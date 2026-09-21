@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod error;
 mod money;
+mod printing;
 mod repositories;
 mod seed;
 mod services;

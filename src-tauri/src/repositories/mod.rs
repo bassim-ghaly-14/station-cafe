@@ -2,6 +2,7 @@
 pub mod catalog;
 pub mod customers;
 pub mod invoices;
+pub mod ops;
 pub mod pos;
 pub mod shifts;
 pub mod users;

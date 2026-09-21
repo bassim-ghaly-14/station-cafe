@@ -196,6 +196,9 @@ fn checkout_invoice(
 
     pos::set_order_status(tx, order.id, "CLOSED")?;
 
+    // Inventory: decrement tracked products (same transaction, auditable).
+    crate::services::ops::apply_sale_to_inventory(tx, invoice_id, actor.id)?;
+
     crate::services::audit::record(
         tx,
         Some(actor.id),
