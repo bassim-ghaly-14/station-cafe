@@ -26,6 +26,46 @@
 
 body {
   margin: 0;
+  /* Stronger, more readable Arabic-first UI type. Cairo renders small at
+     legacy sizes, so the UI baseline is 16px and headings are weightier. */
   font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--color-brand-950);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Shared typography hierarchy — use these classes instead of per-component
+   font-size overrides so every screen stays consistent. */
+@utility text-heading {
+  font-size: 1.375rem; /* page / dialog titles */
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-brand-900);
+}
+
+@utility text-section {
+  font-size: 1.0625rem; /* card / section titles */
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--color-brand-900);
+}
+
+@utility text-body {
+  font-size: 1rem; /* default UI text */
+  font-weight: 500;
+}
+
+@utility text-caption {
+  font-size: 0.875rem; /* secondary / hints — readable, not tiny */
+  font-weight: 500;
+  color: var(--color-brand-600);
+}
+
+/* Numeric emphasis: prices, totals, quantities stay tabular in RTL. */
+@utility text-money {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
