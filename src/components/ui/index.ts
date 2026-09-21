@@ -1,6 +1,7 @@
 /** Barrel for the curated UI primitive set (add only what is actually used). */
 export { Button, type ButtonProps } from './button'
-export { Input, Textarea, Label, Field } from './input'
+export { Input, Textarea, Label, Field, PasswordInput } from './input'
+export { iconSize, type LucideIcon } from './icon'
 export { Card, CardHeader, Badge, type BadgeTone } from './card'
 export { Dialog } from './dialog'
 export { MoneyDisplay } from './money'
