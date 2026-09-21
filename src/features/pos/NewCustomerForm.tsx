@@ -1,0 +1,80 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui'
+import { Field, Input } from '@/components/ui/input'
+import { useToast } from '@/components/ui'
+import { api } from '@/services/posApi'
+
+export function NewCustomerForm({
+  query,
+  onClose,
+  onCreated,
+}: {
+  query: string
+  onClose: () => void
+  onCreated: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const [name, setName] = useState(query)
+  const [phone, setPhone] = useState('')
+  const [plate, setPlate] = useState('')
+  const [model, setModel] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  return (
+    <div className="mt-3 rounded border border-brand-200 p-3">
+      <h4 className="mb-2 font-bold">{t('pos.newCustomer')}</h4>
+      <div className="flex flex-col gap-2">
+        <Field label={t('pos.customerName')}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label={t('pos.phone')}>
+          <Input dir="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </Field>
+        <Field label={t('pos.plateOptional')}>
+          <Input dir="ltr" value={plate} onChange={(e) => setPlate(e.target.value.toUpperCase())} />
+        </Field>
+        <Field label={t('pos.modelOptional')}>
+          <Input value={model} onChange={(e) => setModel(e.target.value)} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            {t('app.cancel')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={busy || !name.trim()}
+            onClick={() => {
+              setBusy(true)
+              api
+                .createCustomer({ name: name.trim(), phone: phone.trim() || null })
+                .then((id) => {
+                  if (plate.trim()) {
+                    return api
+                      .createCar({
+                        customer_id: id,
+                        plate_no: plate.trim().toUpperCase(),
+                        car_model: model.trim() || null,
+                      })
+                      .then(() => id)
+                  }
+                  return id
+                })
+                .then(onCreated)
+                .catch((e) =>
+                  toast(
+                    t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
+                    'error',
+                  ),
+                )
+                .finally(() => setBusy(false))
+            }}
+          >
+            {t('app.save')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -66,11 +66,94 @@
     "empty": "لا يوجد موظفون بعد"
   },
   "pos": {
-    "subtitleSoon": "شاشة الطاولات والأوامر — جارٍ التنفيذ",
-    "emptySoon": "شاشة نقطة البيع قيد التجهيز في هذه المرحلة"
+    "tables": "الطاولات",
+    "todayInvoices": "فواتير اليوم",
+    "selectTable": "اختر طاولة لبدء أوردر جديد",
+    "order": "أوردر",
+    "items": "أصناف",
+    "emptyOrder": "لا توجد أصناف بعد — أضف من الكتالوج",
+    "subtotal": "الإجمالي الفرعي",
+    "discount": "الخصم",
+    "serviceCharge": "الخدمة",
+    "total": "الإجمالي",
+    "cafe": "كافيه",
+    "wash": "غسيل",
+    "searchItems": "ابحث باسم الصنف…",
+    "noItems": "لا توجد أصناف مطابقة",
+    "qty": "الكمية",
+    "pay": "الدفع",
+    "confirmPay": "تأكيد الدفع",
+    "requestPayment": "طلب الدفع",
+    "customerCar": "العميل والسيارة",
+    "washTicket": "تذكرة الغسيل",
+    "ticketIssued": "تم إصدار تذكرة الغسيل — رقم الانتظار {{no}}",
+    "removeLine": "حذف الصنف",
+    "paidMessage": "تم الدفع — فاتورة #{{no}}",
+    "customerSearch": "بحث عن عميل",
+    "customerSearchHint": "ابحث بالاسم أو التليفون أو رقم اللوحة",
+    "noCustomers": "لا يوجد عملاء مطابقون",
+    "newCustomer": "عميل جديد",
+    "attachOnly": "ربط بدون سيارة",
+    "customerName": "اسم العميل",
+    "phone": "التليفون",
+    "plateOptional": "رقم اللوحة (اختياري)",
+    "modelOptional": "موديل السيارة (اختياري)",
+    "fixed": "مبلغ ثابت",
+    "clearDiscount": "إلغاء الخصم",
+    "invalidDiscount": "قيمة الخصم غير صحيحة",
+    "payHintDiscount": "الخصم يتم ضبطه من شاشة الأوردر قبل الدفع",
+    "invoiceSearch": "بحث في الفواتير",
+    "invoiceSearchHint": "رقم فاتورة / طاولة / عميل / لوحة",
+    "allStatuses": "كل الحالات",
+    "allMethods": "كل الطرق",
+    "noInvoices": "لا توجد فواتير اليوم بعد",
+    "noDayHint": "لا يوجد يوم عمل مفتوح",
+    "shiftRequired": "لا توجد وردية مفتوحة",
+    "shiftRequiredHint": "افتح الوردية (ويوم العمل) من هنا",
+    "dept": {
+      "CAFE": "كافيه",
+      "WASH": "غسيل"
+    },
+    "state": {
+      "EMPTY": "فارغة",
+      "OPEN": "مشغولة",
+      "READY_TO_PAY": "جاهزة للدفع"
+    }
+  },
+  "shift": {
+    "openShift": "فتح الوردية",
+    "openingCash": "النقدية الافتتاحية (جنيه)",
+    "invalidCash": "قيمة النقدية غير صحيحة"
+  },
+  "pay": {
+    "methodLabel": "طريقة الدفع",
+    "method": {
+      "CASH": "نقدي",
+      "CARD": "بطاقة",
+      "CREDIT": "آجل"
+    },
+    "received": "المبلغ المستلم",
+    "change": "الباقي للعميل",
+    "invalidReceived": "أدخل المبلغ المستلم بشكل صحيح",
+    "insufficientCash": "المبلغ المستلم أقل من الإجمالي",
+    "creditHint": "البيع الآجل يتطلب عميلًا مصرّحًا له — سيتم تسجيل المديونية"
+  },
+  "invoice": {
+    "status": {
+      "PENDING_PAYMENT": "بانتظار الدفع",
+      "PAID": "مدفوعة",
+      "PARTIALLY_PAID": "مدفوعة جزئيًا",
+      "CREDIT": "آجل",
+      "CANCELLED": "ملغاة"
+    }
+  },
+  "print": {
+    "done": "تم إرسال الطباعة",
+    "duplicateSuppressed": "تم منع طباعة مكررة (نفس المستند)"
   },
   "errors": {
     "internal_error": "حدث خطأ غير متوقع، حاول مرة أخرى",
+    "tauri_required": "هذا التطبيق يعمل داخل بيئة سطح المكتب (Tauri). شغّله عبر الأمر: pnpm dev:app",
     "auth.bad_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
     "auth.suspended": "هذا الحساب موقوف، راجع الإدارة",
     "auth.invalid_session": "الجلسة غير صالحة، سجّل الدخول من جديد",
@@ -83,6 +166,35 @@
     "user.password_too_short": "كلمة المرور يجب ألا تقل عن 6 حروف",
     "user.invalid_status": "الحالة غير صحيحة",
     "user.cannot_suspend_self": "لا يمكنك إيقاف حسابك بنفسك",
-    "user.not_found": "الموظف غير موجود"
+    "user.not_found": "الموظف غير موجود",
+    "pos.no_business_day": "لا يوجد يوم عمل مفتوح — افتح يوم العمل أولًا",
+    "pos.no_active_shift": "لا توجد وردية مفتوحة — افتح الوردية أولًا",
+    "pos.table_not_found": "الطاولة غير موجودة",
+    "pos.table_busy": "الطاولة مشغولة بالفعل",
+    "pos.order_not_found": "الأوردر غير موجود",
+    "pos.order_not_editable": "لا يمكن تعديل هذا الأوردر",
+    "pos.invalid_quantity": "الكمية غير صحيحة",
+    "pos.line_not_found": "الصنف غير موجود في الأوردر",
+    "pos.empty_order": "الأوردر فارغ — أضف أصنافًا أولًا",
+    "pos.not_ready_to_pay": "الأوردر ليس في حالة الدفع بعد",
+    "catalog.item_not_found": "الصنف غير موجود",
+    "catalog.item_inactive": "هذا الصنف غير متاح حاليًا",
+    "discount.invalid": "قيمة الخصم غير صحيحة",
+    "payment.invalid_method": "طريقة الدفع غير صحيحة",
+    "payment.received_required": "أدخل المبلغ المستلم",
+    "payment.insufficient_cash": "المبلغ المستلم أقل من الإجمالي",
+    "payment.zero_total": "إجمالي الفاتورة صفر",
+    "credit.customer_required": "البيع الآجل يتطلب عميلًا",
+    "credit.not_allowed": "هذا العميل غير مصرّح له بالشراء الآجل",
+    "wash.no_wash_items": "لا توجد خدمات غسيل في الأوردر",
+    "wash.customer_required": "خدمة الغسيل تتطلب بيانات العميل",
+    "wash.car_required": "خدمة الغسيل تتطلب بيانات السيارة",
+    "customers.name_required": "اسم العميل مطلوب",
+    "customers.plate_taken": "رقم اللوحة مسجل بالفعل",
+    "customers.car_not_found": "السيارة غير مسجلة",
+    "customers.car_other_owner": "هذه السيارة مسجلة لعميل آخر",
+    "day.already_open": "يوجد يوم عمل مفتوح بالفعل",
+    "day.not_open": "لا يوجد يوم عمل مفتوح",
+    "shift.already_open": "لديك وردية مفتوحة بالفعل"
   }
 }

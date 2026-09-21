@@ -18,7 +18,7 @@ pub fn adjust_stock(
     if !["PURCHASE", "ADJUSTMENT", "WASTE"].contains(&reason) {
         return Err(AppError::validation("inventory.invalid_reason"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let p = catalog::get(&tx, product_id)?
         .ok_or_else(|| AppError::not_found("catalog.item_not_found"))?;
     if !p.track_inventory {
@@ -97,7 +97,7 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
     {
         return Err(AppError::validation("expenses.invalid_recurrence"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let day_id = crate::repositories::shifts::current_day(&tx)?.map(|d| d.id);
     let date = input
         .expense_date

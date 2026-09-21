@@ -4,6 +4,12 @@
 //! UI (React) → Tauri commands → services → repositories → SQLite.
 //! The UI never executes SQL directly; all data access lives here.
 
+// EXPECTED_UNUSED_PENDING_PHASE2: the backend implements the full Phase 2
+// service/repository/command surface ahead of frontend consumption. Dead-code
+// warnings are suppressed here until every command is wired into the UI;
+// remove this attribute once Phase 2 wiring is complete.
+#![allow(dead_code)]
+
 mod commands;
 mod db;
 mod error;
@@ -27,7 +33,11 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // NOTE: no updater plugin — tauri-plugin-updater requires a
+        // `plugins.updater` config (pubkey/endpoints) in tauri.conf.json;
+        // registering it without config crashes the app at startup. This is a
+        // fully-offline application; re-add the plugin together with its
+        // configuration when auto-update is actually introduced.
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

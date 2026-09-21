@@ -26,7 +26,7 @@ pub fn state(conn: &Db, actor: &User) -> AppResult<DayShiftState> {
 }
 
 pub fn open_day(conn: &Db, actor: &User) -> AppResult<i64> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     if shifts::current_day(&tx)?.is_some() {
         return Err(AppError::business("day.already_open"));
     }
@@ -50,7 +50,7 @@ pub fn open_shift(conn: &Db, actor: &User, opening_cash: Money) -> AppResult<i64
     if opening_cash < 0 {
         return Err(AppError::validation("shift.invalid_opening_cash"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let day = shifts::current_day(&tx)?.ok_or_else(|| AppError::business("day.not_open"))?;
     if shifts::active_shift_for(&tx, actor.id)?.is_some() {
         return Err(AppError::business("shift.already_open"));
@@ -84,7 +84,7 @@ pub fn close_shift(conn: &Db, actor: &User, actual_cash: Money) -> AppResult<Shi
     if actual_cash < 0 {
         return Err(AppError::validation("shift.invalid_actual_cash"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let shift = shifts::active_shift_for(&tx, actor.id)?
         .ok_or_else(|| AppError::business("shift.not_open"))?;
     if shift.status != "ACTIVE" {
@@ -120,7 +120,7 @@ pub fn close_shift(conn: &Db, actor: &User, actual_cash: Money) -> AppResult<Shi
 
 /// Close the business day: requires every shift CLOSED and no open orders.
 pub fn close_day(conn: &Db, actor: &User) -> AppResult<DayTotals> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let day = shifts::current_day(&tx)?.ok_or_else(|| AppError::business("day.not_open"))?;
     let open_shifts: Vec<ShiftRow> = shifts::shifts_of_day(&tx, day.id)?
         .into_iter()

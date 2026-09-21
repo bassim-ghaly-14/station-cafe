@@ -56,7 +56,7 @@ pub fn add_line(
     if quantity <= 0 {
         return Err(AppError::validation("pos.invalid_quantity"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     let p = catalog::get(&tx, product_id)?
@@ -75,7 +75,7 @@ pub fn update_line_quantity(conn: &Db, actor: &User, line_id: i64, quantity: i64
     if quantity <= 0 {
         return Err(AppError::validation("pos.invalid_quantity"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let line = pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
     let order = get_order(&tx, line.order_id)?;
     require_editable(&order, actor)?;
@@ -85,7 +85,7 @@ pub fn update_line_quantity(conn: &Db, actor: &User, line_id: i64, quantity: i64
 }
 
 pub fn remove_line(conn: &Db, actor: &User, line_id: i64) -> AppResult<()> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let line = pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
     let order = get_order(&tx, line.order_id)?;
     require_editable(&order, actor)?;
@@ -95,7 +95,7 @@ pub fn remove_line(conn: &Db, actor: &User, line_id: i64) -> AppResult<()> {
 }
 
 pub fn mark_ready_to_pay(conn: &Db, actor: &User, order_id: i64) -> AppResult<()> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     if order.lines.is_empty() {
@@ -113,7 +113,7 @@ pub fn attach_customer(
     customer_id: i64,
     car_plate: Option<&str>,
 ) -> AppResult<()> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
     if order.status == "CLOSED" || order.status == "CANCELLED" {
         return Err(AppError::business("pos.order_not_editable"));
@@ -207,7 +207,7 @@ pub struct WashTicketData {
 }
 
 pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> {
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
     if !order.lines.iter().any(|l| l.department == "WASH") {
         return Err(AppError::business("wash.no_wash_items"));

@@ -37,7 +37,7 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
     if !["CASH", "CARD", "CREDIT"].contains(&input.method.as_str()) {
         return Err(AppError::validation("payment.invalid_method"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
 
     // ---- validate -----------------------------------------------------------
     let order = pos::get_order(&tx, input.order_id)?
@@ -221,7 +221,7 @@ pub fn cancel_invoice(conn: &Db, actor: &User, invoice_id: i64, reason: &str) ->
     if reason.trim().is_empty() {
         return Err(AppError::validation("invoice.cancel_reason_required"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let day = crate::repositories::shifts::current_day(&tx)?
         .ok_or_else(|| AppError::business("pos.no_business_day"))?;
     let inv: (Option<i64>, String) = tx
@@ -257,7 +257,7 @@ pub fn settle_credit(conn: &Db, actor: &User, customer_id: i64, amount: i64) -> 
     if amount <= 0 {
         return Err(AppError::validation("payment.invalid_amount"));
     }
-    let mut tx = conn.unchecked_transaction()?;
+    let tx = conn.unchecked_transaction()?;
     let (acct, _, _): (i64, i64, i64) = invoices::credit_account_for(&tx, customer_id)?
         .ok_or_else(|| AppError::not_found("credit.not_found"))?;
     let status = invoices::pay_credit(&tx, acct, amount, actor.id)?;

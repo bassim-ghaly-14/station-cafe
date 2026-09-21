@@ -8,6 +8,7 @@
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
   "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"],
+  "css.lint.unknownAtRules": "ignore",
   "files.associations": {
     "*.sql": "sql"
   }
