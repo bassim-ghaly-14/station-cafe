@@ -1,56 +1,95 @@
+/**
+ * Root: db bridge check → SessionProvider → Login / AppShell + routed views.
+ */
 import { useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
-import { LogoPlaceholder } from '@/components/branding/LogoPlaceholder'
+import { useTranslation } from 'react-i18next'
+import { Logo } from '@/components/branding/LogoPlaceholder'
 import { LoadingState, ErrorState } from '@/components/states'
+import { ToastProvider } from '@/components/ui'
+import { SessionProvider, useSession } from '@/features/auth/useSession'
+import LoginPage from '@/features/auth/LoginPage'
+import AppShell from '@/app/AppShell'
+import { RouterProvider, useRouter } from '@/app/router'
+import StaffPage from '@/features/staff/StaffPage'
+import PosPage from '@/features/pos/PosPage'
 
 interface DbStatus {
   ok: boolean
   schema_version: number
 }
 
-/**
- * Foundation shell. Real layout/routing arrives in Phase 1.
- * Verifies the backend/database bridge during startup.
- */
+function RoutedViews() {
+  const { view } = useRouter()
+  switch (view) {
+    case 'staff':
+      return <StaffPage />
+    case 'pos':
+    default:
+      return <PosPage />
+  }
+}
+
+function Authed() {
+  const { user, loading } = useSession()
+  if (loading) return <BootScreen />
+  if (!user) return <LoginPage />
+  return (
+    <RouterProvider>
+      <AppShell>
+        <RoutedViews />
+      </AppShell>
+    </RouterProvider>
+  )
+}
+
+function BootScreen() {
+  const { t } = useTranslation()
+  return (
+    <main dir="rtl" className="flex h-screen flex-col items-center justify-center gap-6 bg-surface">
+      <Logo size={88} />
+      <LoadingState label={t('app.loading')} />
+    </main>
+  )
+}
+
 export default function App() {
   const { t } = useTranslation()
-  const [status, setStatus] = useState<DbStatus | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [dbOk, setDbOk] = useState<boolean | null>(null)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    setStatus(null)
-    setError(null)
     invoke<DbStatus>('db_status')
-      .then((s) => !cancelled && setStatus(s))
-      .catch((e) => !cancelled && setError(String(e)))
+      .then(() => !cancelled && setDbOk(true))
+      .catch(() => !cancelled && setDbOk(false))
     return () => {
       cancelled = true
     }
   }, [tick])
 
-  return (
-    <main
-      dir="rtl"
-      className="flex h-screen flex-col items-center justify-center gap-6 bg-surface text-brand-950"
-    >
-      <LogoPlaceholder />
-      <h1 className="text-3xl font-bold">{t('app.name')}</h1>
-      {error ? (
+  if (dbOk === null) return <BootScreen />
+  if (!dbOk) {
+    return (
+      <main
+        dir="rtl"
+        className="flex h-screen flex-col items-center justify-center gap-6 bg-surface"
+      >
+        <Logo size={88} />
         <ErrorState
-          message={error}
+          message={t('errors.internal_error')}
           onRetry={() => setTick((x) => x + 1)}
           retryLabel={t('app.retry')}
         />
-      ) : status ? (
-        <p className="text-brand-700">
-          {t('app.dbReady')} — schema v{status.schema_version}
-        </p>
-      ) : (
-        <LoadingState label={t('app.loading')} />
-      )}
-    </main>
+      </main>
+    )
+  }
+
+  return (
+    <ToastProvider>
+      <SessionProvider>
+        <Authed />
+      </SessionProvider>
+    </ToastProvider>
   )
 }

@@ -1,16 +1,90 @@
 {
   "app": {
     "name": "ستيشن كافيه",
+    "tagline": "نظام إدارة الكافيه والغسيل — يعمل أوفلاين بالكامل",
     "loading": "جارٍ التحميل…",
     "error": "حدث خطأ غير متوقع",
     "retry": "إعادة المحاولة",
     "emptyTitle": "لا توجد بيانات بعد",
     "emptyAction": "ابدأ بإضافة عنصر جديد",
-    "updateAvailable": "يوجد تحديث جديد متاح",
-    "currentVersion": "الإصدار الحالي",
-    "availableVersion": "الإصدار المتاح",
-    "updateNow": "التحديث الآن",
-    "updateLater": "لاحقًا",
-    "dbReady": "قاعدة البيانات جاهزة"
+    "dbReady": "قاعدة البيانات جاهزة",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "close": "إغلاق",
+    "confirm": "تأكيد",
+    "print": "طباعة",
+    "search": "بحث",
+    "add": "إضافة",
+    "actions": "إجراءات",
+    "status": "الحالة",
+    "date": "التاريخ",
+    "time": "الوقت",
+    "amount": "المبلغ",
+    "notes": "ملاحظات",
+    "yes": "نعم",
+    "no": "لا"
+  },
+  "auth": {
+    "signIn": "تسجيل الدخول",
+    "signingIn": "جارٍ الدخول…",
+    "name": "اسم المستخدم",
+    "password": "كلمة المرور",
+    "nameRequired": "من فضلك أدخل اسم المستخدم",
+    "passwordRequired": "من فضلك أدخل كلمة المرور",
+    "logout": "تسجيل الخروج",
+    "currentSession": "المستخدم الحالي"
+  },
+  "roles": {
+    "ADMIN": "مدير النظام",
+    "MANAGER": "مدير",
+    "STAFF": "كاشير"
+  },
+  "nav": {
+    "pos": "نقطة البيع",
+    "dashboard": "لوحة التحكم",
+    "staff": "الموظفون",
+    "catalog": "الأصناف والخدمات",
+    "customers": "العملاء والسيارات",
+    "inventory": "المخزون",
+    "expenses": "المصروفات",
+    "reports": "التقارير",
+    "audit": "سجل العمليات",
+    "settings": "الإعدادات"
+  },
+  "staff": {
+    "subtitle": "إدارة حسابات الموظفين والأدوار",
+    "addStaff": "إضافة موظف",
+    "name": "الاسم",
+    "phone": "التليفون",
+    "active": "نشط",
+    "suspended": "موقوف",
+    "suspend": "إيقاف",
+    "activate": "تنشيط",
+    "created": "تم إنشاء الموظف",
+    "saved": "تم الحفظ",
+    "empty": "لا يوجد موظفون بعد"
+  },
+  "roles": {
+    "title": "الدور"
+  },
+  "pos": {
+    "subtitleSoon": "شاشة الطاولات والأوامر — جارٍ التنفيذ",
+    "emptySoon": "شاشة نقطة البيع قيد التجهيز في هذه المرحلة"
+  },
+  "errors": {
+    "internal_error": "حدث خطأ غير متوقع، حاول مرة أخرى",
+    "auth.bad_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
+    "auth.suspended": "هذا الحساب موقوف، راجع الإدارة",
+    "auth.invalid_session": "الجلسة غير صالحة، سجّل الدخول من جديد",
+    "auth.session_expired": "انتهت صلاحية الجلسة، سجّل الدخول من جديد",
+    "auth.forbidden": "ليس لديك صلاحية لتنفيذ هذا الإجراء",
+    "auth.admin_only": "هذا الإجراء متاح لمدير النظام فقط",
+    "user.name_required": "اسم المستخدم مطلوب",
+    "user.name_taken": "اسم المستخدم موجود بالفعل",
+    "user.invalid_role": "الدور غير صحيح",
+    "user.password_too_short": "كلمة المرور يجب ألا تقل عن 6 حروف",
+    "user.invalid_status": "الحالة غير صحيحة",
+    "user.cannot_suspend_self": "لا يمكنك إيقاف حسابك بنفسك",
+    "user.not_found": "الموظف غير موجود"
   }
 }
