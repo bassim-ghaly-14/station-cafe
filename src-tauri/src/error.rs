@@ -6,6 +6,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)] // variants fill in as services are built (Phase 2)
 pub enum AppError {
     #[error("database error: {0}")]
     Db(#[from] rusqlite::Error),

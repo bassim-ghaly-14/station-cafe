@@ -8,7 +8,9 @@ mod commands;
 mod db;
 mod error;
 mod money;
+mod repositories;
 mod seed;
+mod services;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -43,7 +45,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::db_status,
+            commands::status::db_status,
+            commands::auth::login,
+            commands::auth::logout,
+            commands::auth::me,
+            commands::auth::change_password,
+            commands::auth::create_staff,
+            commands::auth::list_staff,
+            commands::auth::set_staff_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
