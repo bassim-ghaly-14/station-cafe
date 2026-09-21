@@ -8,7 +8,7 @@ use crate::services::shifts::{self as shift_svc, DayShiftState, ShiftClosing};
 use crate::AppState;
 use tauri::State;
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn day_shift_state(
     state: State<'_, AppState>,
     token: String,
@@ -16,14 +16,14 @@ pub fn day_shift_state(
     authorized(&state, &token, "STAFF", |conn, actor| shift_svc::state(conn, actor))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn open_business_day(state: State<'_, AppState>, token: String) -> AppResult<i64> {
     authorized(&state, &token, "MANAGER", |conn, actor| {
         shift_svc::open_day(conn, actor)
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn open_shift(
     state: State<'_, AppState>,
     token: String,
@@ -35,7 +35,7 @@ pub fn open_shift(
 }
 
 /// Closing returns expected vs actual and the explicit difference.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn close_shift(
     state: State<'_, AppState>,
     token: String,
@@ -46,26 +46,26 @@ pub fn close_shift(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn close_business_day(state: State<'_, AppState>, token: String) -> AppResult<DayTotals> {
     authorized(&state, &token, "MANAGER", |conn, actor| {
         shift_svc::close_day(conn, actor)
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_shifts(state: State<'_, AppState>, token: String, day_id: i64) -> AppResult<Vec<ShiftRow>> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         crate::repositories::shifts::shifts_of_day(conn, day_id)
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn shift_report(state: State<'_, AppState>, token: String, shift_id: i64) -> AppResult<ShiftReport> {
     authorized(&state, &token, "STAFF", move |conn, _| reports::shift_report(conn, shift_id))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn day_report(state: State<'_, AppState>, token: String, day_id: i64) -> AppResult<DayReport> {
     authorized(&state, &token, "MANAGER", move |conn, _| reports::day_report(conn, day_id))
 }

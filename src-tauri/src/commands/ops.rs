@@ -13,12 +13,12 @@ use tauri::State;
 
 // ---- inventory -------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_stock(state: State<'_, AppState>, token: String) -> AppResult<Vec<StockRow>> {
     authorized(&state, &token, "STAFF", |conn, _| ops_svc::list_stock(conn))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_stock_movements(
     state: State<'_, AppState>,
     token: String,
@@ -27,7 +27,7 @@ pub fn list_stock_movements(
     authorized(&state, &token, "MANAGER", move |conn, _| ops_svc::list_movements(conn, limit))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn adjust_stock(
     state: State<'_, AppState>,
     token: String,
@@ -41,7 +41,7 @@ pub fn adjust_stock(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_stock_minimum(
     state: State<'_, AppState>,
     token: String,
@@ -55,7 +55,7 @@ pub fn set_stock_minimum(
 
 // ---- expenses --------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_expenses(
     state: State<'_, AppState>,
     token: String,
@@ -68,7 +68,7 @@ pub fn list_expenses(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_expense(
     state: State<'_, AppState>,
     token: String,
@@ -81,12 +81,12 @@ pub fn create_expense(
 
 // ---- reports & audit -------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn today_summary(state: State<'_, AppState>, token: String) -> AppResult<TodaySummary> {
     authorized(&state, &token, "STAFF", |conn, _| reports::today_summary(conn))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn sales_by_day(
     state: State<'_, AppState>,
     token: String,
@@ -98,7 +98,7 @@ pub fn sales_by_day(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn product_sales(
     state: State<'_, AppState>,
     token: String,
@@ -110,7 +110,7 @@ pub fn product_sales(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_audit(
     state: State<'_, AppState>,
     token: String,
@@ -124,12 +124,12 @@ pub fn list_audit(
 
 // ---- printing --------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_print_config(state: State<'_, AppState>, token: String) -> AppResult<PrintConfig> {
     authorized(&state, &token, "MANAGER", |conn, _| printing::get_config(conn))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_print_config(
     state: State<'_, AppState>,
     token: String,
@@ -154,12 +154,12 @@ pub fn set_print_config(
 }
 
 /// Test print — explicit user action, so duplicate protection is bypassed.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn print_test(state: State<'_, AppState>, token: String) -> AppResult<PrintOutcome> {
     authorized(&state, &token, "MANAGER", |conn, _| printing::print_test(conn, true))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn print_invoice(
     state: State<'_, AppState>,
     token: String,
@@ -171,7 +171,7 @@ pub fn print_invoice(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn print_wash_ticket(
     state: State<'_, AppState>,
     token: String,
@@ -183,7 +183,7 @@ pub fn print_wash_ticket(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn print_shift_report(
     state: State<'_, AppState>,
     token: String,
@@ -195,7 +195,7 @@ pub fn print_shift_report(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn print_day_report_cmd(
     state: State<'_, AppState>,
     token: String,
@@ -207,7 +207,7 @@ pub fn print_day_report_cmd(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_print_jobs(
     state: State<'_, AppState>,
     token: String,

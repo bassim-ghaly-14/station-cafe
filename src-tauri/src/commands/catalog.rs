@@ -18,7 +18,7 @@ pub struct ProductInput {
 }
 
 /// POS reads the sellable catalog (active items only).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_products(
     state: State<'_, AppState>,
     token: String,
@@ -30,7 +30,7 @@ pub fn list_products(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_product(
     state: State<'_, AppState>,
     token: String,
@@ -78,7 +78,7 @@ pub fn create_product(
 }
 
 /// Price change: audited, and historical invoices stay untouched (snapshots).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_product_price(
     state: State<'_, AppState>,
     token: String,
@@ -104,7 +104,7 @@ pub fn set_product_price(
 }
 
 /// Deactivation is preferred over deletion (history must stay intact).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_product_active(
     state: State<'_, AppState>,
     token: String,
@@ -126,7 +126,7 @@ pub fn set_product_active(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn rename_product(
     state: State<'_, AppState>,
     token: String,
@@ -154,7 +154,7 @@ pub fn rename_product(
 
 // ---- settings (service charge / credit rules) ------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_service_charge(
     state: State<'_, AppState>,
     token: String,
@@ -164,7 +164,7 @@ pub fn get_service_charge(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_service_charge(
     state: State<'_, AppState>,
     token: String,
@@ -175,7 +175,7 @@ pub fn set_service_charge(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_credit_config(
     state: State<'_, AppState>,
     token: String,
@@ -185,7 +185,7 @@ pub fn get_credit_config(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_credit_config(
     state: State<'_, AppState>,
     token: String,

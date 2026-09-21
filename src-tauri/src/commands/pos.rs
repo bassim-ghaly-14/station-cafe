@@ -10,25 +10,25 @@ use crate::AppState;
 use serde::Deserialize;
 use tauri::State;
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_tables(state: State<'_, AppState>, token: String) -> AppResult<Vec<TableView>> {
     authorized(&state, &token, "STAFF", |conn, _| pos_svc::list_tables(conn))
 }
 
 /// Opening a table requires an OPEN business day + the caller's ACTIVE shift.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn open_table(state: State<'_, AppState>, token: String, table_id: i64) -> AppResult<i64> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
         pos_svc::open_table(conn, actor, table_id)
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_order(state: State<'_, AppState>, token: String, order_id: i64) -> AppResult<Order> {
     authorized(&state, &token, "STAFF", move |conn, _| pos_svc::get_order(conn, order_id))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn add_order_line(
     state: State<'_, AppState>,
     token: String,
@@ -41,7 +41,7 @@ pub fn add_order_line(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_line_quantity(
     state: State<'_, AppState>,
     token: String,
@@ -57,7 +57,7 @@ pub fn set_line_quantity(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn remove_order_line(
     state: State<'_, AppState>,
     token: String,
@@ -70,7 +70,7 @@ pub fn remove_order_line(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn mark_ready_to_pay(
     state: State<'_, AppState>,
     token: String,
@@ -88,7 +88,7 @@ pub struct AttachCustomerInput {
     pub car_plate: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn attach_customer(
     state: State<'_, AppState>,
     token: String,
@@ -100,7 +100,7 @@ pub fn attach_customer(
 }
 
 /// Authoritative pricing preview (subtotal / discount / service charge / total).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn preview_order(
     state: State<'_, AppState>,
     token: String,
@@ -114,7 +114,7 @@ pub fn preview_order(
 }
 
 /// Issue + print the wash job ticket (requires wash items, customer and car).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn issue_wash_ticket(
     state: State<'_, AppState>,
     token: String,
@@ -125,7 +125,7 @@ pub fn issue_wash_ticket(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn checkout_order(
     state: State<'_, AppState>,
     token: String,
@@ -136,7 +136,7 @@ pub fn checkout_order(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn get_invoice(
     state: State<'_, AppState>,
     token: String,
@@ -149,7 +149,7 @@ pub fn get_invoice(
 }
 
 /// Today's invoices with fast lookup filters.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn search_invoices(
     state: State<'_, AppState>,
     token: String,
@@ -170,7 +170,7 @@ pub fn search_invoices(
 }
 
 /// Cancellation is MANAGER+, same business day only, always audited.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn cancel_invoice(
     state: State<'_, AppState>,
     token: String,
@@ -182,7 +182,7 @@ pub fn cancel_invoice(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_credit_accounts(
     state: State<'_, AppState>,
     token: String,
@@ -190,7 +190,7 @@ pub fn list_credit_accounts(
     authorized(&state, &token, "STAFF", |conn, _| invoices::list_credit_accounts(conn))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn settle_credit(
     state: State<'_, AppState>,
     token: String,

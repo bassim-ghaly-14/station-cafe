@@ -9,23 +9,23 @@ use crate::AppState;
 use serde::Deserialize;
 use tauri::State;
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn login(state: State<'_, AppState>, input: auth::LoginInput) -> AppResult<auth::SessionInfo> {
     with_conn(&state, |conn| auth::login(conn, &input))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn logout(state: State<'_, AppState>, token: String) -> AppResult<()> {
     with_conn(&state, |conn| auth::logout(conn, &token))
 }
 
 /// Validate the stored session on app start (session restoration).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn me(state: State<'_, AppState>, token: String) -> AppResult<users::User> {
     with_conn(&state, |conn| auth::require_user(conn, &token))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn change_password(
     state: State<'_, AppState>,
     token: String,
@@ -45,7 +45,7 @@ pub struct NewStaffInput {
     pub password: String,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_staff(
     state: State<'_, AppState>,
     token: String,
@@ -91,12 +91,12 @@ pub fn create_staff(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_staff(state: State<'_, AppState>, token: String) -> AppResult<Vec<users::User>> {
     authorized(&state, &token, "MANAGER", |conn, _actor| users::list(conn))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_staff_status(
     state: State<'_, AppState>,
     token: String,

@@ -15,7 +15,7 @@ pub struct CustomerInput {
 }
 
 /// Unified lookup used by the POS search box (name / phone / plate).
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn search_customers(
     state: State<'_, AppState>,
     token: String,
@@ -29,7 +29,7 @@ pub fn search_customers(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_cars_of(
     state: State<'_, AppState>,
     token: String,
@@ -40,7 +40,7 @@ pub fn list_cars_of(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn find_cars_by_plate(
     state: State<'_, AppState>,
     token: String,
@@ -51,7 +51,7 @@ pub fn find_cars_by_plate(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_customer(
     state: State<'_, AppState>,
     token: String,
@@ -77,7 +77,7 @@ pub fn create_customer(
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_customer(
     state: State<'_, AppState>,
     token: String,
@@ -112,7 +112,7 @@ pub struct CarInput {
 }
 
 /// Plates are unique — a duplicate plate returns a clear conflict error.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn create_car(state: State<'_, AppState>, token: String, input: CarInput) -> AppResult<i64> {
     let plate = input.plate_no.trim().to_uppercase();
     if plate.is_empty() {

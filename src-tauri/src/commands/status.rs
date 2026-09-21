@@ -13,7 +13,7 @@ pub struct DbStatus {
 
 /// Health-check command used by the frontend on startup to verify the
 /// database is reachable and to learn the applied schema version.
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn db_status(state: State<'_, AppState>) -> AppResult<DbStatus> {
     let conn = state
         .conn
