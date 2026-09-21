@@ -7,6 +7,7 @@
 mod commands;
 mod db;
 mod error;
+mod money;
 mod seed;
 
 use std::sync::Mutex;
