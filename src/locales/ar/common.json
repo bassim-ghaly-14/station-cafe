@@ -1,0 +1,16 @@
+{
+  "app": {
+    "name": "ستيشن كافيه",
+    "loading": "جارٍ التحميل…",
+    "error": "حدث خطأ غير متوقع",
+    "retry": "إعادة المحاولة",
+    "emptyTitle": "لا توجد بيانات بعد",
+    "emptyAction": "ابدأ بإضافة عنصر جديد",
+    "updateAvailable": "يوجد تحديث جديد متاح",
+    "currentVersion": "الإصدار الحالي",
+    "availableVersion": "الإصدار المتاح",
+    "updateNow": "التحديث الآن",
+    "updateLater": "لاحقًا",
+    "dbReady": "قاعدة البيانات جاهزة"
+  }
+}

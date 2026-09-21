@@ -1,0 +1,31 @@
+/*
+ * Station Cafe design tokens
+ * Warm, professional cafe aesthetic: beige / brown / warm neutrals.
+ * Applied via Tailwind v4 CSS-first theme configuration.
+ */
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-50: #faf6f0;
+  --color-brand-100: #f3ead9;
+  --color-brand-200: #e6d5b8;
+  --color-brand-300: #d9b98f;
+  --color-brand-400: #c69a63;
+  --color-brand-500: #b07f47;
+  --color-brand-600: #96673a;
+  --color-brand-700: #7a5230;
+  --color-brand-800: #5e3f25;
+  --color-brand-900: #432d1c;
+  --color-brand-950: #2b1d12;
+
+  --color-surface: #faf6f0;
+  --color-surface-raised: #fffdf9;
+
+  --font-sans: 'Cairo', 'Segoe UI', 'Tahoma', system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
