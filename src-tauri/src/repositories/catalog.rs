@@ -43,7 +43,12 @@ pub fn list(conn: &Db, department: Option<&str>, active_only: bool) -> AppResult
     }
     sql.push_str(" ORDER BY department, name");
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(params![department], row)?;
+    // The department placeholder only exists when a filter was appended;
+    // binding unconditionally would fail with "Got 1, needed 0".
+    let rows = match department {
+        Some(d) => stmt.query_map(params![d], row)?,
+        None => stmt.query_map([], row)?,
+    };
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -97,4 +102,33 @@ pub fn rename(conn: &Db, id: i64, name: &str) -> AppResult<()> {
         params![id, name],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrate;
+    use crate::seed::run_if_empty;
+    use rusqlite::Connection;
+
+    fn fresh() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+        conn
+    }
+
+    /// Regression: the department filter is appended conditionally, so an
+    /// unfiltered list must bind ZERO parameters (was "Got 1, needed 0").
+    #[test]
+    fn list_without_department_filter_binds_no_params() {
+        let conn = fresh();
+        let all = list(&conn, None, false).unwrap();
+        assert!(!all.is_empty());
+        let active = list(&conn, None, true).unwrap();
+        assert!(active.iter().all(|p| p.is_active));
+        let cafe = list(&conn, Some("CAFE"), false).unwrap();
+        assert!(!cafe.is_empty() && cafe.iter().all(|p| p.department == "CAFE"));
+    }
 }
