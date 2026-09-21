@@ -2,6 +2,7 @@
  * Shared loading / empty / error states.
  * Every data-driven screen must use these — never ship a blank screen.
  */
+import { RotateCcw } from '@/components/ui/icon'
 export function LoadingState({ label }: { label?: string }) {
   return (
     <div role="status" aria-live="polite" className="flex flex-col items-center gap-3">
@@ -41,7 +42,7 @@ export function ErrorState({
           onClick={onRetry}
           className="rounded-md bg-brand-600 px-4 py-2 text-white hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-brand-800"
         >
-          {retryLabel ?? '↻'}
+          {retryLabel ?? <RotateCcw size={16} aria-hidden />}
         </button>
       ) : null}
     </div>

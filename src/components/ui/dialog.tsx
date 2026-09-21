@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { X } from './icon'
 
 export function Dialog({
   open,
@@ -60,7 +61,7 @@ export function Dialog({
             aria-label="close"
             className="rounded p-1 text-brand-500 hover:bg-brand-100 hover:text-brand-800"
           >
-            ✕
+            <X size={16} aria-hidden />
           </button>
         </div>
         {children}
