@@ -55,10 +55,16 @@ function BootScreen() {
 
 export default function App() {
   const { t } = useTranslation()
-  const [dbOk, setDbOk] = useState<boolean | null>(null)
+  // The app is a Tauri desktop application: the backend (SQLite, commands)
+  // only exists inside the Tauri shell. When opened from a plain browser
+  // (e.g. bare `pnpm dev`), there is no IPC runtime and db_status can never
+  // succeed — surface that explicitly instead of a generic error.
+  const inTauri = '__TAURI_INTERNALS__' in window
+  const [dbOk, setDbOk] = useState<boolean | null>(inTauri ? null : false)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
+    if (!inTauri) return
     let cancelled = false
     invoke<DbStatus>('db_status')
       .then(() => !cancelled && setDbOk(true))
@@ -66,7 +72,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [tick])
+  }, [inTauri, tick])
 
   if (dbOk === null) return <BootScreen />
   if (!dbOk) {
@@ -77,7 +83,7 @@ export default function App() {
       >
         <Logo size={88} />
         <ErrorState
-          message={t('errors.internal_error')}
+          message={t(inTauri ? 'errors.internal_error' : 'errors.tauri_required')}
           onRetry={() => setTick((x) => x + 1)}
           retryLabel={t('app.retry')}
         />
