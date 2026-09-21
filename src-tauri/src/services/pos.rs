@@ -228,19 +228,24 @@ pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> 
         .map_err(|_| AppError::business("wash.car_required"))?;
 
     let day = shifts::current_day(&tx)?.ok_or_else(|| AppError::business("pos.no_business_day"))?;
-    if order.waiting_no.is_none() {
-        // Per-day waiting number sequence (unique per day).
-        let waiting_no: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(waiting_no), 0) + 1 FROM wash_tickets WHERE day_date = ?1",
-            [&day.day_date],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            "INSERT INTO wash_tickets (order_id, waiting_no, day_date) VALUES (?1, ?2, ?3)",
-            params![order_id, waiting_no, day.day_date],
-        )?;
-        pos::set_waiting_no(&tx, order_id, waiting_no)?;
-    }
+    // The order snapshot was read BEFORE the ticket existed; keep the fresh number.
+    let waiting_no = match order.waiting_no {
+        Some(existing) => existing,
+        None => {
+            // Per-day waiting number sequence (unique per day).
+            let next: i64 = tx.query_row(
+                "SELECT COALESCE(MAX(waiting_no), 0) + 1 FROM wash_tickets WHERE day_date = ?1",
+                [&day.day_date],
+                |r| r.get(0),
+            )?;
+            tx.execute(
+                "INSERT INTO wash_tickets (order_id, waiting_no, day_date) VALUES (?1, ?2, ?3)",
+                params![order_id, next, day.day_date],
+            )?;
+            pos::set_waiting_no(&tx, order_id, next)?;
+            next
+        }
+    };
     let services: Vec<String> = order
         .lines
         .iter()
@@ -250,7 +255,7 @@ pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> 
     tx.commit()?;
 
     Ok(WashTicketData {
-        waiting_no: order.waiting_no.unwrap_or(0),
+        waiting_no,
         customer_name: name,
         customer_phone: phone,
         car_plate: plate,

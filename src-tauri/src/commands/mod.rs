@@ -3,5 +3,10 @@
 //! Business logic belongs in services; SQL in repositories.
 
 pub mod auth;
+pub mod catalog;
 pub mod common;
+pub mod customers;
+pub mod ops;
+pub mod pos;
+pub mod shifts;
 pub mod status;

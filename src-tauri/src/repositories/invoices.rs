@@ -79,15 +79,20 @@ pub fn insert_invoice_customer(
 
 /// Atomically take the next sequential invoice number.
 pub fn next_invoice_no(conn: &Db) -> AppResult<i64> {
-    let n: i64 = conn.query_row(
+    // Stored as TEXT in app_settings; parse defensively.
+    let raw: String = conn.query_row(
         "SELECT value FROM app_settings WHERE key = 'invoice.next_number'",
         [],
         |r| r.get(0),
     )?;
+    let n: i64 = raw
+        .trim()
+        .parse()
+        .map_err(|_| crate::error::AppError::internal("invoice.next_number corrupt"))?;
     conn.execute(
-        "UPDATE app_settings SET value = ?2, updated_at = datetime('now')
+        "UPDATE app_settings SET value = ?1, updated_at = datetime('now')
          WHERE key = 'invoice.next_number'",
-        params![n.to_string(), (n + 1).to_string()],
+        [(n + 1).to_string()],
     )?;
     Ok(n)
 }

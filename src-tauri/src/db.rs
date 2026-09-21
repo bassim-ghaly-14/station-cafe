@@ -401,6 +401,17 @@ const MIGRATIONS: &[Migration] = &[Migration {
             CREATE UNIQUE INDEX idx_wash_tickets_day_no ON wash_tickets(day_date, waiting_no);
         "#,
     },
+    Migration {
+        version: 4,
+        name: "orders customer and waiting columns",
+        sql: r#"
+            -- v2 defined the orders columns but never created them; v3-era
+            -- repositories read them. Add them additively (never edit v2).
+            ALTER TABLE orders ADD COLUMN customer_id INTEGER REFERENCES customers(id);
+            ALTER TABLE orders ADD COLUMN waiting_no INTEGER;
+            CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+        "#,
+    },
 ];
 
 pub fn migrate(conn: &Db) -> AppResult<()> {
