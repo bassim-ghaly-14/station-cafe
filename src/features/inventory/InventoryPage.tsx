@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, LoadingState } from '@/components/states'
+import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { Badge, Button, Card, CardHeader, Dialog } from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Boxes } from '@/components/ui/icon'
@@ -19,17 +19,27 @@ export default function InventoryPage() {
   const errText = useErrText(t)
   const [stock, setStock] = useState<StockRow[] | null>(null)
   const [movements, setMovements] = useState<MovementRow[] | null>(null)
+  const [stockErr, setStockErr] = useState<string | null>(null)
+  const [movErr, setMovErr] = useState<string | null>(null)
   const [adjusting, setAdjusting] = useState<StockRow | null>(null)
 
   const load = useCallback(() => {
+    setStockErr(null)
+    setMovErr(null)
     opsApi
       .stock()
       .then(setStock)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setStockErr(errText(e))
+        toast(errText(e), 'error')
+      })
     opsApi
       .movements(30)
       .then(setMovements)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setMovErr(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [toast, errText])
 
   useEffect(() => {
@@ -44,7 +54,11 @@ export default function InventoryPage() {
       </h1>
 
       {stock === null ? (
-        <LoadingState label={t('app.loading')} />
+        stockErr ? (
+          <ErrorState message={stockErr} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : stock.length === 0 ? (
         <EmptyState title={t('inventory.empty')} />
       ) : (
@@ -81,7 +95,11 @@ export default function InventoryPage() {
       <Card>
         <CardHeader title={t('inventory.movements')} />
         {movements === null ? (
-          <LoadingState />
+          movErr ? (
+            <ErrorState message={movErr} onRetry={load} retryLabel={t('app.retry')} />
+          ) : (
+            <LoadingState />
+          )
         ) : movements.length === 0 ? (
           <EmptyState title={t('inventory.noMovements')} />
         ) : (

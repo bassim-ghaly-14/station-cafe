@@ -1,7 +1,8 @@
 /** Live order panel: lines, product pad, discount, customer/car, wash ticket. */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
+import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type OrderPreview, type PosOrder, type Product } from '@/services/posApi'
 import { ActionRow } from './ActionRow'
@@ -32,6 +33,7 @@ export function OrderPanel({
   const { t } = useTranslation()
   const toast = useToast()
   const [products, setProducts] = useState<Product[] | null>(null)
+  const [prodErr, setProdErr] = useState<string | null>(null)
   const [dept, setDept] = useState<'CAFE' | 'WASH'>('CAFE')
   const [query, setQuery] = useState('')
   const [qty, setQty] = useState(1)
@@ -40,17 +42,19 @@ export function OrderPanel({
   const [localPreview, setLocalPreview] = useState<OrderPreview | null>(null)
   const discountRef = useRef<DiscountSel>({ mode: null, value: null })
 
-  useEffect(() => {
+  const loadProducts = useCallback(() => {
+    setProdErr(null)
     api
       .products()
       .then(setProducts)
-      .catch((e) =>
-        toast(
-          t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
-          'error',
-        ),
-      )
-  }, [t, toast])
+      .catch((e) => {
+        setProdErr(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
+      })
+  }, [t])
+
+  useEffect(() => {
+    loadProducts()
+  }, [loadProducts])
 
   useEffect(() => {
     setLocalPreview(null)
@@ -120,16 +124,20 @@ export function OrderPanel({
           onRefreshTables()
         }}
       />
-      <ProductPad
-        dept={dept}
-        setDept={setDept}
-        query={query}
-        setQuery={setQuery}
-        qty={qty}
-        setQty={setQty}
-        items={filtered}
-        onAdd={addItem}
-      />
+      {prodErr ? (
+        <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
+      ) : (
+        <ProductPad
+          dept={dept}
+          setDept={setDept}
+          query={query}
+          setQuery={setQuery}
+          qty={qty}
+          setQty={setQty}
+          items={filtered}
+          onAdd={addItem}
+        />
+      )}
       {discountOpen ? (
         <DiscountDialog
           onClose={() => setDiscountOpen(false)}

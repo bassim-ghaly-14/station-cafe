@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, LoadingState } from '@/components/states'
+import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { Badge, Button, Card, Dialog, MoneyDisplay } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
 import { Package, Plus, Search } from '@/components/ui/icon'
@@ -22,6 +22,7 @@ export default function CatalogPage() {
   const toast = useToast()
   const errText = useErrText(t)
   const [items, setItems] = useState<Product[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [dept, setDept] = useState<'' | (typeof DEPARTMENTS)[number]>('')
   const [status, setStatus] = useState<'' | 'ACTIVE' | 'INACTIVE'>('')
@@ -30,10 +31,14 @@ export default function CatalogPage() {
   const [confirming, setConfirming] = useState<Product | null>(null)
 
   const load = useCallback(() => {
+    setLoadError(null)
     catalogApi
       .list()
       .then(setItems)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [toast, errText])
 
   useEffect(() => {
@@ -80,7 +85,7 @@ export default function CatalogPage() {
           <Search
             size={16}
             aria-hidden
-            className="pointer-events-none absolute top-1/2 start-3 -translate-y-1/2 text-brand-400"
+            className="pointer-events-none absolute top-1/2 inset-s-3 -translate-y-1/2 text-brand-400"
           />
           <Input
             aria-label={t('catalog.search')}
@@ -116,7 +121,11 @@ export default function CatalogPage() {
       </div>
 
       {items === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : filtered.length === 0 ? (
         <EmptyState title={t('catalog.empty')} />
       ) : (

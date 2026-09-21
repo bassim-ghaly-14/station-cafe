@@ -42,7 +42,10 @@ export function PaymentDialog({
           setDiscountValue(p.discount_value)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // The second effect re-fetches with the same inputs and surfaces the
+        // error inline; nothing to do here without a discount yet.
+      })
     return () => {
       cancelled = true
     }
@@ -52,12 +55,12 @@ export function PaymentDialog({
   useEffect(() => {
     api
       .preview(orderId, discountMode, discountValue)
-      .then(setPreview)
+      .then((p) => {
+        setPreview(p)
+        setError(null)
+      })
       .catch((e) =>
-        toast(
-          t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
-          'error',
-        ),
+        setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error'])),
       )
   }, [orderId, discountMode, discountValue, t, toast])
 

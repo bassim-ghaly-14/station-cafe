@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Dialog, MoneyDisplay } from '@/components/ui'
 import { Input } from '@/components/ui/input'
+import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type InvoiceRow } from '@/services/posApi'
 import { shiftApi } from '@/services/shiftApi'
@@ -11,29 +12,31 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
   const [rows, setRows] = useState<InvoiceRow[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [method, setMethod] = useState('')
   const [dayId, setDayId] = useState<number | null>(null)
 
   const load = useCallback(() => {
-    void shiftApi.state().then((st) => {
-      setDayId(st.day?.id ?? null)
-      return api
-        .invoices({
-          business_day_id: st.day?.id,
-          query: query.trim() || undefined,
-          status: status || undefined,
-          method: method || undefined,
-        })
-        .then(setRows)
-        .catch((e) =>
-          toast(
-            t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
-            'error',
-          ),
+    setLoadError(null)
+    void (async () => {
+      try {
+        const st = await shiftApi.state()
+        setDayId(st.day?.id ?? null)
+        setRows(
+          await api.invoices({
+            business_day_id: st.day?.id,
+            query: query.trim() || undefined,
+            status: status || undefined,
+            method: method || undefined,
+          }),
         )
-    })
+      } catch (e) {
+        setLoadError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
+        toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
+      }
+    })()
   }, [query, status, method, t, toast])
 
   useEffect(() => {
@@ -93,7 +96,11 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
         </Button>
       </div>
       {!rows ? (
-        <p>{t('app.loading')}</p>
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <p>{t('app.loading')}</p>
+        )
       ) : rows.length === 0 ? (
         <p className="py-4 text-center text-sm text-brand-500">{t('pos.noInvoices')}</p>
       ) : (

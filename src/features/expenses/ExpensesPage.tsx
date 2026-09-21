@@ -1,7 +1,7 @@
 /** Manager expenses UI — list, filter by date, create. Backend authoritative. */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, LoadingState } from '@/components/states'
+import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { Badge, Button, Card, Dialog, MoneyDisplay } from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Plus, Receipt } from '@/components/ui/icon'
@@ -15,15 +15,20 @@ export default function ExpensesPage() {
   const toast = useToast()
   const errText = useErrText(t)
   const [rows, setRows] = useState<Expense[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
 
   const load = useCallback(() => {
+    setLoadError(null)
     opsApi
       .expenses(from || undefined, to || undefined)
       .then(setRows)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [from, to, toast, errText])
 
   useEffect(() => {
@@ -59,7 +64,11 @@ export default function ExpensesPage() {
       </div>
 
       {rows === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : rows.length === 0 ? (
         <EmptyState title={t('expenses.empty')} />
       ) : (

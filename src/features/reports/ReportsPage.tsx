@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, LoadingState } from '@/components/states'
+import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { Badge, Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
 import { BarChart3, Printer } from '@/components/ui/icon'
@@ -110,12 +110,17 @@ function SalesReport({
   const toast = useToast()
   const errText = useErrText(t)
   const [rows, setRows] = useState<SalesByDay[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(() => {
+    setLoadError(null)
     opsApi
       .salesByDay(from, to)
       .then(setRows)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [from, to, toast, errText])
 
   useEffect(() => {
@@ -126,7 +131,11 @@ function SalesReport({
     <div className="flex flex-col gap-3">
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
       {rows === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noData')} />
       ) : (
@@ -191,12 +200,17 @@ function ProductSalesReport({
   const toast = useToast()
   const errText = useErrText(t)
   const [rows, setRows] = useState<ProductSales[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(() => {
+    setLoadError(null)
     opsApi
       .productSales(from, to)
       .then(setRows)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [from, to, toast, errText])
 
   useEffect(() => {
@@ -207,7 +221,11 @@ function ProductSalesReport({
     <div className="flex flex-col gap-3">
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
       {rows === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noData')} />
       ) : (
@@ -246,13 +264,18 @@ function AuditList() {
   const toast = useToast()
   const errText = useErrText(t)
   const [rows, setRows] = useState<AuditEntry[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [action, setAction] = useState('')
 
   const load = useCallback(() => {
+    setLoadError(null)
     opsApi
       .audit(100, action.trim() || undefined)
       .then(setRows)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [action, toast, errText])
 
   useEffect(() => {
@@ -271,7 +294,11 @@ function AuditList() {
         </Field>
       </div>
       {rows === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : rows.length === 0 ? (
         <EmptyState title={t('audit.empty')} />
       ) : (
@@ -315,13 +342,18 @@ function PrintJobsList() {
   const toast = useToast()
   const errText = useErrText(t)
   const [rows, setRows] = useState<PrintJobRow[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
 
   const load = useCallback(() => {
+    setLoadError(null)
     opsApi
       .printJobs(30)
       .then(setRows)
-      .catch((e) => toast(errText(e), 'error'))
+      .catch((e) => {
+        setLoadError(errText(e))
+        toast(errText(e), 'error')
+      })
   }, [toast, errText])
 
   useEffect(() => {
@@ -350,7 +382,11 @@ function PrintJobsList() {
         </Button>
       </div>
       {rows === null ? (
-        <LoadingState label={t('app.loading')} />
+        loadError ? (
+          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
+        ) : (
+          <LoadingState label={t('app.loading')} />
+        )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noPrintJobs')} />
       ) : (
