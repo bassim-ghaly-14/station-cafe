@@ -13,6 +13,10 @@ import AppShell from '@/app/AppShell'
 import { RouterProvider, useRouter } from '@/app/router'
 import StaffPage from '@/features/staff/StaffPage'
 import PosPage from '@/features/pos/PosPage'
+import CatalogPage from '@/features/catalog/CatalogPage'
+import ExpensesPage from '@/features/expenses/ExpensesPage'
+import InventoryPage from '@/features/inventory/InventoryPage'
+import ReportsPage from '@/features/reports/ReportsPage'
 
 interface DbStatus {
   ok: boolean
@@ -24,6 +28,15 @@ function RoutedViews() {
   switch (view) {
     case 'staff':
       return <StaffPage />
+    case 'catalog':
+      return <CatalogPage />
+    case 'expenses':
+      return <ExpensesPage />
+    case 'inventory':
+      return <InventoryPage />
+    case 'reports':
+      return <ReportsPage />
+    case 'audit':
     case 'pos':
     default:
       return <PosPage />

@@ -3,6 +3,17 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/LogoPlaceholder'
 import { Badge, Button } from '@/components/ui'
+import {
+  BarChart3,
+  Boxes,
+  LogOut,
+  Package,
+  Receipt,
+  ScrollText,
+  Store,
+  Users,
+  type LucideIcon,
+} from '@/components/ui/icon'
 import { useRouter, type View } from './router'
 import { atLeast, useSession } from '@/features/auth/useSession'
 
@@ -10,12 +21,17 @@ interface NavItem {
   view: View
   minRole: 'STAFF' | 'MANAGER'
   labelKey: string
+  icon: LucideIcon
 }
 
 const NAV: NavItem[] = [
-  { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos' },
-  { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff' },
-  // Future workstreams are registered here as their pages land (2.2+).
+  { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store },
+  { view: 'catalog', minRole: 'MANAGER', labelKey: 'nav.catalog', icon: Package },
+  { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
+  { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
+  { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
+  { view: 'audit', minRole: 'MANAGER', labelKey: 'nav.audit', icon: ScrollText },
+  { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff', icon: Users },
 ]
 
 export default function AppShell({ children }: { children: ReactNode }) {
@@ -32,18 +48,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <p className="text-sm font-bold text-brand-900">{t('app.name')}</p>
         </div>
         <nav className="flex flex-col gap-1">
-          {items.map((n) => (
-            <button
-              key={n.view}
-              type="button"
-              onClick={() => navigate(n.view)}
-              className={`rounded-md px-3 py-2 text-right text-sm font-medium transition-colors ${
-                view === n.view ? 'bg-brand-700 text-white' : 'text-brand-800 hover:bg-brand-100'
-              }`}
-            >
-              {t(n.labelKey)}
-            </button>
-          ))}
+          {items.map((n) => {
+            const Icon = n.icon
+            return (
+              <button
+                key={n.view}
+                type="button"
+                onClick={() => navigate(n.view)}
+                aria-current={view === n.view ? 'page' : undefined}
+                className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-right text-base font-medium transition-colors ${
+                  view === n.view ? 'bg-brand-700 text-white' : 'text-brand-800 hover:bg-brand-100'
+                }`}
+              >
+                <Icon size={18} aria-hidden />
+                {t(n.labelKey)}
+              </button>
+            )
+          })}
         </nav>
       </aside>
 
@@ -60,6 +81,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={() => void logout()}>
+            <LogOut size={15} aria-hidden />
             {t('auth.logout')}
           </Button>
         </header>
