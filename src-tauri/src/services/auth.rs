@@ -7,8 +7,9 @@
 //!   hide features, but hiding is never the security boundary.
 
 use crate::error::{AppError, AppResult};
-use crate::repositories::users::{self, User};
+use crate::repositories::users::{self};
 use crate::repositories::Db;
+pub use crate::repositories::users::User;
 use argon2::password_hash::{
     rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
 };

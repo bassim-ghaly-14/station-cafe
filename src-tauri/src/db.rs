@@ -384,6 +384,23 @@ const MIGRATIONS: &[Migration] = &[Migration {
             CREATE INDEX IF NOT EXISTS idx_print_jobs_hash ON print_jobs(content_hash);
         "#,
     },
+    Migration {
+        version: 3,
+        name: "wash tickets link to orders",
+        sql: r#"
+            -- A wash job ticket is issued when the wash STARTS (order stage),
+            -- before any invoice exists — so it must reference the order.
+            DROP TABLE IF EXISTS wash_tickets;
+            CREATE TABLE wash_tickets (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id   INTEGER NOT NULL UNIQUE REFERENCES orders(id),
+                waiting_no INTEGER NOT NULL,
+                day_date   TEXT NOT NULL,
+                issued_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE UNIQUE INDEX idx_wash_tickets_day_no ON wash_tickets(day_date, waiting_no);
+        "#,
+    },
 ];
 
 pub fn migrate(conn: &Db) -> AppResult<()> {
