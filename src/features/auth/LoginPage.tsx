@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/LogoPlaceholder'
 import { ErrorState } from '@/components/states'
 import { Button } from '@/components/ui/button'
-import { Field, Input } from '@/components/ui/input'
+import { Field, Input, PasswordInput } from '@/components/ui/input'
 import { useSession } from './useSession'
 
 export default function LoginPage() {
@@ -49,7 +49,7 @@ export default function LoginPage() {
     >
       <div className="flex flex-col items-center gap-3">
         <Logo size={88} />
-        <h1 className="text-2xl font-bold text-brand-900">{t('app.name')}</h1>
+        <h1 className="text-heading">{t('app.name')}</h1>
       </div>
 
       <form
@@ -74,9 +74,8 @@ export default function LoginPage() {
           htmlFor="login-password"
           error={fieldError === 'password' ? error : null}
         >
-          <Input
+          <PasswordInput
             id="login-password"
-            type="password"
             value={password}
             autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
@@ -84,7 +83,7 @@ export default function LoginPage() {
           />
         </Field>
 
-        <Button type="submit" size="lg" disabled={busy}>
+        <Button type="submit" size="lg" disabled={busy} className="text-body">
           {busy ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
 
