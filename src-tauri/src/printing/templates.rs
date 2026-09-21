@@ -60,7 +60,7 @@ pub fn invoice(
     p.hr(WIDTH);
 
     if show_dept_sections {
-        for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "الغسيل")] {
+        for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "المغسلة")] {
             let dept_lines: Vec<&InvoiceLine> =
                 lines.iter().filter(|l| l.department == dept).collect();
             if dept_lines.is_empty() {
@@ -108,7 +108,7 @@ pub fn invoice(
 /// big waiting number, service list, explicit "wash can start" line.
 pub fn wash_ticket(mode: ArabicMode, codepage: u8, ticket: &WashTicketData, logo: bool) -> Vec<u8> {
     let mut p = EscPos::new(mode, codepage);
-    header(&mut p, logo, "تذكرة غسيل سيارة", "WASH JOB TICKET");
+    header(&mut p, logo, "تذكرة مغسلة سيارة", "WASH JOB TICKET");
     p.align(Align::Center);
     p.size(2, 3);
     p.bold(true);
@@ -137,7 +137,7 @@ pub fn wash_ticket(mode: ArabicMode, codepage: u8, ticket: &WashTicketData, logo
     p.hr(WIDTH);
     p.align(Align::Center);
     p.bold(true);
-    p.line("يمكن بدء عملية الغسيل");
+    p.line("يمكن بدء عملية المغسلة");
     p.bold(false);
     p.line("(ليست فاتورة دفع)");
     p.finish()
@@ -176,7 +176,7 @@ pub fn day_report(mode: ArabicMode, codepage: u8, r: &DayReport, logo: bool) -> 
     p.hr(WIDTH);
     p.kv_line("عدد الفواتير", &r.totals.invoices_count.to_string(), WIDTH);
     p.kv_line("مبيعات الكافيه", &minor(r.totals.cafe_sales), WIDTH);
-    p.kv_line("مبيعات الغسيل", &minor(r.totals.wash_sales), WIDTH);
+    p.kv_line("مبيعات المغسلة", &minor(r.totals.wash_sales), WIDTH);
     p.bold(true);
     p.kv_line("إجمالي المبيعات", &minor(r.totals.total_sales), WIDTH);
     p.bold(false);
@@ -262,7 +262,7 @@ mod tests {
             },
             InvoiceLine {
                 department: "WASH".into(),
-                product_name: "غسيل كامل".into(),
+                product_name: "مغسلة كامل".into(),
                 unit_price: 160_00,
                 quantity: 1,
                 discount_minor: 0,
@@ -299,7 +299,7 @@ mod tests {
             customer_phone: Some("0100".into()),
             car_plate: "ABC123".into(),
             car_model: Some("تويوتا".into()),
-            services: vec!["غسيل كامل".into()],
+            services: vec!["مغسلة كامل".into()],
             entry_time: "2026-09-21 12:00:00".into(),
         };
         let bytes = wash_ticket(ArabicMode::Cp1256, 22, &ticket, false);

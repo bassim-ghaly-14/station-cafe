@@ -31,9 +31,9 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64)] = &[
     ("كابتشينو", "PRODUCT", "CAFE", 4000),
     ("عصير مانجو", "PRODUCT", "CAFE", 3500),
     ("مياه معدنية", "PRODUCT", "CAFE", 1000),
-    ("غسيل خارجي", "SERVICE", "WASH", 5000),
-    ("غسيل داخلي", "SERVICE", "WASH", 7000),
-    ("غسيل كامل", "SERVICE", "WASH", 12000),
+    ("مغسلة خارجي", "SERVICE", "WASH", 5000),
+    ("مغسلة داخلي", "SERVICE", "WASH", 7000),
+    ("مغسلة كامل", "SERVICE", "WASH", 12000),
     ("تلميع", "SERVICE", "WASH", 8000),
 ];
 

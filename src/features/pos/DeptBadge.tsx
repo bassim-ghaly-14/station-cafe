@@ -8,5 +8,5 @@ function deptTone(dept: Department): 'info' | 'warning' {
 }
 
 export function DeptBadge({ dept }: { dept: Department }) {
-  return <Badge tone={deptTone(dept)}>{dept === 'CAFE' ? 'كافيه' : 'غسيل'}</Badge>
+  return <Badge tone={deptTone(dept)}>{dept === 'CAFE' ? 'كافيه' : 'مغسلة'}</Badge>
 }

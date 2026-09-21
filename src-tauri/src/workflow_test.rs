@@ -80,7 +80,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     // ---- cafe items + wash service on the SAME table ----------------------
     pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "قهوة"), 2).unwrap();
     pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "مياه معدنية"), 1).unwrap();
-    pos_svc::add_line(&conn, &staff, order_id, wash_service(&conn, "غسيل كامل"), 1).unwrap();
+    pos_svc::add_line(&conn, &staff, order_id, wash_service(&conn, "مغسلة كامل"), 1).unwrap();
 
     // ---- customer + car (required for wash) --------------------------------
     let customer_id = customers::insert(&conn, "أحمد محمود", Some("01234567890"), None).unwrap();
@@ -91,7 +91,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     let ticket = pos_svc::issue_wash_ticket(&conn, order_id).unwrap();
     assert_eq!(ticket.waiting_no, 1);
     assert_eq!(ticket.car_plate, "ABC123");
-    assert_eq!(ticket.services, vec!["غسيل كامل"]);
+    assert_eq!(ticket.services, vec!["مغسلة كامل"]);
 
     // ---- service charge configuration (fixed 20.00 EGP) --------------------
     settings::set_service_charge(
