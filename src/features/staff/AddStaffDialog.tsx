@@ -31,7 +31,7 @@ export function AddStaffDialog({
   async function save() {
     const errs: Record<string, string> = {}
     if (!name.trim()) errs.name = t('user.name_required')
-    if (password.length < 6) errs.password = t('user.password_too_short')
+    if (password.length < 5) errs.password = t('user.password_too_short')
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     setBusy(true)

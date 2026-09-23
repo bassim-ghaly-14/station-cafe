@@ -288,7 +288,10 @@ pub fn detach_customer(conn: &Db, order_id: i64) -> AppResult<()> {
     if order.lines.iter().any(|l| l.department == "WASH") {
         return Err(AppError::business("wash.customer_required"));
     }
-    tx.execute("UPDATE orders SET customer_id = NULL WHERE id = ?1", [order_id])?;
+    tx.execute(
+        "UPDATE orders SET customer_id = NULL WHERE id = ?1",
+        [order_id],
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -392,11 +395,13 @@ pub fn preview(
 ) -> AppResult<OrderPreview> {
     let order = get_order(conn, order_id)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    let discount_minor = validate_discount_against_limit(conn, subtotal, discount_mode, discount_value)
-        .map_err(|e| match e {
-            AppError::Validation(m) => AppError::business(m),
-            other => other,
-        })?;
+    let discount_minor =
+        validate_discount_against_limit(conn, subtotal, discount_mode, discount_value).map_err(
+            |e| match e {
+                AppError::Validation(m) => AppError::business(m),
+                other => other,
+            },
+        )?;
     let base = subtotal - discount_minor;
     let sc = settings::get_service_charge(conn)?;
     let service_charge_minor = match sc.mode {
@@ -421,6 +426,45 @@ pub fn preview(
     })
 }
 
+/// Read-only data resolution for printing the current order. This function is
+/// deliberately separate from checkout and ticket issuance: it performs no
+/// inserts, updates, sequence allocation, or state transition.
+#[derive(Debug, Clone)]
+pub struct CurrentPrintOrder {
+    pub order: Order,
+    pub totals: OrderPreview,
+    pub customer: Option<OrderCustomer>,
+    pub car_plate: Option<String>,
+}
+
+pub fn current_print_order(
+    conn: &Db,
+    order_id: i64,
+    discount_mode: Option<&str>,
+    discount_value: Option<i64>,
+) -> AppResult<CurrentPrintOrder> {
+    let order = get_order(conn, order_id)?;
+    if order.lines.is_empty() {
+        return Err(AppError::business("pos.empty_order"));
+    }
+    let totals = preview(conn, order_id, discount_mode, discount_value)?;
+    let customer = order_customer(conn, order_id)?;
+    let car_plate = order.customer_id.and_then(|customer_id| {
+        conn.query_row(
+            "SELECT plate_no FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
+            [customer_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    });
+    Ok(CurrentPrintOrder {
+        order,
+        totals,
+        customer,
+        car_plate,
+    })
+}
+
 /// Issue the wash job ticket: validates customer + car presence, assigns the
 /// per-day waiting number, and returns the ticket data for printing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -434,9 +478,21 @@ pub struct WashTicketData {
     pub entry_time: String,
 }
 
-pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> {
-    let tx = conn.unchecked_transaction()?;
-    let order = get_order(&tx, order_id)?;
+/// Ticket data resolved from the order's live snapshot (customer + car +
+/// wash services). `waiting_no` is `None` until the ticket has been issued.
+#[derive(Debug, Clone)]
+struct WashTicketSource {
+    waiting_no: Option<i64>,
+    customer_name: String,
+    customer_phone: Option<String>,
+    car_plate: String,
+    car_model: Option<String>,
+    services: Vec<String>,
+}
+
+/// Single read-only resolution of everything a wash ticket prints — shared by
+/// issuing (write path) and preview (read path) so both show the same data.
+fn wash_ticket_source(conn: &Db, order: &pos::Order) -> AppResult<WashTicketSource> {
     if !order.lines.iter().any(|l| l.department == "WASH") {
         return Err(AppError::business("wash.no_wash_items"));
     }
@@ -444,23 +500,55 @@ pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> 
         .customer_id
         .ok_or_else(|| AppError::business("wash.customer_required"))?;
     let (name, phone) = {
-        let mut stmt = tx.prepare("SELECT name, phone FROM customers WHERE id = ?1")?;
+        let mut stmt = conn.prepare("SELECT name, phone FROM customers WHERE id = ?1")?;
         stmt.query_row([customer_id], |r| Ok((r.get(0)?, r.get(1)?)))?
     };
     // Car required for a wash: latest car of the customer on this order.
-    let (plate, car_model): (String, Option<String>) = tx
+    let (plate, car_model): (String, Option<String>) = conn
         .query_row(
             "SELECT plate_no, car_model FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
             [customer_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| AppError::business("wash.car_required"))?;
+    let services: Vec<String> = order
+        .lines
+        .iter()
+        .filter(|l| l.department == "WASH")
+        .map(|l| l.product_name.clone())
+        .collect();
+    Ok(WashTicketSource {
+        waiting_no: order.waiting_no,
+        customer_name: name,
+        customer_phone: phone,
+        car_plate: plate,
+        car_model,
+        services,
+    })
+}
 
-    let day = shifts::current_day(&tx)?.ok_or_else(|| AppError::business("pos.no_business_day"))?;
+fn ticket_data(src: WashTicketSource, waiting_no: i64) -> WashTicketData {
+    WashTicketData {
+        waiting_no,
+        customer_name: src.customer_name,
+        customer_phone: src.customer_phone,
+        car_plate: src.car_plate,
+        car_model: src.car_model,
+        services: src.services,
+        entry_time: crate::services::auth::sqlite_now(),
+    }
+}
+
+pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> {
+    let tx = conn.unchecked_transaction()?;
+    let order = get_order(&tx, order_id)?;
     // The order snapshot was read BEFORE the ticket existed; keep the fresh number.
-    let waiting_no = match order.waiting_no {
+    let src = wash_ticket_source(&tx, &order)?;
+    let waiting_no = match src.waiting_no {
         Some(existing) => existing,
         None => {
+            let day = shifts::current_day(&tx)?
+                .ok_or_else(|| AppError::business("pos.no_business_day"))?;
             // Per-day waiting number sequence (unique per day).
             let next: i64 = tx.query_row(
                 "SELECT COALESCE(MAX(waiting_no), 0) + 1 FROM wash_tickets WHERE day_date = ?1",
@@ -475,21 +563,17 @@ pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> 
             next
         }
     };
-    let services: Vec<String> = order
-        .lines
-        .iter()
-        .filter(|l| l.department == "WASH")
-        .map(|l| l.product_name.clone())
-        .collect();
     tx.commit()?;
+    Ok(ticket_data(src, waiting_no))
+}
 
-    Ok(WashTicketData {
-        waiting_no,
-        customer_name: name,
-        customer_phone: phone,
-        car_plate: plate,
-        car_model,
-        services,
-        entry_time: crate::services::auth::sqlite_now(),
-    })
+/// Read-only ticket view for printing/preview consumers that must never change
+/// business state (no waiting-number allocation, no counter growth).
+pub fn wash_ticket_snapshot(conn: &Db, order_id: i64) -> AppResult<WashTicketData> {
+    let order = get_order(conn, order_id)?;
+    let src = wash_ticket_source(conn, &order)?;
+    let waiting_no = src
+        .waiting_no
+        .ok_or_else(|| AppError::business("wash.ticket_not_issued"))?;
+    Ok(ticket_data(src, waiting_no))
 }

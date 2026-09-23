@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Dialog, MoneyDisplay } from '@/components/ui'
-import { Printer, Search } from '@/components/ui/icon'
+import { Eye, Printer, Search } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type InvoiceRow } from '@/services/posApi'
 import { shiftApi } from '@/services/shiftApi'
+import { PrintPreviewDialog } from './PrintPreviewDialog'
 
 export function TodayInvoices({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
@@ -18,6 +19,8 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState('')
   const [method, setMethod] = useState('')
   const [dayId, setDayId] = useState<number | null>(null)
+  // Print preview of a persisted invoice — same document as the reprint below.
+  const [previewId, setPreviewId] = useState<number | null>(null)
 
   const load = useCallback(() => {
     setLoadError(null)
@@ -139,6 +142,15 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
               <Button
                 size="sm"
                 variant="ghost"
+                aria-label={`${t('print.preview')} — #${r.invoice_no}`}
+                onClick={() => setPreviewId(r.id)}
+              >
+                <Eye size={16} aria-hidden />
+                {t('print.preview')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
                 aria-label={`${t('app.print')} — #${r.invoice_no}`}
                 onClick={() => printAgain(r.id)}
               >
@@ -151,6 +163,12 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
       )}
       {dayId === null ? (
         <p className="mt-2 text-xs text-foreground-subtle">{t('pos.noDayHint')}</p>
+      ) : null}
+      {previewId !== null ? (
+        <PrintPreviewDialog
+          target={{ kind: 'invoice', invoice_id: previewId }}
+          onClose={() => setPreviewId(null)}
+        />
       ) : null}
     </Dialog>
   )

@@ -286,7 +286,10 @@
     "orderType": {
       "TABLE": "صالة",
       "TAKEAWAY": "تيك أواي"
-    }
+    },
+    "printPreview": "معاينة الطباعة",
+    "printPreviewAfterPay": "لا يوجد مستند مطبوع لهذا الطلب بعد — تُتاح معاينة الفاتورة وإعادة طبعها بعد الدفع من «فواتير اليوم»",
+    "printPreviewIssueTicket": "أصدر تذكرة المغسلة أولًا — عندها تصبح معاينتها وإعادة طبعها متاحة"
   },
   "shift": {
     "openShift": "فتح الوردية",
@@ -317,7 +320,22 @@
   },
   "print": {
     "done": "تم إرسال الطباعة",
-    "duplicateSuppressed": "تم منع طباعة مكررة (نفس المستند)"
+    "duplicateSuppressed": "تم منع طباعة مكررة (نفس المستند)",
+    "preview": "معاينة الطباعة",
+    "previewTitle": "معاينة الطباعة",
+    "previewHint": "معاينة مطابقة للمستند المُرسل للطابعة — ورق {{paper}} مم",
+    "previewSurface": "معاينة الإيصال الحراري",
+    "expand": "توسيع المعاينة",
+    "collapse": "تصغير المعاينة",
+    "reprint": "إعادة طبع",
+    "cut": "قطع الورق",
+    "docType": {
+      "CAFE_INVOICE": "فاتورة كافيه",
+      "WASH_INVOICE": "فاتورة مغسلة",
+      "HYBRID_INVOICE": "فاتورة كافيه ومغسلة",
+      "TAKEAWAY_INVOICE": "إيصال تيك أواي",
+      "WASH_TICKET": "تذكرة مغسلة سيارة"
+    }
   },
   "errors": {
     "internal_error": "حدث خطأ غير متوقع، حاول مرة أخرى",
@@ -359,6 +377,7 @@
     "credit.customer_required": "البيع الآجل يتطلب عميلًا",
     "credit.not_allowed": "هذا العميل غير مصرّح له بالشراء الآجل",
     "wash.no_wash_items": "لا توجد خدمات مغسلة في الطلب",
+    "wash.ticket_not_issued": "لم تُصدر تذكرة مغسلة لهذا الطلب بعد",
     "wash.customer_required": "خدمة المغسلة تتطلب بيانات العميل",
     "wash.car_required": "خدمة المغسلة تتطلب بيانات السيارة",
     "customers.name_required": "اسم العميل مطلوب",

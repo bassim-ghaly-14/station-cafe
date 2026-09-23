@@ -79,6 +79,7 @@ pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
     if !verify_password(&input.password, &record.password_hash) {
         return Err(AppError::unauthorized("auth.bad_credentials"));
     }
+
     if record.user.status != "ACTIVE" {
         return Err(AppError::unauthorized("auth.suspended"));
     }
@@ -129,6 +130,7 @@ pub fn require_user(conn: &Db, token: &str) -> AppResult<User> {
     if revoked.is_some() || expires < sqlite_now() {
         return Err(AppError::unauthorized("auth.session_expired"));
     }
+
     users::find_by_id(conn, id)?.ok_or_else(|| AppError::unauthorized("auth.invalid_session"))
 }
 
@@ -156,6 +158,7 @@ pub fn logout(conn: &Db, token: &str) -> AppResult<()> {
         "UPDATE sessions SET revoked_at = datetime('now') WHERE token_hash = ?1",
         params![token_hash(token)],
     )?;
+
     Ok(())
 }
 
@@ -194,6 +197,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let mp = (5 * doy + 2) / 153;
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
@@ -207,9 +211,12 @@ pub fn change_password(
     if actor.id != target_id {
         require_role(actor, "MANAGER")?;
     }
+
     validate_password(new_password)?;
+
     let hash = hash_password(new_password)?;
     users::set_password(conn, target_id, &hash)?;
+
     crate::services::audit::record(
         conn,
         Some(actor.id),
@@ -222,10 +229,15 @@ pub fn change_password(
     )
 }
 
+/// Minimum password length for Station accounts.
+///
+/// Five characters allows staff passwords/PIN-style credentials such as
+/// `20192` while still preventing empty or trivially short values.
 pub fn validate_password(p: &str) -> AppResult<()> {
-    if p.len() < 6 {
+    if p.len() < 5 {
         return Err(AppError::validation("user.password_too_short"));
     }
+
     Ok(())
 }
 
@@ -247,6 +259,7 @@ mod tests {
     #[test]
     fn login_logout_session_flow() {
         let conn = fresh();
+
         // Seeded admin account works
         let s = login(
             &conn,
@@ -256,7 +269,9 @@ mod tests {
             },
         )
         .unwrap();
+
         assert_eq!(s.user.role, "ADMIN");
+
         let u = require_user(&conn, &s.token).unwrap();
         assert_eq!(u.id, s.user.id);
 
@@ -269,6 +284,7 @@ mod tests {
             },
         )
         .unwrap_err();
+
         assert!(matches!(err, AppError::Unauthorized(_)));
 
         logout(&conn, &s.token).unwrap();
@@ -278,6 +294,7 @@ mod tests {
     #[test]
     fn seeded_accounts_roles() {
         let conn = fresh();
+
         for (name, role) in [("manager", "MANAGER"), ("cashier", "STAFF")] {
             let s = login(
                 &conn,
@@ -287,6 +304,7 @@ mod tests {
                 },
             )
             .unwrap();
+
             assert_eq!(s.user.role, role);
         }
     }
@@ -294,8 +312,19 @@ mod tests {
     #[test]
     fn password_hash_roundtrip() {
         let h = hash_password("s3cret").unwrap();
+
         assert!(verify_password("s3cret", &h));
         assert!(!verify_password("wrong", &h));
+    }
+
+    #[test]
+    fn password_validation_accepts_five_characters() {
+        assert!(validate_password("20192").is_ok());
+    }
+
+    #[test]
+    fn password_validation_rejects_less_than_five_characters() {
+        assert!(validate_password("1234").is_err());
     }
 
     #[test]
@@ -309,13 +338,16 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
         };
+
         assert!(require_role(&admin, "STAFF").is_ok());
         assert!(require_role(&admin, "MANAGER").is_ok());
         assert!(require_role(&admin, "ADMIN").is_ok());
+
         let staff = User {
             role: "STAFF".into(),
             ..admin
         };
+
         assert!(require_role(&staff, "MANAGER").is_err());
     }
 }

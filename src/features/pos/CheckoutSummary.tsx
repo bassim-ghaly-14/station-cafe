@@ -1,7 +1,7 @@
 /** Compact checkout summary: totals + optional customer + single pay action. */
 import { useTranslation } from 'react-i18next'
 import { Button, MoneyDisplay } from '@/components/ui'
-import { Percent, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
+import { Eye, Percent, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
 import type { OrderCustomer, OrderPreview, PosOrder } from '@/services/posApi'
 
 export function CheckoutSummary({
@@ -17,6 +17,8 @@ export function CheckoutSummary({
   detaching,
   onTicket,
   onReviewPay,
+  onPrintPreview,
+  printPreviewHint,
 }: {
   order: PosOrder
   shown: OrderPreview | null
@@ -30,6 +32,9 @@ export function CheckoutSummary({
   detaching: boolean
   onTicket: (() => void) | null
   onReviewPay: () => void
+  /** Print preview of the order's printable document; null when none exists yet. */
+  onPrintPreview: (() => void) | null
+  printPreviewHint?: string | null
 }) {
   const { t } = useTranslation()
   const subtotal = shown?.subtotal ?? order.lines.reduce((a, l) => a + l.line_total, 0)
@@ -98,11 +103,29 @@ export function CheckoutSummary({
           </Button>
         ) : null}
         <span className="flex-1" />
+        {/* Print preview sits beside the pay action: it shows the document the
+            printer draws (or is disabled while no such document exists yet). */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onPrintPreview ?? undefined}
+          disabled={!onPrintPreview}
+          title={onPrintPreview ? undefined : (printPreviewHint ?? undefined)}
+          aria-label={t('pos.printPreview')}
+        >
+          <Eye size={15} aria-hidden />
+          {t('pos.printPreview')}
+        </Button>
         <Button size="sm" onClick={onReviewPay} disabled={order.lines.length === 0}>
           <Wallet size={15} aria-hidden />
           {t('pos.reviewAndPay')}
         </Button>
       </div>
+      {!onPrintPreview && printPreviewHint ? (
+        <p className="border-t border-border-subtle px-3 py-1.5 text-xs text-foreground-subtle">
+          {printPreviewHint}
+        </p>
+      ) : null}
     </section>
   )
 }

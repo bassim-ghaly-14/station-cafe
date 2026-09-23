@@ -6,11 +6,18 @@
 //! support the Arabic codepage; the codepage index is configurable
 //! (`printer.codepage`) because it differs between Xprinter models. A
 //! guaranteed-legible `LATIN` mode (bilingual templates) is also available.
+//!
+//! Every drawing call also records a [`PreviewOp`] (see `printing::ir`), so the
+//! same template run feeds both the printer and the on-screen preview.
+
+use super::ir::{to_hex, PreviewOp, PrintDoc};
+use serde::Serialize;
 
 pub const ESC: u8 = 0x1B;
 pub const GS: u8 = 0x1D;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Align {
     Left,
     Center,
@@ -26,12 +33,35 @@ pub enum ArabicMode {
     Latin,
 }
 
+/// Active ESC/POS attributes — captured per text line for the preview.
+#[derive(Debug, Clone, Copy)]
+struct Attrs {
+    align: Align,
+    bold: bool,
+    width: u8,
+    height: u8,
+}
+
+impl Default for Attrs {
+    fn default() -> Self {
+        Self {
+            align: Align::Left,
+            bold: false,
+            width: 1,
+            height: 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EscPos {
     buf: Vec<u8>,
     pub arabic_mode: ArabicMode,
     /// ESC/POS codepage index sent with `ESC t n`.
     pub codepage: u8,
+    attrs: Attrs,
+    /// Preview operations, recorded in emission order.
+    ops: Vec<PreviewOp>,
 }
 
 impl EscPos {
@@ -40,6 +70,8 @@ impl EscPos {
             buf: Vec::new(),
             arabic_mode,
             codepage,
+            attrs: Attrs::default(),
+            ops: Vec::new(),
         };
         p.init();
         p
@@ -61,22 +93,49 @@ impl EscPos {
             Align::Center => 1,
             Align::Right => 2,
         };
+        self.attrs.align = a;
         self.buf.extend_from_slice(&[ESC, b'a', n]);
     }
 
     pub fn bold(&mut self, on: bool) {
+        self.attrs.bold = on;
         self.buf
             .extend_from_slice(&[ESC, b'E', if on { 1 } else { 0 }]);
     }
 
     /// Character size multiplier (1..=3 per axis).
     pub fn size(&mut self, w: u8, h: u8) {
-        let n = ((w.clamp(1, 3) - 1) << 4) | (h.clamp(1, 3) - 1);
+        let w = w.clamp(1, 3);
+        let h = h.clamp(1, 3);
+        let n = ((w - 1) << 4) | (h - 1);
+        self.attrs.width = w;
+        self.attrs.height = h;
         self.buf.extend_from_slice(&[GS, b'!', n]);
+    }
+
+    /// A preview-only line. It is intentionally not emitted as ESC/POS bytes.
+    /// Used for screen-only contact details that must not alter printer output.
+    pub fn preview_line(&mut self, text: &str) {
+        self.ops.push(PreviewOp::Text {
+            text: self.printed_text(text),
+            align: self.attrs.align,
+            bold: self.attrs.bold,
+            width: self.attrs.width,
+            height: self.attrs.height,
+        });
     }
 
     /// A text line (encoded + reordered) followed by LF.
     pub fn line(&mut self, text: &str) {
+        // The preview records the line exactly as the printer receives it, so
+        // preview text and printer bytes are produced from one code path.
+        self.ops.push(PreviewOp::Text {
+            text: self.printed_text(text),
+            align: self.attrs.align,
+            bold: self.attrs.bold,
+            width: self.attrs.width,
+            height: self.attrs.height,
+        });
         let bytes = self.encode_line(text);
         self.buf.extend_from_slice(&bytes);
         self.buf.push(b'\n');
@@ -91,22 +150,70 @@ impl EscPos {
         self.line(&line);
     }
 
+    /// Emit the existing two thermal lines for an item and record their source
+    /// values as one semantic preview operation. No price is derived here.
+    pub fn item(&mut self, name: &str, quantity: &str, unit_price: &str, line_total: &str) {
+        let first = format!("{name} x{quantity}");
+        let pad = 42usize.saturating_sub(line_total.chars().count()).max(1);
+        let second = format!("{}{line_total}", " ".repeat(pad));
+        self.ops.push(PreviewOp::Item {
+            name: self.printed_text(name),
+            quantity: quantity.to_string(),
+            unit_price: unit_price.to_string(),
+            line_total: self.printed_text(line_total),
+            align: self.attrs.align,
+        });
+        self.append_printed_lines(&[first, second]);
+    }
+
+    /// Emit one authoritative financial line and expose its label/value to the
+    /// screen renderer without recalculating either value in the frontend.
+    pub fn financial(&mut self, label: &str, value: &str, total: bool) {
+        let pad = 42usize
+            .saturating_sub(value.chars().count() + label.chars().count())
+            .max(1);
+        let line = format!("{label}{}{value}", " ".repeat(pad));
+        self.ops.push(PreviewOp::Financial {
+            label: self.printed_text(label),
+            value: self.printed_text(value),
+            total,
+            align: self.attrs.align,
+        });
+        self.append_printed_lines(&[line]);
+    }
+
+    fn append_printed_lines(&mut self, lines: &[String]) {
+        for line in lines {
+            let bytes = self.encode_line(line);
+            self.buf.extend_from_slice(&bytes);
+            self.buf.push(b'\n');
+        }
+    }
+
     pub fn hr(&mut self, width: usize) {
         self.line(&"-".repeat(width));
     }
 
     pub fn feed(&mut self, n: u8) {
+        self.ops.push(PreviewOp::Feed { lines: n });
         self.buf.extend_from_slice(&[ESC, b'd', n]);
     }
 
     /// GS V 0 — full cut with feed.
     pub fn cut(&mut self) {
         self.feed(3);
+        self.ops.push(PreviewOp::Cut);
         self.buf.extend_from_slice(&[GS, b'V', 0]);
     }
 
     /// GS v 0 — raster bit image (monochrome), width ≤ 576 dots.
     pub fn raster(&mut self, width_dots: usize, height_dots: usize, data: &[u8]) {
+        self.ops.push(PreviewOp::Logo {
+            width_dots,
+            height_dots,
+            bits_hex: to_hex(data),
+            align: self.attrs.align,
+        });
         let width_bytes = width_dots.div_ceil(8);
         self.buf.extend_from_slice(&[
             GS,
@@ -121,9 +228,13 @@ impl EscPos {
         self.buf.extend_from_slice(data);
     }
 
-    pub fn finish(mut self) -> Vec<u8> {
+    /// Finish the document: cut + both artefacts (printer bytes and preview).
+    pub fn finish(mut self) -> PrintDoc {
         self.cut();
-        self.buf
+        PrintDoc {
+            escpos: self.buf,
+            ops: self.ops,
+        }
     }
 
     pub fn buffer(&self) -> &[u8] {
@@ -138,54 +249,24 @@ impl EscPos {
             ArabicMode::Latin => strip_arabic(&reordered).into_bytes(),
         }
     }
+
+    /// The line exactly as the printer receives it, decoded back to text:
+    /// same reordering and same codepage mapping as [`Self::encode_line`].
+    fn printed_text(&self, text: &str) -> String {
+        let reordered = bidi_line(text);
+        match self.arabic_mode {
+            ArabicMode::Cp1256 => decode_cp1256(&encode_cp1256(&reordered)),
+            ArabicMode::Latin => strip_arabic(&reordered),
+        }
+    }
 }
 
-/// Visual reordering for RTL: reverse the order of Arabic/other runs while
-/// keeping the characters inside each run in their original order. Boundary
-/// whitespace is preserved at the corresponding (mirrored) boundary so the
-/// printed line keeps its spacing.
+/// Preserve Unicode logical order for the Arabic-capable printer firmware.
+/// The firmware performs Arabic contextual shaping and visual ordering. Doing
+/// a second run reversal in Rust reverses the letters inside each word before
+/// shaping and is the source of broken character order.
 pub fn bidi_line(text: &str) -> String {
-    #[derive(PartialEq)]
-    enum Run {
-        Arabic,
-        Other,
-    }
-    let mut runs: Vec<(Run, String)> = Vec::new();
-    for ch in text.chars() {
-        let kind = if is_arabic(ch) {
-            Run::Arabic
-        } else {
-            Run::Other
-        };
-        match runs.last_mut() {
-            Some((k, s)) if *k == kind => s.push(ch),
-            _ => runs.push((kind, ch.to_string())),
-        }
-    }
-    if runs.len() < 2 {
-        return text.to_string();
-    }
-    // Whitespace at an internal boundary is mirror-symmetric, so the same
-    // flags applied in reversed order reproduce the intended spacing.
-    let mut separators: Vec<bool> = (0..runs.len() - 1)
-        .map(|i| runs[i].1.ends_with(' ') || runs[i + 1].1.starts_with(' '))
-        .collect();
-    separators.reverse();
-
-    let trimmed: Vec<String> = runs
-        .into_iter()
-        .map(|(_, s)| s.trim().to_string())
-        .collect();
-    let mut trimmed = trimmed;
-    trimmed.reverse();
-    let mut out = String::new();
-    for (i, part) in trimmed.iter().enumerate() {
-        if i > 0 && separators[i - 1] {
-            out.push(' ');
-        }
-        out.push_str(part);
-    }
-    out
+    text.to_owned()
 }
 
 fn is_arabic(ch: char) -> bool {
@@ -245,6 +326,33 @@ fn cp1256_byte(ch: char) -> u8 {
     }
 }
 
+/// CP1256 byte → character: the exact inverse of [`cp1256_byte`] for every
+/// byte that function can emit. Used to render the preview from the same bytes
+/// the printer receives (the preview text IS the printed text).
+pub fn decode_cp1256(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| cp1256_char(*b)).collect()
+}
+
+fn cp1256_char(b: u8) -> char {
+    match b {
+        0x00..=0x7F => b as char,
+        0xA1 => '\u{060C}',
+        0xBA => '\u{061B}',
+        0xBF => '\u{061F}',
+        0xC1..=0xD6 => char::from_u32(0x0621 + (b - 0xC1) as u32).unwrap_or('?'),
+        0xD8 => '\u{0637}',
+        0xD9 => '\u{0638}',
+        0xDA => '\u{0639}',
+        0xDB => '\u{063A}',
+        0xE0 => '\u{0640}',
+        0xE1..=0xF2 => char::from_u32(0x0641 + (b - 0xE1) as u32).unwrap_or('?'),
+        0xF3 => '\u{0670}',
+        // Mirrors `cp1256_byte` for the bytes it can actually produce.
+        0xF4..=0xFF => char::from_u32(0x0679 + (b - 0xF4) as u32).unwrap_or('?'),
+        _ => '?',
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,8 +365,99 @@ mod tests {
     }
 
     #[test]
-    fn bidi_reorders_runs_for_rtl() {
-        assert_eq!(bidi_line("اجمالي 240.00"), "240.00 اجمالي");
+    fn preview_text_round_trips_through_the_printer_codepage() {
+        // Every character a template can print must decode back to what the
+        // preview shows, and re-encode to the same byte (no preview drift).
+        let sample = "ستيشن كافيه — الإجمالي الفرعي 240.00 (خصم) [x2] أ ب ت ث ج ح خ د ذ ر ز س ش ص ض ط ظ ع غ ف ق ل م ن ه و ي";
+        for ch in sample.chars() {
+            let byte = cp1256_byte(ch);
+            assert_eq!(cp1256_byte(cp1256_char(byte)), byte, "char {ch:?}");
+        }
+        assert_eq!(
+            encode_cp1256(&decode_cp1256(&encode_cp1256(sample))),
+            encode_cp1256(sample)
+        );
+        // The em dash is printed as a plain dash — the preview shows a dash.
+        assert_eq!(decode_cp1256(&encode_cp1256("—")), "-");
+        // Arabic-Indic digits are printed as ASCII digits.
+        assert_eq!(decode_cp1256(&encode_cp1256("١٢")), "12");
+    }
+
+    #[test]
+    fn encoder_records_preview_ops_that_match_the_printed_lines() {
+        let mut p = EscPos::new(ArabicMode::Cp1256, 22);
+        p.align(Align::Center);
+        p.bold(true);
+        p.line("ستيشن كافيه");
+        p.size(2, 2);
+        p.line("الإجمالي 240.00");
+        let doc = p.finish();
+        assert_eq!(doc.ops.len(), 4, "two lines + feed + cut");
+        match &doc.ops[0] {
+            PreviewOp::Text {
+                text,
+                align,
+                bold,
+                width,
+                height,
+            } => {
+                assert_eq!(*align, Align::Center);
+                assert!(*bold);
+                assert_eq!((*width, *height), (1, 1));
+                // Exactly the bytes the printer receives, decoded back.
+                assert_eq!(
+                    encode_cp1256(text),
+                    encode_cp1256(&bidi_line("ستيشن كافيه"))
+                );
+            }
+            other => panic!("expected a text op, got {other:?}"),
+        }
+        match &doc.ops[1] {
+            PreviewOp::Text {
+                text,
+                width,
+                height,
+                ..
+            } => {
+                assert_eq!((*width, *height), (2, 2));
+                assert!(text.contains("240.00"));
+            }
+            other => panic!("expected a text op, got {other:?}"),
+        }
+        assert_eq!(doc.ops[2], PreviewOp::Feed { lines: 3 });
+        assert_eq!(doc.ops[3], PreviewOp::Cut);
+    }
+
+    #[test]
+    fn semantic_preview_ops_emit_the_existing_printer_bytes() {
+        let mut old = EscPos::new(ArabicMode::Cp1256, 22);
+        old.align(Align::Right);
+        old.line("قهوة x2");
+        old.kv_line("", "100.00", 42);
+        old.kv_line("الإجمالي", "100.00", 42);
+        let old = old.finish();
+
+        let mut semantic = EscPos::new(ArabicMode::Cp1256, 22);
+        semantic.align(Align::Right);
+        semantic.item("قهوة", "2", "50.00", "100.00");
+        semantic.financial("الإجمالي", "100.00", true);
+        let doc = semantic.finish();
+
+        assert_eq!(
+            doc.escpos, old.escpos,
+            "screen semantics must not change printer bytes"
+        );
+        assert!(matches!(doc.ops[0], PreviewOp::Item { .. }));
+        assert!(matches!(
+            doc.ops[1],
+            PreviewOp::Financial { total: true, .. }
+        ));
+    }
+
+    #[test]
+    fn bidi_preserves_logical_arabic_for_printer_shaping() {
+        assert_eq!(bidi_line("اجمالي 240.00"), "اجمالي 240.00");
+        assert_eq!(bidi_line("ستيشن كافيه"), "ستيشن كافيه");
         assert_eq!(bidi_line("INV-000012"), "INV-000012");
     }
 
@@ -267,7 +466,7 @@ mod tests {
         let mut p = EscPos::new(ArabicMode::Cp1256, 22);
         p.line("اجمالي");
         p.feed(2);
-        let bytes = p.finish();
+        let bytes = p.finish().escpos;
         assert!(bytes.starts_with(&[ESC, b'@']));
         assert!(bytes.windows(3).any(|w| w == [GS, b'V', 0]));
     }

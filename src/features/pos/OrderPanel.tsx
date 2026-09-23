@@ -16,6 +16,7 @@ import {
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
 import { DiscountLimitDialog } from './DiscountLimitDialog'
+import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
 import { ProductPad } from './ProductPad'
 import { QtyStepper } from './QtyStepper'
 import { DeptBadge } from './DeptBadge'
@@ -58,6 +59,7 @@ export function OrderPanel({
   const [customer, setCustomer] = useState<OrderCustomer | null>(null)
   const [detaching, setDetaching] = useState(false)
   const [ticketBusy, setTicketBusy] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const loadProducts = useCallback(() => {
     setProdErr(null)
@@ -90,6 +92,18 @@ export function OrderPanel({
     (p) => p.department === dept && p.name.includes(query.trim()),
   )
   const hasWash = shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')
+  // Current orders always have a read-only preview document. An issued wash
+  // ticket keeps its operational document identity; otherwise the backend
+  // selects CAFE/WASH/HYBRID/TAKEAWAY from the live order without finalizing it.
+  const previewTarget: PrintPreviewTarget =
+    hasWash && typeof order.waiting_no === 'number'
+      ? { kind: 'wash_ticket', order_id: order.id }
+      : {
+          kind: 'order',
+          order_id: order.id,
+          discount_mode: discount.mode,
+          discount_value: discount.value,
+        }
   const discountLabel = discount.mode
     ? discount.mode === 'PERCENT'
       ? `${(discount.value ?? 0) / 1000}%`
@@ -181,7 +195,11 @@ export function OrderPanel({
         detaching={detaching}
         onTicket={hasWash && !ticketBusy ? issueTicket : hasWash ? () => {} : null}
         onReviewPay={onPay}
+        onPrintPreview={() => setPreviewOpen(true)}
       />
+      {previewOpen ? (
+        <PrintPreviewDialog target={previewTarget} onClose={() => setPreviewOpen(false)} />
+      ) : null}
       {prodErr ? (
         <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
       ) : (

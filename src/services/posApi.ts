@@ -155,6 +155,70 @@ export interface PrintOutcome {
   duplicate_suppressed: boolean
 }
 
+/**
+ * Print preview IR — the drawing operations of the document that goes to the
+ * printer, in printer order. It is produced by the same Rust template run that
+ * generates the ESC/POS bytes, so the preview cannot drift from the real
+ * output. Text is already in printed (visual) order for RTL lines.
+ */
+export interface PreviewTextOp {
+  kind: 'text'
+  text: string
+  align: 'left' | 'center' | 'right'
+  bold: boolean
+  /** Character-width multiplier (ESC/POS GS ! n). */
+  width: number
+  /** Character-height multiplier. */
+  height: number
+}
+
+/** Monochrome raster (brand logo): 1 bit per dot, MSB first, packed rows. */
+export interface PreviewLogoOp {
+  kind: 'logo'
+  width_dots: number
+  height_dots: number
+  bits_hex: string
+  align: 'left' | 'center' | 'right'
+}
+
+export interface PreviewFeedOp {
+  kind: 'feed'
+  lines: number
+}
+
+/** Authoritative item fields formatted by the backend template. */
+export interface PreviewItemOp {
+  kind: 'item'
+  name: string
+  quantity: string
+  unit_price: string
+  line_total: string
+  align: 'left' | 'center' | 'right'
+}
+
+/** Authoritative financial fields formatted by the backend template. */
+export interface PreviewFinancialOp {
+  kind: 'financial'
+  label: string
+  value: string
+  total: boolean
+  align: 'left' | 'center' | 'right'
+}
+
+export interface PreviewCutOp {
+  kind: 'cut'
+}
+
+export type PreviewOp =
+  PreviewTextOp | PreviewLogoOp | PreviewItemOp | PreviewFinancialOp | PreviewFeedOp | PreviewCutOp
+
+export interface PrintPreview {
+  doc_type: string
+  paper_mm: number
+  width_chars: number
+  ops: PreviewOp[]
+}
+
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
   openTakeaways: () => call<TakeawayView[]>('list_open_takeaway_orders'),
@@ -205,6 +269,22 @@ export const api = {
     call<PrintOutcome>('print_invoice', { invoice_id, force: force ?? null }),
   printTicket: (order_id: number, force?: boolean) =>
     call<PrintOutcome>('print_wash_ticket', { order_id, force: force ?? null }),
+  /** Read-only preview of the current, unfinalized order. */
+  printPreviewOrder: (
+    order_id: number,
+    discount_mode?: string | null,
+    discount_value?: number | null,
+  ) =>
+    call<PrintPreview>('preview_order_document', {
+      order_id,
+      discount_mode: discount_mode ?? null,
+      discount_value: discount_value ?? null,
+    }),
+  /** Read-only preview of a persisted invoice (never prints, never records). */
+  printPreviewInvoice: (invoice_id: number) =>
+    call<PrintPreview>('preview_invoice', { invoice_id }),
+  /** Read-only preview of an issued wash ticket (never allocates a number). */
+  printPreviewTicket: (order_id: number) => call<PrintPreview>('preview_wash_ticket', { order_id }),
   creditAccounts: () => call<CreditAccount[]>('list_credit_accounts'),
   settleCredit: (customer_id: number, amount: number) =>
     call<string>('settle_credit', { customer_id, amount }),

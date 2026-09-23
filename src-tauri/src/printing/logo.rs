@@ -31,21 +31,23 @@ pub fn logo_raster() -> Option<&'static (usize, usize, Vec<u8>)> {
 fn build_raster() -> AppResult<(usize, usize, Vec<u8>)> {
     let img = image::load_from_memory(LOGO_PNG)
         .map_err(|e| AppError::internal(format!("logo decode failed: {e}")))?;
-    let target_h = LOGO_WIDTH_DOTS; // square brand mark
-    let small = img.resize_exact(
-        LOGO_WIDTH_DOTS as u32,
-        target_h as u32,
-        FilterType::Triangle,
-    );
-    let luma = small.to_luma8();
-    let (w, h) = (luma.width() as usize, luma.height() as usize);
+    // Preserve the source aspect ratio.  The canonical asset is currently
+    // square, but this remains correct if the brand artwork changes later.
+    let small = img.resize(LOGO_WIDTH_DOTS as u32, u32::MAX, FilterType::Triangle);
+    let rgba = small.to_rgba8();
+    let (w, h) = (rgba.width() as usize, rgba.height() as usize);
     let width_bytes = w.div_ceil(8);
     let mut data = vec![0u8; width_bytes * h];
     for y in 0..h {
         for x in 0..w {
-            // Threshold at mid-grey; alpha-blended light pixels stay white.
-            let pixel = luma.get_pixel(x as u32, y as u32).0[0];
-            if pixel < 150 {
+            let [r, g, b, a] = rgba.get_pixel(x as u32, y as u32).0;
+            // Composite against paper before thresholding.  Looking only at
+            // RGB would turn transparent pixels with black RGB values into ink.
+            let alpha = a as u32;
+            let paper = |channel: u8| ((channel as u32 * alpha + 255 * (255 - alpha)) / 255) as u8;
+            let luma = ((paper(r) as u32 * 299 + paper(g) as u32 * 587 + paper(b) as u32 * 114)
+                / 1000) as u8;
+            if luma < 150 {
                 data[y * width_bytes + x / 8] |= 0b1000_0000 >> (x % 8);
             }
         }
@@ -62,7 +64,15 @@ mod tests {
         let (w, h, data) = logo_raster().expect("logo raster");
         assert_eq!(*w, LOGO_WIDTH_DOTS);
         assert_eq!(data.len(), w.div_ceil(8) * h);
-        // Some ink must be present (not a blank page).
-        assert!(data.iter().any(|b| *b != 0));
+        assert!(*w <= 576, "logo must fit the printable width");
+        // Aspect ratio is preserved and the transparent background is paper.
+        let rgba = image::load_from_memory(LOGO_PNG).unwrap().to_rgba8();
+        let source_aspect = rgba.width() as f64 / rgba.height() as f64;
+        let raster_aspect = *w as f64 / *h as f64;
+        assert!((source_aspect - raster_aspect).abs() < 0.01);
+        assert!(data.iter().any(|b| *b != 0), "visible logo ink exists");
+        // First row is transparent padding in the canonical asset, therefore
+        // it must contain no ink. This fails if RGBA is converted without alpha.
+        assert!(data.iter().take(w.div_ceil(8)).all(|b| *b == 0));
     }
 }

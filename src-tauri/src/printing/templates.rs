@@ -1,9 +1,12 @@
 //! Document templates — professional, clearly distinguishable layouts.
-//! Each template is a pure function: data → ESC/POS bytes. No DB access, so
-//! templates can be unit-tested byte-for-byte.
+//! Each template is a pure function: data → [`PrintDoc`] (ESC/POS bytes for the
+//! printer + the matching preview operations). No DB access, so templates can be
+//! unit-tested byte-for-byte.
 
 use super::escpos::{Align, ArabicMode, EscPos};
+use super::ir::PrintDoc;
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
+use crate::repositories::pos::Order;
 use crate::services::pos::WashTicketData;
 use crate::services::reports::{DayReport, ShiftReport};
 
@@ -40,7 +43,7 @@ pub fn invoice(
     lines: &[InvoiceLine],
     show_dept_sections: bool,
     logo: bool,
-) -> Vec<u8> {
+) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(
         &mut p,
@@ -76,7 +79,7 @@ pub fn takeaway_receipt(
     inv: &InvoiceRow,
     lines: &[InvoiceLine],
     logo: bool,
-) -> Vec<u8> {
+) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "تيك أواي — ستيشن كافيه", "TAKEAWAY RECEIPT");
     p.align(Align::Center);
@@ -114,46 +117,144 @@ fn items_and_totals(p: &mut EscPos, inv: &InvoiceRow, lines: &[InvoiceLine], by_
             p.line(title);
             p.bold(false);
             for l in dept_lines {
-                p.line(&format!("{} x{}", l.product_name, l.quantity));
-                p.kv_line("", &minor(l.line_total), WIDTH);
+                p.item(
+                    &l.product_name,
+                    &l.quantity.to_string(),
+                    &minor(l.unit_price),
+                    &minor(l.line_total),
+                );
             }
         }
     } else {
         for l in lines {
-            p.line(&format!("{} x{}", l.product_name, l.quantity));
-            p.kv_line("", &minor(l.line_total), WIDTH);
+            p.item(
+                &l.product_name,
+                &l.quantity.to_string(),
+                &minor(l.unit_price),
+                &minor(l.line_total),
+            );
         }
     }
 
     p.hr(WIDTH);
-    p.kv_line("الإجمالي الفرعي", &minor(inv.subtotal), WIDTH);
+    p.financial("الإجمالي الفرعي", &minor(inv.subtotal), false);
     if inv.discount_minor > 0 {
-        p.kv_line("الخصم", &minor(inv.discount_minor), WIDTH);
+        p.financial("الخصم", &minor(inv.discount_minor), false);
     }
     if inv.service_charge > 0 {
-        p.kv_line("خدمة", &minor(inv.service_charge), WIDTH);
+        p.financial("خدمة", &minor(inv.service_charge), false);
     }
     p.bold(true);
     p.size(1, 2);
-    p.kv_line("الإجمالي", &minor(inv.total), WIDTH);
+    p.financial("الإجمالي", &minor(inv.total), true);
     p.size(1, 1);
     p.bold(false);
-    p.kv_line("المدفوع", &minor(inv.paid_amount), WIDTH);
+    p.financial("المدفوع", &minor(inv.paid_amount), false);
     if inv.status == "CREDIT" {
-        p.kv_line("المتبقي (آجل)", &minor(inv.total - inv.paid_amount), WIDTH);
+        p.financial("المتبقي (آجل)", &minor(inv.total - inv.paid_amount), false);
     }
 }
 
-fn footer(mut p: EscPos) -> Vec<u8> {
+fn footer(mut p: EscPos) -> PrintDoc {
     p.hr(WIDTH);
     p.align(Align::Center);
     p.line("شكراً لزيارتكم — Station Cafe");
+    // Business contact is preview-only: the physical receipt bytes remain unchanged.
+    p.preview_line("01154520775");
     p.finish()
+}
+
+pub fn current_order(
+    mode: ArabicMode,
+    codepage: u8,
+    order: &Order,
+    totals: &crate::services::pos::OrderPreview,
+    customer: Option<&crate::services::pos::OrderCustomer>,
+    car_plate: Option<&str>,
+    logo: bool,
+) -> PrintDoc {
+    let mut p = EscPos::new(mode, codepage);
+    if order.order_type == "TAKEAWAY" {
+        header(&mut p, logo, "تيك أواي — ستيشن كافيه", "TAKEAWAY RECEIPT");
+        if let Some(no) = order.takeaway_no {
+            p.align(Align::Center);
+            p.size(2, 2);
+            p.bold(true);
+            p.line(&no.to_string());
+            p.size(1, 1);
+            p.bold(false);
+        }
+    } else {
+        header(
+            &mut p,
+            logo,
+            "ستيشن كافيه",
+            "Station Cafe - Cafe & Car Wash",
+        );
+    }
+    p.align(Align::Right);
+    p.kv_line("الطلب", &order.id.to_string(), WIDTH);
+    p.kv_line("التاريخ", &order.opened_at, WIDTH);
+    if let Some(label) = &order.table_label {
+        p.kv_line("الطاولة", label, WIDTH);
+    }
+    if let Some(c) = customer {
+        p.kv_line("العميل", &c.name, WIDTH);
+        if let Some(phone) = &c.phone {
+            p.kv_line("تليفون", phone, WIDTH);
+        }
+    }
+    if let Some(plate) = car_plate {
+        p.kv_line("رقم السيارة", plate, WIDTH);
+    }
+    p.hr(WIDTH);
+    let hybrid = order.lines.iter().any(|l| l.department == "WASH")
+        && order.lines.iter().any(|l| l.department == "CAFE");
+    for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "المغسلة")] {
+        if hybrid {
+            p.bold(true);
+            p.line(title);
+            p.bold(false);
+        }
+        for line in order
+            .lines
+            .iter()
+            .filter(|l| !hybrid || l.department == dept)
+        {
+            p.item(
+                &line.product_name,
+                &line.quantity.to_string(),
+                &minor(line.unit_price),
+                &minor(line.line_total),
+            );
+        }
+    }
+    p.hr(WIDTH);
+    p.financial("الإجمالي الفرعي", &minor(totals.subtotal), false);
+    if totals.discount_minor > 0 {
+        p.financial("الخصم", &minor(totals.discount_minor), false);
+    }
+    if totals.service_charge_minor > 0 {
+        p.financial("خدمة", &minor(totals.service_charge_minor), false);
+    }
+    p.bold(true);
+    p.size(1, 2);
+    p.financial("الإجمالي", &minor(totals.total), true);
+    p.size(1, 1);
+    p.bold(false);
+    p.align(Align::Center);
+    p.line("معاينة الطلب — قبل الدفع");
+    footer(p)
 }
 
 /// Wash job ticket — deliberately DIFFERENT from the payment receipt:
 /// big waiting number, service list, explicit "wash can start" line.
-pub fn wash_ticket(mode: ArabicMode, codepage: u8, ticket: &WashTicketData, logo: bool) -> Vec<u8> {
+pub fn wash_ticket(
+    mode: ArabicMode,
+    codepage: u8,
+    ticket: &WashTicketData,
+    logo: bool,
+) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "تذكرة مغسلة سيارة", "WASH JOB TICKET");
     p.align(Align::Center);
@@ -190,7 +291,7 @@ pub fn wash_ticket(mode: ArabicMode, codepage: u8, ticket: &WashTicketData, logo
     p.finish()
 }
 
-pub fn shift_closing(mode: ArabicMode, codepage: u8, r: &ShiftReport, logo: bool) -> Vec<u8> {
+pub fn shift_closing(mode: ArabicMode, codepage: u8, r: &ShiftReport, logo: bool) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "تقفيل وردية", "SHIFT CLOSING");
     p.kv_line("الموظف", r.shift.user_name.as_deref().unwrap_or("-"), WIDTH);
@@ -216,7 +317,7 @@ pub fn shift_closing(mode: ArabicMode, codepage: u8, r: &ShiftReport, logo: bool
     p.finish()
 }
 
-pub fn day_report(mode: ArabicMode, codepage: u8, r: &DayReport, logo: bool) -> Vec<u8> {
+pub fn day_report(mode: ArabicMode, codepage: u8, r: &DayReport, logo: bool) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "تقفيل يوم العمل", "DAY CLOSING");
     p.kv_line("اليوم", &r.day.day_date, WIDTH);
@@ -258,7 +359,7 @@ pub fn day_report(mode: ArabicMode, codepage: u8, r: &DayReport, logo: bool) -> 
 }
 
 /// Test page used to verify a newly installed/renamed printer.
-pub fn test_page(mode: ArabicMode, codepage: u8, device: &str, logo: bool) -> Vec<u8> {
+pub fn test_page(mode: ArabicMode, codepage: u8, device: &str, logo: bool) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "اختبار الطباعة", "PRINTER TEST PAGE");
     p.kv_line("الجهاز", device, WIDTH);
@@ -326,7 +427,7 @@ mod tests {
 
     #[test]
     fn hybrid_invoice_contains_both_department_sections_and_totals() {
-        let bytes = invoice(ArabicMode::Cp1256, 22, &inv("PAID"), &lines(), true, false);
+        let bytes = invoice(ArabicMode::Cp1256, 22, &inv("PAID"), &lines(), true, false).escpos;
         let text = String::from_utf8_lossy(&bytes);
         assert!(bytes.starts_with(&[0x1B, b'@']));
         // 240.00 and 20.00 in minor units → printed as major units
@@ -339,7 +440,7 @@ mod tests {
         let mut i = inv("CREDIT");
         i.paid_amount = 0;
         i.total = 240_00;
-        let bytes = invoice(ArabicMode::Cp1256, 22, &i, &lines(), false, false);
+        let bytes = invoice(ArabicMode::Cp1256, 22, &i, &lines(), false, false).escpos;
         let encoded_remaining = super::super::escpos::encode_cp1256("240.00");
         assert!(bytes
             .windows(encoded_remaining.len())
@@ -357,7 +458,7 @@ mod tests {
             services: vec!["مغسلة كامل".into()],
             entry_time: "2026-09-21 12:00:00".into(),
         };
-        let bytes = wash_ticket(ArabicMode::Cp1256, 22, &ticket, false);
+        let bytes = wash_ticket(ArabicMode::Cp1256, 22, &ticket, false).escpos;
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("12")); // waiting number
         assert!(bytes.len() > 200);
@@ -372,7 +473,7 @@ mod tests {
         i.customer_name = None;
         i.customer_phone = None;
         i.car_plate = None;
-        let bytes = takeaway_receipt(ArabicMode::Cp1256, 22, &i, &lines(), false);
+        let bytes = takeaway_receipt(ArabicMode::Cp1256, 22, &i, &lines(), false).escpos;
         let text = String::from_utf8_lossy(&bytes);
         assert!(bytes.starts_with(&[0x1B, b'@']));
         assert!(
@@ -397,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_page_renders_in_latin_mode_without_high_bytes() {
-        let bytes = test_page(ArabicMode::Latin, 22, "file:/tmp/x.prn", false);
+        let bytes = test_page(ArabicMode::Latin, 22, "file:/tmp/x.prn", false).escpos;
         assert!(!bytes.iter().skip(4).any(|b| *b >= 0x80));
         assert!(String::from_utf8_lossy(&bytes).contains("0123456789"));
     }

@@ -8,7 +8,13 @@ import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
 import '@/lib/i18n'
 import PosPage, { TableCard } from './PosPage'
-import type { OrderPreview, PosOrder, TableView, TakeawayView } from '@/services/posApi'
+import type {
+  OrderPreview,
+  PosOrder,
+  PrintPreview,
+  TableView,
+  TakeawayView,
+} from '@/services/posApi'
 
 const mocks = vi.hoisted(() => ({
   tables: vi.fn(),
@@ -22,6 +28,9 @@ const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
   checkout: vi.fn(),
   printInvoice: vi.fn(),
+  printPreviewOrder: vi.fn(),
+  printPreviewInvoice: vi.fn(),
+  printPreviewTicket: vi.fn(),
   state: vi.fn(),
 }))
 
@@ -42,6 +51,9 @@ vi.mock('@/services/posApi', () => ({
     products: vi.fn().mockResolvedValue([]),
     checkout: mocks.checkout,
     printInvoice: mocks.printInvoice,
+    printPreviewOrder: mocks.printPreviewOrder,
+    printPreviewInvoice: mocks.printPreviewInvoice,
+    printPreviewTicket: mocks.printPreviewTicket,
     ticket: vi.fn(),
     orderCustomer: vi.fn().mockResolvedValue(null),
     detachCustomer: vi.fn().mockResolvedValue(undefined),
@@ -431,5 +443,76 @@ describe('open takeaway lifecycle (issue 4)', () => {
     await screen.findByText('تم الدفع — فاتورة #78')
     await waitFor(() => expect(screen.queryByTestId('open-takeaway-7')).not.toBeInTheDocument())
     expect(screen.queryByText('قهوة')).not.toBeInTheDocument()
+  })
+})
+
+describe('print preview action beside the pay action', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.tables.mockResolvedValue([table({ status: 'OCCUPIED', order_id: 9 })])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.preview.mockResolvedValue(previewOf())
+  })
+
+  it('previews a CAFE order before payment without finalizing it', async () => {
+    mocks.getOrder.mockResolvedValue(order())
+    mocks.printPreviewOrder.mockResolvedValue({
+      doc_type: 'CAFE_INVOICE',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [{ kind: 'text', text: 'معاينة الطلب — قبل الدفع', align: 'center', bold: false, width: 1, height: 1 }],
+    })
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    const preview = await screen.findByRole('button', { name: 'معاينة الطباعة' })
+    expect(preview).toBeEnabled()
+    fireEvent.click(preview)
+
+    await waitFor(() => expect(mocks.printPreviewOrder).toHaveBeenCalledWith(9, null, null))
+    expect(await screen.findByText('معاينة الطلب — قبل الدفع')).toBeInTheDocument()
+    expect(mocks.checkout).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /إعادة طبع/ })).not.toBeInTheDocument()
+  })
+
+  it('previews the issued wash ticket of the open order by its own order id', async () => {
+    mocks.getOrder.mockResolvedValue(
+      order({
+        waiting_no: 12,
+        lines: [
+          {
+            id: 100,
+            order_id: 9,
+            product_id: 2,
+            department: 'WASH',
+            product_name: 'غسيل كامل سيدان',
+            unit_price: 17500,
+            quantity: 1,
+            discount_minor: 0,
+            line_total: 17500,
+          },
+        ],
+      }),
+    )
+    mocks.preview.mockResolvedValue({ ...previewOf(17500), has_wash: true })
+    const ticket: PrintPreview = {
+      doc_type: 'WASH_TICKET',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        { kind: 'text', text: 'رقم الانتظار', align: 'center', bold: true, width: 1, height: 1 },
+      ],
+    }
+    mocks.printPreviewTicket.mockResolvedValue(ticket)
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'معاينة الطباعة' }))
+
+    await waitFor(() => expect(mocks.printPreviewTicket).toHaveBeenCalledWith(9))
+    expect(await screen.findByText('رقم الانتظار')).toBeInTheDocument()
+    // Reprint of the wash ticket reuses the existing print pipeline/id.
+    expect(screen.getByRole('button', { name: /إعادة طبع/ })).toBeEnabled()
   })
 })

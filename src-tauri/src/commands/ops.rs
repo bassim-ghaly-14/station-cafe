@@ -2,7 +2,7 @@
 
 use super::common::authorized;
 use crate::error::AppResult;
-use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome};
+use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome, PrintPreview};
 use crate::repositories::ops::{Expense, MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
 use crate::services::reports::{self, AuditEntry, ProductSales, SalesByDay, TodaySummary};
@@ -186,6 +186,48 @@ pub fn print_wash_ticket(
 ) -> AppResult<PrintOutcome> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         printing::print_wash_ticket(conn, order_id, force.unwrap_or(false))
+    })
+}
+
+/// Read-only printable representation of the current order and selected
+/// discount. No invoice, payment, stock movement, print job, order transition,
+/// or wash waiting number is created.
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_order_document(
+    state: State<'_, AppState>,
+    token: String,
+    order_id: i64,
+    discount_mode: Option<String>,
+    discount_value: Option<i64>,
+) -> AppResult<PrintPreview> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        printing::preview_order(conn, order_id, discount_mode.as_deref(), discount_value)
+    })
+}
+
+/// Read-only print preview of a persisted invoice. Same authorization and the
+/// same template/data as `print_invoice` — it only differs by not sending the
+/// document to the printer and not recording a print job.
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_invoice(
+    state: State<'_, AppState>,
+    token: String,
+    invoice_id: i64,
+) -> AppResult<PrintPreview> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        printing::preview_invoice(conn, invoice_id)
+    })
+}
+
+/// Read-only print preview of an issued wash ticket (never allocates a number).
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_wash_ticket(
+    state: State<'_, AppState>,
+    token: String,
+    order_id: i64,
+) -> AppResult<PrintPreview> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        printing::preview_wash_ticket(conn, order_id)
     })
 }
 

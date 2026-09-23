@@ -3,7 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::invoices::{self, CreditAccount, InvoiceRow};
-use crate::repositories::pos::{self, Order, TakeawayView, TableView};
+use crate::repositories::pos::{self, Order, TableView, TakeawayView};
 use crate::services::checkout::{self, CheckoutInput, CheckoutResult};
 use crate::services::pos as pos_svc;
 use crate::AppState;
@@ -158,11 +158,7 @@ pub fn attach_customer(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn detach_customer(
-    state: State<'_, AppState>,
-    token: String,
-    order_id: i64,
-) -> AppResult<()> {
+pub fn detach_customer(state: State<'_, AppState>, token: String, order_id: i64) -> AppResult<()> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         pos_svc::detach_customer(conn, order_id)
     })
