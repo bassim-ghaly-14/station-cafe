@@ -11,10 +11,12 @@ import { parseMajor } from '@/lib/utils'
 
 export function PaymentDialog({
   orderId,
+  order,
   onClose,
   onDone,
 }: {
   orderId: number
+  order?: { order_type?: string; takeaway_no?: number | null } | null
   onClose: () => void
   onDone: (invoiceId: number, outcome: PrintOutcome | null) => void
 }) {
@@ -117,6 +119,19 @@ export function PaymentDialog({
 
   return (
     <Dialog open onClose={onClose} title={t('pos.pay')}>
+      {order?.order_type === 'TAKEAWAY' ? (
+        <p className="mb-2 text-sm font-bold text-foreground-strong">
+          {t('pos.takeaway')}
+          {typeof order.takeaway_no === 'number' ? (
+            <>
+              {' '}
+              {t('pos.takeawayNo')}: <span dir="ltr">#{order.takeaway_no}</span>
+            </>
+          ) : (
+            <> · {t('pos.takeawayHint')}</>
+          )}
+        </p>
+      ) : null}
       {preview ? <TotalsBlock shown={preview} /> : <p>{t('app.loading')}</p>}
 
       <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label={t('pay.methodLabel')}>

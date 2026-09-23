@@ -7,9 +7,9 @@
 //!   hide features, but hiding is never the security boundary.
 
 use crate::error::{AppError, AppResult};
+pub use crate::repositories::users::User;
 use crate::repositories::users::{self};
 use crate::repositories::Db;
-pub use crate::repositories::users::User;
 use argon2::password_hash::{
     rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
 };
@@ -90,7 +90,11 @@ pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
     conn.execute(
         "INSERT INTO sessions (user_id, token_hash, expires_at)
          VALUES (?1, ?2, datetime('now', ?3))",
-        params![record.user.id, token_hash(&token), format!("+{SESSION_TTL_HOURS} hours")],
+        params![
+            record.user.id,
+            token_hash(&token),
+            format!("+{SESSION_TTL_HOURS} hours")
+        ],
     )?;
 
     crate::services::audit::record(
@@ -104,7 +108,10 @@ pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
         None,
     )?;
 
-    Ok(SessionInfo { token, user: record.user })
+    Ok(SessionInfo {
+        token,
+        user: record.user,
+    })
 }
 
 /// Validate a session token; returns the active user or an error.
@@ -241,14 +248,27 @@ mod tests {
     fn login_logout_session_flow() {
         let conn = fresh();
         // Seeded admin account works
-        let s = login(&conn, &LoginInput { name: "admin".into(), password: "admin123".into() }).unwrap();
+        let s = login(
+            &conn,
+            &LoginInput {
+                name: "admin".into(),
+                password: "admin123".into(),
+            },
+        )
+        .unwrap();
         assert_eq!(s.user.role, "ADMIN");
         let u = require_user(&conn, &s.token).unwrap();
         assert_eq!(u.id, s.user.id);
 
         // Wrong password rejected with the same error shape
-        let err = login(&conn, &LoginInput { name: "admin".into(), password: "nope".into() })
-            .unwrap_err();
+        let err = login(
+            &conn,
+            &LoginInput {
+                name: "admin".into(),
+                password: "nope".into(),
+            },
+        )
+        .unwrap_err();
         assert!(matches!(err, AppError::Unauthorized(_)));
 
         logout(&conn, &s.token).unwrap();
@@ -259,8 +279,14 @@ mod tests {
     fn seeded_accounts_roles() {
         let conn = fresh();
         for (name, role) in [("manager", "MANAGER"), ("cashier", "STAFF")] {
-            let s = login(&conn, &LoginInput { name: name.into(), password: format!("{name}123") })
-                .unwrap();
+            let s = login(
+                &conn,
+                &LoginInput {
+                    name: name.into(),
+                    password: format!("{name}123"),
+                },
+            )
+            .unwrap();
             assert_eq!(s.user.role, role);
         }
     }
@@ -286,7 +312,10 @@ mod tests {
         assert!(require_role(&admin, "STAFF").is_ok());
         assert!(require_role(&admin, "MANAGER").is_ok());
         assert!(require_role(&admin, "ADMIN").is_ok());
-        let staff = User { role: "STAFF".into(), ..admin };
+        let staff = User {
+            role: "STAFF".into(),
+            ..admin
+        };
         assert!(require_role(&staff, "MANAGER").is_err());
     }
 }

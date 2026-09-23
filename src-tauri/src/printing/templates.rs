@@ -42,7 +42,12 @@ pub fn invoice(
     logo: bool,
 ) -> Vec<u8> {
     let mut p = EscPos::new(mode, codepage);
-    header(&mut p, logo, "ستيشن كافيه", "Station Cafe - Cafe & Car Wash");
+    header(
+        &mut p,
+        logo,
+        "ستيشن كافيه",
+        "Station Cafe - Cafe & Car Wash",
+    );
     p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
     p.kv_line("التاريخ", &inv.created_at, WIDTH);
     if let Some(t) = &inv.table_label {
@@ -58,8 +63,47 @@ pub fn invoice(
         p.kv_line("رقم السيارة", pl, WIDTH);
     }
     p.hr(WIDTH);
+    items_and_totals(&mut p, inv, lines, show_dept_sections);
+    footer(p)
+}
 
-    if show_dept_sections {
+/// Takeaway receipt — a distinct document identity for an order that has no
+/// table: the takeaway number replaces the table line and the header states
+/// the context explicitly. Same items/totals renderer as the invoices.
+pub fn takeaway_receipt(
+    mode: ArabicMode,
+    codepage: u8,
+    inv: &InvoiceRow,
+    lines: &[InvoiceLine],
+    logo: bool,
+) -> Vec<u8> {
+    let mut p = EscPos::new(mode, codepage);
+    header(&mut p, logo, "تيك أواي — ستيشن كافيه", "TAKEAWAY RECEIPT");
+    p.align(Align::Center);
+    p.size(2, 2);
+    p.bold(true);
+    p.kv_line(
+        "رقم التيك أواي",
+        &inv.takeaway_no.unwrap_or_default().to_string(),
+        WIDTH,
+    );
+    p.size(1, 1);
+    p.bold(false);
+    p.align(Align::Right);
+    p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
+    p.kv_line("التاريخ", &inv.created_at, WIDTH);
+    if let Some(c) = &inv.customer_name {
+        p.kv_line("العميل", c, WIDTH);
+    }
+    p.hr(WIDTH);
+    items_and_totals(&mut p, inv, lines, false);
+    footer(p)
+}
+
+/// Shared line items + totals block — one renderer for every invoice-shaped
+/// document so totals can never diverge between templates.
+fn items_and_totals(p: &mut EscPos, inv: &InvoiceRow, lines: &[InvoiceLine], by_department: bool) {
+    if by_department {
         for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "المغسلة")] {
             let dept_lines: Vec<&InvoiceLine> =
                 lines.iter().filter(|l| l.department == dept).collect();
@@ -98,6 +142,9 @@ pub fn invoice(
     if inv.status == "CREDIT" {
         p.kv_line("المتبقي (آجل)", &minor(inv.total - inv.paid_amount), WIDTH);
     }
+}
+
+fn footer(mut p: EscPos) -> Vec<u8> {
     p.hr(WIDTH);
     p.align(Align::Center);
     p.line("شكراً لزيارتكم — Station Cafe");
@@ -188,7 +235,11 @@ pub fn day_report(mode: ArabicMode, codepage: u8, r: &DayReport, logo: bool) -> 
     p.kv_line("خصومات", &minor(r.totals.discounts), WIDTH);
     p.kv_line("مصروفات", &minor(r.totals.expenses), WIDTH);
     p.hr(WIDTH);
-    p.kv_line("النقدية المتوقعة بالدرج", &minor(r.expected_drawer_cash), WIDTH);
+    p.kv_line(
+        "النقدية المتوقعة بالدرج",
+        &minor(r.expected_drawer_cash),
+        WIDTH,
+    );
     p.kv_line("فروق الكاش", &minor(r.cash_differences), WIDTH);
     p.hr(WIDTH);
     p.line("الورديات:");
@@ -233,6 +284,8 @@ mod tests {
             id: 1,
             invoice_no: 7,
             table_label: Some("طاولة 04".into()),
+            order_type: "TABLE".into(),
+            takeaway_no: None,
             status: status.into(),
             total: 240_00,
             paid_amount: 240_00,
@@ -288,7 +341,9 @@ mod tests {
         i.total = 240_00;
         let bytes = invoice(ArabicMode::Cp1256, 22, &i, &lines(), false, false);
         let encoded_remaining = super::super::escpos::encode_cp1256("240.00");
-        assert!(bytes.windows(encoded_remaining.len()).any(|w| w == encoded_remaining));
+        assert!(bytes
+            .windows(encoded_remaining.len())
+            .any(|w| w == encoded_remaining));
     }
 
     #[test]
@@ -306,6 +361,38 @@ mod tests {
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("12")); // waiting number
         assert!(bytes.len() > 200);
+    }
+
+    #[test]
+    fn takeaway_receipt_shows_takeaway_number_and_never_a_table() {
+        let mut i = inv("PAID");
+        i.order_type = "TAKEAWAY".into();
+        i.takeaway_no = Some(37);
+        i.table_label = None;
+        i.customer_name = None;
+        i.customer_phone = None;
+        i.car_plate = None;
+        let bytes = takeaway_receipt(ArabicMode::Cp1256, 22, &i, &lines(), false);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(bytes.starts_with(&[0x1B, b'@']));
+        assert!(
+            text.contains("TAKEAWAY RECEIPT"),
+            "document identity must be explicit"
+        );
+        assert!(bytes.len() > 200);
+        // The takeaway number and the total are rendered.
+        for expected in [
+            super::super::escpos::encode_cp1256("37"),
+            super::super::escpos::encode_cp1256("240.00"),
+        ] {
+            assert!(
+                bytes.windows(expected.len()).any(|w| w == expected),
+                "missing rendered value in takeaway receipt"
+            );
+        }
+        // No table line can leak into a takeaway receipt.
+        let table_word = super::super::escpos::encode_cp1256("الطاولة");
+        assert!(!bytes.windows(table_word.len()).any(|w| w == table_word));
     }
 
     #[test]

@@ -9,11 +9,10 @@ use crate::AppState;
 use tauri::State;
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn day_shift_state(
-    state: State<'_, AppState>,
-    token: String,
-) -> AppResult<DayShiftState> {
-    authorized(&state, &token, "STAFF", |conn, actor| shift_svc::state(conn, actor))
+pub fn day_shift_state(state: State<'_, AppState>, token: String) -> AppResult<DayShiftState> {
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        shift_svc::state(conn, actor)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -24,11 +23,7 @@ pub fn open_business_day(state: State<'_, AppState>, token: String) -> AppResult
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn open_shift(
-    state: State<'_, AppState>,
-    token: String,
-    opening_cash: i64,
-) -> AppResult<i64> {
+pub fn open_shift(state: State<'_, AppState>, token: String, opening_cash: i64) -> AppResult<i64> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
         shift_svc::open_shift(conn, actor, opening_cash)
     })
@@ -54,18 +49,30 @@ pub fn close_business_day(state: State<'_, AppState>, token: String) -> AppResul
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn list_shifts(state: State<'_, AppState>, token: String, day_id: i64) -> AppResult<Vec<ShiftRow>> {
+pub fn list_shifts(
+    state: State<'_, AppState>,
+    token: String,
+    day_id: i64,
+) -> AppResult<Vec<ShiftRow>> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         crate::repositories::shifts::shifts_of_day(conn, day_id)
     })
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn shift_report(state: State<'_, AppState>, token: String, shift_id: i64) -> AppResult<ShiftReport> {
-    authorized(&state, &token, "STAFF", move |conn, _| reports::shift_report(conn, shift_id))
+pub fn shift_report(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: i64,
+) -> AppResult<ShiftReport> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        reports::shift_report(conn, shift_id)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn day_report(state: State<'_, AppState>, token: String, day_id: i64) -> AppResult<DayReport> {
-    authorized(&state, &token, "MANAGER", move |conn, _| reports::day_report(conn, day_id))
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        reports::day_report(conn, day_id)
+    })
 }

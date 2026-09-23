@@ -83,18 +83,44 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
     };
 
     let invoice_no = invoices::next_invoice_no(&tx)?;
-    let table_label: String = tx
-        .query_row("SELECT label FROM cafe_tables WHERE id = ?1", [order.table_id], |r| r.get(0))
-        .unwrap_or_default();
+    let table_label: Option<String> = match order.table_id {
+        Some(id) => Some(
+            tx.query_row("SELECT label FROM cafe_tables WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap_or_default(),
+        ),
+        None => None,
+    };
     let day_id: i64 = tx
-        .query_row("SELECT business_day_id FROM orders WHERE id = ?1", [input.order_id], |r| {
-            r.get::<_, Option<i64>>(0)
-        })?
+        .query_row(
+            "SELECT business_day_id FROM orders WHERE id = ?1",
+            [input.order_id],
+            |r| r.get::<_, Option<i64>>(0),
+        )?
         .ok_or_else(|| AppError::business("pos.no_business_day"))?;
-    let cafe_total: Money =
-        order.lines.iter().filter(|l| l.department == "CAFE").map(|l| l.line_total).sum();
-    let wash_total: Money =
-        order.lines.iter().filter(|l| l.department == "WASH").map(|l| l.line_total).sum();
+    // A takeaway order takes its human number at finalization, inside this
+    // transaction: an unfinished or failed payment consumes no number, and the
+    // number is snapshotted on the invoice so it stays stable in print records.
+    let takeaway_no = if order.order_type == "TAKEAWAY" {
+        let no = pos::next_takeaway_no(&tx, day_id)?;
+        pos::set_takeaway_no(&tx, order.id, no)?;
+        Some(no)
+    } else {
+        None
+    };
+    let cafe_total: Money = order
+        .lines
+        .iter()
+        .filter(|l| l.department == "CAFE")
+        .map(|l| l.line_total)
+        .sum();
+    let wash_total: Money = order
+        .lines
+        .iter()
+        .filter(|l| l.department == "WASH")
+        .map(|l| l.line_total)
+        .sum();
     let lines: Vec<invoices::InvoiceLine> = order
         .lines
         .iter()
@@ -109,8 +135,21 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
         .collect();
 
     checkout_invoice(
-        &tx, actor, input, &order, &preview, invoice_no, &table_label, day_id, cafe_total,
-        wash_total, &lines, total, received, change,
+        &tx,
+        actor,
+        input,
+        &order,
+        &preview,
+        invoice_no,
+        table_label.as_deref(),
+        day_id,
+        takeaway_no,
+        cafe_total,
+        wash_total,
+        &lines,
+        total,
+        received,
+        change,
     )
     .and_then(|result| {
         tx.commit()?;
@@ -118,7 +157,7 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
     })
 }
 
-/// Persist invoice + snapshot + payment + credit + close order + audit.
+/// Persist invoice + snapshot + payment + credit + close order/session + audit.
 #[allow(clippy::too_many_arguments)]
 fn checkout_invoice(
     tx: &rusqlite::Transaction<'_>,
@@ -127,8 +166,9 @@ fn checkout_invoice(
     order: &pos::Order,
     preview: &pos_svc::OrderPreview,
     invoice_no: i64,
-    table_label: &str,
+    table_label: Option<&str>,
     day_id: i64,
+    takeaway_no: Option<i64>,
     cafe_total: Money,
     wash_total: Money,
     lines: &[invoices::InvoiceLine],
@@ -144,6 +184,8 @@ fn checkout_invoice(
         day_id,
         order.shift_id,
         actor.id,
+        &order.order_type,
+        takeaway_no,
         order.customer_id,
         preview.subtotal,
         preview.discount_minor,
@@ -182,7 +224,15 @@ fn checkout_invoice(
 
     let status = match input.method.as_str() {
         "CASH" | "CARD" => {
-            invoices::insert_payment(tx, invoice_id, &input.method, total, received, change, actor.id)?;
+            invoices::insert_payment(
+                tx,
+                invoice_id,
+                &input.method,
+                total,
+                received,
+                change,
+                actor.id,
+            )?;
             invoices::apply_payment_to_invoice(tx, invoice_id, total)?
         }
         "CREDIT" => {
@@ -195,6 +245,11 @@ fn checkout_invoice(
     };
 
     pos::set_order_status(tx, order.id, "CLOSED")?;
+    // A settled table order ends its lifecycle session: the table returns to
+    // EMPTY and the session stays recorded as "closed with an order".
+    if let Some(table_id) = order.table_id {
+        pos::close_open_session_of_table(tx, table_id, actor.id)?;
+    }
 
     // Inventory: decrement tracked products (same transaction, auditable).
     crate::services::ops::apply_sale_to_inventory(tx, invoice_id, actor.id)?;
@@ -209,11 +264,18 @@ fn checkout_invoice(
         None,
         Some(&serde_json::json!({
             "invoice_no": invoice_no, "method": input.method, "total": total,
-            "discount": preview.discount_minor, "service_charge": preview.service_charge_minor
+            "discount": preview.discount_minor, "service_charge": preview.service_charge_minor,
+            "order_type": order.order_type, "takeaway_no": takeaway_no
         })),
     )?;
 
-    Ok(CheckoutResult { invoice_id, invoice_no, total, change_given: change, status })
+    Ok(CheckoutResult {
+        invoice_id,
+        invoice_no,
+        total,
+        change_given: change,
+        status,
+    })
 }
 
 /// Manager-level invoice cancellation — only while the day is still open.

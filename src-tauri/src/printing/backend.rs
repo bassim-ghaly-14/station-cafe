@@ -38,7 +38,8 @@ impl PrinterBackend for FileBackend {
             .map_err(|e| AppError::printer(format!("printer.open_failed: {e}")))?;
         f.write_all(bytes)
             .map_err(|e| AppError::printer(format!("printer.write_failed: {e}")))?;
-        f.flush().map_err(|e| AppError::printer(format!("printer.flush_failed: {e}")))?;
+        f.flush()
+            .map_err(|e| AppError::printer(format!("printer.flush_failed: {e}")))?;
         Ok(())
     }
 
@@ -59,7 +60,9 @@ pub struct LprBackend {
 
 impl LprBackend {
     pub fn new(queue: impl Into<String>) -> Self {
-        Self { queue: queue.into() }
+        Self {
+            queue: queue.into(),
+        }
     }
 }
 
@@ -109,7 +112,9 @@ pub struct MemoryBackend {
 
 impl Default for MemoryBackend {
     fn default() -> Self {
-        Self { last: std::sync::Mutex::new(Vec::new()) }
+        Self {
+            last: std::sync::Mutex::new(Vec::new()),
+        }
     }
 }
 

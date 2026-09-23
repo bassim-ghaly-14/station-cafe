@@ -42,7 +42,11 @@ impl Default for PrintConfig {
 
 pub fn get_config(conn: &Db) -> AppResult<PrintConfig> {
     let raw: Option<String> = conn
-        .query_row("SELECT value FROM app_settings WHERE key = 'printer'", [], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'printer'",
+            [],
+            |r| r.get(0),
+        )
         .ok();
     match raw {
         Some(v) => Ok(serde_json::from_str(&v).unwrap_or_default()),
@@ -145,16 +149,27 @@ pub fn print_invoice(conn: &Db, invoice_id: i64, force: bool) -> AppResult<Print
     let cfg = get_config(conn)?;
     let (inv, lines) = invoices::get_invoice_full(conn, invoice_id)?
         .ok_or_else(|| crate::error::AppError::not_found("invoice.not_found"))?;
-    let hybrid = lines.iter().any(|l| l.department == "WASH")
-        && lines.iter().any(|l| l.department == "CAFE");
-    let doc = if hybrid {
-        "HYBRID_INVOICE"
-    } else if lines.iter().any(|l| l.department == "WASH") {
-        "WASH_INVOICE"
+    // Takeaway has its own document identity (no table, its own number).
+    let (doc, bytes) = if inv.order_type == "TAKEAWAY" {
+        (
+            "TAKEAWAY_INVOICE",
+            templates::takeaway_receipt(mode_of(&cfg), cfg.codepage, &inv, &lines, true),
+        )
     } else {
-        "CAFE_INVOICE"
+        let hybrid = lines.iter().any(|l| l.department == "WASH")
+            && lines.iter().any(|l| l.department == "CAFE");
+        let doc = if hybrid {
+            "HYBRID_INVOICE"
+        } else if lines.iter().any(|l| l.department == "WASH") {
+            "WASH_INVOICE"
+        } else {
+            "CAFE_INVOICE"
+        };
+        (
+            doc,
+            templates::invoice(mode_of(&cfg), cfg.codepage, &inv, &lines, hybrid, true),
+        )
     };
-    let bytes = templates::invoice(mode_of(&cfg), cfg.codepage, &inv, &lines, hybrid, true);
     send(conn, doc, Some(invoice_id), &bytes, force)
 }
 
@@ -255,13 +270,20 @@ mod tests {
         let path = std::env::temp_dir().join("station_print_dup.prn");
         set_config(
             &conn,
-            &PrintConfig { target: format!("file:{}", path.display()), logo: false, ..Default::default() },
+            &PrintConfig {
+                target: format!("file:{}", path.display()),
+                logo: false,
+                ..Default::default()
+            },
         )
         .unwrap();
         let first = print_test(&conn, false).unwrap();
         let second = print_test(&conn, false).unwrap();
         assert!(!first.duplicate_suppressed);
-        assert!(second.duplicate_suppressed, "identical document must not print twice");
+        assert!(
+            second.duplicate_suppressed,
+            "identical document must not print twice"
+        );
     }
 
     #[test]

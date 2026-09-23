@@ -143,8 +143,14 @@ pub fn insert_expense(
             recurrence, business_day_id, user_id)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
         params![
-            category, amount, description, expense_date, is_recurring as i64, recurrence,
-            business_day_id, user_id
+            category,
+            amount,
+            description,
+            expense_date,
+            is_recurring as i64,
+            recurrence,
+            business_day_id,
+            user_id
         ],
     )?;
     Ok(conn.last_insert_rowid())

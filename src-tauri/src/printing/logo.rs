@@ -25,16 +25,18 @@ static RASTER: OnceLock<Option<(usize, usize, Vec<u8>)>> = OnceLock::new();
 /// Returns (width_dots, height_dots, 1-bit packed rows), or None when the
 /// logo cannot be prepared (printing then continues without a logo).
 pub fn logo_raster() -> Option<&'static (usize, usize, Vec<u8>)> {
-    RASTER
-        .get_or_init(|| build_raster().ok())
-        .as_ref()
+    RASTER.get_or_init(|| build_raster().ok()).as_ref()
 }
 
 fn build_raster() -> AppResult<(usize, usize, Vec<u8>)> {
     let img = image::load_from_memory(LOGO_PNG)
         .map_err(|e| AppError::internal(format!("logo decode failed: {e}")))?;
     let target_h = LOGO_WIDTH_DOTS; // square brand mark
-    let small = img.resize_exact(LOGO_WIDTH_DOTS as u32, target_h as u32, FilterType::Triangle);
+    let small = img.resize_exact(
+        LOGO_WIDTH_DOTS as u32,
+        target_h as u32,
+        FilterType::Triangle,
+    );
     let luma = small.to_luma8();
     let (w, h) = (luma.width() as usize, luma.height() as usize);
     let width_bytes = w.div_ceil(8);

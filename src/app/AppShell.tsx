@@ -1,5 +1,5 @@
 /** App shell: topbar (logo, user, logout) + role-filtered sidebar + views. */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/LogoPlaceholder'
 import { Badge } from '@/components/ui/card'
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/icon'
 import { useRouter, type View } from './router'
 import { atLeast, useSession } from '@/features/auth/useSession'
+import { Dialog } from '@/components/ui'
 
 interface NavItem {
   view: View
@@ -39,7 +40,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const { user, logout } = useSession()
   const { view, navigate } = useRouter()
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
+
   const items = NAV.filter((n) => atLeast(user?.role, n.minRole))
+
+  async function confirmLogout() {
+    setLogoutConfirmOpen(false)
+    await logout()
+  }
 
   return (
     <div dir="rtl" className="flex min-h-screen bg-background">
@@ -48,9 +56,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <Logo size={56} />
           <p className="text-sm font-bold text-foreground-strong">{t('app.name')}</p>
         </div>
+
         <nav className="flex flex-col gap-1">
           {items.map((n) => {
             const Icon = n.icon
+
             return (
               <button
                 key={n.view}
@@ -58,7 +68,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 onClick={() => navigate(n.view)}
                 aria-current={view === n.view ? 'page' : undefined}
                 className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-start text-base font-medium transition-colors ${
-                  view === n.view ? 'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active' : 'text-foreground-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active'
+                  view === n.view
+                    ? 'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active'
+                    : 'text-foreground-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active'
                 }`}
               >
                 <Icon size={18} aria-hidden />
@@ -73,6 +85,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-foreground-muted">{user?.name}</span>
+
             <Badge
               tone={
                 user?.role === 'ADMIN' ? 'danger' : user?.role === 'MANAGER' ? 'info' : 'neutral'
@@ -81,13 +94,36 @@ export default function AppShell({ children }: { children: ReactNode }) {
               {user ? t(`roles.${user.role}`) : ''}
             </Badge>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => void logout()}>
+
+          <Button variant="destructiveGhost" size="sm" onClick={() => setLogoutConfirmOpen(true)}>
             <LogOut size={16} aria-hidden />
             {t('auth.logout')}
           </Button>
         </header>
+
         <main className="min-w-0 flex-1 p-6">{children}</main>
       </div>
+
+      <Dialog
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        title={t('auth.logout')}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-body">{t('auth.logoutConfirm')}</p>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setLogoutConfirmOpen(false)}>
+              {t('app.cancel')}
+            </Button>
+
+            <Button variant="destructiveGhost" onClick={() => void confirmLogout()}>
+              <LogOut size={16} aria-hidden />
+              {t('auth.logout')}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   )
 }

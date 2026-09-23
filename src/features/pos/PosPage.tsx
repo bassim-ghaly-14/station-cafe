@@ -1,8 +1,9 @@
-/** The main POS screen: table grid + live order panel + payment. */
+/** The main POS screen: safe table grid + live order panel + payment + takeaway.
+ * Card click NEVER mutates state — only explicit buttons call the backend. */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
-import { Receipt } from '@/components/ui/icon'
+import { Badge, Button, Card, CardHeader, Dialog, MoneyDisplay } from '@/components/ui'
+import { ClipboardList, DoorClosed, DoorOpen, Receipt, ShoppingBag } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type OrderPreview, type PosOrder, type TableView } from '@/services/posApi'
@@ -17,11 +18,14 @@ export default function PosPage() {
   const toast = useToast()
   const [tables, setTables] = useState<TableView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   const [activeOrder, setActiveOrder] = useState<PosOrder | null>(null)
   const [dayReady, setDayReady] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const [preview, setPreview] = useState<OrderPreview | null>(null)
   const [invoicesOpen, setInvoicesOpen] = useState(false)
+  const [closeTarget, setCloseTarget] = useState<TableView | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -55,23 +59,96 @@ export default function PosPage() {
 
   if (!dayReady) return <ShiftGate onReady={() => void refresh()} />
 
-  const report = (e: unknown) =>
+  const report = (e: unknown) => {
+    void refresh()
     toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
+  }
 
-  const selectTable = (tv: TableView) => {
-    if (tv.order_id) {
-      api.getOrder(tv.order_id).then(setActiveOrder).catch(report)
-    } else {
-      api
-        .openTable(tv.id)
-        .then((orderId) => api.getOrder(orderId))
-        .then((o) => {
-          setActiveOrder(o)
-          void refresh()
-        })
-        .catch(report)
+  // Card click is SAFE: selection/inspection only — never a backend mutation.
+  const selectTable = (tv: TableView) => setSelectedTableId(tv.id)
+
+  const openSelectedTable = async (tv: TableView) => {
+    setBusy(`open-${tv.id}`)
+    try {
+      await api.openTable(tv.id)
+      toast(t('pos.openedMessage', { label: tv.label }), 'success')
+      await refresh()
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(null)
     }
   }
+
+  const confirmCloseEmpty = async () => {
+    if (!closeTarget) return
+    setBusy(`close-${closeTarget.id}`)
+    try {
+      await api.closeEmptyTable(closeTarget.id)
+      toast(t('pos.closedEmptyMessage', { label: closeTarget.label }), 'success')
+      setCloseTarget(null)
+      await refresh()
+    } catch (e) {
+      setCloseTarget(null)
+      report(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const startOrderFor = async (tv: TableView) => {
+    setBusy(`order-${tv.id}`)
+    try {
+      const orderId = await api.startOrder(tv.id)
+      setActiveOrder(await api.getOrder(orderId))
+      await refresh()
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const openOrderFor = async (tv: TableView) => {
+    if (!tv.order_id) return
+    try {
+      setActiveOrder(await api.getOrder(tv.order_id))
+    } catch (e) {
+      report(e)
+    }
+  }
+
+  const startTakeaway = async () => {
+    setBusy('takeaway')
+    try {
+      const orderId = await api.startTakeaway()
+      setActiveOrder(await api.getOrder(orderId))
+      toast(t('pos.takeawayStarted'), 'success')
+      await refresh()
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const discardActiveOrder = async () => {
+    if (!activeOrder || activeOrder.lines.length > 0) return
+    setBusy('discard')
+    try {
+      await api.discardOrder(activeOrder.id)
+      setActiveOrder(null)
+      toast(t('pos.discardedMessage'), 'success')
+      await refresh()
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const selected = tables.find((x) => x.id === selectedTableId) ?? null
+  const takeawayActive = activeOrder?.order_type === 'TAKEAWAY'
 
   return (
     <div className="grid gap-4 lg:grid-cols-[720px_1fr]">
@@ -79,10 +156,22 @@ export default function PosPage() {
         <CardHeader
           title={t('pos.tables')}
           actions={
-            <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
-              <Receipt size={16} aria-hidden />
-              {t('pos.todayInvoices')}
-            </Button>
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => void startTakeaway()}
+                disabled={busy === 'takeaway'}
+                loading={busy === 'takeaway'}
+              >
+                <ShoppingBag size={16} aria-hidden />
+                {t('pos.startTakeaway')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+                <Receipt size={16} aria-hidden />
+                {t('pos.todayInvoices')}
+              </Button>
+            </>
           }
         />
 
@@ -91,22 +180,64 @@ export default function PosPage() {
             <TableCard
               key={tv.id}
               tv={tv}
-              active={activeOrder?.id === tv.order_id}
-              onClick={() => selectTable(tv)}
+              selected={selectedTableId === tv.id}
+              active={activeOrder?.id === tv.order_id && !!tv.order_id}
+              busy={busy}
+              onSelect={() => selectTable(tv)}
+              onOpen={() => void openSelectedTable(tv)}
+              onStartOrder={() => void startOrderFor(tv)}
+              onOpenOrder={() => void openOrderFor(tv)}
+              onCloseEmpty={() => setCloseTarget(tv)}
             />
           ))}
         </div>
+        <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
       </Card>
 
       <div>
         {activeOrder ? (
-          <OrderPanel
-            order={activeOrder}
-            preview={preview}
-            onChange={setActiveOrder}
-            onRefreshTables={() => void refresh()}
-            onPay={() => setPayOpen(true)}
-          />
+          <>
+            {takeawayActive ? (
+              <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
+                <Badge tone="info">
+                  <ShoppingBag size={14} aria-hidden />
+                  {t('pos.takeawayActive')}
+                </Badge>
+                {typeof activeOrder.takeaway_no === 'number' ? (
+                  <span>
+                    {t('pos.takeawayNo')}: <span dir="ltr">#{activeOrder.takeaway_no}</span>
+                  </span>
+                ) : (
+                  <span className="font-medium text-foreground-subtle">
+                    {t('pos.takeawayHint')}
+                  </span>
+                )}
+              </p>
+            ) : null}
+            <OrderPanel
+              order={activeOrder}
+              preview={preview}
+              onChange={setActiveOrder}
+              onRefreshTables={() => void refresh()}
+              onPay={() => setPayOpen(true)}
+              onDiscard={
+                activeOrder.lines.length === 0 ? () => void discardActiveOrder() : undefined
+              }
+              discarding={busy === 'discard'}
+            />
+          </>
+        ) : selected ? (
+          <Card>
+            <CardHeader title={selected.label} subtitle={t(`pos.state.${selected.status}`)} />
+            <SelectedTableActions
+              tv={selected}
+              busy={busy}
+              onOpen={() => void openSelectedTable(selected)}
+              onStartOrder={() => void startOrderFor(selected)}
+              onOpenOrder={() => void openOrderFor(selected)}
+              onCloseEmpty={() => setCloseTarget(selected)}
+            />
+          </Card>
         ) : (
           <Card>
             <p className="text-center text-sm text-foreground-subtle">{t('pos.selectTable')}</p>
@@ -117,6 +248,7 @@ export default function PosPage() {
       {activeOrder && payOpen ? (
         <PaymentDialog
           orderId={activeOrder.id}
+          order={activeOrder}
           onClose={() => setPayOpen(false)}
           onDone={(invoiceId, outcome) => {
             setPayOpen(false)
@@ -132,6 +264,27 @@ export default function PosPage() {
         />
       ) : null}
 
+      {closeTarget ? (
+        <Dialog open onClose={() => setCloseTarget(null)} title={t('pos.closeEmptyTitle')}>
+          <p className="mb-4 text-sm text-foreground-muted">
+            {t('pos.closeEmptyBody', { label: closeTarget.label })}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setCloseTarget(null)}>
+              {t('app.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmCloseEmpty()}
+              loading={busy === `close-${closeTarget.id}`}
+            >
+              <DoorClosed size={16} aria-hidden />
+              {t('pos.closeEmpty')}
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
+
       {invoicesOpen ? <TodayInvoices onClose={() => setInvoicesOpen(false)} /> : null}
     </div>
   )
@@ -139,74 +292,235 @@ export default function PosPage() {
 
 export function TableCard({
   tv,
+  selected,
   active,
-  onClick,
+  busy,
+  onSelect,
+  onOpen,
+  onStartOrder,
+  onOpenOrder,
+  onCloseEmpty,
 }: {
   tv: TableView
+  selected: boolean
   active: boolean
-  onClick: () => void
+  busy: string | null
+  onSelect: () => void
+  onOpen: () => void
+  onStartOrder: () => void
+  onOpenOrder: () => void
+  onCloseEmpty: () => void
 }) {
   const { t } = useTranslation()
 
-  const tone = tv.status === 'EMPTY' ? 'neutral' : tv.status === 'OPEN' ? 'info' : 'warning'
+  const tone =
+    tv.status === 'EMPTY'
+      ? 'danger'
+      : tv.status === 'OPEN'
+        ? 'info'
+        : tv.status === 'OCCUPIED'
+          ? 'success'
+          : 'warning'
 
-  // Status is NEVER color-only: always an icon + an Arabic label.
-  const icon = tv.status === 'EMPTY' ? '○' : tv.status === 'OPEN' ? '◉' : '✔'
+  const isEmpty = tv.status === 'EMPTY'
+  const isOpen = tv.status === 'OPEN'
+
+  const statusLabel = t(`pos.state.${tv.status}`)
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`${tv.label} — ${t(`pos.state.${tv.status}`)}`}
-      className={`group flex min-h-44 flex-col gap-4 rounded-lg border p-4 text-start transition-all ${
-        active
-          ? 'border-primary bg-accent shadow-sm hover:bg-accent-hover active:bg-accent-hover'
-          : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-accent active:border-border-accent-hover active:bg-accent-hover'
-      }`}
+    <article
+      aria-label={`${tv.label} — ${statusLabel}`}
+      aria-current={selected ? true : undefined}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
+      tabIndex={0}
+      data-testid={`table-card-${tv.id}`}
+      className={[
+        'group relative flex min-h-48 cursor-pointer flex-col overflow-hidden',
+        'rounded-lg border p-4 text-start',
+        'transition-[border-color,background-color,box-shadow]',
+        'duration-200',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+        selected
+          ? 'border-primary bg-accent shadow-sm'
+          : active
+            ? 'border-success-soft bg-success-soft/20'
+            : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-accent/60',
+      ].join(' ')}
     >
+      {/* Status accent */}
+      <span
+        aria-hidden
+        className={[
+          'absolute inset-y-0 start-0 w-1',
+          tone === 'danger'
+            ? 'bg-danger'
+            : tone === 'info'
+              ? 'bg-info'
+              : tone === 'success'
+                ? 'bg-success'
+                : 'bg-warning',
+        ].join(' ')}
+      />
+
       {/* Header */}
-      <div className="flex w-full items-start justify-between gap-3">
-        <p className="truncate text-lg font-bold leading-tight text-foreground-strong">{tv.label}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="min-w-0 truncate text-lg font-bold leading-tight text-foreground-strong">
+          {tv.label}
+        </p>
 
-        <span
-          aria-hidden="true"
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-base font-bold ${
-            active
-              ? 'border-border-accent bg-surface text-foreground-muted'
-              : 'border-border-strong bg-accent text-foreground-muted'
-          }`}
-        >
-          {icon}
-        </span>
+        <Badge tone={tone}>{statusLabel}</Badge>
       </div>
 
-      {/* Status */}
-      <div className="flex w-full">
-        <Badge tone={tone}>{t(`pos.state.${tv.status}`)}</Badge>
+      {/* Main information */}
+      <div className="mt-5 flex min-h-16 flex-1 flex-col justify-center">
+        {isEmpty ? (
+          <>
+            <p className="text-xs font-medium text-foreground-subtle">{t('pos.items')}</p>
+
+            <p className="mt-1 text-base font-bold tabular-nums text-foreground-strong">0</p>
+
+            <p className="mt-2 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs font-medium text-foreground-subtle">{t('pos.items')}</p>
+
+            <div className="mt-1 flex items-end justify-between gap-3">
+              <span className="text-base font-bold tabular-nums text-foreground-strong">
+                {tv.items_count}
+              </span>
+
+              <span className="text-xl font-bold leading-none tabular-nums text-foreground-strong">
+                <MoneyDisplay amount={tv.total_minor} />
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Metrics */}
-      <div className="mt-auto grid w-full grid-cols-[72px_minmax(0,1fr)] items-stretch gap-2">
-        <div className="min-w-0 overflow-hidden border border-border-subtle bg-surface-muted px-2 py-2.5 text-start">
-          <p className="truncate whitespace-nowrap text-[11px] font-medium text-foreground-subtle">
-            {t('pos.items')}
+      {/* Daily counters */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="min-w-0 rounded-md border border-border bg-background/40 px-2.5 py-2">
+          <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
+            {t('pos.opensToday')}
           </p>
-
-          <p className="mt-0.5 truncate whitespace-nowrap text-base font-bold text-foreground-strong">
-            {tv.items_count}
+          <p className="mt-0.5 text-sm font-bold leading-tight tabular-nums text-foreground-strong">
+            {tv.opens_today}
           </p>
         </div>
 
-        <div className="min-w-0 overflow-hidden border border-border-subtle bg-surface-muted px-3 py-2.5 text-start">
-          <p className="truncate whitespace-nowrap text-[11px] font-medium text-foreground-subtle">
-            {t('pos.total')}
+        <div className="min-w-0 rounded-md border border-border bg-background/40 px-2.5 py-2">
+          <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
+            {t('pos.closedEmptyToday')}
           </p>
-
-          <p className="mt-0.5 min-w-0 truncate whitespace-nowrap text-sm font-bold text-foreground-strong">
-            <MoneyDisplay amount={tv.total_minor} />
+          <p className="mt-0.5 text-sm font-bold leading-tight tabular-nums text-foreground-strong">
+            {tv.closed_empty_today}
           </p>
         </div>
       </div>
-    </button>
+
+      {/* Fixed action zone */}
+      <div className="mt-3 flex min-h-9 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        {isEmpty ? (
+          <Button
+            className="w-full"
+            size="sm"
+            variant="outline"
+            onClick={onOpen}
+            loading={busy === `open-${tv.id}`}
+            aria-label={`${t('pos.openTable')} — ${tv.label}`}
+          >
+            <DoorOpen size={16} aria-hidden />
+            {t('pos.openTable')}
+          </Button>
+        ) : isOpen ? (
+          <>
+            <Button
+              className="min-w-0 flex-1"
+              size="sm"
+              onClick={onStartOrder}
+              loading={busy === `order-${tv.id}`}
+              aria-label={`${t('pos.startOrder')} — ${tv.label}`}
+            >
+              <ClipboardList size={16} aria-hidden />
+              {t('pos.startOrder')}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onCloseEmpty}
+              aria-label={`${t('pos.closeEmpty')} — ${tv.label}`}
+            >
+              <DoorClosed size={16} aria-hidden />
+              {t('pos.closeEmpty')}
+            </Button>
+          </>
+        ) : (
+          <Button
+            className="w-full"
+            size="sm"
+            variant="secondary"
+            onClick={onOpenOrder}
+            aria-label={`${t('pos.openOrder')} — ${tv.label}`}
+          >
+            <ClipboardList size={16} aria-hidden />
+            {t('pos.openOrder')}
+          </Button>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function SelectedTableActions({
+  tv,
+  busy,
+  onOpen,
+  onStartOrder,
+  onOpenOrder,
+  onCloseEmpty,
+}: {
+  tv: TableView
+  busy: string | null
+  onOpen: () => void
+  onStartOrder: () => void
+  onOpenOrder: () => void
+  onCloseEmpty: () => void
+}) {
+  const { t } = useTranslation()
+  if (tv.status === 'EMPTY') {
+    return (
+      <Button onClick={onOpen} loading={busy === `open-${tv.id}`}>
+        <DoorOpen size={16} aria-hidden />
+        {t('pos.openTable')}
+      </Button>
+    )
+  }
+  if (tv.status === 'OPEN') {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={onStartOrder} loading={busy === `order-${tv.id}`}>
+          <ClipboardList size={16} aria-hidden />
+          {t('pos.startOrder')}
+        </Button>
+        <Button variant="outline" onClick={onCloseEmpty}>
+          <DoorClosed size={16} aria-hidden />
+          {t('pos.closeEmpty')}
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <Button variant="secondary" onClick={onOpenOrder}>
+      <ClipboardList size={16} aria-hidden />
+      {t('pos.openOrder')}
+    </Button>
   )
 }

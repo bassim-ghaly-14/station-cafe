@@ -113,10 +113,21 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
               className="flex items-center justify-between gap-2 rounded border border-border-subtle p-2"
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-bold">#{r.invoice_no}</span>
+                <span className="block text-sm font-bold">
+                  #{r.invoice_no}
+                  {r.order_type === 'TAKEAWAY' && typeof r.takeaway_no === 'number' ? (
+                    <span className="ms-2 text-xs font-medium text-foreground-subtle" dir="ltr">
+                      TW-{r.takeaway_no}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="block truncate text-xs text-foreground-subtle">
-                  {r.table_label ?? ''} · {r.customer_name ?? ''} ·{' '}
-                  <span dir="ltr">{r.car_plate ?? ''}</span>
+                  {r.order_type === 'TAKEAWAY' ? (
+                    <>{t('pos.orderType.TAKEAWAY')}</>
+                  ) : (
+                    <>{r.table_label ?? ''}</>
+                  )}{' '}
+                  · {r.customer_name ?? ''} · <span dir="ltr">{r.car_plate ?? ''}</span>
                 </span>
               </span>
               <Badge
@@ -138,7 +149,9 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           ))}
         </ul>
       )}
-      {dayId === null ? <p className="mt-2 text-xs text-foreground-subtle">{t('pos.noDayHint')}</p> : null}
+      {dayId === null ? (
+        <p className="mt-2 text-xs text-foreground-subtle">{t('pos.noDayHint')}</p>
+      ) : null}
     </Dialog>
   )
 }

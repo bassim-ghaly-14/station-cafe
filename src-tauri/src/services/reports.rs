@@ -21,7 +21,10 @@ pub struct TodaySummary {
 pub fn today_summary(conn: &Db) -> AppResult<TodaySummary> {
     let day = shifts::current_day(conn)?;
     let (totals, shift_list) = match &day {
-        Some(d) => (shifts::day_totals(conn, d.id)?, shifts::shifts_of_day(conn, d.id)?),
+        Some(d) => (
+            shifts::day_totals(conn, d.id)?,
+            shifts::shifts_of_day(conn, d.id)?,
+        ),
         None => (DayTotals::default(), Vec::new()),
     };
     let openings: i64 = shift_list.iter().map(|s| s.opening_cash).sum();

@@ -26,18 +26,24 @@ pub struct ServiceChargeConfig {
 impl Default for ServiceChargeConfig {
     fn default() -> Self {
         // Open business decision → safest default is OFF (configurable).
-        Self { mode: ServiceChargeMode::None, value: 0 }
+        Self {
+            mode: ServiceChargeMode::None,
+            value: 0,
+        }
     }
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(conn: &Db, key: &str, default: T) -> AppResult<T> {
     let raw: Option<String> = conn
-        .query_row("SELECT value FROM app_settings WHERE key = ?1", [key], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = ?1",
+            [key],
+            |r| r.get(0),
+        )
         .ok();
     match raw {
-        Some(v) => Ok(serde_json::from_str(&v).map_err(|e| {
-            AppError::internal(format!("invalid settings JSON for {key}: {e}"))
-        })?),
+        Some(v) => Ok(serde_json::from_str(&v)
+            .map_err(|e| AppError::internal(format!("invalid settings JSON for {key}: {e}")))?),
         None => Ok(default),
     }
 }
@@ -59,11 +65,7 @@ pub fn get_service_charge(conn: &Db) -> AppResult<ServiceChargeConfig> {
 
 /// MANAGER+ sets the service-charge mode/value; every consumer (POS preview,
 /// checkout, reports) reads it through here.
-pub fn set_service_charge(
-    conn: &Db,
-    actor: &User,
-    cfg: &ServiceChargeConfig,
-) -> AppResult<()> {
+pub fn set_service_charge(conn: &Db, actor: &User, cfg: &ServiceChargeConfig) -> AppResult<()> {
     if cfg.mode == ServiceChargeMode::Percent && !(0..=100_000).contains(&cfg.value) {
         return Err(AppError::validation("settings.invalid_percent"));
     }
@@ -94,7 +96,10 @@ pub struct CreditConfig {
 
 impl Default for CreditConfig {
     fn default() -> Self {
-        Self { mode: "LIST".into(), allowed_customer_ids: Vec::new() }
+        Self {
+            mode: "LIST".into(),
+            allowed_customer_ids: Vec::new(),
+        }
     }
 }
 

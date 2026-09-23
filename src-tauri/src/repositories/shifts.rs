@@ -161,7 +161,12 @@ pub fn day_totals(conn: &Db, day_id: i64) -> AppResult<DayTotals> {
 
 // ---- SHIFTS ----------------------------------------------------------------
 
-pub fn open_shift(conn: &Db, day_id: i64, user_id: i64, opening_cash: i64) -> AppResult<Option<i64>> {
+pub fn open_shift(
+    conn: &Db,
+    day_id: i64,
+    user_id: i64,
+    opening_cash: i64,
+) -> AppResult<Option<i64>> {
     let n = conn.execute(
         "INSERT INTO shifts (business_day_id, user_id, opening_cash) VALUES (?1, ?2, ?3)",
         params![day_id, user_id, opening_cash],
@@ -258,8 +263,15 @@ pub fn save_shift_closing(
             actual_cash = ?9, cash_difference = ?9 - ?8
          WHERE id = ?1",
         params![
-            shift_id, cash_sales, card_sales, credit_sales, service_charges, discounts,
-            invoices_count, expected_cash, actual_cash
+            shift_id,
+            cash_sales,
+            card_sales,
+            credit_sales,
+            service_charges,
+            discounts,
+            invoices_count,
+            expected_cash,
+            actual_cash
         ],
     )?;
     Ok(())

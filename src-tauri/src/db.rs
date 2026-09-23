@@ -27,19 +27,26 @@ pub fn open(data_dir: &Path) -> AppResult<Db> {
 }
 
 /// A migration is a (version, name, SQL) triple applied in version order.
+/// `needs_fk_off` marks migrations that rebuild a table: SQLite refuses to
+/// toggle `foreign_keys` inside a transaction, so the runner disables FK
+/// enforcement around that migration and re-verifies integrity afterwards
+/// (the documented procedure for the 12-step table rebuild).
 struct Migration {
     version: i64,
     name: &'static str,
+    needs_fk_off: bool,
     sql: &'static str,
 }
 
 /// Phase 2 — core business schema. All tables FK-linked, with CHECK
 /// constraints enforcing lifecycle states, and snapshot columns so
 /// historical transactions are immutable even when masters change.
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "core foundation",
-    sql: r#"
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "core foundation",
+        needs_fk_off: false,
+        sql: r#"
         -- Core configuration store (single row per key; JSON values)
         CREATE TABLE IF NOT EXISTS app_settings (
             key         TEXT PRIMARY KEY,
@@ -80,6 +87,7 @@ const MIGRATIONS: &[Migration] = &[Migration {
     Migration {
         version: 2,
         name: "core business system",
+        needs_fk_off: false,
         sql: r#"
             -- ============================================================
             -- 2.1 AUTH / STAFF
@@ -387,6 +395,7 @@ const MIGRATIONS: &[Migration] = &[Migration {
     Migration {
         version: 3,
         name: "wash tickets link to orders",
+        needs_fk_off: false,
         sql: r#"
             -- A wash job ticket is issued when the wash STARTS (order stage),
             -- before any invoice exists — so it must reference the order.
@@ -404,6 +413,7 @@ const MIGRATIONS: &[Migration] = &[Migration {
     Migration {
         version: 4,
         name: "orders customer and waiting columns",
+        needs_fk_off: false,
         sql: r#"
             -- v2 defined the orders columns but never created them; v3-era
             -- repositories read them. Add them additively (never edit v2).
@@ -412,9 +422,152 @@ const MIGRATIONS: &[Migration] = &[Migration {
             CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
         "#,
     },
+    Migration {
+        version: 5,
+        name: "table sessions",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- TABLE SESSIONS
+            -- A table lifecycle is explicit: opening a table is its own
+            -- event, independent of whether an order is ever created.
+            -- `order_id IS NULL` on a CLOSED session ⇒ "opened and closed
+            -- without an order" (no invoice, no revenue, still auditable).
+            -- ============================================================
+            CREATE TABLE IF NOT EXISTS table_sessions (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                table_id        INTEGER NOT NULL REFERENCES cafe_tables(id),
+                business_day_id INTEGER REFERENCES business_days(id),
+                shift_id        INTEGER REFERENCES shifts(id),
+                opened_by       INTEGER NOT NULL REFERENCES users(id),
+                opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                order_id        INTEGER REFERENCES orders(id),
+                closed_by       INTEGER REFERENCES users(id),
+                closed_at       TEXT,
+                status          TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED'))
+            );
+            -- At most ONE live session per table (concurrency-safe).
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_table_sessions_open
+                ON table_sessions(table_id) WHERE status = 'OPEN';
+            CREATE INDEX IF NOT EXISTS idx_table_sessions_day
+                ON table_sessions(business_day_id, status);
+            CREATE INDEX IF NOT EXISTS idx_table_sessions_table
+                ON table_sessions(table_id, opened_at);
+        "#,
+    },
+    Migration {
+        version: 6,
+        name: "order context and takeaway orders",
+        needs_fk_off: true,
+        sql: r#"
+            -- ============================================================
+            -- ORDER CONTEXT (TABLE | TAKEAWAY)
+            -- Takeaway is a first-class order context: never a fake table,
+            -- never a reserved table number. Making `orders.table_id`
+            -- nullable requires a rebuild (SQLite cannot drop NOT NULL);
+            -- the standard 12-step procedure is used and every row keeps its
+            -- id so invoice/line references stay valid.
+            -- ============================================================
+            -- The runner executes this migration with FK enforcement off and
+            -- verifies integrity before committing (see `apply_migrations`).
+            CREATE TABLE orders_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_type      TEXT NOT NULL DEFAULT 'TABLE'
+                                CHECK (order_type IN ('TABLE','TAKEAWAY')),
+                table_id        INTEGER REFERENCES cafe_tables(id),
+                user_id         INTEGER NOT NULL REFERENCES users(id),
+                business_day_id INTEGER REFERENCES business_days(id),
+                shift_id        INTEGER,
+                status          TEXT NOT NULL DEFAULT 'OPEN'
+                                CHECK (status IN ('OPEN','READY_TO_PAY','CLOSED','CANCELLED')),
+                takeaway_no     INTEGER,
+                opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                ready_at        TEXT,
+                closed_at       TEXT,
+                customer_id     INTEGER REFERENCES customers(id),
+                waiting_no      INTEGER,
+                -- A table order always has a table; takeaway never does.
+                CHECK ((order_type = 'TABLE' AND table_id IS NOT NULL)
+                       OR (order_type = 'TAKEAWAY' AND table_id IS NULL))
+            );
+
+            -- Existing rows are all table orders (data preserved verbatim).
+            INSERT INTO orders_new (id, order_type, table_id, user_id, business_day_id, shift_id,
+                                    status, opened_at, ready_at, closed_at, customer_id, waiting_no)
+                SELECT id, 'TABLE', table_id, user_id, business_day_id, shift_id,
+                       status, opened_at, ready_at, closed_at, customer_id, waiting_no
+                FROM orders;
+
+            DROP TABLE orders;
+            ALTER TABLE orders_new RENAME TO orders;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_open_table
+                ON orders(table_id) WHERE status IN ('OPEN','READY_TO_PAY');
+            CREATE INDEX IF NOT EXISTS idx_orders_shift ON orders(shift_id);
+            CREATE INDEX IF NOT EXISTS idx_orders_day ON orders(business_day_id);
+            CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+            -- Per business-day takeaway sequence — uniqueness by constraint.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_takeaway_day_no
+                ON orders(business_day_id, takeaway_no) WHERE takeaway_no IS NOT NULL;
+
+            -- Live orders that predate sessions get their session backfilled so
+            -- the table grid stays correct and the history stays traceable.
+            INSERT INTO table_sessions (table_id, business_day_id, shift_id, opened_by,
+                                        opened_at, order_id)
+                SELECT o.table_id, o.business_day_id, o.shift_id, o.user_id, o.opened_at, o.id
+                FROM orders o
+                WHERE o.status IN ('OPEN','READY_TO_PAY') AND o.table_id IS NOT NULL;
+        "#,
+    },
+    Migration {
+        version: 7,
+        name: "invoice context snapshot and takeaway receipt type",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- INVOICE SNAPSHOT OF THE ORDER CONTEXT
+            -- The receipt must stay reproducible: the takeaway number is
+            -- stored on the invoice, never re-derived from mutable rows.
+            -- ============================================================
+            ALTER TABLE invoices ADD COLUMN order_type TEXT NOT NULL DEFAULT 'TABLE';
+            ALTER TABLE invoices ADD COLUMN takeaway_no INTEGER;
+
+            -- ============================================================
+            -- TAKEAWAY RECEIPT DOCUMENT TYPE
+            -- print_jobs has a CHECK on doc_type → rebuild (append-only log,
+            -- nothing references it; every row is preserved).
+            -- ============================================================
+            CREATE TABLE print_jobs_new (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                doc_type     TEXT NOT NULL CHECK
+                    (doc_type IN ('CAFE_INVOICE','WASH_INVOICE','HYBRID_INVOICE','TAKEAWAY_INVOICE',
+                                  'WASH_TICKET','SHIFT_REPORT','DAY_REPORT','TEST')),
+                ref_id       INTEGER,
+                content_hash TEXT NOT NULL,
+                status       TEXT NOT NULL DEFAULT 'PENDING'
+                             CHECK (status IN ('PENDING','PRINTED','FAILED')),
+                attempts     INTEGER NOT NULL DEFAULT 0,
+                error        TEXT,
+                created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO print_jobs_new (id, doc_type, ref_id, content_hash, status,
+                                        attempts, error, created_at)
+                SELECT id, doc_type, ref_id, content_hash, status, attempts, error, created_at
+                FROM print_jobs;
+            DROP TABLE print_jobs;
+            ALTER TABLE print_jobs_new RENAME TO print_jobs;
+            CREATE INDEX IF NOT EXISTS idx_print_jobs_hash ON print_jobs(content_hash);
+        "#,
+    },
 ];
 
 pub fn migrate(conn: &Db) -> AppResult<()> {
+    apply_migrations(conn, None)
+}
+
+/// Apply embedded migrations in version order. `up_to` is used by tests to
+/// build a pre-upgrade database and verify the data-preserving path.
+fn apply_migrations(conn: &Db, up_to: Option<i64>) -> AppResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
             version     INTEGER PRIMARY KEY,
@@ -430,27 +583,56 @@ pub fn migrate(conn: &Db) -> AppResult<()> {
     )?;
 
     for m in MIGRATIONS {
-        if m.version <= current {
+        if m.version <= current || up_to.is_some_and(|v| m.version > v) {
             continue;
+        }
+        // A table rebuild must run with FK enforcement off (SQLite ignores the
+        // pragma inside a transaction); integrity is verified before commit.
+        if m.needs_fk_off {
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
         }
         conn.execute_batch("BEGIN IMMEDIATE;")?;
         let result = conn
             .execute_batch(m.sql)
+            .map_err(AppError::from)
+            .and_then(|_| check_no_fk_violations(conn))
             .and_then(|_| {
-                conn.execute(
-                    "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
-                    rusqlite::params![m.version, m.name],
-                )
-            })
-            .map_err(AppError::from);
+                let n = conn
+                    .execute(
+                        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
+                        rusqlite::params![m.version, m.name],
+                    )
+                    .map_err(AppError::from)?;
+                Ok(n)
+            });
         match result {
             Ok(_) => conn.execute_batch("COMMIT;")?,
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK;");
+                if m.needs_fk_off {
+                    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+                }
                 return Err(e);
             }
         }
+        if m.needs_fk_off {
+            conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        }
         log::info!("applied migration {}: {}", m.version, m.name);
+    }
+    Ok(())
+}
+
+/// Safety net for migrations that rebuild tables: never leave the database
+/// with dangling references (checked BEFORE the migration commits).
+fn check_no_fk_violations(conn: &Db) -> AppResult<()> {
+    let mut stmt = conn.prepare("PRAGMA foreign_key_check;")?;
+    let mut rows = stmt.query([])?;
+    if let Some(row) = rows.next()? {
+        let table: String = row.get(0).unwrap_or_default();
+        return Err(AppError::internal(format!(
+            "foreign key violation in {table}"
+        )));
     }
     Ok(())
 }
@@ -459,10 +641,15 @@ pub fn migrate(conn: &Db) -> AppResult<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn migrations_apply_in_order_and_are_idempotent() {
+    fn memory_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn
+    }
+
+    #[test]
+    fn migrations_apply_in_order_and_are_idempotent() {
+        let conn = memory_db();
         migrate(&conn).unwrap();
         // Running twice must be a no-op
         migrate(&conn).unwrap();
@@ -483,6 +670,7 @@ mod tests {
             "customers",
             "cars",
             "cafe_tables",
+            "table_sessions",
             "orders",
             "order_lines",
             "invoices",
@@ -507,5 +695,120 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 1, "table {table} should exist");
         }
+    }
+
+    /// Production-like upgrade path: a database written by the previous schema
+    /// (v4) must keep every order/invoice/line row and its references intact.
+    #[test]
+    fn order_context_upgrade_preserves_historical_data() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(4)).unwrap();
+
+        // Legacy shape: a live order (with a line), a paid invoice + payment,
+        // a closed order and a print job — all pre-upgrade data.
+        conn.execute_batch(
+            "INSERT INTO users (name, role, password_hash) VALUES ('u','STAFF','x');
+             INSERT INTO cafe_tables (label) VALUES ('طاولة 01'), ('طاولة 02');
+             INSERT INTO business_days (day_date, opened_at) VALUES ('2026-01-01', datetime('now'));
+             INSERT INTO products (name, item_type, department, price_minor)
+                 VALUES ('قهوة','PRODUCT','CAFE',3000);
+             INSERT INTO orders (table_id, user_id, business_day_id, status, customer_id, waiting_no)
+                 VALUES (1, 1, 1, 'OPEN', NULL, NULL);
+             INSERT INTO orders (table_id, user_id, business_day_id, status)
+                 VALUES (2, 1, 1, 'CLOSED');
+             INSERT INTO order_lines (order_id, product_id, department, product_name, unit_price, quantity, line_total)
+                 VALUES (1, 1, 'CAFE', 'قهوة', 3000, 2, 6000);
+             INSERT INTO invoices (invoice_no, order_id, table_label, business_day_id, user_id,
+                                   status, subtotal, total, paid_amount)
+                 VALUES (1, 2, 'طاولة 02', 1, 1, 'PAID', 6000, 6000, 6000);
+             INSERT INTO invoice_lines (invoice_id, department, product_name, unit_price, quantity, line_total)
+                 VALUES (1, 'CAFE', 'قهوة', 3000, 2, 6000);
+             INSERT INTO payments (invoice_id, method, amount, user_id) VALUES (1, 'CASH', 6000, 1);
+             INSERT INTO print_jobs (doc_type, ref_id, content_hash, status)
+                 VALUES ('CAFE_INVOICE', 1, 'hash1', 'PRINTED');",
+        )
+        .unwrap();
+
+        // Upgrade.
+        migrate(&conn).unwrap();
+
+        let counts: (i64, i64, i64, i64, i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM orders),
+                        (SELECT COUNT(*) FROM order_lines),
+                        (SELECT COUNT(*) FROM invoices),
+                        (SELECT COUNT(*) FROM invoice_lines),
+                        (SELECT COUNT(*) FROM payments),
+                        (SELECT COUNT(*) FROM print_jobs)",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(counts, (2, 1, 1, 1, 1, 1));
+
+        // Order ids/references survive the rebuild and legacy rows read back.
+        let (otype, table_id, status): (String, i64, String) = conn
+            .query_row(
+                "SELECT order_type, table_id, status FROM orders WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (otype.as_str(), table_id, status.as_str()),
+            ("TABLE", 1, "OPEN")
+        );
+
+        // Live order → backfilled session linked to that order.
+        let (sessions, session_order): (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(order_id), 0) FROM table_sessions",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((sessions, session_order), (1, 1));
+
+        // Invoice context defaults to a table order and keeps its order link.
+        let (itype, takeaway, order_id): (String, Option<i64>, i64) = conn
+            .query_row(
+                "SELECT order_type, takeaway_no, order_id FROM invoices WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((itype.as_str(), takeaway, order_id), ("TABLE", None, 2));
+
+        // The rebuilt orders table accepts a table-less takeaway order, refuses
+        // one that fakes a table, and refuses a duplicate takeaway number.
+        conn.execute(
+            "INSERT INTO orders (order_type, user_id, business_day_id, takeaway_no)
+             VALUES ('TAKEAWAY', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+        assert!(conn
+            .execute(
+                "INSERT INTO orders (order_type, table_id, user_id, business_day_id)
+                 VALUES ('TAKEAWAY', 1, 1, 1)",
+                [],
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "INSERT INTO orders (order_type, user_id, business_day_id, takeaway_no)
+                 VALUES ('TAKEAWAY', 1, 1, 1)",
+                [],
+            )
+            .is_err());
     }
 }

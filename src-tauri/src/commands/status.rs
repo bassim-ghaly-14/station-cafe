@@ -24,5 +24,8 @@ pub fn db_status(state: State<'_, AppState>) -> AppResult<DbStatus> {
         [],
         |row| row.get(0),
     )?;
-    Ok(DbStatus { ok: true, schema_version: version })
+    Ok(DbStatus {
+        ok: true,
+        schema_version: version,
+    })
 }

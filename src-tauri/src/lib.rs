@@ -54,7 +54,9 @@ pub fn run() {
             // it is deterministic and safe to re-run.
             seed::run_if_empty(&conn)?;
 
-            app.manage(AppState { conn: Mutex::new(conn) });
+            app.manage(AppState {
+                conn: Mutex::new(conn),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -83,6 +85,10 @@ pub fn run() {
             commands::customers::create_car,
             commands::pos::list_tables,
             commands::pos::open_table,
+            commands::pos::close_empty_table,
+            commands::pos::start_order,
+            commands::pos::start_takeaway,
+            commands::pos::discard_order,
             commands::pos::get_order,
             commands::pos::add_order_line,
             commands::pos::set_line_quantity,
@@ -127,4 +133,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

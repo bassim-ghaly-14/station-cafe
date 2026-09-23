@@ -5,9 +5,7 @@ use crate::error::AppResult;
 use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome};
 use crate::repositories::ops::{Expense, MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
-use crate::services::reports::{
-    self, AuditEntry, ProductSales, SalesByDay, TodaySummary,
-};
+use crate::services::reports::{self, AuditEntry, ProductSales, SalesByDay, TodaySummary};
 use crate::AppState;
 use tauri::State;
 
@@ -24,7 +22,9 @@ pub fn list_stock_movements(
     token: String,
     limit: i64,
 ) -> AppResult<Vec<MovementRow>> {
-    authorized(&state, &token, "MANAGER", move |conn, _| ops_svc::list_movements(conn, limit))
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        ops_svc::list_movements(conn, limit)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -83,7 +83,9 @@ pub fn create_expense(
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn today_summary(state: State<'_, AppState>, token: String) -> AppResult<TodaySummary> {
-    authorized(&state, &token, "STAFF", |conn, _| reports::today_summary(conn))
+    authorized(&state, &token, "STAFF", |conn, _| {
+        reports::today_summary(conn)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -126,7 +128,9 @@ pub fn list_audit(
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_print_config(state: State<'_, AppState>, token: String) -> AppResult<PrintConfig> {
-    authorized(&state, &token, "MANAGER", |conn, _| printing::get_config(conn))
+    authorized(&state, &token, "MANAGER", |conn, _| {
+        printing::get_config(conn)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -156,7 +160,9 @@ pub fn set_print_config(
 /// Test print — explicit user action, so duplicate protection is bypassed.
 #[tauri::command(rename_all = "snake_case")]
 pub fn print_test(state: State<'_, AppState>, token: String) -> AppResult<PrintOutcome> {
-    authorized(&state, &token, "MANAGER", |conn, _| printing::print_test(conn, true))
+    authorized(&state, &token, "MANAGER", |conn, _| {
+        printing::print_test(conn, true)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -213,5 +219,7 @@ pub fn list_print_jobs(
     token: String,
     limit: i64,
 ) -> AppResult<Vec<PrintJobRow>> {
-    authorized(&state, &token, "MANAGER", move |conn, _| printing::recent_jobs(conn, limit))
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        printing::recent_jobs(conn, limit)
+    })
 }

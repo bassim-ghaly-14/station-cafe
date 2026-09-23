@@ -89,7 +89,13 @@ pub fn update_customer(
         return Err(AppError::validation("customers.name_required"));
     }
     authorized(&state, &token, "MANAGER", move |conn, actor| {
-        customers::update(conn, customer_id, &name, input.phone.as_deref(), input.notes.as_deref())?;
+        customers::update(
+            conn,
+            customer_id,
+            &name,
+            input.phone.as_deref(),
+            input.notes.as_deref(),
+        )?;
         crate::services::audit::record(
             conn,
             Some(actor.id),

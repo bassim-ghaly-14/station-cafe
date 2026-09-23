@@ -36,7 +36,11 @@ pub struct EscPos {
 
 impl EscPos {
     pub fn new(arabic_mode: ArabicMode, codepage: u8) -> Self {
-        let mut p = Self { buf: Vec::new(), arabic_mode, codepage };
+        let mut p = Self {
+            buf: Vec::new(),
+            arabic_mode,
+            codepage,
+        };
         p.init();
         p
     }
@@ -61,7 +65,8 @@ impl EscPos {
     }
 
     pub fn bold(&mut self, on: bool) {
-        self.buf.extend_from_slice(&[ESC, b'E', if on { 1 } else { 0 }]);
+        self.buf
+            .extend_from_slice(&[ESC, b'E', if on { 1 } else { 0 }]);
     }
 
     /// Character size multiplier (1..=3 per axis).
@@ -147,7 +152,11 @@ pub fn bidi_line(text: &str) -> String {
     }
     let mut runs: Vec<(Run, String)> = Vec::new();
     for ch in text.chars() {
-        let kind = if is_arabic(ch) { Run::Arabic } else { Run::Other };
+        let kind = if is_arabic(ch) {
+            Run::Arabic
+        } else {
+            Run::Other
+        };
         match runs.last_mut() {
             Some((k, s)) if *k == kind => s.push(ch),
             _ => runs.push((kind, ch.to_string())),
@@ -163,7 +172,10 @@ pub fn bidi_line(text: &str) -> String {
         .collect();
     separators.reverse();
 
-    let trimmed: Vec<String> = runs.into_iter().map(|(_, s)| s.trim().to_string()).collect();
+    let trimmed: Vec<String> = runs
+        .into_iter()
+        .map(|(_, s)| s.trim().to_string())
+        .collect();
     let mut trimmed = trimmed;
     trimmed.reverse();
     let mut out = String::new();
@@ -223,9 +235,9 @@ fn cp1256_byte(ch: char) -> u8 {
         '\u{0641}'..='\u{0652}' => 0xE1 + (c - 0x0641) as u8,
         '\u{0670}' => 0xF3,
         '\u{0679}'..='\u{06D5}' => 0xF4 + (c - 0x0679) as u8,
-        '\u{060C}' => 0xA1, // Arabic comma
-        '\u{061B}' => 0xBA, // Arabic semicolon
-        '\u{061F}' => 0xBF, // Arabic question mark
+        '\u{060C}' => 0xA1,                                   // Arabic comma
+        '\u{061B}' => 0xBA,                                   // Arabic semicolon
+        '\u{061F}' => 0xBF,                                   // Arabic question mark
         '\u{0660}'..='\u{0669}' => 0x30 + (c - 0x0660) as u8, // Arabic-Indic digits → ASCII
         '\u{2013}' | '\u{2014}' => b'-',
         '\u{00A0}' => b' ',

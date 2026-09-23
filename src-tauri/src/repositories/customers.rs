@@ -37,7 +37,13 @@ pub fn insert(conn: &Db, name: &str, phone: Option<&str>, notes: Option<&str>) -
     Ok(conn.last_insert_rowid())
 }
 
-pub fn update(conn: &Db, id: i64, name: &str, phone: Option<&str>, notes: Option<&str>) -> AppResult<()> {
+pub fn update(
+    conn: &Db,
+    id: i64,
+    name: &str,
+    phone: Option<&str>,
+    notes: Option<&str>,
+) -> AppResult<()> {
     conn.execute(
         "UPDATE customers SET name = ?2, phone = ?3, notes = ?4, updated_at = datetime('now')
          WHERE id = ?1",
@@ -49,7 +55,12 @@ pub fn update(conn: &Db, id: i64, name: &str, phone: Option<&str>, notes: Option
 const CUST_COLS: &str = "id, name, phone, notes";
 
 fn cust_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Customer> {
-    Ok(Customer { id: r.get(0)?, name: r.get(1)?, phone: r.get(2)?, notes: r.get(3)? })
+    Ok(Customer {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        phone: r.get(2)?,
+        notes: r.get(3)?,
+    })
 }
 
 /// Search by name / phone / plate — one endpoint for the POS lookup box.
@@ -103,7 +114,12 @@ pub fn find_cars_by_plate(conn: &Db, plate: &str) -> AppResult<Vec<(Car, Custome
                 car_model: r.get(3)?,
                 notes: r.get(4)?,
             },
-            Customer { id: r.get(5)?, name: r.get(6)?, phone: r.get(7)?, notes: r.get(8)? },
+            Customer {
+                id: r.get(5)?,
+                name: r.get(6)?,
+                phone: r.get(7)?,
+                notes: r.get(8)?,
+            },
         ))
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)

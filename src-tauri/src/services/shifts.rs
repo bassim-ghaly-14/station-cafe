@@ -30,8 +30,8 @@ pub fn open_day(conn: &Db, actor: &User) -> AppResult<i64> {
     if shifts::current_day(&tx)?.is_some() {
         return Err(AppError::business("day.already_open"));
     }
-    let id = shifts::open_day(&tx, actor.id)?
-        .ok_or_else(|| AppError::conflict("day.already_exists"))?;
+    let id =
+        shifts::open_day(&tx, actor.id)?.ok_or_else(|| AppError::conflict("day.already_exists"))?;
     crate::services::audit::record(
         &tx,
         Some(actor.id),
@@ -95,7 +95,16 @@ pub fn close_shift(conn: &Db, actor: &User, actual_cash: Money) -> AppResult<Shi
     let credit = shifts::shift_credit_sales(&tx, shift.id)?;
     let expected = shift.opening_cash + cash; // cash expenses tracked at day level
     shifts::save_shift_closing(
-        &tx, shift.id, cash, card, credit, sc, disc, count, expected, actual_cash,
+        &tx,
+        shift.id,
+        cash,
+        card,
+        credit,
+        sc,
+        disc,
+        count,
+        expected,
+        actual_cash,
     )?;
     crate::services::audit::record(
         &tx,
@@ -112,7 +121,8 @@ pub fn close_shift(conn: &Db, actor: &User, actual_cash: Money) -> AppResult<Shi
     )?;
     tx.commit()?;
     Ok(ShiftClosing {
-        shift: shifts::get_shift(conn, shift.id)?.ok_or_else(|| AppError::internal("shift lost"))?,
+        shift: shifts::get_shift(conn, shift.id)?
+            .ok_or_else(|| AppError::internal("shift lost"))?,
         expected_cash: expected,
         difference: actual_cash - expected,
     })

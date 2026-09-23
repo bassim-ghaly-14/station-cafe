@@ -64,8 +64,9 @@ pub fn find_by_id(conn: &Db, id: i64) -> AppResult<Option<User>> {
 }
 
 pub fn list(conn: &Db) -> AppResult<Vec<User>> {
-    let mut stmt =
-        conn.prepare(&format!("SELECT {USER_COLS} FROM users ORDER BY role, name"))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {USER_COLS} FROM users ORDER BY role, name"
+    ))?;
     let rows = stmt.query_map([], row_to_user)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }

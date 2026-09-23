@@ -16,15 +16,19 @@ pub struct InvoiceLine {
 }
 
 /// Insert a full invoice + lines inside the caller's transaction.
+/// `order_type` / `takeaway_no` are snapshotted: the printed document must
+/// stay reproducible even though the order row is mutable/archived later.
 #[allow(clippy::too_many_arguments)]
 pub fn insert_invoice(
     conn: &Db,
     invoice_no: i64,
     order_id: i64,
-    table_label: &str,
+    table_label: Option<&str>,
     business_day_id: i64,
     shift_id: Option<i64>,
     user_id: i64,
+    order_type: &str,
+    takeaway_no: Option<i64>,
     customer_id: Option<i64>,
     subtotal: i64,
     discount_minor: i64,
@@ -38,13 +42,27 @@ pub fn insert_invoice(
 ) -> AppResult<i64> {
     conn.execute(
         "INSERT INTO invoices (invoice_no, order_id, table_label, business_day_id, shift_id,
-            user_id, customer_id, subtotal, discount_minor, discount_mode, discount_value,
-            service_charge, total, cafe_total, wash_total)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+            user_id, order_type, takeaway_no, customer_id, subtotal, discount_minor,
+            discount_mode, discount_value, service_charge, total, cafe_total, wash_total)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
         params![
-            invoice_no, order_id, table_label, business_day_id, shift_id, user_id, customer_id,
-            subtotal, discount_minor, discount_mode, discount_value, service_charge, total,
-            cafe_total, wash_total
+            invoice_no,
+            order_id,
+            table_label,
+            business_day_id,
+            shift_id,
+            user_id,
+            order_type,
+            takeaway_no,
+            customer_id,
+            subtotal,
+            discount_minor,
+            discount_mode,
+            discount_value,
+            service_charge,
+            total,
+            cafe_total,
+            wash_total
         ],
     )?;
     let inv = conn.last_insert_rowid();
@@ -54,7 +72,13 @@ pub fn insert_invoice(
     )?;
     for l in lines {
         stmt.execute(params![
-            inv, l.department, l.product_name, l.unit_price, l.quantity, l.discount_minor, l.line_total
+            inv,
+            l.department,
+            l.product_name,
+            l.unit_price,
+            l.quantity,
+            l.discount_minor,
+            l.line_total
         ])?;
     }
     Ok(inv)
@@ -122,7 +146,11 @@ pub fn apply_payment_to_invoice(conn: &Db, invoice_id: i64, amount: i64) -> AppR
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let new_paid = paid + amount;
-    let status = if new_paid >= total { "PAID" } else { "PARTIALLY_PAID" };
+    let status = if new_paid >= total {
+        "PAID"
+    } else {
+        "PARTIALLY_PAID"
+    };
     conn.execute(
         "UPDATE invoices SET paid_amount = ?2, status = ?3,
             paid_at = COALESCE(paid_at, CASE WHEN ?3 = 'PAID' THEN datetime('now') END)
@@ -133,7 +161,10 @@ pub fn apply_payment_to_invoice(conn: &Db, invoice_id: i64, amount: i64) -> AppR
 }
 
 pub fn mark_invoice_credit(conn: &Db, invoice_id: i64) -> AppResult<()> {
-    conn.execute("UPDATE invoices SET status = 'CREDIT' WHERE id = ?1", [invoice_id])?;
+    conn.execute(
+        "UPDATE invoices SET status = 'CREDIT' WHERE id = ?1",
+        [invoice_id],
+    )?;
     Ok(())
 }
 
@@ -152,6 +183,8 @@ pub struct InvoiceRow {
     pub id: i64,
     pub invoice_no: i64,
     pub table_label: Option<String>,
+    pub order_type: String,
+    pub takeaway_no: Option<i64>,
     pub status: String,
     pub total: i64,
     pub paid_amount: i64,
@@ -168,29 +201,31 @@ pub struct InvoiceRow {
     pub business_day_id: Option<i64>,
 }
 
-const INV_COLS: &str = "i.id, i.invoice_no, i.table_label, i.status, i.total, i.paid_amount,
-    i.service_charge, i.discount_minor, i.subtotal, i.cafe_total, i.wash_total,
-    k.name, k.phone, ic.car_plate, i.created_at, i.shift_id, i.business_day_id";
+const INV_COLS: &str = "i.id, i.invoice_no, i.table_label, i.order_type, i.takeaway_no, i.status,
+    i.total, i.paid_amount, i.service_charge, i.discount_minor, i.subtotal, i.cafe_total,
+    i.wash_total, k.name, k.phone, ic.car_plate, i.created_at, i.shift_id, i.business_day_id";
 
 fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
     Ok(InvoiceRow {
         id: r.get(0)?,
         invoice_no: r.get(1)?,
         table_label: r.get(2)?,
-        status: r.get(3)?,
-        total: r.get(4)?,
-        paid_amount: r.get(5)?,
-        service_charge: r.get(6)?,
-        discount_minor: r.get(7)?,
-        subtotal: r.get(8)?,
-        cafe_total: r.get(9)?,
-        wash_total: r.get(10)?,
-        customer_name: r.get(11)?,
-        customer_phone: r.get(12)?,
-        car_plate: r.get(13)?,
-        created_at: r.get(14)?,
-        shift_id: r.get(15)?,
-        business_day_id: r.get(16)?,
+        order_type: r.get(3)?,
+        takeaway_no: r.get(4)?,
+        status: r.get(5)?,
+        total: r.get(6)?,
+        paid_amount: r.get(7)?,
+        service_charge: r.get(8)?,
+        discount_minor: r.get(9)?,
+        subtotal: r.get(10)?,
+        cafe_total: r.get(11)?,
+        wash_total: r.get(12)?,
+        customer_name: r.get(13)?,
+        customer_phone: r.get(14)?,
+        car_plate: r.get(15)?,
+        created_at: r.get(16)?,
+        shift_id: r.get(17)?,
+        business_day_id: r.get(18)?,
     })
 }
 
@@ -217,7 +252,8 @@ pub fn search_invoices(
         args.push(format!("%{qq}%"));
         sql.push_str(&format!(
             " AND (CAST(i.invoice_no AS TEXT) LIKE ?{n} OR k.name LIKE ?{n} OR k.phone LIKE ?{n}
-              OR ic.car_plate LIKE ?{n} OR i.table_label LIKE ?{n})",
+              OR ic.car_plate LIKE ?{n} OR i.table_label LIKE ?{n}
+              OR CAST(i.takeaway_no AS TEXT) LIKE ?{n})",
             n = args.len()
         ));
     }
@@ -234,8 +270,7 @@ pub fn search_invoices(
     }
     sql.push_str(" ORDER BY i.id DESC LIMIT 200");
     let mut stmt = conn.prepare(&sql)?;
-    let refs: Vec<&dyn rusqlite::ToSql> =
-        args.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
     let rows = stmt.query_map(refs.as_slice(), inv_row)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
@@ -339,7 +374,11 @@ pub fn pay_credit(conn: &Db, account_id: i64, amount: i64, user_id: i64) -> AppR
         params![account_id, amount, user_id],
     )?;
     let new_paid = paid + amount;
-    let status = if new_paid == orig { "PAID" } else { "PARTIALLY_PAID" };
+    let status = if new_paid == orig {
+        "PAID"
+    } else {
+        "PARTIALLY_PAID"
+    };
     conn.execute(
         "UPDATE credit_accounts SET paid_total = ?2, status = ?3, updated_at = datetime('now')
          WHERE id = ?1",
@@ -370,6 +409,10 @@ pub fn list_credit_accounts(conn: &Db) -> AppResult<Vec<CreditAccount>> {
 
 pub fn invoice_by_order(conn: &Db, order_id: i64) -> AppResult<Option<i64>> {
     Ok(conn
-        .query_row("SELECT id FROM invoices WHERE order_id = ?1", [order_id], |r| r.get(0))
+        .query_row(
+            "SELECT id FROM invoices WHERE order_id = ?1",
+            [order_id],
+            |r| r.get(0),
+        )
         .ok())
 }

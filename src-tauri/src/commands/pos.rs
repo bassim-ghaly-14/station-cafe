@@ -12,10 +12,13 @@ use tauri::State;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_tables(state: State<'_, AppState>, token: String) -> AppResult<Vec<TableView>> {
-    authorized(&state, &token, "STAFF", |conn, _| pos_svc::list_tables(conn))
+    authorized(&state, &token, "STAFF", |conn, _| {
+        pos_svc::list_tables(conn)
+    })
 }
 
-/// Opening a table requires an OPEN business day + the caller's ACTIVE shift.
+/// Opening a table starts an explicit lifecycle session (no order is created).
+/// Requires an OPEN business day + the caller's ACTIVE shift.
 #[tauri::command(rename_all = "snake_case")]
 pub fn open_table(state: State<'_, AppState>, token: String, table_id: i64) -> AppResult<i64> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
@@ -23,9 +26,47 @@ pub fn open_table(state: State<'_, AppState>, token: String, table_id: i64) -> A
     })
 }
 
+/// Close a table that was opened and never ordered (no invoice, no revenue).
+#[tauri::command(rename_all = "snake_case")]
+pub fn close_empty_table(
+    state: State<'_, AppState>,
+    token: String,
+    table_id: i64,
+) -> AppResult<()> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::close_empty_table(conn, actor, table_id)
+    })
+}
+
+/// Enter an order for a table that is already OPEN.
+#[tauri::command(rename_all = "snake_case")]
+pub fn start_order(state: State<'_, AppState>, token: String, table_id: i64) -> AppResult<i64> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::start_order(conn, actor, table_id)
+    })
+}
+
+/// Start a first-class takeaway order (independent of any table).
+#[tauri::command(rename_all = "snake_case")]
+pub fn start_takeaway(state: State<'_, AppState>, token: String) -> AppResult<i64> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::start_takeaway(conn, actor)
+    })
+}
+
+/// Discard an itemless cart (never an order that holds items).
+#[tauri::command(rename_all = "snake_case")]
+pub fn discard_order(state: State<'_, AppState>, token: String, order_id: i64) -> AppResult<()> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::discard_order(conn, actor, order_id)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_order(state: State<'_, AppState>, token: String, order_id: i64) -> AppResult<Order> {
-    authorized(&state, &token, "STAFF", move |conn, _| pos_svc::get_order(conn, order_id))
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        pos_svc::get_order(conn, order_id)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -95,7 +136,12 @@ pub fn attach_customer(
     input: AttachCustomerInput,
 ) -> AppResult<()> {
     authorized(&state, &token, "STAFF", move |conn, _| {
-        pos_svc::attach_customer(conn, input.order_id, input.customer_id, input.car_plate.as_deref())
+        pos_svc::attach_customer(
+            conn,
+            input.order_id,
+            input.customer_id,
+            input.car_plate.as_deref(),
+        )
     })
 }
 
@@ -187,7 +233,9 @@ pub fn list_credit_accounts(
     state: State<'_, AppState>,
     token: String,
 ) -> AppResult<Vec<CreditAccount>> {
-    authorized(&state, &token, "STAFF", |conn, _| invoices::list_credit_accounts(conn))
+    authorized(&state, &token, "STAFF", |conn, _| {
+        invoices::list_credit_accounts(conn)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -26,12 +26,14 @@ export interface OrderLine {
 
 export interface PosOrder {
   id: number
-  table_id: number
+  order_type: 'TABLE' | 'TAKEAWAY'
+  table_id: number | null
   user_id: number
   status: string
   customer_id: number | null
   opened_at: string
   waiting_no: number | null
+  takeaway_no: number | null
   shift_id: number | null
   lines: OrderLine[]
 }
@@ -39,11 +41,14 @@ export interface PosOrder {
 export interface TableView {
   id: number
   label: string
-  status: 'EMPTY' | 'OPEN' | 'READY_TO_PAY'
+  status: 'EMPTY' | 'OPEN' | 'OCCUPIED' | 'READY_TO_PAY'
   order_id: number | null
+  session_id: number | null
   items_count: number
   total_minor: number
   opened_at: string | null
+  opens_today: number
+  closed_empty_today: number
 }
 
 export interface OrderPreview {
@@ -78,6 +83,8 @@ export interface InvoiceRow {
   id: number
   invoice_no: number
   table_label: string | null
+  order_type: 'TABLE' | 'TAKEAWAY'
+  takeaway_no: number | null
   status: string
   total: number
   paid_amount: number
@@ -140,6 +147,10 @@ export interface PrintOutcome {
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
   openTable: (table_id: number) => call<number>('open_table', { table_id }),
+  closeEmptyTable: (table_id: number) => call<void>('close_empty_table', { table_id }),
+  startOrder: (table_id: number) => call<number>('start_order', { table_id }),
+  startTakeaway: () => call<number>('start_takeaway'),
+  discardOrder: (order_id: number) => call<void>('discard_order', { order_id }),
   getOrder: (order_id: number) => call<PosOrder>('get_order', { order_id }),
   addLine: (order_id: number, product_id: number, quantity: number) =>
     call<PosOrder>('add_order_line', { order_id, product_id, quantity }),

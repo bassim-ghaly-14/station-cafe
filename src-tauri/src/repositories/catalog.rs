@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct Product {
     pub id: i64,
     pub name: String,
-    pub item_type: String, // PRODUCT | SERVICE
+    pub item_type: String,  // PRODUCT | SERVICE
     pub department: String, // CAFE | WASH
     pub price_minor: i64,
     pub is_active: bool,
@@ -17,7 +17,8 @@ pub struct Product {
     pub is_seed: bool,
 }
 
-const COLS: &str = "id, name, item_type, department, price_minor, is_active, track_inventory, is_seed";
+const COLS: &str =
+    "id, name, item_type, department, price_minor, is_active, track_inventory, is_seed";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -73,14 +74,24 @@ pub fn insert(conn: &Db, p: &NewProduct<'_>) -> AppResult<i64> {
     conn.execute(
         "INSERT INTO products (name, item_type, department, price_minor, track_inventory)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![p.name, p.item_type, p.department, p.price_minor, p.track_inventory as i64],
+        params![
+            p.name,
+            p.item_type,
+            p.department,
+            p.price_minor,
+            p.track_inventory as i64
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 /// Returns the previous row state (name/price/active) for audit purposes.
 pub fn update_price(conn: &Db, id: i64, price_minor: i64) -> AppResult<i64> {
-    let old: i64 = conn.query_row("SELECT price_minor FROM products WHERE id = ?1", [id], |r| r.get(0))?;
+    let old: i64 = conn.query_row(
+        "SELECT price_minor FROM products WHERE id = ?1",
+        [id],
+        |r| r.get(0),
+    )?;
     conn.execute(
         "UPDATE products SET price_minor = ?2, updated_at = datetime('now') WHERE id = ?1",
         params![id, price_minor],

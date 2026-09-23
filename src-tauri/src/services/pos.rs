@@ -1,6 +1,14 @@
-//! POS workflow service — tables, orders, order lines, pricing preview.
-//! All order mutations run inside transactions; shift gating is enforced
-//! HERE (not in the UI): no open business day + active shift → no tables.
+//! POS workflow service — tables, table sessions, orders, order lines,
+//! pricing preview, takeaway.
+//! All order/session mutations run inside transactions; shift gating is
+//! enforced HERE (not in the UI): no open business day + active shift → no
+//! tables and no orders.
+//!
+//! TABLE LIFECYCLE (explicit, never implicit):
+//!   EMPTY --open_table--> OPEN(session) --start_order--> OCCUPIED(order)
+//!   OPEN(session) --close_empty_table--> EMPTY   (no invoice, no revenue)
+//!   OCCUPIED --checkout--> EMPTY                 (invoice + payment)
+//! Clicking a table card in the UI never calls any of these.
 
 use crate::error::{AppError, AppResult};
 use crate::money::{self, Money, Rate};
@@ -15,24 +23,145 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 pub fn list_tables(conn: &Db) -> AppResult<Vec<TableView>> {
-    pos::list_tables(conn)
+    // Lifecycle counters are scoped to the current business day (none → zeros).
+    let day = shifts::current_day(conn)?;
+    pos::list_tables(conn, day.map(|d| d.id))
 }
 
+/// Gates shared by every order/session-creating POS action: an OPEN business
+/// day plus the caller's own ACTIVE shift (the order must belong to the shift
+/// that will later be closed, so shift totals stay correct).
+fn require_day_and_shift(
+    conn: &Db,
+    actor: &User,
+) -> AppResult<(shifts::BusinessDay, shifts::ShiftRow)> {
+    let day =
+        shifts::current_day(conn)?.ok_or_else(|| AppError::business("pos.no_business_day"))?;
+    let shift = shifts::active_shift_for(conn, actor.id)?
+        .ok_or_else(|| AppError::business("pos.no_active_shift"))?;
+    Ok((day, shift))
+}
+
+/// OPEN a table: starts an explicit lifecycle session. NO order is created —
+/// the customer may sit down and leave without ordering anything.
 pub fn open_table(conn: &Db, actor: &User, table_id: i64) -> AppResult<i64> {
-    // Gate 1: an explicit OPEN business day must exist.
-    let day = shifts::current_day(conn)?.ok_or_else(|| AppError::business("pos.no_business_day"))?;
-    // Gate 2: the staff member must have their own ACTIVE shift.
-    let shift =
-        shifts::active_shift_for(conn, actor.id)?.ok_or_else(|| AppError::business("pos.no_active_shift"))?;
-    // Gate 3: table exists.
-    pos::get_table(conn, table_id)?.ok_or_else(|| AppError::not_found("pos.table_not_found"))?;
-    // Gate 4: no live order already on the table (DB constraint backs this).
-    pos::open_order(conn, table_id, actor.id, day.id, shift.id)?
-        .ok_or_else(|| AppError::conflict("pos.table_busy"))
+    let tx = conn.unchecked_transaction()?;
+    let (day, shift) = require_day_and_shift(&tx, actor)?;
+    pos::get_table(&tx, table_id)?.ok_or_else(|| AppError::not_found("pos.table_not_found"))?;
+    if pos::active_order_on_table(&tx, table_id)?.is_some() {
+        return Err(AppError::conflict("pos.table_busy"));
+    }
+    // One live session per table (the partial unique index backs this up).
+    let session_id = pos::open_session(&tx, table_id, actor.id, day.id, shift.id)?
+        .ok_or_else(|| AppError::conflict("pos.table_already_open"))?;
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "table.opened",
+        "table",
+        Some(&table_id.to_string()),
+        None,
+        Some(&serde_json::json!({ "session_id": session_id, "shift_id": shift.id })),
+    )?;
+    tx.commit()?;
+    Ok(session_id)
+}
+
+/// Only the employee who opened the table (or a MANAGER+) may end its
+/// lifecycle — service-layer authorization, not a UI hint.
+fn require_session_owner(session: &pos::TableSession, actor: &User) -> AppResult<()> {
+    if session.opened_by != actor.id && actor.role == "STAFF" {
+        return Err(AppError::unauthorized("auth.forbidden"));
+    }
+    Ok(())
+}
+
+/// CLOSE an opened table that never ordered. Rejected as soon as an order
+/// exists — settlement stays exclusively governed by the order/payment flow.
+/// Creates no invoice, no payment and no revenue; the lifecycle event stays.
+pub fn close_empty_table(conn: &Db, actor: &User, table_id: i64) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let session = pos::open_session_of_table(&tx, table_id)?
+        .ok_or_else(|| AppError::business("pos.table_not_open"))?;
+    if pos::active_order_on_table(&tx, table_id)?.is_some() {
+        return Err(AppError::business("pos.table_has_order"));
+    }
+    require_session_owner(&session, actor)?;
+    pos::close_session(&tx, session.id, actor.id)?;
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "table.closed_empty",
+        "table",
+        Some(&table_id.to_string()),
+        None,
+        Some(&serde_json::json!({ "session_id": session.id })),
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Order> {
     pos::get_order(conn, order_id)?.ok_or_else(|| AppError::not_found("pos.order_not_found"))
+}
+
+/// Enter an order for a table that is already OPEN. The table must have been
+/// opened explicitly first; the order is attached to that session so the
+/// lifecycle stays traceable.
+pub fn start_order(conn: &Db, actor: &User, table_id: i64) -> AppResult<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let (day, shift) = require_day_and_shift(&tx, actor)?;
+    pos::get_table(&tx, table_id)?.ok_or_else(|| AppError::not_found("pos.table_not_found"))?;
+    let session = pos::open_session_of_table(&tx, table_id)?
+        .ok_or_else(|| AppError::business("pos.table_not_open"))?;
+    let order_id = pos::open_order(&tx, "TABLE", Some(table_id), actor.id, day.id, shift.id)?
+        .ok_or_else(|| AppError::conflict("pos.table_busy"))?;
+    pos::set_session_order(&tx, session.id, order_id)?;
+    tx.commit()?;
+    Ok(order_id)
+}
+
+/// Start a first-class TAKEAWAY order: independent of any table, persisted
+/// through the normal order flow, payable immediately via `checkout`.
+pub fn start_takeaway(conn: &Db, actor: &User) -> AppResult<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let (day, shift) = require_day_and_shift(&tx, actor)?;
+    let order_id = pos::open_order(&tx, "TAKEAWAY", None, actor.id, day.id, shift.id)?
+        .ok_or_else(|| AppError::internal("order insert failed"))?;
+    tx.commit()?;
+    Ok(order_id)
+}
+
+/// Discard an order that holds no items (an abandoned cart) so it can never
+/// block the day close. Financially inert: no invoice, no payment, no stock.
+/// Orders WITH items stay exclusively governed by the payment flow.
+pub fn discard_order(conn: &Db, actor: &User, order_id: i64) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let order = get_order(&tx, order_id)?;
+    if !order.lines.is_empty() {
+        return Err(AppError::business("pos.order_not_empty"));
+    }
+    if order.status == "CLOSED" || order.status == "CANCELLED" {
+        return Err(AppError::business("pos.order_not_editable"));
+    }
+    if order.user_id != actor.id && actor.role == "STAFF" {
+        return Err(AppError::unauthorized("auth.forbidden"));
+    }
+    pos::set_order_status(&tx, order_id, "CANCELLED")?;
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "order.discarded",
+        "order",
+        Some(&order_id.to_string()),
+        None,
+        Some(&serde_json::json!({ "order_type": order.order_type })),
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 fn require_editable(order: &Order, actor: &User) -> AppResult<()> {
@@ -65,7 +194,15 @@ pub fn add_line(
         return Err(AppError::business("catalog.item_inactive"));
     }
     // Snapshot: name + unit price + department are frozen at this moment.
-    pos::add_line(&tx, order_id, p.id, &p.department, &p.name, p.price_minor, quantity)?;
+    pos::add_line(
+        &tx,
+        order_id,
+        p.id,
+        &p.department,
+        &p.name,
+        p.price_minor,
+        quantity,
+    )?;
     let lines = pos::lines_of(&tx, order_id)?;
     tx.commit()?;
     Ok(Order { lines, ..order })
@@ -76,7 +213,8 @@ pub fn update_line_quantity(conn: &Db, actor: &User, line_id: i64, quantity: i64
         return Err(AppError::validation("pos.invalid_quantity"));
     }
     let tx = conn.unchecked_transaction()?;
-    let line = pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
+    let line =
+        pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
     let order = get_order(&tx, line.order_id)?;
     require_editable(&order, actor)?;
     pos::update_line_quantity(&tx, line_id, quantity)?;
@@ -86,7 +224,8 @@ pub fn update_line_quantity(conn: &Db, actor: &User, line_id: i64, quantity: i64
 
 pub fn remove_line(conn: &Db, actor: &User, line_id: i64) -> AppResult<()> {
     let tx = conn.unchecked_transaction()?;
-    let line = pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
+    let line =
+        pos::line_of(&tx, line_id)?.ok_or_else(|| AppError::not_found("pos.line_not_found"))?;
     let order = get_order(&tx, line.order_id)?;
     require_editable(&order, actor)?;
     pos::remove_line(&tx, line_id)?;
@@ -212,8 +351,9 @@ pub fn issue_wash_ticket(conn: &Db, order_id: i64) -> AppResult<WashTicketData> 
     if !order.lines.iter().any(|l| l.department == "WASH") {
         return Err(AppError::business("wash.no_wash_items"));
     }
-    let customer_id =
-        order.customer_id.ok_or_else(|| AppError::business("wash.customer_required"))?;
+    let customer_id = order
+        .customer_id
+        .ok_or_else(|| AppError::business("wash.customer_required"))?;
     let (name, phone) = {
         let mut stmt = tx.prepare("SELECT name, phone FROM customers WHERE id = ?1")?;
         stmt.query_row([customer_id], |r| Ok((r.get(0)?, r.get(1)?)))?

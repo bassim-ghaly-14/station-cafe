@@ -83,7 +83,7 @@ export default function LoginPage() {
           />
         </Field>
 
-        <Button type="submit" size="lg" disabled={busy} loading={busy} className="text-body">
+        <Button type="submit" size="lg" variant="default" disabled={busy} loading={busy}>
           {busy ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
 

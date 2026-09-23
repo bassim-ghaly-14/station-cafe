@@ -48,18 +48,27 @@ pub fn list_movements(conn: &Db, limit: i64) -> AppResult<Vec<MovementRow>> {
 }
 
 /// Decrement stock for tracked items sold in an invoice (inside checkout tx).
-pub fn apply_sale_to_inventory(
-    conn: &Db,
-    invoice_id: i64,
-    user_id: i64,
-) -> AppResult<()> {
+pub fn apply_sale_to_inventory(conn: &Db, invoice_id: i64, user_id: i64) -> AppResult<()> {
     for (product_id, qty) in ops::tracked_lines_of_invoice(conn, invoice_id)? {
-        ops::adjust(conn, product_id, -qty, "SALE", None, Some(invoice_id), user_id)?;
+        ops::adjust(
+            conn,
+            product_id,
+            -qty,
+            "SALE",
+            None,
+            Some(invoice_id),
+            user_id,
+        )?;
     }
     Ok(())
 }
 
-pub fn set_min_quantity(conn: &Db, actor: &User, product_id: i64, min_quantity: i64) -> AppResult<()> {
+pub fn set_min_quantity(
+    conn: &Db,
+    actor: &User,
+    product_id: i64,
+    min_quantity: i64,
+) -> AppResult<()> {
     ops::set_min_quantity(conn, product_id, min_quantity)?;
     crate::services::audit::record(
         conn,
@@ -84,8 +93,14 @@ pub struct NewExpense {
 }
 
 pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<i64> {
-    const CATEGORIES: [&str; 6] =
-        ["MAINTENANCE", "SUPPLIES", "UTILITY", "SALARY", "EMERGENCY", "OTHER"];
+    const CATEGORIES: [&str; 6] = [
+        "MAINTENANCE",
+        "SUPPLIES",
+        "UTILITY",
+        "SALARY",
+        "EMERGENCY",
+        "OTHER",
+    ];
     if !CATEGORIES.contains(&input.category.as_str()) {
         return Err(AppError::validation("expenses.invalid_category"));
     }
@@ -93,7 +108,10 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
         return Err(AppError::validation("expenses.invalid_amount"));
     }
     if input.is_recurring
-        && !matches!(input.recurrence.as_deref(), Some("WEEKLY") | Some("MONTHLY"))
+        && !matches!(
+            input.recurrence.as_deref(),
+            Some("WEEKLY") | Some("MONTHLY")
+        )
     {
         return Err(AppError::validation("expenses.invalid_recurrence"));
     }
@@ -104,7 +122,11 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
         .clone()
         .filter(|d| !d.trim().is_empty())
         .unwrap_or_else(crate::services::auth::sqlite_today);
-    let recurrence = if input.is_recurring { input.recurrence.as_deref() } else { None };
+    let recurrence = if input.is_recurring {
+        input.recurrence.as_deref()
+    } else {
+        None
+    };
     let id = ops::insert_expense(
         &tx,
         &input.category,

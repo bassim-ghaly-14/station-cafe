@@ -24,12 +24,16 @@ export function OrderPanel({
   onChange,
   onRefreshTables,
   onPay,
+  onDiscard,
+  discarding,
 }: {
   order: PosOrder
   preview: OrderPreview | null
   onChange: (o: PosOrder) => void
   onRefreshTables: () => void
   onPay: (discountSel: DiscountSel) => void
+  onDiscard?: () => void
+  discarding?: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -100,17 +104,38 @@ export function OrderPanel({
   return (
     <Card>
       <CardHeader
-        title={`${t('pos.order')} ${order.id}`}
+        title={
+          order.order_type === 'TAKEAWAY' && typeof order.takeaway_no === 'number'
+            ? `${t('pos.takeaway')} #${order.takeaway_no} · ${t('pos.order')} ${order.id}`
+            : order.order_type === 'TAKEAWAY'
+              ? `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
+              : `${t('pos.order')} ${order.id}`
+        }
         subtitle={t(`pos.state.${order.status}`)}
         actions={
-          <Button
-            size="sm"
-            onClick={() => onPay(discountRef.current)}
-            disabled={order.lines.length === 0}
-          >
-            <Wallet size={16} aria-hidden />
-            {t('pos.pay')}
-          </Button>
+          <span className="flex items-center gap-2">
+            {onDiscard ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDiscard}
+                disabled={discarding}
+                loading={discarding}
+                aria-label={t('pos.discardOrder')}
+              >
+                <Trash2 size={16} aria-hidden />
+                {t('pos.discardOrder')}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              onClick={() => onPay(discountRef.current)}
+              disabled={order.lines.length === 0}
+            >
+              <Wallet size={16} aria-hidden />
+              {t('pos.pay')}
+            </Button>
+          </span>
         }
       />
       <LineList order={order} onChange={onChange} onRefreshTables={onRefreshTables} />
