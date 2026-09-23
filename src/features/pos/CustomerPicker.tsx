@@ -77,7 +77,9 @@ export function CustomerPicker({
       </div>
 
       {results === null ? (
-        <p className="py-3 text-center text-sm text-foreground-subtle">{t('pos.customerSearchHint')}</p>
+        <p className="py-3 text-center text-sm text-foreground-subtle">
+          {t('pos.customerSearchHint')}
+        </p>
       ) : results.length === 0 ? (
         <p className="py-3 text-center text-sm text-foreground-subtle">{t('pos.noCustomers')}</p>
       ) : (

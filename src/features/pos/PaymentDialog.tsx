@@ -1,21 +1,23 @@
-/** Payment dialog: method, discount echo, cash tendered/change, print. */
+/** Payment dialog: method + live totals, cash tendered/change, print. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog, MoneyDisplay } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
-import { api, type OrderPreview, type PrintOutcome } from '@/services/posApi'
-import { TotalsBlock } from './OrderPanel'
+import { api, type DiscountSel, type OrderPreview, type PrintOutcome } from '@/services/posApi'
+import { TotalsBlock } from './CheckoutSummary'
 import { parseMajor } from '@/lib/utils'
 
 export function PaymentDialog({
   orderId,
+  discount,
   order,
   onClose,
   onDone,
 }: {
   orderId: number
+  discount: DiscountSel
   order?: { order_type?: string; takeaway_no?: number | null } | null
   onClose: () => void
   onDone: (invoiceId: number, outcome: PrintOutcome | null) => void
@@ -28,36 +30,11 @@ export function PaymentDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Discount editing lives in the order panel; the dialog just reads the order's
-  // current discount (set from the panel before opening). Keep these so the
-  // dialog can surface the discount in TotalsBlock and pass it to checkout.
-  const [discountMode, setDiscountMode] = useState<string | null>(null)
-  const [discountValue, setDiscountValue] = useState<number | null>(null)
-
-  // Sync the dialog's discount state with the order on open.
-  useEffect(() => {
-    let cancelled = false
-    api
-      .preview(orderId, null, null)
-      .then((p) => {
-        if (!cancelled) {
-          setDiscountMode(p.discount_mode)
-          setDiscountValue(p.discount_value)
-        }
-      })
-      .catch(() => {
-        // The second effect re-fetches with the same inputs and surfaces the
-        // error inline; nothing to do here without a discount yet.
-      })
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId])
-
+  // Single authoritative preview: the SAME discount selection the order panel
+  // holds. No second discount editor lives here — one source of truth.
   useEffect(() => {
     api
-      .preview(orderId, discountMode, discountValue)
+      .preview(orderId, discount.mode, discount.value)
       .then((p) => {
         setPreview(p)
         setError(null)
@@ -65,7 +42,7 @@ export function PaymentDialog({
       .catch((e) =>
         setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error'])),
       )
-  }, [orderId, discountMode, discountValue, t, toast])
+  }, [orderId, discount.mode, discount.value, t])
 
   const pay = () => {
     if (!preview) return
@@ -88,8 +65,8 @@ export function PaymentDialog({
       .checkout({
         order_id: orderId,
         method,
-        discount_mode: discountMode,
-        discount_value: discountValue,
+        discount_mode: discount.mode,
+        discount_value: discount.value,
         received: receivedMinor,
       })
       .then((res) =>

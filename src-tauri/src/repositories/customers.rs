@@ -143,6 +143,15 @@ pub fn find_car(conn: &Db, plate_no: &str) -> AppResult<Option<Car>> {
     }
 }
 
+pub fn find_by_id(conn: &Db, id: i64) -> AppResult<Option<Customer>> {
+    let mut stmt = conn.prepare(&format!("SELECT {CUST_COLS} FROM customers WHERE id = ?1"))?;
+    let mut rows = stmt.query([id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(cust_row(r)?)),
+        None => Ok(None),
+    }
+}
+
 pub fn insert_car(
     conn: &Db,
     customer_id: i64,

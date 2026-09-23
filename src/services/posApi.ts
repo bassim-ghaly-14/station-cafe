@@ -35,6 +35,8 @@ export interface PosOrder {
   waiting_no: number | null
   takeaway_no: number | null
   shift_id: number | null
+  /** Authoritative table label from the backend; null for TAKEAWAY. */
+  table_label: string | null
   lines: OrderLine[]
 }
 
@@ -49,6 +51,15 @@ export interface TableView {
   opened_at: string | null
   opens_today: number
   closed_empty_today: number
+}
+
+/** Open (unpaid) takeaway order — discoverable/reopenable from the POS. */
+export interface TakeawayView {
+  id: number
+  status: string
+  opened_at: string
+  items_count: number
+  total_minor: number
 }
 
 export interface OrderPreview {
@@ -146,6 +157,7 @@ export interface PrintOutcome {
 
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
+  openTakeaways: () => call<TakeawayView[]>('list_open_takeaway_orders'),
   openTable: (table_id: number) => call<number>('open_table', { table_id }),
   closeEmptyTable: (table_id: number) => call<void>('close_empty_table', { table_id }),
   startOrder: (table_id: number) => call<number>('start_order', { table_id }),
@@ -158,7 +170,6 @@ export const api = {
     call<PosOrder>('set_line_quantity', { order_id, line_id, quantity }),
   removeLine: (order_id: number, line_id: number) =>
     call<PosOrder>('remove_order_line', { order_id, line_id }),
-  readyToPay: (order_id: number) => call<void>('mark_ready_to_pay', { order_id }),
   products: (department?: string) =>
     call<Product[]>('list_products', { department: department ?? null, active_only: true }),
   preview: (order_id: number, discount_mode: string | null, discount_value: number | null) =>
@@ -184,6 +195,11 @@ export const api = {
   }) => call<number>('create_car', { input }),
   attachCustomer: (input: { order_id: number; customer_id: number; car_plate?: string | null }) =>
     call<void>('attach_customer', { input }),
+  detachCustomer: (order_id: number) => call<void>('detach_customer', { order_id }),
+  orderCustomer: (order_id: number) =>
+    call<{ id: number; name: string; phone: string | null } | null>('get_order_customer', {
+      order_id,
+    }),
   ticket: (order_id: number) => call<TicketData>('issue_wash_ticket', { order_id }),
   printInvoice: (invoice_id: number, force?: boolean) =>
     call<PrintOutcome>('print_invoice', { invoice_id, force: force ?? null }),
@@ -196,6 +212,27 @@ export const api = {
     call<PrintOutcome>('print_shift_report', { shift_id, force: force ?? null }),
   printDay: (day_id: number, force?: boolean) =>
     call<PrintOutcome>('print_day_report_cmd', { day_id, force: force ?? null }),
+}
+
+export interface DiscountSel {
+  mode: string | null
+  value: number | null
+}
+
+export interface OrderCustomer {
+  id: number
+  name: string
+  phone: string | null
+}
+
+export interface DiscountLimitConfig {
+  mode: 'NONE' | 'PERCENT' | 'FIXED'
+  value: number
+}
+
+export const settingsApi = {
+  discountLimit: () => call<DiscountLimitConfig>('get_discount_limit'),
+  setDiscountLimit: (config: DiscountLimitConfig) => call<void>('set_discount_limit', { config }),
 }
 
 export interface CheckoutInput {

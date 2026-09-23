@@ -3,7 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::invoices::{self, CreditAccount, InvoiceRow};
-use crate::repositories::pos::{self, Order, TableView};
+use crate::repositories::pos::{self, Order, TakeawayView, TableView};
 use crate::services::checkout::{self, CheckoutInput, CheckoutResult};
 use crate::services::pos as pos_svc;
 use crate::AppState;
@@ -51,6 +51,18 @@ pub fn start_order(state: State<'_, AppState>, token: String, table_id: i64) -> 
 pub fn start_takeaway(state: State<'_, AppState>, token: String) -> AppResult<i64> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
         pos_svc::start_takeaway(conn, actor)
+    })
+}
+
+/// Open (unpaid) takeaway orders of the caller — makes an in-progress
+/// takeaway discoverable and reopenable after leaving the active view.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_open_takeaway_orders(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<TakeawayView>> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::list_open_takeaways(conn, actor)
     })
 }
 
@@ -142,6 +154,28 @@ pub fn attach_customer(
             input.customer_id,
             input.car_plate.as_deref(),
         )
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn detach_customer(
+    state: State<'_, AppState>,
+    token: String,
+    order_id: i64,
+) -> AppResult<()> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        pos_svc::detach_customer(conn, order_id)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_order_customer(
+    state: State<'_, AppState>,
+    token: String,
+    order_id: i64,
+) -> AppResult<Option<pos_svc::OrderCustomer>> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        pos_svc::order_customer(conn, order_id)
     })
 }
 

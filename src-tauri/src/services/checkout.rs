@@ -42,8 +42,14 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
     // ---- validate -----------------------------------------------------------
     let order = pos::get_order(&tx, input.order_id)?
         .ok_or_else(|| AppError::not_found("pos.order_not_found"))?;
-    if order.status != "READY_TO_PAY" {
-        return Err(AppError::business("pos.not_ready_to_pay"));
+    // Direct payment: an OPEN order goes straight to checkout — there is NO
+    // "payment request" prerequisite in the Station workflow. READY_TO_PAY
+    // stays accepted (legacy lifecycle state set by `mark_ready_to_pay`).
+    // Settled (CLOSED) or CANCELLED orders can never be paid twice; every
+    // other validation below (emptiness, totals, method, cash, credit) is
+    // unchanged and stays authoritative.
+    if order.status != "OPEN" && order.status != "READY_TO_PAY" {
+        return Err(AppError::business("pos.order_not_payable"));
     }
     if order.lines.is_empty() {
         return Err(AppError::business("pos.empty_order"));

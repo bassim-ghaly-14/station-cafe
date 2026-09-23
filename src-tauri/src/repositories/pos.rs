@@ -82,7 +82,22 @@ pub struct Order {
     pub waiting_no: Option<i64>,
     pub takeaway_no: Option<i64>,
     pub shift_id: Option<i64>,
+    /// Authoritative table label (joined from `cafe_tables`) for TABLE orders;
+    /// `None` for TAKEAWAY — a takeaway never fakes a table.
+    pub table_label: Option<String>,
     pub lines: Vec<OrderLine>,
+}
+
+/// Compact row that keeps an in-progress TAKEAWAY order discoverable so it
+/// can be reopened after leaving the active order view. Pure order data —
+/// takeaway rows are never faked as tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TakeawayView {
+    pub id: i64, // order id
+    pub status: String,
+    pub opened_at: String,
+    pub items_count: i64,
+    pub total_minor: i64,
 }
 
 /// All tables with their live status/total in a single query (fast grid).
@@ -261,12 +276,41 @@ pub fn set_takeaway_no(conn: &Db, order_id: i64, takeaway_no: i64) -> AppResult<
     Ok(())
 }
 
+/// Open (unpaid) TAKEAWAY orders owned by `owner_id`. Ownership mirrors the
+/// edit path (`require_editable` is owner-only), so every listed row is
+/// guaranteed reopenable by the caller. Explicit order-type semantics: this
+/// query never touches tables.
+pub fn list_open_takeaways(conn: &Db, owner_id: i64) -> AppResult<Vec<TakeawayView>> {
+    let mut stmt = conn.prepare(
+        "SELECT o.id, o.status, o.opened_at, COUNT(l.id), COALESCE(SUM(l.line_total), 0)
+         FROM orders o
+         LEFT JOIN order_lines l ON l.order_id = o.id
+         WHERE o.order_type = 'TAKEAWAY'
+           AND o.status IN ('OPEN','READY_TO_PAY')
+           AND o.user_id = ?1
+         GROUP BY o.id, o.status, o.opened_at
+         ORDER BY o.id",
+    )?;
+    let rows = stmt.query_map([owner_id], |r| {
+        Ok(TakeawayView {
+            id: r.get(0)?,
+            status: r.get(1)?,
+            opened_at: r.get(2)?,
+            items_count: r.get(3)?,
+            total_minor: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
 pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
     let head = conn
         .query_row(
-            "SELECT id, order_type, table_id, user_id, status, customer_id, opened_at,
-                    waiting_no, takeaway_no, shift_id
-             FROM orders WHERE id = ?1",
+            "SELECT o.id, o.order_type, o.table_id, o.user_id, o.status, o.customer_id, o.opened_at,
+                    o.waiting_no, o.takeaway_no, o.shift_id, t.label
+             FROM orders o
+             LEFT JOIN cafe_tables t ON t.id = o.table_id
+             WHERE o.id = ?1",
             [order_id],
             |r| {
                 Ok((
@@ -280,6 +324,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
                     r.get::<_, Option<i64>>(7)?,
                     r.get::<_, Option<i64>>(8)?,
                     r.get::<_, Option<i64>>(9)?,
+                    r.get::<_, Option<String>>(10)?,
                 ))
             },
         )
@@ -299,6 +344,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         waiting_no,
         takeaway_no,
         shift_id,
+        table_label,
     ) = head;
     let lines = lines_of(conn, order_id)?;
     Ok(Some(Order {
@@ -312,6 +358,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         waiting_no,
         takeaway_no,
         shift_id,
+        table_label,
         lines,
     }))
 }

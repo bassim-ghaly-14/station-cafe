@@ -11,7 +11,7 @@
 //! Clicking a table card in the UI never calls any of these.
 
 use crate::error::{AppError, AppResult};
-use crate::money::{self, Money, Rate};
+use crate::money::{self, Money};
 use crate::repositories::catalog;
 use crate::repositories::customers;
 use crate::repositories::pos::{self, Order, OrderLine, TableView};
@@ -132,6 +132,14 @@ pub fn start_takeaway(conn: &Db, actor: &User) -> AppResult<i64> {
         .ok_or_else(|| AppError::internal("order insert failed"))?;
     tx.commit()?;
     Ok(order_id)
+}
+
+/// Open (unpaid) TAKEAWAY orders the caller may continue. Listing is scoped
+/// to the owner exactly like the edit path (`require_editable`), so the
+/// backend stays authoritative for ownership: what shows up here is precisely
+/// what this user can reopen, edit and pay.
+pub fn list_open_takeaways(conn: &Db, actor: &User) -> AppResult<Vec<pos::TakeawayView>> {
+    pos::list_open_takeaways(conn, actor.id)
 }
 
 /// Discard an order that holds no items (an abandoned cart) so it can never
@@ -270,6 +278,98 @@ pub fn attach_customer(
     Ok(())
 }
 
+/// Remove the attached customer (cafe orders only; wash requires one).
+pub fn detach_customer(conn: &Db, order_id: i64) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let order = get_order(&tx, order_id)?;
+    if order.status == "CLOSED" || order.status == "CANCELLED" {
+        return Err(AppError::business("pos.order_not_editable"));
+    }
+    if order.lines.iter().any(|l| l.department == "WASH") {
+        return Err(AppError::business("wash.customer_required"));
+    }
+    tx.execute("UPDATE orders SET customer_id = NULL WHERE id = ?1", [order_id])?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Attached customer snapshot for the checkout summary (id + display name).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderCustomer {
+    pub id: i64,
+    pub name: String,
+    pub phone: Option<String>,
+}
+
+pub fn order_customer(conn: &Db, order_id: i64) -> AppResult<Option<OrderCustomer>> {
+    let order = get_order(conn, order_id)?;
+    match order.customer_id {
+        None => Ok(None),
+        Some(cid) => match customers::find_by_id(conn, cid)? {
+            None => Ok(None),
+            Some(c) => Ok(Some(OrderCustomer {
+                id: c.id,
+                name: c.name,
+                phone: c.phone,
+            })),
+        },
+    }
+}
+
+/// Backend-authoritative discount validation: shape checks PLUS the
+/// configured global ceiling (mode-aware). Called by preview (actor-aware)
+/// and checkout so a modified client can never bypass the limit.
+pub fn validate_discount_against_limit(
+    conn: &Db,
+    subtotal: i64,
+    mode: Option<&str>,
+    value: Option<i64>,
+) -> AppResult<i64> {
+    let limit = settings::get_discount_limit(conn)?;
+    match (mode, value) {
+        (None, _) | (_, None) => Ok(0),
+        (Some("FIXED"), Some(v)) => {
+            if v < 0 || v > subtotal {
+                return Err(AppError::validation("discount.invalid"));
+            }
+            // Ceiling: NONE → 0; PERCENT limit → percent_of(subtotal); FIXED → value.
+            let ceiling = settings::discount_ceiling_minor(&limit, subtotal);
+            if v > ceiling {
+                return Err(AppError::validation("discount.over_limit"));
+            }
+            Ok(v)
+        }
+        (Some("PERCENT"), Some(v)) => {
+            if !(0..=money::RATE_SCALE).contains(&v) {
+                return Err(AppError::validation("discount.invalid"));
+            }
+            match limit.mode {
+                settings::DiscountLimitMode::None => {
+                    if v != 0 {
+                        return Err(AppError::validation("discount.over_limit"));
+                    }
+                    Ok(0)
+                }
+                settings::DiscountLimitMode::Percent => {
+                    if v > limit.value {
+                        return Err(AppError::validation("discount.over_limit"));
+                    }
+                    Ok(subtotal - money::apply_percent_discount(subtotal, v))
+                }
+                settings::DiscountLimitMode::Fixed => {
+                    let minor = subtotal - money::apply_percent_discount(subtotal, v);
+                    if minor > limit.value.max(0) || minor > subtotal {
+                        return Err(AppError::validation("discount.over_limit"));
+                    }
+                    Ok(minor)
+                }
+            }
+        }
+        _ => Err(AppError::validation("discount.invalid")),
+    }
+}
+
+/// Authoritative preview shape: subtotal / discount / service charge / total.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderPreview {
     pub subtotal: i64,
@@ -292,22 +392,11 @@ pub fn preview(
 ) -> AppResult<OrderPreview> {
     let order = get_order(conn, order_id)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    let discount_minor = match (discount_mode, discount_value) {
-        (Some("FIXED"), Some(v)) => {
-            if v < 0 || v > subtotal {
-                return Err(AppError::business("discount.invalid"));
-            }
-            v
-        }
-        (Some("PERCENT"), Some(v)) => {
-            let r = v as Rate;
-            if !(0..=money::RATE_SCALE).contains(&r) {
-                return Err(AppError::business("discount.invalid"));
-            }
-            subtotal - money::apply_percent_discount(subtotal, r)
-        }
-        _ => 0,
-    };
+    let discount_minor = validate_discount_against_limit(conn, subtotal, discount_mode, discount_value)
+        .map_err(|e| match e {
+            AppError::Validation(m) => AppError::business(m),
+            other => other,
+        })?;
     let base = subtotal - discount_minor;
     let sc = settings::get_service_charge(conn)?;
     let service_charge_minor = match sc.mode {

@@ -195,3 +195,26 @@ pub fn set_credit_config(
         crate::services::settings::set_credit_config(conn, actor, &config)
     })
 }
+
+// ---- discount limit (global ceiling; MANAGER+ configures, STAFF+ reads) ----
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_discount_limit(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<crate::services::settings::DiscountLimitConfig> {
+    authorized(&state, &token, "STAFF", |conn, _| {
+        crate::services::settings::get_discount_limit(conn)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_discount_limit(
+    state: State<'_, AppState>,
+    token: String,
+    config: crate::services::settings::DiscountLimitConfig,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        crate::services::settings::set_discount_limit(conn, actor, &config)
+    })
+}

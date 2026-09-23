@@ -1,12 +1,20 @@
 /** The main POS screen: safe table grid + live order panel + payment + takeaway.
- * Card click NEVER mutates state — only explicit buttons call the backend. */
+ * Card click NEVER mutates state — only explicit buttons call the backend.
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Card, CardHeader, Dialog, MoneyDisplay } from '@/components/ui'
 import { ClipboardList, DoorClosed, DoorOpen, Receipt, ShoppingBag } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
-import { api, type OrderPreview, type PosOrder, type TableView } from '@/services/posApi'
+import {
+  api,
+  type DiscountSel,
+  type OrderPreview,
+  type PosOrder,
+  type TableView,
+  type TakeawayView,
+} from '@/services/posApi'
 import { shiftApi } from '@/services/shiftApi'
 import { OrderPanel } from './OrderPanel'
 import { PaymentDialog } from './PaymentDialog'
@@ -17,20 +25,23 @@ export default function PosPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const [tables, setTables] = useState<TableView[] | null>(null)
+  const [takeaways, setTakeaways] = useState<TakeawayView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   const [activeOrder, setActiveOrder] = useState<PosOrder | null>(null)
   const [dayReady, setDayReady] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const [preview, setPreview] = useState<OrderPreview | null>(null)
+  const [discount, setDiscount] = useState<DiscountSel>({ mode: null, value: null })
   const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<TableView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [tv, st] = await Promise.all([api.tables(), shiftApi.state()])
+      const [tv, tk, st] = await Promise.all([api.tables(), api.openTakeaways(), shiftApi.state()])
       setTables(tv)
+      setTakeaways(tk)
       setDayReady(st.day !== null && st.my_shift !== null)
       setError(null)
     } catch (e) {
@@ -45,16 +56,17 @@ export default function PosPage() {
   useEffect(() => {
     if (activeOrder) {
       api
-        .preview(activeOrder.id, null, null)
+        .preview(activeOrder.id, discount.mode, discount.value)
         .then(setPreview)
         .catch(() => setPreview(null))
     } else {
       setPreview(null)
     }
-  }, [activeOrder])
+  }, [activeOrder, discount.mode, discount.value])
 
   if (error)
     return <ErrorState message={error} onRetry={() => void refresh()} retryLabel={t('app.retry')} />
+
   if (!tables) return <p>{t('app.loading')}</p>
 
   if (!dayReady) return <ShiftGate onReady={() => void refresh()} />
@@ -69,6 +81,7 @@ export default function PosPage() {
 
   const openSelectedTable = async (tv: TableView) => {
     setBusy(`open-${tv.id}`)
+
     try {
       await api.openTable(tv.id)
       toast(t('pos.openedMessage', { label: tv.label }), 'success')
@@ -82,7 +95,9 @@ export default function PosPage() {
 
   const confirmCloseEmpty = async () => {
     if (!closeTarget) return
+
     setBusy(`close-${closeTarget.id}`)
+
     try {
       await api.closeEmptyTable(closeTarget.id)
       toast(t('pos.closedEmptyMessage', { label: closeTarget.label }), 'success')
@@ -96,11 +111,33 @@ export default function PosPage() {
     }
   }
 
+  // Single order-loading path shared by EVERY entry point (table card,
+  // takeaway chip, start order, start takeaway): one authoritative snapshot,
+  // one discount resync — never a second source of truth for any of them.
+  const loadOrder = async (orderId: number) => {
+    const order = await api.getOrder(orderId)
+
+    setActiveOrder(order)
+
+    // Re-sync the shared discount from the authoritative preview so the
+    // payment dialog never opens with a stale/empty discount.
+    const p = await api.preview(orderId, null, null).catch(() => null)
+
+    setDiscount({
+      mode: p?.discount_mode ?? null,
+      value: p?.discount_value ?? null,
+    })
+
+    setPayOpen(false)
+  }
+
   const startOrderFor = async (tv: TableView) => {
     setBusy(`order-${tv.id}`)
+
     try {
       const orderId = await api.startOrder(tv.id)
-      setActiveOrder(await api.getOrder(orderId))
+
+      await loadOrder(orderId)
       await refresh()
     } catch (e) {
       report(e)
@@ -111,8 +148,19 @@ export default function PosPage() {
 
   const openOrderFor = async (tv: TableView) => {
     if (!tv.order_id) return
+
     try {
-      setActiveOrder(await api.getOrder(tv.order_id))
+      await loadOrder(tv.order_id)
+    } catch (e) {
+      report(e)
+    }
+  }
+
+  // Reopen a still-open takeaway from the discoverable list: the backend
+  // order is loaded with ALL persisted data (lines, prices, totals, type).
+  const reopenTakeaway = async (orderId: number) => {
+    try {
+      await loadOrder(orderId)
     } catch (e) {
       report(e)
     }
@@ -120,9 +168,12 @@ export default function PosPage() {
 
   const startTakeaway = async () => {
     setBusy('takeaway')
+
     try {
       const orderId = await api.startTakeaway()
-      setActiveOrder(await api.getOrder(orderId))
+
+      await loadOrder(orderId)
+
       toast(t('pos.takeawayStarted'), 'success')
       await refresh()
     } catch (e) {
@@ -134,7 +185,9 @@ export default function PosPage() {
 
   const discardActiveOrder = async () => {
     if (!activeOrder || activeOrder.lines.length > 0) return
+
     setBusy('discard')
+
     try {
       await api.discardOrder(activeOrder.id)
       setActiveOrder(null)
@@ -150,9 +203,26 @@ export default function PosPage() {
   const selected = tables.find((x) => x.id === selectedTableId) ?? null
   const takeawayActive = activeOrder?.order_type === 'TAKEAWAY'
 
+  /*
+   * Progressive workspace:
+   *
+   * No active order:
+   *   tables use the available width.
+   *
+   * Active order:
+   *   tables remain the dominant area.
+   *   The order panel is intentionally capped around 460px so it does not
+   *   consume the table workspace.
+   */
+  const hasWorkspace = activeOrder !== null || selected !== null
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[720px_1fr]">
-      <Card>
+    <div
+      className={
+        hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
+      }
+    >
+      <Card className={hasWorkspace ? 'min-w-0' : 'w-full'}>
         <CardHeader
           title={t('pos.tables')}
           actions={
@@ -167,6 +237,7 @@ export default function PosPage() {
                 <ShoppingBag size={16} aria-hidden />
                 {t('pos.startTakeaway')}
               </Button>
+
               <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
                 <Receipt size={16} aria-hidden />
                 {t('pos.todayInvoices')}
@@ -175,7 +246,21 @@ export default function PosPage() {
           }
         />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
+        {takeaways && takeaways.length > 0 ? (
+          <OpenTakeaways
+            items={takeaways}
+            activeOrderId={activeOrder?.id ?? null}
+            onOpen={(orderId) => void reopenTakeaway(orderId)}
+          />
+        ) : null}
+
+        <div
+          className={
+            hasWorkspace
+              ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
+              : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5'
+          }
+        >
           {tables.map((tv) => (
             <TableCard
               key={tv.id}
@@ -191,10 +276,11 @@ export default function PosPage() {
             />
           ))}
         </div>
+
         <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
       </Card>
 
-      <div>
+      <div className={hasWorkspace ? 'min-w-0' : ''}>
         {activeOrder ? (
           <>
             {takeawayActive ? (
@@ -203,6 +289,7 @@ export default function PosPage() {
                   <ShoppingBag size={14} aria-hidden />
                   {t('pos.takeawayActive')}
                 </Badge>
+
                 {typeof activeOrder.takeaway_no === 'number' ? (
                   <span>
                     {t('pos.takeawayNo')}: <span dir="ltr">#{activeOrder.takeaway_no}</span>
@@ -214,9 +301,12 @@ export default function PosPage() {
                 )}
               </p>
             ) : null}
+
             <OrderPanel
               order={activeOrder}
               preview={preview}
+              discount={discount}
+              onDiscountChange={(d: DiscountSel) => setDiscount(d)}
               onChange={setActiveOrder}
               onRefreshTables={() => void refresh()}
               onPay={() => setPayOpen(true)}
@@ -229,6 +319,7 @@ export default function PosPage() {
         ) : selected ? (
           <Card>
             <CardHeader title={selected.label} subtitle={t(`pos.state.${selected.status}`)} />
+
             <SelectedTableActions
               tv={selected}
               busy={busy}
@@ -239,20 +330,20 @@ export default function PosPage() {
             />
           </Card>
         ) : (
-          <Card>
-            <p className="text-center text-sm text-foreground-subtle">{t('pos.selectTable')}</p>
-          </Card>
+          <p className="text-sm text-foreground-subtle">{t('pos.selectTableHint')}</p>
         )}
       </div>
 
       {activeOrder && payOpen ? (
         <PaymentDialog
           orderId={activeOrder.id}
+          discount={discount}
           order={activeOrder}
           onClose={() => setPayOpen(false)}
           onDone={(invoiceId, outcome) => {
             setPayOpen(false)
             setActiveOrder(null)
+            setDiscount({ mode: null, value: null })
             void refresh()
 
             if (outcome?.duplicate_suppressed) {
@@ -269,10 +360,12 @@ export default function PosPage() {
           <p className="mb-4 text-sm text-foreground-muted">
             {t('pos.closeEmptyBody', { label: closeTarget.label })}
           </p>
+
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => setCloseTarget(null)}>
               {t('app.cancel')}
             </Button>
+
             <Button
               variant="destructive"
               onClick={() => void confirmCloseEmpty()}
@@ -287,6 +380,62 @@ export default function PosPage() {
 
       {invoicesOpen ? <TodayInvoices onClose={() => setInvoicesOpen(false)} /> : null}
     </div>
+  )
+}
+
+/**
+ * Compact list of OPEN takeaway orders inside the existing POS workspace.
+ * The backend is the source of truth: clicking a row reopens the persisted
+ * order with all its data. Rows disappear once the order is paid.
+ */
+export function OpenTakeaways({
+  items,
+  activeOrderId,
+  onOpen,
+}: {
+  items: TakeawayView[]
+  activeOrderId: number | null
+  onOpen: (orderId: number) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <section
+      aria-label={t('pos.openTakeaways')}
+      className="mb-3 rounded-md border border-border bg-surface-muted/40 px-3 py-2"
+    >
+      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground-subtle">
+        <ShoppingBag size={14} aria-hidden />
+        {t('pos.openTakeaways')}
+      </p>
+
+      <ul className="flex flex-wrap gap-2">
+        {items.map((tk) => (
+          <li key={tk.id}>
+            <Button
+              variant={activeOrderId === tk.id ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onOpen(tk.id)}
+              aria-label={`${t('pos.openOrder')} — ${t('pos.takeaway')} ${tk.id}`}
+              data-testid={`open-takeaway-${tk.id}`}
+            >
+              <span className="font-bold">
+                {t('pos.takeaway')} · {t('pos.order')} {tk.id}
+              </span>
+              {tk.opened_at ? (
+                <span className="text-xs opacity-70" dir="ltr">
+                  {tk.opened_at.slice(11, 16)}
+                </span>
+              ) : null}
+              <span className="text-xs opacity-70">
+                {tk.items_count} {t('pos.items')}
+              </span>
+              <MoneyDisplay amount={tk.total_minor} />
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -341,7 +490,7 @@ export function TableCard({
       tabIndex={0}
       data-testid={`table-card-${tv.id}`}
       className={[
-        'group relative flex min-h-48 cursor-pointer flex-col overflow-hidden',
+        'group relative flex min-h-56 cursor-pointer flex-col overflow-hidden',
         'rounded-lg border p-4 text-start',
         'transition-[border-color,background-color,box-shadow]',
         'duration-200',
@@ -378,14 +527,14 @@ export function TableCard({
       </div>
 
       {/* Main information */}
-      <div className="mt-5 flex min-h-16 flex-1 flex-col justify-center">
+      <div className="mt-4 flex min-h-16 flex-1 flex-col justify-center">
         {isEmpty ? (
           <>
             <p className="text-xs font-medium text-foreground-subtle">{t('pos.items')}</p>
 
             <p className="mt-1 text-base font-bold tabular-nums text-foreground-strong">0</p>
 
-            <p className="mt-2 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
+            <p className="mt-2 text-xs text-foreground-subtle">{t('pos.emptyTableHint')}</p>
           </>
         ) : (
           <>
@@ -410,6 +559,7 @@ export function TableCard({
           <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
             {t('pos.opensToday')}
           </p>
+
           <p className="mt-0.5 text-sm font-bold leading-tight tabular-nums text-foreground-strong">
             {tv.opens_today}
           </p>
@@ -419,13 +569,14 @@ export function TableCard({
           <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
             {t('pos.closedEmptyToday')}
           </p>
+
           <p className="mt-0.5 text-sm font-bold leading-tight tabular-nums text-foreground-strong">
             {tv.closed_empty_today}
           </p>
         </div>
       </div>
 
-      {/* Fixed action zone */}
+      {/* State-dependent actions */}
       <div className="mt-3 flex min-h-9 items-center gap-2" onClick={(e) => e.stopPropagation()}>
         {isEmpty ? (
           <Button
@@ -453,6 +604,7 @@ export function TableCard({
             </Button>
 
             <Button
+              className="min-w-0 flex-1"
               size="sm"
               variant="ghost"
               onClick={onCloseEmpty}
@@ -495,6 +647,7 @@ function SelectedTableActions({
   onCloseEmpty: () => void
 }) {
   const { t } = useTranslation()
+
   if (tv.status === 'EMPTY') {
     return (
       <Button onClick={onOpen} loading={busy === `open-${tv.id}`}>
@@ -503,6 +656,7 @@ function SelectedTableActions({
       </Button>
     )
   }
+
   if (tv.status === 'OPEN') {
     return (
       <div className="flex flex-wrap gap-2">
@@ -510,6 +664,7 @@ function SelectedTableActions({
           <ClipboardList size={16} aria-hidden />
           {t('pos.startOrder')}
         </Button>
+
         <Button variant="outline" onClick={onCloseEmpty}>
           <DoorClosed size={16} aria-hidden />
           {t('pos.closeEmpty')}
@@ -517,6 +672,7 @@ function SelectedTableActions({
       </div>
     )
   }
+
   return (
     <Button variant="secondary" onClick={onOpenOrder}>
       <ClipboardList size={16} aria-hidden />

@@ -1,21 +1,32 @@
-/** Live order panel: order-level FIXED/PERCENT discount dialog. */
+/** Order-level FIXED/PERCENT discount dialog (backend enforces limits). */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
-import { Input } from '@/components/ui/input'
-import type { DiscountSel } from './OrderPanel'
+import { Field, Input } from '@/components/ui/input'
+import { parseMajor } from '@/lib/utils'
+import type { DiscountSel } from '@/services/posApi'
 
 export function DiscountDialog({
+  initial,
   onClose,
   onApply,
 }: {
+  initial: DiscountSel
   onClose: () => void
   onApply: (d: DiscountSel) => void
 }) {
   const { t } = useTranslation()
-  const [mode, setMode] = useState<'FIXED' | 'PERCENT'>('PERCENT')
-  const [value, setValue] = useState('10')
+  const [mode, setMode] = useState<'FIXED' | 'PERCENT'>(
+    initial.mode === 'FIXED' ? 'FIXED' : 'PERCENT',
+  )
+  const [value, setValue] = useState(() =>
+    initial.mode === 'FIXED' && typeof initial.value === 'number'
+      ? (initial.value / 100).toFixed(2)
+      : initial.mode === 'PERCENT' && typeof initial.value === 'number'
+        ? String(initial.value / 1000)
+        : '10',
+  )
   const [error, setError] = useState<string | null>(null)
 
   return (
@@ -39,12 +50,17 @@ export function DiscountDialog({
             {t('pos.fixed')}
           </Button>
         </div>
-        <Input
-          dir="ltr"
-          value={value}
-          inputMode="decimal"
-          onChange={(e) => setValue(e.target.value)}
-        />
+        <Field
+          label={mode === 'PERCENT' ? t('pos.discountPercentHint') : t('pos.discountFixedHint')}
+        >
+          <Input
+            dir="ltr"
+            value={value}
+            inputMode="decimal"
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </Field>
+        <p className="text-xs text-foreground-subtle">{t('pos.discountLimitEnforced')}</p>
         {error ? (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {error}
@@ -59,18 +75,21 @@ export function DiscountDialog({
           </Button>
           <Button
             onClick={() => {
-              const n = parseFloat(value.replace(',', '.'))
-              if (!Number.isFinite(n) || n < 0) {
+              if (mode === 'PERCENT') {
+                const n = parseFloat(value.replace(',', '.'))
+                if (!Number.isFinite(n) || n < 0 || n > 100) {
+                  setError(t('pos.invalidDiscount'))
+                  return
+                }
+                onApply({ mode, value: Math.round(n * 1000) })
+                return
+              }
+              const minor = parseMajor(value || '0')
+              if (minor === null) {
                 setError(t('pos.invalidDiscount'))
                 return
               }
-              // Backend re-validates; PERCENT uses the ×1000 fixed-point scale.
-              const scaled = mode === 'PERCENT' ? Math.round(n * 1000) : Math.round(n * 100)
-              if (mode === 'PERCENT' && scaled > 100_000) {
-                setError(t('pos.invalidDiscount'))
-                return
-              }
-              onApply({ mode, value: scaled })
+              onApply({ mode, value: minor })
             }}
           >
             <Check size={16} aria-hidden />

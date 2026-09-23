@@ -1,26 +1,32 @@
 /** Live order panel: lines, product pad, discount, customer/car, wash ticket. */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
-import { Trash2, Wallet } from '@/components/ui/icon'
+import { Trash2 } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
-import { api, type OrderPreview, type PosOrder, type Product } from '@/services/posApi'
-import { ActionRow } from './ActionRow'
+import {
+  api,
+  type DiscountSel,
+  type OrderCustomer,
+  type OrderPreview,
+  type PosOrder,
+  type Product,
+} from '@/services/posApi'
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
+import { DiscountLimitDialog } from './DiscountLimitDialog'
 import { ProductPad } from './ProductPad'
 import { QtyStepper } from './QtyStepper'
 import { DeptBadge } from './DeptBadge'
-
-export interface DiscountSel {
-  mode: string | null
-  value: number | null
-}
+import { CheckoutSummary } from './CheckoutSummary'
+import { useSession } from '@/features/auth/useSession'
 
 export function OrderPanel({
   order,
   preview,
+  discount,
+  onDiscountChange,
   onChange,
   onRefreshTables,
   onPay,
@@ -29,23 +35,29 @@ export function OrderPanel({
 }: {
   order: PosOrder
   preview: OrderPreview | null
+  discount: DiscountSel
+  onDiscountChange: (d: DiscountSel) => void
   onChange: (o: PosOrder) => void
   onRefreshTables: () => void
-  onPay: (discountSel: DiscountSel) => void
+  onPay: () => void
   onDiscard?: () => void
   discarding?: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const { user } = useSession()
+  const canManageLimits = user?.role === 'MANAGER' || user?.role === 'ADMIN'
   const [products, setProducts] = useState<Product[] | null>(null)
   const [prodErr, setProdErr] = useState<string | null>(null)
   const [dept, setDept] = useState<'CAFE' | 'WASH'>('CAFE')
   const [query, setQuery] = useState('')
   const [qty, setQty] = useState(1)
   const [discountOpen, setDiscountOpen] = useState(false)
+  const [limitOpen, setLimitOpen] = useState(false)
   const [customerOpen, setCustomerOpen] = useState(false)
-  const [localPreview, setLocalPreview] = useState<OrderPreview | null>(null)
-  const discountRef = useRef<DiscountSel>({ mode: null, value: null })
+  const [customer, setCustomer] = useState<OrderCustomer | null>(null)
+  const [detaching, setDetaching] = useState(false)
+  const [ticketBusy, setTicketBusy] = useState(false)
 
   const loadProducts = useCallback(() => {
     setProdErr(null)
@@ -61,23 +73,28 @@ export function OrderPanel({
     loadProducts()
   }, [loadProducts])
 
+  // Attached-customer display: refresh when the order's customer link changes.
   useEffect(() => {
-    setLocalPreview(null)
-    discountRef.current = { mode: null, value: null }
-  }, [order.id])
+    api
+      .orderCustomer(order.id)
+      .then(setCustomer)
+      .catch(() => setCustomer(null))
+  }, [order.customer_id, order.id])
 
   const report = (e: unknown) =>
     toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
 
-  const shown = preview ?? localPreview
+  // Parent owns the preview/discount (single backend fetch); panel is display.
+  const shown = preview
   const filtered = (products ?? []).filter(
     (p) => p.department === dept && p.name.includes(query.trim()),
   )
-
-  const refreshPreview = (d: DiscountSel) => {
-    discountRef.current = d
-    api.preview(order.id, d.mode, d.value).then(setLocalPreview).catch(report)
-  }
+  const hasWash = shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')
+  const discountLabel = discount.mode
+    ? discount.mode === 'PERCENT'
+      ? `${(discount.value ?? 0) / 1000}%`
+      : null
+    : null
 
   const addItem = (p: Product) =>
     api
@@ -85,21 +102,37 @@ export function OrderPanel({
       .then((o) => {
         onChange(o)
         onRefreshTables()
-        const d = discountRef.current
-        if (d.mode) void api.preview(order.id, d.mode, d.value).then(setLocalPreview)
       })
       .catch(report)
 
-  const markReady = () =>
+  const detach = () => {
+    setDetaching(true)
     api
-      .readyToPay(order.id)
+      .detachCustomer(order.id)
       .then(() => api.getOrder(order.id))
       .then((o) => {
         onChange(o)
-        onRefreshTables()
-        onPay(discountRef.current)
+        setCustomer(null)
       })
       .catch(report)
+      .finally(() => setDetaching(false))
+  }
+
+  const issueTicket = () => {
+    setTicketBusy(true)
+    api
+      .ticket(order.id)
+      .then((tk) => {
+        toast(t('pos.ticketIssued', { no: tk.waiting_no }), 'success')
+        return api.getOrder(order.id)
+      })
+      .then((o) => {
+        onChange(o)
+        onRefreshTables()
+      })
+      .catch(report)
+      .finally(() => setTicketBusy(false))
+  }
 
   return (
     <Card>
@@ -111,45 +144,43 @@ export function OrderPanel({
               ? `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
               : `${t('pos.order')} ${order.id}`
         }
-        subtitle={t(`pos.state.${order.status}`)}
+        subtitle={
+          // Table identity comes from the authoritative order row (backend
+          // join) — never from a UI selection. Takeaways show no fake table.
+          order.order_type === 'TABLE' && order.table_label
+            ? `${order.table_label} · ${t(`pos.state.${order.status}`)}`
+            : t(`pos.state.${order.status}`)
+        }
         actions={
-          <span className="flex items-center gap-2">
-            {onDiscard ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onDiscard}
-                disabled={discarding}
-                loading={discarding}
-                aria-label={t('pos.discardOrder')}
-              >
-                <Trash2 size={16} aria-hidden />
-                {t('pos.discardOrder')}
-              </Button>
-            ) : null}
+          onDiscard ? (
             <Button
               size="sm"
-              onClick={() => onPay(discountRef.current)}
-              disabled={order.lines.length === 0}
+              variant="ghost"
+              onClick={onDiscard}
+              disabled={discarding}
+              loading={discarding}
+              aria-label={t('pos.discardOrder')}
             >
-              <Wallet size={16} aria-hidden />
-              {t('pos.pay')}
+              <Trash2 size={16} aria-hidden />
+              {t('pos.discardOrder')}
             </Button>
-          </span>
+          ) : null
         }
       />
       <LineList order={order} onChange={onChange} onRefreshTables={onRefreshTables} />
-      {shown ? <TotalsBlock shown={shown} /> : <LineTotals order={order} />}
-      <ActionRow
+      <CheckoutSummary
         order={order}
-        hasWash={shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')}
+        shown={shown}
+        customer={customer}
+        discountLabel={discountLabel}
         onDiscount={() => setDiscountOpen(true)}
+        onLimit={() => setLimitOpen(true)}
+        canManageLimits={canManageLimits}
         onCustomer={() => setCustomerOpen(true)}
-        onReady={markReady}
-        onRefresh={(o) => {
-          onChange(o)
-          onRefreshTables()
-        }}
+        onDetachCustomer={detach}
+        detaching={detaching}
+        onTicket={hasWash && !ticketBusy ? issueTicket : hasWash ? () => {} : null}
+        onReviewPay={onPay}
       />
       {prodErr ? (
         <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
@@ -167,12 +198,16 @@ export function OrderPanel({
       )}
       {discountOpen ? (
         <DiscountDialog
+          initial={discount}
           onClose={() => setDiscountOpen(false)}
           onApply={(d) => {
             setDiscountOpen(false)
-            refreshPreview(d)
+            onDiscountChange(d)
           }}
         />
+      ) : null}
+      {limitOpen && canManageLimits ? (
+        <DiscountLimitDialog onClose={() => setLimitOpen(false)} />
       ) : null}
       {customerOpen ? (
         <CustomerPicker
@@ -252,40 +287,5 @@ function LineList({
         </li>
       ))}
     </ul>
-  )
-}
-
-export function LineTotals({ order }: { order: PosOrder }) {
-  const { t } = useTranslation()
-  const subtotal = order.lines.reduce((a, l) => a + l.line_total, 0)
-  return (
-    <div className="mb-3 flex justify-between rounded bg-surface-muted p-2 text-sm font-medium">
-      <span>{t('pos.subtotal')}</span>
-      <MoneyDisplay amount={subtotal} />
-    </div>
-  )
-}
-
-export function TotalsBlock({ shown }: { shown: OrderPreview }) {
-  const { t } = useTranslation()
-  return (
-    <div className="mb-3 flex flex-col gap-1 rounded bg-surface-muted p-2 text-sm">
-      <div className="flex justify-between">
-        <span>{t('pos.subtotal')}</span>
-        <MoneyDisplay amount={shown.subtotal} />
-      </div>
-      <div className="flex justify-between">
-        <span>{t('pos.discount')}</span>
-        <MoneyDisplay amount={shown.discount_minor} />
-      </div>
-      <div className="flex justify-between">
-        <span>{t('pos.serviceCharge')}</span>
-        <MoneyDisplay amount={shown.service_charge_minor} />
-      </div>
-      <div className="flex justify-between text-base font-bold">
-        <span>{t('pos.total')}</span>
-        <MoneyDisplay amount={shown.total} />
-      </div>
-    </div>
   )
 }
