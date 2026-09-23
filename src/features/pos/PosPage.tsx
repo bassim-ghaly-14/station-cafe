@@ -357,7 +357,7 @@ export function TableCard({
       <span
         aria-hidden
         className={[
-          'absolute inset-y-0 start-0 w-1',
+          'absolute inset-y-0 inset-s-0 w-1',
           tone === 'danger'
             ? 'bg-danger'
             : tone === 'info'

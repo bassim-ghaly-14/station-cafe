@@ -1,7 +1,17 @@
 /**
- * Manager catalog UI — products & services listing, search, filters,
- * create / edit / price / activation. Backend stays authoritative.
+ * Catalog UI — products & services listing.
+ *
+ * STAFF:
+ * - Read-only catalog access.
+ * - Can search and filter products/services.
+ * - Cannot create, edit, activate, or deactivate items.
+ *
+ * MANAGER / ADMIN:
+ * - Full catalog management.
+ *
+ * Backend remains authoritative for all mutations.
  */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
@@ -13,6 +23,7 @@ import { formatMinor, parseMajor } from '@/lib/utils'
 import { useErrText } from '@/lib/err'
 import { catalogApi, type NewProductInput } from '@/services/catalogApi'
 import type { Product } from '@/services/posApi'
+import { useSession } from '@/features/auth/useSession'
 
 const DEPARTMENTS = ['CAFE', 'WASH'] as const
 const TYPES = ['PRODUCT', 'SERVICE'] as const
@@ -21,6 +32,8 @@ export default function CatalogPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const errText = useErrText(t)
+  const { user } = useSession()
+
   const [items, setItems] = useState<Product[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -30,14 +43,18 @@ export default function CatalogPage() {
   const [editing, setEditing] = useState<Product | null>(null)
   const [confirming, setConfirming] = useState<Product | null>(null)
 
+  const canManageCatalog = user?.role === 'MANAGER' || user?.role === 'ADMIN'
+
   const load = useCallback(() => {
     setLoadError(null)
+
     catalogApi
       .list()
       .then(setItems)
       .catch((e) => {
-        setLoadError(errText(e))
-        toast(errText(e), 'error')
+        const message = errText(e)
+        setLoadError(message)
+        toast(message, 'error')
       })
   }, [toast, errText])
 
@@ -53,14 +70,19 @@ export default function CatalogPage() {
       if (dept && p.department !== dept) return false
       if (status === 'ACTIVE' && !p.is_active) return false
       if (status === 'INACTIVE' && p.is_active) return false
+
       return true
     })
   }, [items, query, dept, status])
 
   async function toggleActive(p: Product) {
+    if (!canManageCatalog) return
+
     try {
       await catalogApi.setActive(p.id, !p.is_active)
+
       toast(p.is_active ? t('catalog.deactivated') : t('catalog.activated'), 'success')
+
       setConfirming(null)
       load()
     } catch (e) {
@@ -76,10 +98,12 @@ export default function CatalogPage() {
           {t('nav.catalog')}
         </h1>
 
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus size={16} aria-hidden />
-          {t('catalog.add')}
-        </Button>
+        {canManageCatalog ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus size={16} aria-hidden />
+            {t('catalog.add')}
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -137,7 +161,12 @@ export default function CatalogPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {filtered.map((p) => (
-            <Card key={p.id} className="flex min-h-48 flex-col gap-4 p-4">
+            <Card
+              key={p.id}
+              className={
+                canManageCatalog ? 'flex min-h-48 flex-col gap-4 p-4' : 'flex flex-col gap-3 p-4'
+              }
+            >
               <div className="min-w-0">
                 <p className="text-body truncate font-bold">{p.name}</p>
 
@@ -155,33 +184,35 @@ export default function CatalogPage() {
                 </Badge>
               </div>
 
-              <div className="mt-auto flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setEditing(p)}
-                >
-                  <Pencil size={16} aria-hidden />
-                  {t('catalog.edit')}
-                </Button>
+              {canManageCatalog ? (
+                <div className="mt-auto flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setEditing(p)}
+                  >
+                    <Pencil size={16} aria-hidden />
+                    {t('catalog.edit')}
+                  </Button>
 
-                <Button
-                  variant={p.is_active ? 'destructiveGhost' : 'secondary'}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setConfirming(p)}
-                >
-                  <Power size={16} aria-hidden />
-                  {p.is_active ? t('catalog.deactivate') : t('catalog.activate')}
-                </Button>
-              </div>
+                  <Button
+                    variant={p.is_active ? 'destructiveGhost' : 'secondary'}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setConfirming(p)}
+                  >
+                    <Power size={16} aria-hidden />
+                    {p.is_active ? t('catalog.deactivate') : t('catalog.activate')}
+                  </Button>
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>
       )}
 
-      {createOpen ? (
+      {canManageCatalog && createOpen ? (
         <CreateProductDialog
           onClose={() => setCreateOpen(false)}
           onCreated={(name) => {
@@ -192,7 +223,7 @@ export default function CatalogPage() {
         />
       ) : null}
 
-      {editing ? (
+      {canManageCatalog && editing ? (
         <EditProductDialog
           product={editing}
           onClose={() => setEditing(null)}
@@ -204,32 +235,34 @@ export default function CatalogPage() {
         />
       ) : null}
 
-      <Dialog
-        open={confirming !== null}
-        onClose={() => setConfirming(null)}
-        title={t('catalog.confirmToggle')}
-      >
-        <p className="text-body mb-4">
-          {t('catalog.confirmToggleBody', {
-            name: confirming?.name ?? '',
-            next: confirming?.is_active ? t('catalog.inactive') : t('catalog.active'),
-          })}
-        </p>
+      {canManageCatalog ? (
+        <Dialog
+          open={confirming !== null}
+          onClose={() => setConfirming(null)}
+          title={t('catalog.confirmToggle')}
+        >
+          <p className="text-body mb-4">
+            {t('catalog.confirmToggleBody', {
+              name: confirming?.name ?? '',
+              next: confirming?.is_active ? t('catalog.inactive') : t('catalog.active'),
+            })}
+          </p>
 
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" onClick={() => setConfirming(null)}>
-            {t('app.cancel')}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirming(null)}>
+              {t('app.cancel')}
+            </Button>
 
-          <Button
-            variant={confirming?.is_active ? 'destructive' : 'default'}
-            onClick={() => confirming && toggleActive(confirming)}
-          >
-            <Check size={16} aria-hidden />
-            {t('app.confirm')}
-          </Button>
-        </div>
-      </Dialog>
+            <Button
+              variant={confirming?.is_active ? 'destructive' : 'default'}
+              onClick={() => confirming && toggleActive(confirming)}
+            >
+              <Check size={16} aria-hidden />
+              {t('app.confirm')}
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   )
 }
@@ -244,6 +277,7 @@ function CreateProductDialog({
   const { t } = useTranslation()
   const toast = useToast()
   const errText = useErrText(t)
+
   const [name, setName] = useState('')
   const [type, setType] = useState<(typeof TYPES)[number]>('PRODUCT')
   const [department, setDepartment] = useState<(typeof DEPARTMENTS)[number]>('CAFE')
@@ -366,6 +400,7 @@ function EditProductDialog({
   const { t } = useTranslation()
   const toast = useToast()
   const errText = useErrText(t)
+
   const [name, setName] = useState(product.name)
   const [price, setPrice] = useState(formatMinor(product.price_minor))
   const [busy, setBusy] = useState(false)

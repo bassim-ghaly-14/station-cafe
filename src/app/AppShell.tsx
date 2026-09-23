@@ -28,7 +28,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store },
-  { view: 'catalog', minRole: 'MANAGER', labelKey: 'nav.catalog', icon: Package },
+  { view: 'catalog', minRole: 'STAFF', labelKey: 'nav.catalog', icon: Package },
   { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
   { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
