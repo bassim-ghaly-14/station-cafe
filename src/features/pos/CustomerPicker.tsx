@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog } from '@/components/ui'
+import { Plus, Search } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
 import { api, type CustomerWithCars, type PosOrder } from '@/services/posApi'
@@ -65,25 +66,27 @@ export function CustomerPicker({
           placeholder={t('pos.customerSearchHint')}
           aria-label={t('pos.customerSearch')}
         />
-        <Button onClick={search} disabled={busy}>
+        <Button onClick={search} disabled={busy} loading={busy}>
+          {!busy ? <Search size={16} aria-hidden /> : null}
           {t('app.search')}
         </Button>
         <Button variant="outline" onClick={() => setNewOpen(true)}>
+          <Plus size={16} aria-hidden />
           {t('pos.newCustomer')}
         </Button>
       </div>
 
       {results === null ? (
-        <p className="py-3 text-center text-sm text-brand-500">{t('pos.customerSearchHint')}</p>
+        <p className="py-3 text-center text-sm text-foreground-subtle">{t('pos.customerSearchHint')}</p>
       ) : results.length === 0 ? (
-        <p className="py-3 text-center text-sm text-brand-500">{t('pos.noCustomers')}</p>
+        <p className="py-3 text-center text-sm text-foreground-subtle">{t('pos.noCustomers')}</p>
       ) : (
         <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
           {results.map((c) => (
-            <li key={c.id} className="rounded border border-brand-200 p-2">
+            <li key={c.id} className="rounded border border-border p-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{c.name}</span>
-                <span dir="ltr" className="text-xs text-brand-500">
+                <span dir="ltr" className="text-xs text-foreground-subtle">
                   {c.phone ?? ''}
                 </span>
               </div>

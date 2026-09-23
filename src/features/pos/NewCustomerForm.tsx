@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui'
+import { Save } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
 import { api } from '@/services/posApi'
@@ -23,7 +24,7 @@ export function NewCustomerForm({
   const [busy, setBusy] = useState(false)
 
   return (
-    <div className="mt-3 rounded border border-brand-200 p-3">
+    <div className="mt-3 rounded border border-border p-3">
       <h4 className="mb-2 font-bold">{t('pos.newCustomer')}</h4>
       <div className="flex flex-col gap-2">
         <Field label={t('pos.customerName')}>
@@ -45,6 +46,7 @@ export function NewCustomerForm({
           <Button
             size="sm"
             disabled={busy || !name.trim()}
+            loading={busy}
             onClick={() => {
               setBusy(true)
               api
@@ -71,6 +73,7 @@ export function NewCustomerForm({
                 .finally(() => setBusy(false))
             }}
           >
+            {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
         </div>

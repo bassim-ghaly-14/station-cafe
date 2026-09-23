@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
+import { Trash2, Wallet } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type OrderPreview, type PosOrder, type Product } from '@/services/posApi'
@@ -107,6 +108,7 @@ export function OrderPanel({
             onClick={() => onPay(discountRef.current)}
             disabled={order.lines.length === 0}
           >
+            <Wallet size={16} aria-hidden />
             {t('pos.pay')}
           </Button>
         }
@@ -176,20 +178,20 @@ function LineList({
     toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
 
   if (order.lines.length === 0) {
-    return <p className="py-4 text-center text-sm text-brand-500">{t('pos.emptyOrder')}</p>
+    return <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.emptyOrder')}</p>
   }
   return (
     <ul className="mb-3 flex flex-col gap-1">
       {order.lines.map((l) => (
         <li
           key={l.id}
-          className="flex items-center justify-between gap-2 rounded border border-brand-100 px-2 py-1.5"
+          className="flex items-center justify-between gap-2 rounded border border-border-subtle px-2 py-1.5"
         >
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">
               {l.product_name} <DeptBadge dept={l.department as 'CAFE' | 'WASH'} />
             </span>
-            <span className="text-xs text-brand-500">
+            <span className="text-xs text-foreground-subtle">
               <MoneyDisplay amount={l.unit_price} /> × {l.quantity}
             </span>
           </span>
@@ -206,8 +208,8 @@ function LineList({
             }
           />
           <Button
-            variant="ghost"
-            size="sm"
+            variant="destructiveGhost"
+            size="icon-sm"
             aria-label={t('pos.removeLine')}
             onClick={() =>
               api
@@ -219,7 +221,7 @@ function LineList({
                 .catch(report)
             }
           >
-            ✕
+            <Trash2 size={16} aria-hidden />
           </Button>
           <MoneyDisplay amount={l.line_total} className="w-20 text-left text-sm font-medium" />
         </li>
@@ -232,7 +234,7 @@ export function LineTotals({ order }: { order: PosOrder }) {
   const { t } = useTranslation()
   const subtotal = order.lines.reduce((a, l) => a + l.line_total, 0)
   return (
-    <div className="mb-3 flex justify-between rounded bg-brand-50 p-2 text-sm font-medium">
+    <div className="mb-3 flex justify-between rounded bg-surface-muted p-2 text-sm font-medium">
       <span>{t('pos.subtotal')}</span>
       <MoneyDisplay amount={subtotal} />
     </div>
@@ -242,7 +244,7 @@ export function LineTotals({ order }: { order: PosOrder }) {
 export function TotalsBlock({ shown }: { shown: OrderPreview }) {
   const { t } = useTranslation()
   return (
-    <div className="mb-3 flex flex-col gap-1 rounded bg-brand-50 p-2 text-sm">
+    <div className="mb-3 flex flex-col gap-1 rounded bg-surface-muted p-2 text-sm">
       <div className="flex justify-between">
         <span>{t('pos.subtotal')}</span>
         <MoneyDisplay amount={shown.subtotal} />

@@ -10,6 +10,8 @@ src-tauri/gen/
 
 # Generated reports / exports / temporary files (app-managed, never commit)
 *.pdf
+!public/print-previews/
+!public/print-previews/*.pdf
 *.xlsx
 
 # Environment & secrets

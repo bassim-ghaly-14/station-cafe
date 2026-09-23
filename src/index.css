@@ -1,37 +1,27 @@
 /*
- * Station Cafe design tokens
- * Warm, professional cafe aesthetic: beige / brown / warm neutrals.
- * Applied via Tailwind v4 CSS-first theme configuration.
+ * Station Cafe global styles.
+ *
+ * COLORS: all application colors live in `./styles/colors.css` (the single
+ * source of truth) and are exposed to Tailwind there. This file only contains
+ * base typography, shared text utilities and app-wide element defaults —
+ * which themselves reference the semantic tokens.
  */
 @import 'tailwindcss';
+@import './styles/colors.css';
 
-@theme {
-  --color-brand-50: #faf6f0;
-  --color-brand-100: #f3ead9;
-  --color-brand-200: #e6d5b8;
-  --color-brand-300: #d9b98f;
-  --color-brand-400: #c69a63;
-  --color-brand-500: #b07f47;
-  --color-brand-600: #96673a;
-  --color-brand-700: #7a5230;
-  --color-brand-800: #5e3f25;
-  --color-brand-900: #432d1c;
-  --color-brand-950: #2b1d12;
-
-  --color-surface: #faf6f0;
-  --color-surface-raised: #fffdf9;
-
+:root {
   --font-sans: 'Cairo', 'Segoe UI', 'Tahoma', system-ui, sans-serif;
 }
 
 body {
   margin: 0;
+  background-color: var(--background);
   /* Stronger, more readable Arabic-first UI type. Cairo renders small at
      legacy sizes, so the UI baseline is 16px and headings are weightier. */
   font-family: var(--font-sans);
   font-size: 1rem;
   line-height: 1.65;
-  color: var(--color-brand-950);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -42,14 +32,14 @@ body {
   font-size: 1.375rem; /* page / dialog titles */
   font-weight: 700;
   line-height: 1.4;
-  color: var(--color-brand-900);
+  color: var(--foreground-strong);
 }
 
 @utility text-section {
   font-size: 1.0625rem; /* card / section titles */
   font-weight: 700;
   line-height: 1.5;
-  color: var(--color-brand-900);
+  color: var(--foreground-strong);
 }
 
 @utility text-body {
@@ -60,7 +50,7 @@ body {
 @utility text-caption {
   font-size: 0.875rem; /* secondary / hints — readable, not tiny */
   font-weight: 500;
-  color: var(--color-brand-600);
+  color: var(--foreground-subtle);
 }
 
 /* Numeric emphasis: prices, totals, quantities stay tabular in RTL. */
@@ -69,3 +59,4 @@ body {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+

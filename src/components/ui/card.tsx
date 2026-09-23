@@ -6,7 +6,7 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'rounded-lg border border-brand-200 bg-surface-raised p-4 shadow-sm',
+        'rounded-lg border border-border bg-surface p-4 shadow-sm',
         className,
       )}
       {...props}
@@ -26,8 +26,8 @@ export function CardHeader({
   return (
     <div className="mb-3 flex items-start justify-between gap-2">
       <div>
-        <h2 className="text-base font-bold text-brand-900">{title}</h2>
-        {subtitle ? <p className="mt-0.5 text-xs text-brand-600">{subtitle}</p> : null}
+        <h2 className="text-base font-bold text-foreground-strong">{title}</h2>
+        {subtitle ? <p className="mt-0.5 text-xs text-foreground-subtle">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
     </div>
@@ -35,12 +35,12 @@ export function CardHeader({
 }
 
 const badgeStyles = {
-  default: 'bg-brand-100 text-brand-800',
-  success: 'bg-green-100 text-green-800',
-  warning: 'bg-amber-100 text-amber-800',
-  danger: 'bg-red-100 text-red-800',
-  info: 'bg-sky-100 text-sky-800',
-  neutral: 'bg-brand-50 text-brand-600 border border-brand-200',
+  default: 'bg-accent text-foreground-muted',
+  success: 'bg-success-soft text-success-foreground',
+  warning: 'bg-warning-soft text-warning-foreground',
+  danger: 'bg-destructive-soft text-destructive-soft-foreground',
+  info: 'bg-info-soft text-info-foreground',
+  neutral: 'bg-surface-muted text-foreground-subtle border border-border',
 } as const
 
 export type BadgeTone = keyof typeof badgeStyles

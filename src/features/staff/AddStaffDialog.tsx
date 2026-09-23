@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
+import { Save } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { call } from '@/services/ipc'
 import { useSession } from '../auth/useSession'
@@ -62,7 +63,7 @@ export function AddStaffDialog({
         </Field>
         <Field label={t('roles.title')}>
           <select
-            className="h-10 w-full rounded-md border border-brand-300 bg-surface-raised px-3 text-sm"
+            className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-sm"
             value={role}
             onChange={(e) => setRole(e.target.value as 'STAFF' | 'MANAGER')}
           >
@@ -74,11 +75,12 @@ export function AddStaffDialog({
         <Field label={t('auth.password')} error={errors.password}>
           <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
-          <Button onClick={save} disabled={busy}>
+          <Button onClick={save} disabled={busy} loading={busy}>
+            {!busy ? <Save size={16} aria-hidden /> : null}
             {busy ? t('app.loading') : t('app.save')}
           </Button>
         </div>

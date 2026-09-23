@@ -3,14 +3,19 @@
 //! The colored brand logo is NOT printed as-is: it is converted here (once,
 //! cached) into a 1-bit raster suitable for ESC/POS `GS v 0`. This keeps all
 //! printer-specific logo handling in one isolated module, fed by the single
-//! branding asset (public/station-cafe.png).
+//! branding asset (public/station-print.png).
+//!
+//! NOTE: The canonical print logo is public/station-print.png (square, 1254px).
+//! The older public/station-cafe.png is a legacy screen-only asset and is NOT
+//! used for printing or for any printable-template PDF preview.
 
 use crate::error::{AppError, AppResult};
 use image::imageops::FilterType;
 use std::sync::OnceLock;
 
-/// The single branding asset (frontend `public/station-cafe.png`).
-const LOGO_PNG: &[u8] = include_bytes!("../../../public/station-cafe.png");
+/// The canonical print/logo asset used by ALL printed and preview output
+/// (thermal ESC/POS + static PDF previews). Square brand mark.
+const LOGO_PNG: &[u8] = include_bytes!("../../../public/station-print.png");
 
 /// 80mm printers give 576 printable dots (72mm); we use a smaller logo.
 pub const LOGO_WIDTH_DOTS: usize = 240;

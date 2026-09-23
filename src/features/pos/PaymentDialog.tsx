@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog, MoneyDisplay } from '@/components/ui'
+import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
 import { api, type OrderPreview, type PrintOutcome } from '@/services/posApi'
@@ -118,11 +119,12 @@ export function PaymentDialog({
     <Dialog open onClose={onClose} title={t('pos.pay')}>
       {preview ? <TotalsBlock shown={preview} /> : <p>{t('app.loading')}</p>}
 
-      <div className="mb-3 grid grid-cols-3 gap-2">
+      <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label={t('pay.methodLabel')}>
         {(['CASH', 'CARD', 'CREDIT'] as const).map((m) => (
           <Button
             key={m}
             variant={method === m ? 'default' : 'outline'}
+            aria-pressed={method === m}
             onClick={() => setMethod(m)}
           >
             {t(`pay.method.${m}`)}
@@ -148,24 +150,25 @@ export function PaymentDialog({
         </div>
       ) : null}
       {method === 'CREDIT' ? (
-        <p className="mb-2 text-xs text-brand-600">{t('pay.creditHint')}</p>
+        <p className="mb-2 text-xs text-foreground-subtle">{t('pay.creditHint')}</p>
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-2 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-sm text-destructive">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
         <Button variant="outline" onClick={onClose}>
           {t('app.cancel')}
         </Button>
-        <Button onClick={pay} disabled={busy || !preview}>
+        <Button onClick={pay} disabled={busy || !preview} loading={busy}>
+          {!busy ? <Check size={16} aria-hidden /> : null}
           {busy ? t('app.loading') : t('pos.confirmPay')}
         </Button>
       </div>
-      <p className="mt-2 text-xs text-brand-500">{t('pos.payHintDiscount')}</p>
+      <p className="mt-2 text-xs text-foreground-subtle">{t('pos.payHintDiscount')}</p>
     </Dialog>
   )
 }

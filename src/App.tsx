@@ -59,7 +59,7 @@ function Authed() {
 function BootScreen() {
   const { t } = useTranslation()
   return (
-    <main dir="rtl" className="flex h-screen flex-col items-center justify-center gap-6 bg-surface">
+    <main dir="rtl" className="flex h-screen flex-col items-center justify-center gap-6 bg-background">
       <Logo size={88} />
       <LoadingState label={t('app.loading')} />
     </main>
@@ -92,7 +92,7 @@ export default function App() {
     return (
       <main
         dir="rtl"
-        className="flex h-screen flex-col items-center justify-center gap-6 bg-surface"
+        className="flex h-screen flex-col items-center justify-center gap-6 bg-background"
       >
         <Logo size={88} />
         <ErrorState

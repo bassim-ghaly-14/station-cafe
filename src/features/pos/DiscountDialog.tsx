@@ -1,7 +1,8 @@
 /** Live order panel: order-level FIXED/PERCENT discount dialog. */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui'
+import { Button, Dialog } from '@/components/ui'
+import { Check } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import type { DiscountSel } from './OrderPanel'
 
@@ -18,13 +19,13 @@ export function DiscountDialog({
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/40 p-4">
-      <div className="w-full max-w-sm rounded-lg bg-surface-raised p-5">
-        <h3 className="mb-3 font-bold">{t('pos.discount')}</h3>
-        <div className="mb-3 flex gap-2">
+    <Dialog open onClose={onClose} title={t('pos.discount')}>
+      <div className="flex flex-col gap-4">
+        <div className="mb-3 flex gap-2" role="group" aria-label={t('pos.discount')}>
           <Button
             variant={mode === 'PERCENT' ? 'default' : 'outline'}
             size="sm"
+            aria-pressed={mode === 'PERCENT'}
             onClick={() => setMode('PERCENT')}
           >
             %
@@ -32,6 +33,7 @@ export function DiscountDialog({
           <Button
             variant={mode === 'FIXED' ? 'default' : 'outline'}
             size="sm"
+            aria-pressed={mode === 'FIXED'}
             onClick={() => setMode('FIXED')}
           >
             {t('pos.fixed')}
@@ -44,11 +46,11 @@ export function DiscountDialog({
           onChange={(e) => setValue(e.target.value)}
         />
         {error ? (
-          <p role="alert" className="mt-1 text-xs text-red-700">
+          <p role="alert" className="mt-1 text-xs text-destructive">
             {error}
           </p>
         ) : null}
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -71,10 +73,11 @@ export function DiscountDialog({
               onApply({ mode, value: scaled })
             }}
           >
+            <Check size={16} aria-hidden />
             {t('app.confirm')}
           </Button>
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }

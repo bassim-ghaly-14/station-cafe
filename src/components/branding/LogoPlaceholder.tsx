@@ -19,7 +19,7 @@ export function Logo({
       <div
         role="img"
         aria-label="Station Cafe"
-        className="flex items-center justify-center rounded-lg bg-brand-100 font-bold text-brand-700 select-none"
+        className="flex items-center justify-center rounded-lg bg-accent font-bold text-foreground-muted select-none"
         style={{ width: size, height: size, fontSize: size * 0.3 }}
       >
         <span dir="ltr">S</span>
@@ -41,7 +41,7 @@ export function Logo({
         style={{ width: size, height: size }}
       />
       {withWordmark ? (
-        <span dir="ltr" className="text-xl font-bold text-brand-900">
+        <span dir="ltr" className="text-xl font-bold text-foreground-strong">
           Station Cafe
         </span>
       ) : null}

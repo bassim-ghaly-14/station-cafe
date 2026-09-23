@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader } from '@/components/ui'
+import { Power } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
 import { shiftApi } from '@/services/shiftApi'
@@ -62,7 +63,8 @@ export function ShiftGate({ onReady }: { onReady: () => void }) {
             placeholder="0.00"
           />
         </Field>
-        <Button size="lg" disabled={opening} onClick={() => void start()}>
+        <Button size="lg" disabled={opening} loading={opening} onClick={() => void start()}>
+          {!opening ? <Power size={20} aria-hidden /> : null}
           {t('shift.openShift')}
         </Button>
       </div>

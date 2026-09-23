@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Card, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Plus, Power } from '@/components/ui/icon'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { useToast } from '@/components/ui/toast'
 import { call } from '@/services/ipc'
@@ -46,7 +47,12 @@ export default function StaffPage() {
         <CardHeader
           title={t('nav.staff')}
           subtitle={t('staff.subtitle')}
-          actions={<Button onClick={() => setDialogOpen(true)}>{t('staff.addStaff')}</Button>}
+          actions={
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus size={16} aria-hidden />
+              {t('staff.addStaff')}
+            </Button>
+          }
         />
         {error ? (
           <ErrorState message={error} onRetry={refresh} retryLabel={t('app.retry')} />
@@ -57,7 +63,7 @@ export default function StaffPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-brand-200 text-right text-brand-600">
+              <tr className="border-b border-border text-right text-foreground-subtle">
                 <th className="p-2 font-medium">{t('staff.name')}</th>
                 <th className="p-2 font-medium">{t('staff.phone')}</th>
                 <th className="p-2 font-medium">{t('roles.title')}</th>
@@ -67,8 +73,8 @@ export default function StaffPage() {
             </thead>
             <tbody>
               {staff.map((u) => (
-                <tr key={u.id} className="border-b border-brand-100">
-                  <td className="p-2 font-medium text-brand-900">{u.name}</td>
+                <tr key={u.id} className="border-b border-border-subtle">
+                  <td className="p-2 font-medium text-foreground-strong">{u.name}</td>
                   <td className="p-2" dir="ltr">
                     {u.phone ?? '—'}
                   </td>
@@ -88,11 +94,12 @@ export default function StaffPage() {
                   </td>
                   <td className="p-2">
                     <Button
-                      variant="ghost"
+                      variant={u.status === 'ACTIVE' ? 'destructiveGhost' : 'secondary'}
                       size="sm"
                       disabled={u.id === user?.id}
                       onClick={() => toggleStatus(u)}
                     >
+                      <Power size={16} aria-hidden />
                       {u.status === 'ACTIVE' ? t('staff.suspend') : t('staff.activate')}
                     </Button>
                   </td>

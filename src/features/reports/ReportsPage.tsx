@@ -5,10 +5,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { Badge, Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
+import { Badge, Button, Card, CardHeader, DateRangePicker, MoneyDisplay } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
 import { BarChart3, Printer } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
+import { addDays, todayIso } from '@/lib/date'
 import {
   opsApi,
   type AuditEntry,
@@ -17,15 +18,15 @@ import {
   type SalesByDay,
 } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
-import { cn } from '@/lib/utils'
 
 type Tab = 'sales' | 'products' | 'audit' | 'print'
 
 export default function ReportsPage() {
   const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('sales')
-  const today = new Date().toISOString().slice(0, 10)
-  const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10)
+  // Default period: the last seven local business days, as `YYYY-MM-DD` strings.
+  const today = todayIso()
+  const weekAgo = addDays(today, -6)
   const [from, setFrom] = useState(weekAgo)
   const [to, setTo] = useState(today)
 
@@ -43,21 +44,23 @@ export default function ReportsPage() {
         {t('nav.reports')}
       </h1>
 
-      <div className="flex flex-wrap items-center gap-2" role="tablist">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="tablist"
+        aria-label={t('nav.reports')}
+      >
         {TABS.map((x) => (
-          <button
+          <Button
             key={x.id}
             type="button"
             role="tab"
             aria-selected={tab === x.id}
+            variant={tab === x.id ? 'default' : 'ghost'}
+            size="sm"
             onClick={() => setTab(x.id)}
-            className={cn(
-              'rounded-md px-4 py-2 text-base font-medium transition-colors',
-              tab === x.id ? 'bg-brand-700 text-white' : 'text-brand-800 hover:bg-brand-100',
-            )}
           >
             {x.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -71,6 +74,11 @@ export default function ReportsPage() {
   )
 }
 
+/**
+ * Report period filter — one shared range control for the `from` / `to` pair the
+ * report services already expect. The values travel to the API untouched:
+ * `YYYY-MM-DD` strings, empty when the user clears the period.
+ */
 function RangePicker({
   from,
   to,
@@ -82,15 +90,16 @@ function RangePicker({
   setFrom: (v: string) => void
   setTo: (v: string) => void
 }) {
-  const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <Field label={t('reports.from')}>
-        <Input type="date" dir="ltr" value={from} onChange={(e) => setFrom(e.target.value)} />
-      </Field>
-      <Field label={t('reports.to')}>
-        <Input type="date" dir="ltr" value={to} onChange={(e) => setTo(e.target.value)} />
-      </Field>
+    <div className="flex flex-wrap items-center gap-2">
+      <DateRangePicker
+        from={from}
+        to={to}
+        onChange={({ from: nextFrom, to: nextTo }) => {
+          setFrom(nextFrom)
+          setTo(nextTo)
+        }}
+      />
     </div>
   )
 }
@@ -143,7 +152,7 @@ function SalesReport({
           <CardHeader title={t('reports.sales')} subtitle={t('reports.salesHint')} />
           <table className="w-full text-right">
             <thead>
-              <tr className="text-caption border-b border-brand-200">
+              <tr className="text-caption border-b border-border">
                 <th className="py-2 font-bold">{t('app.date')}</th>
                 <th className="py-2 font-bold">{t('reports.invoices')}</th>
                 <th className="py-2 font-bold">{t('pos.cafe')}</th>
@@ -155,7 +164,7 @@ function SalesReport({
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.day_id} className="border-b border-brand-100">
+                <tr key={r.day_id} className="border-b border-border-subtle">
                   <td className="py-2 text-body" dir="ltr">
                     {r.day_date}
                   </td>
@@ -233,7 +242,7 @@ function ProductSalesReport({
           <CardHeader title={t('reports.products')} />
           <table className="w-full text-right">
             <thead>
-              <tr className="text-caption border-b border-brand-200">
+              <tr className="text-caption border-b border-border">
                 <th className="py-2 font-bold">{t('catalog.name')}</th>
                 <th className="py-2 font-bold">{t('catalog.department')}</th>
                 <th className="py-2 font-bold">{t('pos.qty')}</th>
@@ -242,7 +251,7 @@ function ProductSalesReport({
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={`${r.product_name}-${r.department}`} className="border-b border-brand-100">
+                <tr key={`${r.product_name}-${r.department}`} className="border-b border-border-subtle">
                   <td className="py-2 text-body font-bold">{r.product_name}</td>
                   <td className="py-2">{t(`catalog.${r.department}`)}</td>
                   <td className="py-2">{r.quantity}</td>
@@ -304,7 +313,7 @@ function AuditList() {
       ) : (
         <Card>
           <CardHeader title={t('nav.audit')} subtitle={t('audit.hint')} />
-          <div className="flex flex-col divide-y divide-brand-100">
+          <div className="flex flex-col divide-y divide-border-subtle">
             {rows.map((a) => (
               <div key={a.id} className="flex flex-wrap items-center gap-3 py-2">
                 <div className="min-w-48 flex-1">
@@ -376,8 +385,13 @@ function PrintJobsList() {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <Button variant="outline" onClick={() => void testPrint()} disabled={testing}>
-          <Printer size={16} aria-hidden />
+        <Button
+          variant="outline"
+          onClick={() => void testPrint()}
+          disabled={testing}
+          loading={testing}
+        >
+          {!testing ? <Printer size={16} aria-hidden /> : null}
           {t('reports.printTest')}
         </Button>
       </div>
@@ -392,7 +406,7 @@ function PrintJobsList() {
       ) : (
         <Card>
           <CardHeader title={t('reports.printJobs')} subtitle={t('reports.printJobsHint')} />
-          <div className="flex flex-col divide-y divide-brand-100">
+          <div className="flex flex-col divide-y divide-border-subtle">
             {rows.map((j) => (
               <div key={j.id} className="flex flex-wrap items-center gap-3 py-2">
                 <div className="min-w-40 flex-1">
@@ -403,7 +417,7 @@ function PrintJobsList() {
                     {j.created_at} · {t('reports.attempts')}: {j.attempts}
                   </p>
                 </div>
-                {j.error ? <span className="text-caption text-red-700">{j.error}</span> : null}
+                {j.error ? <span className="text-caption text-destructive">{j.error}</span> : null}
                 <Badge
                   tone={
                     j.status === 'DONE' ? 'success' : j.status === 'FAILED' ? 'danger' : 'warning'

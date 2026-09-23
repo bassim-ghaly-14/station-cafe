@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { Badge, Button, Card, Dialog, MoneyDisplay } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
-import { Package, Plus, Search } from '@/components/ui/icon'
+import { Check, Package, Pencil, Plus, Power, Save, Search } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { formatMinor, parseMajor } from '@/lib/utils'
 import { useErrText } from '@/lib/err'
@@ -47,6 +47,7 @@ export default function CatalogPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
+
     return (items ?? []).filter((p) => {
       if (q && !p.name.toLowerCase().includes(q)) return false
       if (dept && p.department !== dept) return false
@@ -74,6 +75,7 @@ export default function CatalogPage() {
           <Package size={22} aria-hidden />
           {t('nav.catalog')}
         </h1>
+
         <Button onClick={() => setCreateOpen(true)}>
           <Plus size={16} aria-hidden />
           {t('catalog.add')}
@@ -85,8 +87,9 @@ export default function CatalogPage() {
           <Search
             size={16}
             aria-hidden
-            className="pointer-events-none absolute top-1/2 inset-s-3 -translate-y-1/2 text-brand-400"
+            className="pointer-events-none absolute top-1/2 inset-s-3 -translate-y-1/2 text-foreground-faint"
           />
+
           <Input
             aria-label={t('catalog.search')}
             value={query}
@@ -95,24 +98,27 @@ export default function CatalogPage() {
             className="ps-9"
           />
         </div>
+
         <select
           aria-label={t('catalog.department')}
           value={dept}
           onChange={(e) => setDept(e.target.value as typeof dept)}
-          className="h-10 rounded-md border border-brand-300 bg-surface-raised px-3 text-base"
+          className="h-10 rounded-md border border-border-strong bg-surface px-3 text-base"
         >
           <option value="">{t('catalog.allDepartments')}</option>
+
           {DEPARTMENTS.map((d) => (
             <option key={d} value={d}>
               {t(`catalog.${d}`)}
             </option>
           ))}
         </select>
+
         <select
           aria-label={t('app.status')}
           value={status}
           onChange={(e) => setStatus(e.target.value as typeof status)}
-          className="h-10 rounded-md border border-brand-300 bg-surface-raised px-3 text-base"
+          className="h-10 rounded-md border border-border-strong bg-surface px-3 text-base"
         >
           <option value="">{t('catalog.allStatuses')}</option>
           <option value="ACTIVE">{t('catalog.active')}</option>
@@ -129,29 +135,44 @@ export default function CatalogPage() {
       ) : filtered.length === 0 ? (
         <EmptyState title={t('catalog.empty')} />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {filtered.map((p) => (
-            <Card key={p.id} className="flex flex-wrap items-center gap-3 py-3">
-              <div className="min-w-40 flex-1">
-                <p className="text-body font-bold">{p.name}</p>
-                <p className="text-caption">
+            <Card key={p.id} className="flex min-h-48 flex-col gap-4 p-4">
+              <div className="min-w-0">
+                <p className="text-body truncate font-bold">{p.name}</p>
+
+                <p className="text-caption mt-1">
                   {t(`catalog.${p.item_type}`)} · {t(`catalog.${p.department}`)}
                   {p.track_inventory ? ` · ${t('inventory.tracked')}` : ''}
                 </p>
               </div>
-              <MoneyDisplay amount={p.price_minor} className="text-money min-w-24" />
-              <Badge tone={p.is_active ? 'success' : 'neutral'}>
-                {p.is_active ? t('catalog.active') : t('catalog.inactive')}
-              </Badge>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setEditing(p)}>
+
+              <div className="flex items-center justify-between gap-3">
+                <MoneyDisplay amount={p.price_minor} className="text-money" />
+
+                <Badge tone={p.is_active ? 'success' : 'neutral'}>
+                  {p.is_active ? t('catalog.active') : t('catalog.inactive')}
+                </Badge>
+              </div>
+
+              <div className="mt-auto flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setEditing(p)}
+                >
+                  <Pencil size={16} aria-hidden />
                   {t('catalog.edit')}
                 </Button>
+
                 <Button
-                  variant={p.is_active ? 'destructive' : 'secondary'}
+                  variant={p.is_active ? 'destructiveGhost' : 'secondary'}
                   size="sm"
+                  className="flex-1"
                   onClick={() => setConfirming(p)}
                 >
+                  <Power size={16} aria-hidden />
                   {p.is_active ? t('catalog.deactivate') : t('catalog.activate')}
                 </Button>
               </div>
@@ -170,6 +191,7 @@ export default function CatalogPage() {
           }}
         />
       ) : null}
+
       {editing ? (
         <EditProductDialog
           product={editing}
@@ -181,6 +203,7 @@ export default function CatalogPage() {
           }}
         />
       ) : null}
+
       <Dialog
         open={confirming !== null}
         onClose={() => setConfirming(null)}
@@ -192,14 +215,17 @@ export default function CatalogPage() {
             next: confirming?.is_active ? t('catalog.inactive') : t('catalog.active'),
           })}
         </p>
-        <div className="flex justify-end gap-2">
+
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => setConfirming(null)}>
             {t('app.cancel')}
           </Button>
+
           <Button
             variant={confirming?.is_active ? 'destructive' : 'default'}
             onClick={() => confirming && toggleActive(confirming)}
           >
+            <Check size={16} aria-hidden />
             {t('app.confirm')}
           </Button>
         </div>
@@ -228,12 +254,16 @@ function CreateProductDialog({
 
   async function save() {
     const minor = parseMajor(price)
+
     if (!name.trim()) return
+
     if (minor === null) {
       setPriceError(t('catalog.invalidPrice'))
       return
     }
+
     setBusy(true)
+
     try {
       const input: NewProductInput = {
         name: name.trim(),
@@ -242,6 +272,7 @@ function CreateProductDialog({
         price_minor: minor,
         track_inventory: tracked,
       }
+
       await catalogApi.create(input)
       onCreated(input.name)
     } catch (e) {
@@ -257,12 +288,13 @@ function CreateProductDialog({
         <Field label={t('catalog.name')}>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('catalog.type')}>
             <select
               value={type}
               onChange={(e) => setType(e.target.value as typeof type)}
-              className="h-10 w-full rounded-md border border-brand-300 bg-surface-raised px-3 text-base"
+              className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base"
             >
               {TYPES.map((v) => (
                 <option key={v} value={v}>
@@ -271,11 +303,12 @@ function CreateProductDialog({
               ))}
             </select>
           </Field>
+
           <Field label={t('catalog.department')}>
             <select
               value={department}
               onChange={(e) => setDepartment(e.target.value as typeof department)}
-              className="h-10 w-full rounded-md border border-brand-300 bg-surface-raised px-3 text-base"
+              className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base"
             >
               {DEPARTMENTS.map((v) => (
                 <option key={v} value={v}>
@@ -285,6 +318,7 @@ function CreateProductDialog({
             </select>
           </Field>
         </div>
+
         <Field label={t('catalog.price')} error={priceError}>
           <Input
             dir="ltr"
@@ -294,20 +328,24 @@ function CreateProductDialog({
             placeholder="0.00"
           />
         </Field>
+
         <label className="text-body flex items-center gap-2">
           <input
             type="checkbox"
             checked={tracked}
             onChange={(e) => setTracked(e.target.checked)}
-            className="h-4 w-4 accent-brand-700"
+            className="h-4 w-4 accent-primary"
           />
           {t('inventory.trackItem')}
         </label>
-        <div className="flex justify-end gap-2">
+
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
-          <Button onClick={save} disabled={busy}>
+
+          <Button onClick={save} disabled={busy} loading={busy}>
+            {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
         </div>
@@ -334,12 +372,21 @@ function EditProductDialog({
 
   async function save() {
     const minor = parseMajor(price)
+
     if (!name.trim()) return
     if (minor === null) return
+
     setBusy(true)
+
     try {
-      if (name.trim() !== product.name) await catalogApi.rename(product.id, name.trim())
-      if (minor !== product.price_minor) await catalogApi.setPrice(product.id, minor)
+      if (name.trim() !== product.name) {
+        await catalogApi.rename(product.id, name.trim())
+      }
+
+      if (minor !== product.price_minor) {
+        await catalogApi.setPrice(product.id, minor)
+      }
+
       onSaved()
     } catch (e) {
       toast(errText(e), 'error')
@@ -354,6 +401,7 @@ function EditProductDialog({
         <Field label={t('catalog.name')}>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
+
         <Field label={t('catalog.price')}>
           <Input
             dir="ltr"
@@ -362,12 +410,16 @@ function EditProductDialog({
             onChange={(e) => setPrice(e.target.value)}
           />
         </Field>
+
         <p className="text-caption">{t('catalog.priceSnapshotHint')}</p>
-        <div className="flex justify-end gap-2">
+
+        <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
-          <Button onClick={save} disabled={busy}>
+
+          <Button onClick={save} disabled={busy} loading={busy}>
+            {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
         </div>

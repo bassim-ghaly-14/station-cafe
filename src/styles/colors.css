@@ -1,0 +1,234 @@
+/*
+ * ============================================================================
+ * STATION CAFE — COLOR SOURCE OF TRUTH
+ * ============================================================================
+ * This file is the ONLY place where application-owned colors are defined.
+ * Every color the app renders comes from the semantic tokens below, exposed to
+ * Tailwind via `@theme inline` in `src/index.css` (so classes like
+ * `bg-primary`, `text-foreground`, `border-border` resolve to these vars).
+ *
+ * Rules:
+ *   - Components consume SEMANTIC tokens (never raw hex values or palette
+ *     shades directly).
+ *   - New application colors are added here, not in components.
+ *   - Light values live in `:root`; dark values override them inside the
+ *     `prefers-color-scheme: dark` block — the ONLY place the two themes
+ *     differ. Theme meaning must stay stable; only values change.
+ *   - To rebrand the app (e.g. change the primary brand color), edit the
+ *     primitive palette / semantic tokens here and the whole UI follows.
+ *
+ * Layers:
+ *   1. Primitive palette (--palette-brand-*) — internal reference shades.
+ *   2. Semantic tokens (--background, --surface, --primary, ...) — the API.
+ * ============================================================================
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. Primitive brand palette (warm beige / brown cafe identity).
+ * ------------------------------------------------------------------------- */
+:root {
+  --palette-brand-50: #faf6f0;
+  --palette-brand-100: #f3ead9;
+  --palette-brand-200: #e6d5b8;
+  --palette-brand-300: #d9b98f;
+  --palette-brand-400: #c69a63;
+  --palette-brand-500: #b07f47;
+  --palette-brand-600: #96673a;
+  --palette-brand-700: #7a5230;
+  --palette-brand-800: #5e3f25;
+  --palette-brand-900: #432d1c;
+  --palette-brand-950: #2b1d12;
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. Semantic tokens — LIGHT theme (default).
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Backgrounds & surfaces (hierarchy: background < surface < overlay). */
+  --background: #faf6f0; /* page / app background */
+  --surface: #fffdf9; /* raised panels: cards, dialogs, sidebar, header, inputs */
+  --surface-muted: #faf6f0; /* subtly tinted panels: totals, metric boxes, neutral badges */
+  --surface-hover: rgb(230 213 184 / 0.6); /* interactive surface hover */
+  --surface-active: #e6d5b8; /* interactive surface pressed */
+  --overlay: rgb(43 29 18 / 0.4); /* dialog / drawer scrim */
+
+  /* Foregrounds. */
+  --foreground: #2b1d12; /* primary text */
+  --foreground-strong: #432d1c; /* headings, emphasized values */
+  --foreground-muted: #5e3f25; /* labels, nav, ghost text */
+  --foreground-subtle: #96673a; /* captions, hints, secondary text */
+  --foreground-faint: #d9b98f; /* decorative: out-of-month days, dashes */
+
+  /* Borders. */
+  --border: #e6d5b8; /* default separators */
+  --border-subtle: #f3ead9; /* hairline row separators */
+  --border-strong: #d9b98f; /* inputs, selects, resting cards */
+  --border-accent: #c69a63; /* outlined interactive resting border */
+  --border-accent-hover: #b07f47; /* outlined interactive hover border */
+
+  /* Primary (brand action). */
+  --primary: #7a5230;
+  --primary-hover: #5e3f25;
+  --primary-active: #432d1c;
+  --primary-foreground: #ffffff;
+
+  /* Secondary (soft brand action). */
+  --secondary: #e6d5b8;
+  --secondary-hover: #d9b98f;
+  --secondary-active: #c69a63;
+  --secondary-foreground: #2b1d12;
+
+  /* Accent tint (selected state, strong tinted surfaces). */
+  --accent: #f3ead9;
+  --accent-hover: #e6d5b8;
+
+  /* Focus. */
+  --focus: #96673a;
+
+  /* Destructive. */
+  --destructive: #b91c1c; /* red-700 */
+  --destructive-hover: #991b1b; /* red-800 */
+  --destructive-active: #7f1d1d; /* red-900 */
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fee2e2; /* red-100: soft bg / border */
+  --destructive-soft-hover: #fecaca; /* red-200 */
+
+/* ---------------------------------------------------------------------------
+ * 3. Semantic tokens — DARK theme. Same meanings, adjusted values only.
+ * ------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #2b1d12;
+    --surface: #3a2a1b;
+    --surface-muted: rgb(255 255 255 / 0.05);
+    --surface-hover: rgb(255 255 255 / 0.1);
+    --surface-active: rgb(255 255 255 / 0.15);
+    --overlay: rgb(0 0 0 / 0.6);
+
+    --foreground: #faf6f0;
+    --foreground-strong: #f3ead9;
+    --foreground-muted: #f3ead9;
+    --foreground-subtle: #c69a63;
+    --foreground-faint: #5e3f25;
+
+    --border: rgb(255 255 255 / 0.15);
+    --border-subtle: rgb(255 255 255 / 0.1);
+    --border-strong: rgb(255 255 255 / 0.2);
+    --border-accent: rgb(255 255 255 / 0.2);
+    --border-accent-hover: rgb(255 255 255 / 0.3);
+
+    --primary: #b07f47;
+    --primary-hover: #c69a63;
+    --primary-active: #d9b98f;
+    --primary-foreground: #2b1d12;
+
+    --secondary: rgb(255 255 255 / 0.1);
+    --secondary-hover: rgb(255 255 255 / 0.15);
+    --secondary-active: rgb(255 255 255 / 0.2);
+    --secondary-foreground: #faf6f0;
+
+    --accent: rgb(255 255 255 / 0.1);
+    --accent-hover: rgb(255 255 255 / 0.15);
+
+    --focus: #d9b98f;
+
+    --destructive: #dc2626;
+    --destructive-hover: #ef4444;
+    --destructive-active: #f87171;
+    --destructive-foreground: #ffffff;
+    --destructive-soft: rgb(239 68 68 / 0.15);
+    --destructive-soft-hover: rgb(239 68 68 / 0.25);
+    --destructive-soft-foreground: #fecaca;
+
+    --success: #4ade80;
+    --success-foreground: #86efac;
+    --success-soft: rgb(34 197 94 / 0.15);
+
+    --warning: #fbbf24;
+    --warning-foreground: #fcd34d;
+    --warning-soft: rgb(245 158 11 / 0.15);
+
+    --info: #38bdf8;
+    --info-foreground: #7dd3fc;
+    --info-soft: rgb(14 165 233 / 0.15);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. Tailwind integration. `inline` makes utilities resolve `var(--token)`
+ *    at the element, so the dark-theme overrides above apply everywhere.
+ *    DO NOT hardcode hex values here or anywhere else in the app.
+ * ------------------------------------------------------------------------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-overlay: var(--overlay);
+
+  --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-foreground-faint: var(--foreground-faint);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-accent: var(--border-accent);
+  --color-border-accent-hover: var(--border-accent-hover);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-active: var(--secondary-active);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+
+  --color-focus: var(--focus);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-active: var(--destructive-active);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-hover: var(--destructive-soft-hover);
+  --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+}
+
+  --destructive-soft-foreground: #991b1b; /* red-800 */
+
+  /* Success. */
+  --success: #15803d; /* green-700 */
+  --success-foreground: #166534; /* green-800 */
+  --success-soft: #dcfce7; /* green-100 */
+
+  /* Warning. */
+  --warning: #d97706; /* amber-600 */
+  --warning-foreground: #92400e; /* amber-800 */
+  --warning-soft: #fef3c7; /* amber-100 */
+
+  /* Info. */
+  --info: #0284c7; /* sky-600 */
+  --info-foreground: #075985; /* sky-800 */
+  --info-soft: #e0f2fe; /* sky-100 */
+}

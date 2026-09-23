@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Dialog, MoneyDisplay } from '@/components/ui'
+import { Printer, Search } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
@@ -66,7 +67,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           aria-label={t('pos.invoiceSearch')}
         />
         <select
-          className="h-10 rounded-md border border-brand-300 bg-surface-raised px-2 text-sm"
+          className="h-10 rounded-md border border-border-strong bg-surface px-2 text-sm"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           aria-label={t('app.status')}
@@ -79,7 +80,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           ))}
         </select>
         <select
-          className="h-10 rounded-md border border-brand-300 bg-surface-raised px-2 text-sm"
+          className="h-10 rounded-md border border-border-strong bg-surface px-2 text-sm"
           value={method}
           onChange={(e) => setMethod(e.target.value)}
           aria-label={t('pay.methodLabel')}
@@ -92,6 +93,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           ))}
         </select>
         <Button variant="outline" onClick={load}>
+          <Search size={16} aria-hidden />
           {t('app.search')}
         </Button>
       </div>
@@ -102,17 +104,17 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           <p>{t('app.loading')}</p>
         )
       ) : rows.length === 0 ? (
-        <p className="py-4 text-center text-sm text-brand-500">{t('pos.noInvoices')}</p>
+        <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noInvoices')}</p>
       ) : (
         <ul className="flex max-h-96 flex-col gap-1 overflow-y-auto">
           {rows.map((r) => (
             <li
               key={r.id}
-              className="flex items-center justify-between gap-2 rounded border border-brand-100 p-2"
+              className="flex items-center justify-between gap-2 rounded border border-border-subtle p-2"
             >
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-bold">#{r.invoice_no}</span>
-                <span className="block truncate text-xs text-brand-600">
+                <span className="block truncate text-xs text-foreground-subtle">
                   {r.table_label ?? ''} · {r.customer_name ?? ''} ·{' '}
                   <span dir="ltr">{r.car_plate ?? ''}</span>
                 </span>
@@ -123,14 +125,20 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
                 {t(`invoice.status.${r.status}`)}
               </Badge>
               <MoneyDisplay amount={r.total} className="text-sm font-medium" />
-              <Button size="sm" variant="ghost" onClick={() => printAgain(r.id)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`${t('app.print')} — #${r.invoice_no}`}
+                onClick={() => printAgain(r.id)}
+              >
+                <Printer size={16} aria-hidden />
                 {t('app.print')}
               </Button>
             </li>
           ))}
         </ul>
       )}
-      {dayId === null ? <p className="mt-2 text-xs text-brand-500">{t('pos.noDayHint')}</p> : null}
+      {dayId === null ? <p className="mt-2 text-xs text-foreground-subtle">{t('pos.noDayHint')}</p> : null}
     </Dialog>
   )
 }

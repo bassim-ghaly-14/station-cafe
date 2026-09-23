@@ -45,7 +45,7 @@ export default function LoginPage() {
   return (
     <main
       dir="rtl"
-      className="flex min-h-screen flex-col items-center justify-center gap-8 bg-surface p-4"
+      className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background p-4"
     >
       <div className="flex flex-col items-center gap-3">
         <Logo size={88} />
@@ -54,7 +54,7 @@ export default function LoginPage() {
 
       <form
         onSubmit={submit}
-        className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-brand-200 bg-surface-raised p-6 shadow-sm"
+        className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-surface p-6 shadow-sm"
       >
         <Field
           label={t('auth.name')}
@@ -83,7 +83,7 @@ export default function LoginPage() {
           />
         </Field>
 
-        <Button type="submit" size="lg" disabled={busy} className="text-body">
+        <Button type="submit" size="lg" disabled={busy} loading={busy} className="text-body">
           {busy ? t('auth.signingIn') : t('auth.signIn')}
         </Button>
 
@@ -94,7 +94,7 @@ export default function LoginPage() {
         ) : null}
       </form>
 
-      <p className="text-xs text-brand-500">{t('app.tagline')}</p>
+      <p className="text-xs text-foreground-subtle">{t('app.tagline')}</p>
     </main>
   )
 }

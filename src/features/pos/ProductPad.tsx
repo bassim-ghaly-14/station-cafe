@@ -25,51 +25,72 @@ export function ProductPad({
   onAdd: (p: Product) => void
 }) {
   const { t } = useTranslation()
+
   return (
     <>
-      <div className="mb-2 flex gap-2">
-        <Button
-          variant={dept === 'CAFE' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setDept('CAFE')}
+      {/* Department + Search */}
+      <div className="mb-3 flex flex-wrap gap-2">
+        <div
+          className="flex shrink-0 items-center rounded-md border border-border bg-surface-muted p-1"
+          role="group"
+          aria-label={t('catalog.department')}
         >
-          {t('pos.cafe')}
-        </Button>
-        <Button
-          variant={dept === 'WASH' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setDept('WASH')}
-        >
-          {t('pos.wash')}
-        </Button>
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('pos.searchItems')}
-          aria-label={t('pos.searchItems')}
-        />
+          <Button
+            variant={dept === 'CAFE' ? 'default' : 'ghost'}
+            size="sm"
+            aria-pressed={dept === 'CAFE'}
+            onClick={() => setDept('CAFE')}
+          >
+            {t('pos.cafe')}
+          </Button>
+
+          <Button
+            variant={dept === 'WASH' ? 'default' : 'ghost'}
+            size="sm"
+            aria-pressed={dept === 'WASH'}
+            onClick={() => setDept('WASH')}
+          >
+            {t('pos.wash')}
+          </Button>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('pos.searchItems')}
+            aria-label={t('pos.searchItems')}
+          />
+        </div>
       </div>
-      <div className="mb-2 flex items-center gap-2 text-sm">
-        <span>{t('pos.qty')}</span>
+
+      {/* Quantity */}
+      <div className="mb-3 flex items-center justify-between border border-border-subtle bg-surface-muted px-3 py-2">
+        <span className="text-sm font-medium text-foreground-muted">{t('pos.qty')}</span>
+
         <QtyStepper qty={qty} min={1} onChange={setQty} big />
       </div>
+
+      {/* Products */}
       <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto">
         {items.map((p) => (
           <button
             key={p.id}
             type="button"
             onClick={() => onAdd(p)}
-            className="flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-lg border border-brand-200 bg-surface-raised p-2 text-right hover:bg-brand-50"
+            className="flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-lg border border-border-strong bg-transparent p-2 text-start text-foreground transition-colors hover:border-border-accent-hover hover:bg-accent active:border-border-accent-hover active:bg-accent-hover"
           >
             <span className="w-full truncate text-sm font-medium">{p.name}</span>
-            <span className="text-sm font-bold text-brand-700">
+
+            <span className="text-sm font-bold text-foreground-muted">
               <MoneyDisplay amount={p.price_minor} />
             </span>
           </button>
         ))}
       </div>
+
       {items.length === 0 ? (
-        <p className="py-3 text-center text-xs text-brand-500">{t('pos.noItems')}</p>
+        <p className="py-3 text-center text-xs text-foreground-subtle">{t('pos.noItems')}</p>
       ) : null}
     </>
   )

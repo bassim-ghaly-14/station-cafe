@@ -35,6 +35,11 @@ src/                       # React frontend
   components/ui/           # shadcn/ui primitives (generated, curated)
   components/states/       # Loading / Empty / Error (shared)
   components/branding/     # LogoPlaceholder (swap real logo in ONE file)
+  styles/colors.css        # COLOR SOURCE OF TRUTH: semantic tokens (light+dark).
+                           # All application colors are defined here and consumed
+                           # via Tailwind classes (bg-primary, text-foreground, ...).
+                           # Never hardcode colors in components.
+  index.css                # imports tokens, base typography utilities
   lib/                     # utils, i18n bootstrap, error taxonomy
   locales/ar/              # Arabic (Egypt) translations — production language
   services/                # typed wrappers over Tauri IPC (frontend side)

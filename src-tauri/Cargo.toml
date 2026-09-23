@@ -30,3 +30,8 @@ argon2 = "0.5"
 image = "0.25"
 rand = "0.8"
 sha2 = "0.10"
+
+# Used only by `examples/gen_previews.rs` (static PDF previews), not the shipped
+# app binary.
+[dev-dependencies]
+printpdf = { version = "0.11.1", features = ["png"] }

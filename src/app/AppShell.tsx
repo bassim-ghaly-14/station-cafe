@@ -2,7 +2,8 @@
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/LogoPlaceholder'
-import { Badge, Button } from '@/components/ui'
+import { Badge } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
   BarChart3,
   Boxes,
@@ -41,11 +42,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const items = NAV.filter((n) => atLeast(user?.role, n.minRole))
 
   return (
-    <div dir="rtl" className="flex min-h-screen bg-surface">
-      <aside className="flex w-56 shrink-0 flex-col border-l border-brand-200 bg-surface-raised p-4">
+    <div dir="rtl" className="flex min-h-screen bg-background">
+      <aside className="flex w-56 shrink-0 flex-col border-l border-border bg-surface p-4">
         <div className="mb-6 flex flex-col items-center gap-2">
           <Logo size={56} />
-          <p className="text-sm font-bold text-brand-900">{t('app.name')}</p>
+          <p className="text-sm font-bold text-foreground-strong">{t('app.name')}</p>
         </div>
         <nav className="flex flex-col gap-1">
           {items.map((n) => {
@@ -56,8 +57,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 type="button"
                 onClick={() => navigate(n.view)}
                 aria-current={view === n.view ? 'page' : undefined}
-                className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-right text-base font-medium transition-colors ${
-                  view === n.view ? 'bg-brand-700 text-white' : 'text-brand-800 hover:bg-brand-100'
+                className={`flex items-center gap-2.5 rounded-md px-3 py-2.5 text-start text-base font-medium transition-colors ${
+                  view === n.view ? 'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active' : 'text-foreground-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active'
                 }`}
               >
                 <Icon size={18} aria-hidden />
@@ -69,9 +70,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-brand-200 bg-surface-raised px-6 py-3">
+        <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-brand-800">{user?.name}</span>
+            <span className="text-sm font-medium text-foreground-muted">{user?.name}</span>
             <Badge
               tone={
                 user?.role === 'ADMIN' ? 'danger' : user?.role === 'MANAGER' ? 'info' : 'neutral'
@@ -81,7 +82,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </Badge>
           </div>
           <Button variant="ghost" size="sm" onClick={() => void logout()}>
-            <LogOut size={15} aria-hidden />
+            <LogOut size={16} aria-hidden />
             {t('auth.logout')}
           </Button>
         </header>

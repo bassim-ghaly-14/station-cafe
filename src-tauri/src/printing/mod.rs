@@ -154,34 +154,34 @@ pub fn print_invoice(conn: &Db, invoice_id: i64, force: bool) -> AppResult<Print
     } else {
         "CAFE_INVOICE"
     };
-    let bytes = templates::invoice(mode_of(&cfg), cfg.codepage, &inv, &lines, hybrid, cfg.logo);
+    let bytes = templates::invoice(mode_of(&cfg), cfg.codepage, &inv, &lines, hybrid, true);
     send(conn, doc, Some(invoice_id), &bytes, force)
 }
 
 pub fn print_wash_ticket(conn: &Db, order_id: i64, force: bool) -> AppResult<PrintOutcome> {
     let cfg = get_config(conn)?;
     let ticket = crate::services::pos::issue_wash_ticket(conn, order_id)?;
-    let bytes = templates::wash_ticket(mode_of(&cfg), cfg.codepage, &ticket, cfg.logo);
+    let bytes = templates::wash_ticket(mode_of(&cfg), cfg.codepage, &ticket, true);
     send(conn, "WASH_TICKET", Some(order_id), &bytes, force)
 }
 
 pub fn print_shift_closing(conn: &Db, shift_id: i64, force: bool) -> AppResult<PrintOutcome> {
     let cfg = get_config(conn)?;
     let report = crate::services::reports::shift_report(conn, shift_id)?;
-    let bytes = templates::shift_closing(mode_of(&cfg), cfg.codepage, &report, cfg.logo);
+    let bytes = templates::shift_closing(mode_of(&cfg), cfg.codepage, &report, true);
     send(conn, "SHIFT_REPORT", Some(shift_id), &bytes, force)
 }
 
 pub fn print_day_report(conn: &Db, day_id: i64, force: bool) -> AppResult<PrintOutcome> {
     let cfg = get_config(conn)?;
     let report = crate::services::reports::day_report(conn, day_id)?;
-    let bytes = templates::day_report(mode_of(&cfg), cfg.codepage, &report, cfg.logo);
+    let bytes = templates::day_report(mode_of(&cfg), cfg.codepage, &report, true);
     send(conn, "DAY_REPORT", Some(day_id), &bytes, force)
 }
 
 pub fn print_test(conn: &Db, force: bool) -> AppResult<PrintOutcome> {
     let cfg = get_config(conn)?;
-    let bytes = templates::test_page(mode_of(&cfg), cfg.codepage, &cfg.target, cfg.logo);
+    let bytes = templates::test_page(mode_of(&cfg), cfg.codepage, &cfg.target, true);
     send(conn, "TEST", None, &bytes, force)
 }
 

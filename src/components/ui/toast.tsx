@@ -36,9 +36,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role="status"
             className={cn(
               'rounded-md border px-4 py-3 text-sm shadow-md',
-              t.tone === 'success' && 'border-green-200 bg-green-50 text-green-900',
-              t.tone === 'error' && 'border-red-200 bg-red-50 text-red-900',
-              t.tone === 'info' && 'border-brand-200 bg-surface-raised text-brand-900',
+              t.tone === 'success' && 'border-success-soft bg-success-soft text-success-foreground',
+              t.tone === 'error' && 'border-destructive-soft bg-destructive-soft text-destructive-soft-foreground',
+              t.tone === 'info' && 'border-border bg-surface text-foreground-strong',
             )}
           >
             {t.message}

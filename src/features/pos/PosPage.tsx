@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
+import { Receipt } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import { api, type OrderPreview, type PosOrder, type TableView } from '@/services/posApi'
@@ -73,17 +74,19 @@ export default function PosPage() {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+    <div className="grid gap-4 lg:grid-cols-[720px_1fr]">
       <Card>
         <CardHeader
           title={t('pos.tables')}
           actions={
             <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+              <Receipt size={16} aria-hidden />
               {t('pos.todayInvoices')}
             </Button>
           }
         />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
           {tables.map((tv) => (
             <TableCard
               key={tv.id}
@@ -94,6 +97,7 @@ export default function PosPage() {
           ))}
         </div>
       </Card>
+
       <div>
         {activeOrder ? (
           <OrderPanel
@@ -105,10 +109,11 @@ export default function PosPage() {
           />
         ) : (
           <Card>
-            <p className="text-center text-sm text-brand-600">{t('pos.selectTable')}</p>
+            <p className="text-center text-sm text-foreground-subtle">{t('pos.selectTable')}</p>
           </Card>
         )}
       </div>
+
       {activeOrder && payOpen ? (
         <PaymentDialog
           orderId={activeOrder.id}
@@ -117,6 +122,7 @@ export default function PosPage() {
             setPayOpen(false)
             setActiveOrder(null)
             void refresh()
+
             if (outcome?.duplicate_suppressed) {
               toast(t('print.duplicateSuppressed'), 'info')
             } else {
@@ -125,6 +131,7 @@ export default function PosPage() {
           }}
         />
       ) : null}
+
       {invoicesOpen ? <TodayInvoices onClose={() => setInvoicesOpen(false)} /> : null}
     </div>
   )
@@ -140,28 +147,66 @@ export function TableCard({
   onClick: () => void
 }) {
   const { t } = useTranslation()
+
   const tone = tv.status === 'EMPTY' ? 'neutral' : tv.status === 'OPEN' ? 'info' : 'warning'
+
   // Status is NEVER color-only: always an icon + an Arabic label.
   const icon = tv.status === 'EMPTY' ? '○' : tv.status === 'OPEN' ? '◉' : '✔'
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={`${tv.label} — ${t(`pos.state.${tv.status}`)}`}
-      className={`flex min-h-24 flex-col items-start gap-1 rounded-lg border p-3 text-right transition-colors ${
+      className={`group flex min-h-44 flex-col gap-4 rounded-lg border p-4 text-start transition-all ${
         active
-          ? 'border-brand-700 bg-brand-50'
-          : 'border-brand-200 bg-surface-raised hover:bg-brand-50'
+          ? 'border-primary bg-accent shadow-sm hover:bg-accent-hover active:bg-accent-hover'
+          : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-accent active:border-border-accent-hover active:bg-accent-hover'
       }`}
     >
-      <span className="flex w-full items-center justify-between">
-        <span className="font-bold text-brand-900">{tv.label}</span>
-        <span aria-hidden="true">{icon}</span>
-      </span>
-      <Badge tone={tone}>{t(`pos.state.${tv.status}`)}</Badge>
-      <span className="text-xs text-brand-600">
-        {tv.items_count} {t('pos.items')} · <MoneyDisplay amount={tv.total_minor} />
-      </span>
+      {/* Header */}
+      <div className="flex w-full items-start justify-between gap-3">
+        <p className="truncate text-lg font-bold leading-tight text-foreground-strong">{tv.label}</p>
+
+        <span
+          aria-hidden="true"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-base font-bold ${
+            active
+              ? 'border-border-accent bg-surface text-foreground-muted'
+              : 'border-border-strong bg-accent text-foreground-muted'
+          }`}
+        >
+          {icon}
+        </span>
+      </div>
+
+      {/* Status */}
+      <div className="flex w-full">
+        <Badge tone={tone}>{t(`pos.state.${tv.status}`)}</Badge>
+      </div>
+
+      {/* Metrics */}
+      <div className="mt-auto grid w-full grid-cols-[72px_minmax(0,1fr)] items-stretch gap-2">
+        <div className="min-w-0 overflow-hidden border border-border-subtle bg-surface-muted px-2 py-2.5 text-start">
+          <p className="truncate whitespace-nowrap text-[11px] font-medium text-foreground-subtle">
+            {t('pos.items')}
+          </p>
+
+          <p className="mt-0.5 truncate whitespace-nowrap text-base font-bold text-foreground-strong">
+            {tv.items_count}
+          </p>
+        </div>
+
+        <div className="min-w-0 overflow-hidden border border-border-subtle bg-surface-muted px-3 py-2.5 text-start">
+          <p className="truncate whitespace-nowrap text-[11px] font-medium text-foreground-subtle">
+            {t('pos.total')}
+          </p>
+
+          <p className="mt-0.5 min-w-0 truncate whitespace-nowrap text-sm font-bold text-foreground-strong">
+            <MoneyDisplay amount={tv.total_minor} />
+          </p>
+        </div>
+      </div>
     </button>
   )
 }
