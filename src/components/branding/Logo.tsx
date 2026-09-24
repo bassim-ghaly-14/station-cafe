@@ -48,6 +48,3 @@ export function Logo({
     </div>
   )
 }
-
-/** Backwards-compatible alias (foundation name). Use `Logo` in new code. */
-export const LogoPlaceholder = Logo

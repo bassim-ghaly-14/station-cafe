@@ -1,7 +1,7 @@
 /** Arabic-first login screen (RTL, no browser alerts, accessible focus). */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Logo } from '@/components/branding/LogoPlaceholder'
+import { Logo } from '@/components/branding/Logo'
 import { ErrorState } from '@/components/states'
 import { Button } from '@/components/ui/button'
 import { Field, Input, PasswordInput } from '@/components/ui/input'

@@ -1,7 +1,7 @@
 /** App shell: topbar (logo, user, logout) + role-filtered sidebar + views. */
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Logo } from '@/components/branding/LogoPlaceholder'
+import { Logo } from '@/components/branding/Logo'
 import { Badge } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {

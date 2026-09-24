@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import { Logo } from '@/components/branding/LogoPlaceholder'
+import { Logo } from '@/components/branding/Logo'
 import { LoadingState, ErrorState } from '@/components/states'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider, useSession } from '@/features/auth/useSession'
