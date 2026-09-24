@@ -45,7 +45,7 @@ export function PaymentDialog({
   }, [orderId, discount.mode, discount.value, t])
 
   const pay = () => {
-    if (!preview) return
+    if (!preview || busy) return
     setError(null)
     let receivedMinor: number | null = null
     if (method === 'CASH') {

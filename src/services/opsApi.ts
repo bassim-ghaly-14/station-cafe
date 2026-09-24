@@ -1,5 +1,6 @@
 /** Typed wrappers over inventory / expenses / reports / audit commands. */
 import { call } from './ipc'
+import type { DayTotals } from './posApi'
 
 export interface StockRow {
   product_id: number
@@ -73,6 +74,18 @@ export interface PrintJobRow {
   created_at: string
 }
 
+export interface ClosedBusinessDay {
+  closing_id: number
+  business_day_id: number
+  day_date: string
+  status: string
+  opened_at: string
+  closed_at: string
+  closed_by: number
+  shift_count: number
+  totals: DayTotals
+}
+
 export interface InventoryReasons {
   PURCHASE: string
   ADJUSTMENT: string
@@ -109,10 +122,19 @@ export const opsApi = {
     recurrence?: string | null
   }) => call<number>('create_expense', { input }),
 
-  salesByDay: (from: string, to: string) => call<SalesByDay[]>('sales_by_day', { from, to }),
-  productSales: (from: string, to: string) => call<ProductSales[]>('product_sales', { from, to }),
+  salesByDay: (from?: string, to?: string) =>
+    call<SalesByDay[]>('sales_by_day', { from: from ?? null, to: to ?? null }),
+  productSales: (from?: string, to?: string) =>
+    call<ProductSales[]>('product_sales', { from: from ?? null, to: to ?? null }),
   audit: (limit = 100, actionLike?: string) =>
     call<AuditEntry[]>('list_audit', { limit, action_like: actionLike ?? null }),
   printJobs: (limit = 30) => call<PrintJobRow[]>('list_print_jobs', { limit }),
+  closedShifts: (from?: string, to?: string) =>
+    call<import('@/services/shiftApi').ShiftRow[]>('list_closed_shifts', {
+      from: from ?? null,
+      to: to ?? null,
+    }),
+  closedBusinessDays: (from?: string, to?: string) =>
+    call<ClosedBusinessDay[]>('list_closed_business_days', { from: from ?? null, to: to ?? null }),
   printTest: () => call<{ duplicate_suppressed: boolean }>('print_test'),
 }

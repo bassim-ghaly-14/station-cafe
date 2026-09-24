@@ -5,41 +5,37 @@ import { Button, Card, CardHeader } from '@/components/ui'
 import { Power } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
-import { shiftApi } from '@/services/shiftApi'
+import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { parseMajor } from '@/lib/utils'
 
-export function ShiftGate({ onReady }: { onReady: () => void }) {
+export function ShiftGate({ state, onReady }: { state: DayShiftState; onReady: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
   const [opening, setOpening] = useState(false)
   const [cash, setCash] = useState('')
   const [cashError, setCashError] = useState<string | null>(null)
 
+  if (state.any_active_shift && !state.my_shift) {
+    return (
+      <Card>
+        <CardHeader title={t('shift.someoneElseOpen')} subtitle={t('shift.someoneElseOpenHint')} />
+      </Card>
+    )
+  }
+
   async function start() {
     setOpening(true)
     setCashError(null)
     try {
-      const st = await shiftApi.state()
-      if (!st.day) {
-        try {
-          await shiftApi.openDay()
-        } catch (e) {
-          const again = await shiftApi.state()
-          if (!again.day) throw e
-        }
-      }
-      const st2 = await shiftApi.state()
-      if (!st2.my_shift) {
-        const cashMinor =
-          cash.trim() === ''
-            ? 0
-            : (parseMajor(cash) ??
-              (() => {
-                setCashError(t('shift.invalidCash'))
-                throw new Error('bad-input')
-              })())
-        await shiftApi.openShift(cashMinor)
-      }
+      const cashMinor =
+        cash.trim() === ''
+          ? 0
+          : (parseMajor(cash) ??
+            (() => {
+              setCashError(t('shift.invalidCash'))
+              throw new Error('bad-input')
+            })())
+      await shiftApi.openShift(cashMinor)
       onReady()
     } catch (e) {
       if ((e as Error).message !== 'bad-input') {
@@ -63,7 +59,13 @@ export function ShiftGate({ onReady }: { onReady: () => void }) {
             placeholder="0.00"
           />
         </Field>
-        <Button size="lg" disabled={opening} loading={opening} onClick={() => void start()}>
+        <Button
+          size="lg"
+          disabled={opening}
+          loading={opening}
+          onClick={() => void start()}
+          className="bg-success hover:bg-success/90 active:bg-success/80"
+        >
           {!opening ? <Power size={20} aria-hidden /> : null}
           {t('shift.openShift')}
         </Button>

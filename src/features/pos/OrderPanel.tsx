@@ -217,10 +217,12 @@ export function OrderPanel({
       {discountOpen ? (
         <DiscountDialog
           initial={discount}
+          orderId={order.id}
           onClose={() => setDiscountOpen(false)}
-          onApply={(d) => {
+          onApply={(d, refreshed) => {
             setDiscountOpen(false)
             onDiscountChange(d)
+            if (refreshed) onChange(refreshed)
           }}
         />
       ) : null}

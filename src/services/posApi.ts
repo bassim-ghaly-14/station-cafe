@@ -31,6 +31,8 @@ export interface PosOrder {
   user_id: number
   status: string
   customer_id: number | null
+  discount_mode: string | null
+  discount_value: number | null
   opened_at: string
   waiting_no: number | null
   takeaway_no: number | null
@@ -107,6 +109,7 @@ export interface InvoiceRow {
   customer_name: string | null
   customer_phone: string | null
   car_plate: string | null
+  car_model: string | null
   created_at: string
   shift_id: number | null
   business_day_id: number | null
@@ -238,6 +241,8 @@ export const api = {
     call<Product[]>('list_products', { department: department ?? null, active_only: true }),
   preview: (order_id: number, discount_mode: string | null, discount_value: number | null) =>
     call<OrderPreview>('preview_order', { order_id, discount_mode, discount_value }),
+  setDiscount: (order_id: number, discount_mode: string | null, discount_value: number | null) =>
+    call<PosOrder>('set_order_discount', { order_id, discount_mode, discount_value }),
   checkout: (input: CheckoutInput) => call<CheckoutResult>('checkout_order', { input }),
   getInvoice: (invoice_id: number) =>
     call<[InvoiceRow, InvoiceLine[]]>('get_invoice', { invoice_id }),
@@ -285,6 +290,8 @@ export const api = {
     call<PrintPreview>('preview_invoice', { invoice_id }),
   /** Read-only preview of an issued wash ticket (never allocates a number). */
   printPreviewTicket: (order_id: number) => call<PrintPreview>('preview_wash_ticket', { order_id }),
+  printPreviewShift: (shift_id: number) => call<PrintPreview>('preview_shift_report', { shift_id }),
+  printPreviewDay: (day_id: number) => call<PrintPreview>('preview_day_report_cmd', { day_id }),
   creditAccounts: () => call<CreditAccount[]>('list_credit_accounts'),
   settleCredit: (customer_id: number, amount: number) =>
     call<string>('settle_credit', { customer_id, amount }),

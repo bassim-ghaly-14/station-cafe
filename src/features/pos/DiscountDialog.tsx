@@ -1,22 +1,25 @@
 /** Order-level FIXED/PERCENT discount dialog (backend enforces limits). */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog } from '@/components/ui'
+import { Button, Dialog, useToast } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { parseMajor } from '@/lib/utils'
-import type { DiscountSel } from '@/services/posApi'
+import { api, type DiscountSel, type PosOrder } from '@/services/posApi'
 
 export function DiscountDialog({
   initial,
+  orderId,
   onClose,
   onApply,
 }: {
   initial: DiscountSel
+  orderId: number
   onClose: () => void
-  onApply: (d: DiscountSel) => void
+  onApply: (d: DiscountSel, refreshed?: PosOrder) => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [mode, setMode] = useState<'FIXED' | 'PERCENT'>(
     initial.mode === 'FIXED' ? 'FIXED' : 'PERCENT',
   )
@@ -28,6 +31,21 @@ export function DiscountDialog({
         : '10',
   )
   const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const persist = (d: DiscountSel) => {
+    setBusy(true)
+    api
+      .setDiscount(orderId, d.mode, d.value)
+      .then((o) => onApply(d, o))
+      .catch((e) =>
+        toast(
+          t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
+          'error',
+        ),
+      )
+      .finally(() => setBusy(false))
+  }
 
   return (
     <Dialog open onClose={onClose} title={t('pos.discount')}>
@@ -70,10 +88,16 @@ export function DiscountDialog({
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
-          <Button variant="ghost" onClick={() => onApply({ mode: null, value: null })}>
+          <Button
+            variant="ghost"
+            onClick={() => persist({ mode: null, value: null })}
+            disabled={busy}
+          >
             {t('pos.clearDiscount')}
           </Button>
           <Button
+            disabled={busy}
+            loading={busy}
             onClick={() => {
               if (mode === 'PERCENT') {
                 const n = parseFloat(value.replace(',', '.'))
@@ -81,7 +105,7 @@ export function DiscountDialog({
                   setError(t('pos.invalidDiscount'))
                   return
                 }
-                onApply({ mode, value: Math.round(n * 1000) })
+                persist({ mode, value: Math.round(n * 1000) })
                 return
               }
               const minor = parseMajor(value || '0')
@@ -89,7 +113,7 @@ export function DiscountDialog({
                 setError(t('pos.invalidDiscount'))
                 return
               }
-              onApply({ mode, value: minor })
+              persist({ mode, value: minor })
             }}
           >
             <Check size={16} aria-hidden />

@@ -15,21 +15,33 @@ import {
   type TableView,
   type TakeawayView,
 } from '@/services/posApi'
-import { shiftApi } from '@/services/shiftApi'
+import { shiftApi, type DayShiftState } from '@/services/shiftApi'
+import { atLeast, useSession } from '@/features/auth/useSession'
+import { CurrentShiftPanel } from './CurrentShiftPanel'
+import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
 import { PaymentDialog } from './PaymentDialog'
 import { ShiftGate } from './ShiftGate'
 import { TodayInvoices } from './TodayInvoices'
 
+/**
+ * Shared visual treatment for explicit "start/open" actions.
+ *
+ * These actions mutate POS state and therefore intentionally use the
+ * success identity with white content.
+ */
+const startActionClassName = 'bg-success text-white hover:bg-success/90 active:bg-success/80'
+
 export default function PosPage() {
   const { t } = useTranslation()
   const toast = useToast()
+  const { user } = useSession()
+  const [shiftState, setShiftState] = useState<DayShiftState | null>(null)
   const [tables, setTables] = useState<TableView[] | null>(null)
   const [takeaways, setTakeaways] = useState<TakeawayView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   const [activeOrder, setActiveOrder] = useState<PosOrder | null>(null)
-  const [dayReady, setDayReady] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const [preview, setPreview] = useState<OrderPreview | null>(null)
   const [discount, setDiscount] = useState<DiscountSel>({ mode: null, value: null })
@@ -43,7 +55,7 @@ export default function PosPage() {
 
       setTables(tv)
       setTakeaways(tk)
-      setDayReady(st.day !== null && st.my_shift !== null)
+      setShiftState(st)
       setError(null)
     } catch (e) {
       setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
@@ -71,7 +83,19 @@ export default function PosPage() {
 
   if (!tables) return <p>{t('app.loading')}</p>
 
-  if (!dayReady) return <ShiftGate onReady={() => void refresh()} />
+  if (!shiftState) return <p>{t('app.loading')}</p>
+
+  if (!shiftState.day || !shiftState.my_shift) {
+    return (
+      <div className="space-y-4">
+        {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
+          <DayClosingPanel dayId={shiftState.day.id} onDone={refresh} />
+        ) : null}
+
+        <ShiftGate state={shiftState} onReady={() => void refresh()} />
+      </div>
+    )
+  }
 
   const report = (e: unknown) => {
     void refresh()
@@ -127,13 +151,11 @@ export default function PosPage() {
 
     setActiveOrder(order)
 
-    // Re-sync the shared discount from the authoritative preview so the
-    // payment dialog never opens with a stale/empty discount.
-    const p = await api.preview(orderId, null, null).catch(() => null)
-
+    // Re-sync the shared discount from the PERSISTED order row — the backend
+    // is authoritative, so refresh / reopen / restart never loses the discount.
     setDiscount({
-      mode: p?.discount_mode ?? null,
-      value: p?.discount_value ?? null,
+      mode: order.discount_mode ?? null,
+      value: order.discount_value ?? null,
     })
 
     setPayOpen(false)
@@ -229,111 +251,128 @@ export default function PosPage() {
   const hasWorkspace = activeOrder !== null || selected !== null
 
   return (
-    <div
-      className={
-        hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
-      }
-    >
-      <Card className={hasWorkspace ? 'min-w-0' : 'w-full'}>
-        <CardHeader
-          title={t('pos.tables')}
-          actions={
-            <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
-              <Receipt size={16} aria-hidden />
-              {t('pos.todayInvoices')}
-            </Button>
-          }
+    <div className="flex flex-col gap-4">
+      {/* Shift + Day closing */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CurrentShiftPanel
+          shift={shiftState.my_shift}
+          onClosed={async () => {
+            toast(t('shift.closedSuccess'), 'success')
+            await refresh()
+          }}
         />
 
-        {takeaways && takeaways.length > 0 ? (
-          <OpenTakeaways
-            items={takeaways}
-            activeOrderId={activeOrder?.id ?? null}
-            onOpen={(orderId) => void reopenTakeaway(orderId)}
-          />
+        {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
+          <DayClosingPanel dayId={shiftState.day.id} onDone={refresh} />
         ) : null}
+      </div>
 
-        <div
-          className={
-            hasWorkspace
-              ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
-              : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5'
-          }
-        >
-          {/* Takeaway action card — always first */}
-          <TakeawayCard busy={busy === 'takeaway'} onStart={() => void startTakeaway()} />
+      <div
+        className={
+          hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
+        }
+      >
+        <Card className={hasWorkspace ? 'min-w-0' : 'w-full'}>
+          <CardHeader
+            title={t('pos.tables')}
+            actions={
+              <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+                <Receipt size={16} aria-hidden />
+                {t('pos.todayInvoices')}
+              </Button>
+            }
+          />
 
-          {tables.map((tv) => (
-            <TableCard
-              key={tv.id}
-              tv={tv}
-              selected={selectedTableId === tv.id}
-              active={activeOrder?.id === tv.order_id && !!tv.order_id}
-              busy={busy}
-              onSelect={() => selectTable(tv)}
-              onOpen={() => void openSelectedTable(tv)}
-              onStartOrder={() => void startOrderFor(tv)}
-              onOpenOrder={() => void openOrderFor(tv)}
-              onCloseEmpty={() => setCloseTarget(tv)}
+          {takeaways && takeaways.length > 0 ? (
+            <OpenTakeaways
+              items={takeaways}
+              activeOrderId={activeOrder?.id ?? null}
+              onOpen={(orderId) => void reopenTakeaway(orderId)}
             />
-          ))}
+          ) : null}
+
+          <div
+            className={
+              hasWorkspace
+                ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
+                : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5'
+            }
+          >
+            {/* Takeaway action card — always first */}
+            <TakeawayCard busy={busy === 'takeaway'} onStart={() => void startTakeaway()} />
+
+            {tables.map((tv) => (
+              <TableCard
+                key={tv.id}
+                tv={tv}
+                selected={selectedTableId === tv.id}
+                active={activeOrder?.id === tv.order_id && !!tv.order_id}
+                busy={busy}
+                onSelect={() => selectTable(tv)}
+                onOpen={() => void openSelectedTable(tv)}
+                onStartOrder={() => void startOrderFor(tv)}
+                onOpenOrder={() => void openOrderFor(tv)}
+                onCloseEmpty={() => setCloseTarget(tv)}
+              />
+            ))}
+          </div>
+
+          <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
+        </Card>
+
+        <div className={hasWorkspace ? 'min-w-0' : ''}>
+          {activeOrder ? (
+            <>
+              {takeawayActive ? (
+                <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
+                  <Badge tone="info">
+                    <ShoppingBag size={14} aria-hidden />
+                    {t('pos.takeawayActive')}
+                  </Badge>
+
+                  {typeof activeOrder.takeaway_no === 'number' ? (
+                    <span>
+                      {t('pos.takeawayNo')}: <span dir="ltr">#{activeOrder.takeaway_no}</span>
+                    </span>
+                  ) : (
+                    <span className="font-medium text-foreground-subtle">
+                      {t('pos.takeawayHint')}
+                    </span>
+                  )}
+                </p>
+              ) : null}
+
+              <OrderPanel
+                order={activeOrder}
+                preview={preview}
+                discount={discount}
+                onDiscountChange={(d: DiscountSel) => setDiscount(d)}
+                onChange={setActiveOrder}
+                onRefreshTables={() => void refresh()}
+                onPay={() => setPayOpen(true)}
+                onDiscard={
+                  activeOrder.lines.length === 0 ? () => void discardActiveOrder() : undefined
+                }
+                discarding={busy === 'discard'}
+              />
+            </>
+          ) : selected ? (
+            <Card>
+              <CardHeader title={selected.label} subtitle={t(`pos.state.${selected.status}`)} />
+
+              <SelectedTableActions
+                tv={selected}
+                busy={busy}
+                onOpen={() => void openSelectedTable(selected)}
+                onStartOrder={() => void startOrderFor(selected)}
+                onOpenOrder={() => void openOrderFor(selected)}
+                onCloseEmpty={() => setCloseTarget(selected)}
+              />
+            </Card>
+          ) : (
+            <p className="text-sm text-foreground-subtle">{t('pos.selectTableHint')}</p>
+          )}
         </div>
-
-        <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
-      </Card>
-
-      <div className={hasWorkspace ? 'min-w-0' : ''}>
-        {activeOrder ? (
-          <>
-            {takeawayActive ? (
-              <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
-                <Badge tone="info">
-                  <ShoppingBag size={14} aria-hidden />
-                  {t('pos.takeawayActive')}
-                </Badge>
-
-                {typeof activeOrder.takeaway_no === 'number' ? (
-                  <span>
-                    {t('pos.takeawayNo')}: <span dir="ltr">#{activeOrder.takeaway_no}</span>
-                  </span>
-                ) : (
-                  <span className="font-medium text-foreground-subtle">
-                    {t('pos.takeawayHint')}
-                  </span>
-                )}
-              </p>
-            ) : null}
-
-            <OrderPanel
-              order={activeOrder}
-              preview={preview}
-              discount={discount}
-              onDiscountChange={(d: DiscountSel) => setDiscount(d)}
-              onChange={setActiveOrder}
-              onRefreshTables={() => void refresh()}
-              onPay={() => setPayOpen(true)}
-              onDiscard={
-                activeOrder.lines.length === 0 ? () => void discardActiveOrder() : undefined
-              }
-              discarding={busy === 'discard'}
-            />
-          </>
-        ) : selected ? (
-          <Card>
-            <CardHeader title={selected.label} subtitle={t(`pos.state.${selected.status}`)} />
-
-            <SelectedTableActions
-              tv={selected}
-              busy={busy}
-              onOpen={() => void openSelectedTable(selected)}
-              onStartOrder={() => void startOrderFor(selected)}
-              onOpenOrder={() => void openOrderFor(selected)}
-              onCloseEmpty={() => setCloseTarget(selected)}
-            />
-          </Card>
-        ) : (
-          <p className="text-sm text-foreground-subtle">{t('pos.selectTableHint')}</p>
-        )}
       </div>
 
       {activeOrder && payOpen ? (
@@ -400,21 +439,21 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
       data-testid="takeaway-card"
       className={[
         'group relative flex min-h-56 flex-col overflow-hidden',
-        'rounded-lg border border-border-accent',
-        'bg-accent/40 p-4 text-start',
+        'rounded-lg border border-info/30',
+        'bg-info/10 p-4 text-start',
         'transition-[border-color,background-color,box-shadow]',
         'duration-200',
-        'hover:border-border-accent-hover hover:bg-accent/70',
+        'hover:border-info/50 hover:bg-info/15',
         'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus',
       ].join(' ')}
     >
       {/* Takeaway identity stripe */}
-      <span aria-hidden className="absolute inset-y-0 inset-s-0 w-1 bg-primary" />
+      <span aria-hidden className="absolute inset-y-0 inset-s-0 w-1 bg-info" />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-info">
             {t('pos.takeaway')}
           </p>
 
@@ -428,8 +467,8 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
           aria-hidden
           className={[
             'flex size-11 shrink-0 items-center justify-center',
-            'rounded-md border border-primary/30',
-            'bg-primary/10 text-primary',
+            'rounded-md border border-info/30',
+            'bg-info/10 text-info',
             'transition-transform duration-200',
             'group-hover:scale-105',
           ].join(' ')}
@@ -462,7 +501,7 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
         <div className="flex items-center gap-3 px-1">
           <div
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-info/10 text-info"
           >
             <ShoppingBag size={18} />
           </div>
@@ -482,7 +521,7 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
       {/* Action */}
       <div className="mt-3">
         <Button
-          className="w-full"
+          className={`w-full ${startActionClassName}`}
           size="sm"
           onClick={onStart}
           loading={busy}
@@ -515,41 +554,71 @@ export function OpenTakeaways({
   return (
     <section
       aria-label={t('pos.openTakeaways')}
-      className="mb-3 rounded-md border border-border bg-surface-muted/40 px-3 py-2"
+      className={['mb-3 rounded-md border border-info/30', 'bg-info/4', 'px-3 py-2.5'].join(' ')}
     >
-      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-foreground-subtle">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-info">
         <ShoppingBag size={14} aria-hidden />
         {t('pos.openTakeaways')}
       </p>
 
       <ul className="flex flex-wrap gap-2">
-        {items.map((tk) => (
-          <li key={tk.id}>
-            <Button
-              variant={activeOrderId === tk.id ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => onOpen(tk.id)}
-              aria-label={`${t('pos.openOrder')} — ${t('pos.takeaway')} ${tk.id}`}
-              data-testid={`open-takeaway-${tk.id}`}
-            >
-              <span className="font-bold">
-                {t('pos.takeaway')} · {t('pos.order')} {tk.id}
-              </span>
+        {items.map((tk) => {
+          const active = activeOrderId === tk.id
 
-              {tk.opened_at ? (
-                <span className="text-xs opacity-70" dir="ltr">
-                  {tk.opened_at.slice(11, 16)}
+          return (
+            <li key={tk.id}>
+              <Button
+                variant="outline"
+                className={[
+                  'border-info/30',
+                  'transition-colors duration-150',
+
+                  active
+                    ? [
+                        'border-info',
+                        'bg-info text-white',
+                        'shadow-sm',
+                        'hover:border-info',
+                        'hover:bg-info/90',
+                        'active:bg-info/80',
+                      ].join(' ')
+                    : [
+                        'bg-info/3',
+                        'text-info',
+                        'hover:border-info/50',
+                        'hover:bg-info/10',
+                        'hover:text-info',
+                        'active:bg-info/16',
+                      ].join(' '),
+                ].join(' ')}
+                size="sm"
+                onClick={() => onOpen(tk.id)}
+                aria-label={`${t('pos.openOrder')} — ${t('pos.takeaway')} ${tk.id}`}
+                data-testid={`open-takeaway-${tk.id}`}
+              >
+                <ShoppingBag size={15} aria-hidden />
+
+                <span className="font-bold">
+                  {t('pos.takeaway')} · {t('pos.order')} {tk.id}
                 </span>
-              ) : null}
 
-              <span className="text-xs opacity-70">
-                {tk.items_count} {t('pos.items')}
-              </span>
+                {tk.opened_at ? (
+                  <span className={active ? 'text-white/70' : 'text-info/70'} dir="ltr">
+                    {tk.opened_at.slice(11, 16)}
+                  </span>
+                ) : null}
 
-              <MoneyDisplay amount={tk.total_minor} />
-            </Button>
-          </li>
-        ))}
+                <span className={active ? 'text-white/70' : 'text-info/70'}>
+                  {tk.items_count} {t('pos.items')}
+                </span>
+
+                <span className={active ? 'text-white' : 'text-info'}>
+                  <MoneyDisplay amount={tk.total_minor} />
+                </span>
+              </Button>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
@@ -696,9 +765,8 @@ export function TableCard({
       <div className="mt-3 flex min-h-9 items-center gap-2">
         {isEmpty ? (
           <Button
-            className="w-full"
             size="sm"
-            variant="outline"
+            className={`w-full ${startActionClassName}`}
             onClick={(e) => {
               e.stopPropagation()
               onOpen()
@@ -712,7 +780,7 @@ export function TableCard({
         ) : isOpen ? (
           <>
             <Button
-              className="min-w-0 flex-1"
+              className={`min-w-0 flex-1 ${startActionClassName}`}
               size="sm"
               onClick={(e) => {
                 e.stopPropagation()
@@ -733,6 +801,7 @@ export function TableCard({
                 e.stopPropagation()
                 onCloseEmpty()
               }}
+              loading={busy === `close-${tv.id}`}
               aria-label={`${t('pos.closeEmpty')} — ${tv.label}`}
             >
               <DoorClosed size={16} aria-hidden />
@@ -778,7 +847,7 @@ function SelectedTableActions({
 
   if (tv.status === 'EMPTY') {
     return (
-      <Button onClick={onOpen} loading={busy === `open-${tv.id}`}>
+      <Button className={startActionClassName} onClick={onOpen} loading={busy === `open-${tv.id}`}>
         <DoorOpen size={16} aria-hidden />
         {t('pos.openTable')}
       </Button>
@@ -788,7 +857,11 @@ function SelectedTableActions({
   if (tv.status === 'OPEN') {
     return (
       <div className="flex flex-wrap gap-2">
-        <Button onClick={onStartOrder} loading={busy === `order-${tv.id}`}>
+        <Button
+          className={startActionClassName}
+          onClick={onStartOrder}
+          loading={busy === `order-${tv.id}`}
+        >
           <ClipboardList size={16} aria-hidden />
           {t('pos.startOrder')}
         </Button>

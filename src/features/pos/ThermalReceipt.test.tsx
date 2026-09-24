@@ -182,6 +182,92 @@ describe('ThermalReceipt — professional 80mm screen presentation', () => {
     expect(logo.style.imageRendering).toBe('auto')
   })
 
+  it('maps text size dimensions with a dense, font-size-derived line box', () => {
+    render(
+      <ThermalReceipt
+        preview={preview({
+          ops: [
+            { kind: 'text', text: '1x1', align: 'left', bold: false, width: 1, height: 1 },
+            { kind: 'text', text: '2x1', align: 'left', bold: false, width: 2, height: 1 },
+            { kind: 'text', text: '1x2', align: 'left', bold: false, width: 1, height: 2 },
+            { kind: 'text', text: '2x2', align: 'left', bold: false, width: 2, height: 2 },
+            { kind: 'text', text: '3x3', align: 'left', bold: false, width: 3, height: 3 },
+            { kind: 'text', text: 'bold 3x3', align: 'left', bold: true, width: 3, height: 3 },
+          ],
+        })}
+      />,
+    )
+
+    const sizes = ['1x1', '2x1', '1x2', '2x2', '3x3'].map((label) => screen.getByText(label))
+    const fontSizes = sizes.map((node) => Number.parseFloat(node.style.fontSize))
+    const lineHeights = sizes.map((node) => Number.parseFloat(node.style.lineHeight))
+
+    expect(sizes.map((node) => node.dataset.previewTextSize)).toEqual([
+      '1x1',
+      '2x1',
+      '1x2',
+      '2x2',
+      '3x3',
+    ])
+    expect(fontSizes).toEqual([8, 9.44, 9.76, 11.36, 12.96])
+    expect(fontSizes[1]).toBeGreaterThan(fontSizes[0])
+    expect(fontSizes[2]).toBeGreaterThan(fontSizes[0])
+    expect(fontSizes[3]).toBeGreaterThan(fontSizes[1])
+    expect(fontSizes[3]).toBeGreaterThan(fontSizes[2])
+    expect(fontSizes[4]).toBeGreaterThan(fontSizes[3])
+    expect(lineHeights).toEqual(fontSizes.map((fontSize) => fontSize * 1.18))
+    expect(screen.getByText('bold 3x3').style.fontSize).toBe('12.96px')
+    expect(sizes.every((node) => node.style.transform === '')).toBe(true)
+  })
+
+  it('applies semantic bold, alignment, and Arabic direction to text operations', () => {
+    render(
+      <ThermalReceipt
+        preview={preview({
+          ops: [
+            { kind: 'text', text: 'عادي', align: 'right', bold: false, width: 1, height: 1 },
+            { kind: 'text', text: 'عريض', align: 'center', bold: true, width: 2, height: 1 },
+            { kind: 'text', text: 'عربي طويل', align: 'right', bold: false, width: 1, height: 2 },
+            { kind: 'text', text: 'عربي ضخم', align: 'right', bold: true, width: 3, height: 3 },
+            { kind: 'text', text: 'Latin', align: 'left', bold: false, width: 1, height: 1 },
+          ],
+        })}
+      />,
+    )
+
+    const normal = screen.getByText('عادي')
+    const bold = screen.getByText('عريض')
+    const arabicTall = screen.getByText('عربي طويل')
+    const arabicMax = screen.getByText('عربي ضخم')
+    const latin = screen.getByText('Latin')
+
+    expect(normal).toHaveAttribute('dir', 'rtl')
+    expect(normal.style.textAlign).toBe('right')
+    expect(normal.style.fontWeight).toBe('400')
+    expect(bold).toHaveAttribute('dir', 'rtl')
+    expect(bold.style.textAlign).toBe('center')
+    expect(bold.style.fontWeight).toBe('750')
+    expect(arabicTall).toHaveAttribute('dir', 'rtl')
+    expect(arabicTall.style.fontSize).toBe('9.76px')
+    expect(arabicMax).toHaveAttribute('dir', 'rtl')
+    expect(arabicMax.style.fontSize).toBe('12.96px')
+    expect(arabicMax.style.fontWeight).toBe('750')
+    expect(latin).toHaveAttribute('dir', 'ltr')
+    expect(latin.style.textAlign).toBe('left')
+  })
+
+  it('keeps semantic item and financial rendering intact', () => {
+    render(<ThermalReceipt preview={preview()} />)
+
+    expect(screen.getByTestId('receipt-item-row')).toHaveStyle({
+      gridTemplateColumns: '22ch 3ch 7ch 7ch',
+    })
+    expect(screen.getByTestId('receipt-total')).toHaveStyle({
+      fontSize: '18px',
+      fontWeight: '800',
+    })
+  })
+
   it('keeps the business phone exactly once and LTR-safe inside RTL content', () => {
     render(
       <div dir="rtl">

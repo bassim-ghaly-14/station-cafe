@@ -9,7 +9,7 @@ import { Badge, Button, Card, CardHeader, DateRangePicker, MoneyDisplay } from '
 import { Field, Input } from '@/components/ui/input'
 import { BarChart3, Printer } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
-import { addDays, todayIso } from '@/lib/date'
+import { addDays, formatSqlDateTime, todayIso } from '@/lib/date'
 import {
   opsApi,
   type AuditEntry,
@@ -18,23 +18,47 @@ import {
   type SalesByDay,
 } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
+import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
+import type { ShiftRow } from '@/services/shiftApi'
 
-type Tab = 'sales' | 'products' | 'audit' | 'print'
+type Tab = 'sales' | 'products' | 'audit' | 'print' | 'shiftClosings' | 'dayClosings'
+const RANGE_KEY = 'station.reports.dateRange'
+
+function initialRange(): { from: string; to: string } {
+  try {
+    const stored = localStorage.getItem(RANGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as { from?: unknown; to?: unknown }
+      return {
+        from: typeof parsed.from === 'string' ? parsed.from : '',
+        to: typeof parsed.to === 'string' ? parsed.to : '',
+      }
+    }
+  } catch {
+    /* fall back to the product's initial seven-day default */
+  }
+  const today = todayIso()
+  return { from: addDays(today, -6), to: today }
+}
 
 export default function ReportsPage() {
   const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('sales')
-  // Default period: the last seven local business days, as `YYYY-MM-DD` strings.
-  const today = todayIso()
-  const weekAgo = addDays(today, -6)
-  const [from, setFrom] = useState(weekAgo)
-  const [to, setTo] = useState(today)
+  const [{ from, to }, setRange] = useState(initialRange)
+  useEffect(() => {
+    localStorage.setItem(RANGE_KEY, JSON.stringify({ from, to }))
+  }, [from, to])
+
+  const setFrom = (value: string) => setRange((current) => ({ ...current, from: value }))
+  const setTo = (value: string) => setRange((current) => ({ ...current, to: value }))
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'sales', label: t('reports.sales') },
     { id: 'products', label: t('reports.products') },
     { id: 'audit', label: t('nav.audit') },
     { id: 'print', label: t('reports.printJobs') },
+    { id: 'shiftClosings', label: t('reports.shiftClosings') },
+    { id: 'dayClosings', label: t('reports.dayClosings') },
   ]
 
   return (
@@ -70,6 +94,12 @@ export default function ReportsPage() {
       ) : null}
       {tab === 'audit' ? <AuditList /> : null}
       {tab === 'print' ? <PrintJobsList /> : null}
+      {tab === 'shiftClosings' ? (
+        <ClosingReports kind="shift" from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      ) : null}
+      {tab === 'dayClosings' ? (
+        <ClosingReports kind="day" from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      ) : null}
     </div>
   )
 }
@@ -251,7 +281,10 @@ function ProductSalesReport({
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={`${r.product_name}-${r.department}`} className="border-b border-border-subtle">
+                <tr
+                  key={`${r.product_name}-${r.department}`}
+                  className="border-b border-border-subtle"
+                >
                   <td className="py-2 text-body font-bold">{r.product_name}</td>
                   <td className="py-2">{t(`catalog.${r.department}`)}</td>
                   <td className="py-2">{r.quantity}</td>
@@ -268,6 +301,111 @@ function ProductSalesReport({
   )
 }
 
+function ClosingReports({
+  kind,
+  from,
+  to,
+  setFrom,
+  setTo,
+}: {
+  kind: 'shift' | 'day'
+  from: string
+  to: string
+  setFrom: (v: string) => void
+  setTo: (v: string) => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const errText = useErrText(t)
+  const [shifts, setShifts] = useState<ShiftRow[]>([])
+  const [days, setDays] = useState<import('@/services/opsApi').ClosedBusinessDay[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [target, setTarget] = useState<PrintPreviewTarget | null>(null)
+  const load = useCallback(() => {
+    setError(null)
+    const request =
+      kind === 'shift'
+        ? opsApi.closedShifts(from || undefined, to || undefined)
+        : opsApi.closedBusinessDays(from || undefined, to || undefined)
+    request
+      .then((rows) =>
+        kind === 'shift'
+          ? setShifts(rows as ShiftRow[])
+          : setDays(rows as import('@/services/opsApi').ClosedBusinessDay[]),
+      )
+      .catch((e) => {
+        setError(errText(e))
+        toast(errText(e), 'error')
+      })
+  }, [kind, from, to, errText, toast])
+  useEffect(() => {
+    load()
+  }, [load])
+  return (
+    <div className="flex flex-col gap-3">
+      <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      {error ? (
+        <ErrorState message={error} onRetry={load} retryLabel={t('app.retry')} />
+      ) : kind === 'shift' ? (
+        <Card>
+          <CardHeader title={t('reports.shiftClosings')} />
+          <div className="divide-y divide-border-subtle">
+            {shifts.map((s) => (
+              <div key={s.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-48 flex-1">
+                  <p className="font-bold" dir="ltr">
+                    #{s.id} · {s.user_name ?? '—'}
+                  </p>
+                  <p className="text-caption" dir="ltr">
+                    {formatSqlDateTime(s.opened_at)} → {formatSqlDateTime(s.closed_at ?? '')}
+                  </p>
+                  <MoneyDisplay amount={s.expected_cash} />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTarget({ kind: 'shift_report', shift_id: s.id })}
+                >
+                  {t('reports.preview')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader title={t('reports.dayClosings')} />
+          <div className="divide-y divide-border-subtle">
+            {days.map((d) => (
+              <div key={d.business_day_id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-48 flex-1">
+                  <p className="font-bold" dir="ltr">
+                    #{d.business_day_id} · {d.day_date}
+                  </p>
+                  <p className="text-caption" dir="ltr">
+                    {d.opened_at} → {d.closed_at}
+                  </p>
+                  <p>
+                    {d.shift_count} · <MoneyDisplay amount={d.totals.total_sales} />
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTarget({ kind: 'day_report', day_id: d.business_day_id })}
+                >
+                  {t('reports.preview')}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {target ? <PrintPreviewDialog target={target} onClose={() => setTarget(null)} /> : null}
+    </div>
+  )
+}
+
 function AuditList() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -278,6 +416,7 @@ function AuditList() {
 
   const load = useCallback(() => {
     setLoadError(null)
+
     opsApi
       .audit(100, action.trim() || undefined)
       .then(setRows)

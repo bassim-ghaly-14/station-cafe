@@ -144,6 +144,13 @@ function utcNoon(parts: CalendarDate): Date {
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12))
 }
 
+/** Format a SQLite timestamp without timezone conversion, preserving its exact date. */
+export function formatSqlDateTime(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(value)
+  if (!match) return value
+  return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`
+}
+
 /** Human-friendly date for the active locale, e.g. `22 سبتمبر 2026` / `Sep 22, 2026`. */
 export function formatIsoDate(value: string, locale: string): string {
   const parts = parseIsoDate(value)

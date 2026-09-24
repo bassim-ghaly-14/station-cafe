@@ -3,13 +3,43 @@
  * stays 80mm; this renderer supplies a readable 42-cell visual grid and the
  * dialog's scaling layer scales the complete paper as one unit.
  */
-import type { ReactNode } from 'react'
-import type { PreviewFinancialOp, PreviewItemOp, PrintPreview } from '@/services/posApi'
+import type { CSSProperties, ReactNode } from 'react'
+import type {
+  PreviewFinancialOp,
+  PreviewItemOp,
+  PreviewTextOp,
+  PrintPreview,
+} from '@/services/posApi'
 
 const CELL_PX = 8
 const BODY_SIZE = CELL_PX
 const META_SIZE = 8
 const TOTAL_SIZE = 18
+
+/** Conservative typographic equivalents for the ESC/POS text multipliers. */
+const TEXT_MODE_SIZE: Record<string, number> = {
+  '1x1': 1,
+  '2x1': 1.18,
+  '1x2': 1.22,
+  '2x2': 1.42,
+  '3x3': 1.62,
+}
+const TEXT_LINE_RHYTHM = 1.18
+
+function textStyle(op: PreviewTextOp): CSSProperties {
+  const width = Math.max(1, Math.min(3, op.width))
+  const height = Math.max(1, Math.min(3, op.height))
+  const modeSize = TEXT_MODE_SIZE[`${width}x${height}`] ?? TEXT_MODE_SIZE['1x1']
+  const fontSize = META_SIZE * modeSize
+  return {
+    textAlign: op.align,
+    fontSize: `${fontSize}px`,
+    fontWeight: op.bold ? 750 : 400,
+    lineHeight: `${fontSize * TEXT_LINE_RHYTHM}px`,
+    unicodeBidi: 'plaintext',
+  }
+}
+
 const LOGO_MM = 31
 
 export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
@@ -26,7 +56,7 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
       className="receipt-paper relative box-border w-full overflow-hidden border border-[#d8cbb8] bg-[#fffdf8] font-mono text-[#211c17] shadow-[0_18px_45px_-18px_rgba(43,29,18,0.45)]"
       style={{ width: `${preview.paper_mm}mm` }}
     >
-      <div className="receipt-content px-[4mm] py-[5mm]">
+      <div className="receipt-content px-[2mm] py-[2.5mm]">
         {preview.ops.map((op, index) => {
           switch (op.kind) {
             case 'logo':
@@ -52,7 +82,7 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
                   <div
                     key={index}
                     role="separator"
-                    className="my-[2.5mm] h-px border-t border-dashed border-[#776b5e]"
+                    className="my-[1.5mm] h-px border-t border-dashed border-[#776b5e]"
                   />
                 )
               }
@@ -61,13 +91,10 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
                 <p
                   key={index}
                   dir={arabic ? 'rtl' : 'ltr'}
+                  data-preview-text-size={`${op.width}x${op.height}`}
                   className="m-0 whitespace-pre-wrap wrap-break-words"
                   style={{
-                    textAlign: op.align,
-                    fontSize: `${op.bold ? 9.5 : op.height > 1 ? 11 : META_SIZE}px`,
-                    fontWeight: op.bold ? 750 : 450,
-                    lineHeight: `${BODY_SIZE * 1.28}px`,
-                    unicodeBidi: 'plaintext',
+                    ...textStyle(op),
                     direction: arabic ? 'rtl' : 'ltr',
                   }}
                 >

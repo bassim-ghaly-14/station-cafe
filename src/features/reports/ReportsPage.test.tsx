@@ -71,6 +71,7 @@ function applyPeriod(displayedFrom: string, from: string, to: string) {
 
 describe('ReportsPage period filter', () => {
   beforeEach(() => {
+    localStorage.clear()
     mocks.salesByDay.mockReset().mockResolvedValue([])
     mocks.productSales.mockReset().mockResolvedValue([])
     mocks.audit.mockReset().mockResolvedValue([])

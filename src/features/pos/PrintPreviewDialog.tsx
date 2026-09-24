@@ -25,6 +25,8 @@ export type PrintPreviewTarget =
       discount_value?: number | null
     }
   | { kind: 'invoice'; invoice_id: number }
+  | { kind: 'shift_report'; shift_id: number }
+  | { kind: 'day_report'; day_id: number }
   | { kind: 'wash_ticket'; order_id: number }
 
 export function PrintPreviewDialog({
@@ -47,12 +49,16 @@ export function PrintPreviewDialog({
   )
 
   const load = useCallback(() => {
-    const request =
+    const request: Promise<PrintPreview> =
       target.kind === 'order'
         ? api.printPreviewOrder(target.order_id, target.discount_mode, target.discount_value)
         : target.kind === 'invoice'
           ? api.printPreviewInvoice(target.invoice_id)
-          : api.printPreviewTicket(target.order_id)
+          : target.kind === 'shift_report'
+            ? api.printPreviewShift(target.shift_id)
+            : target.kind === 'day_report'
+              ? api.printPreviewDay(target.day_id)
+              : api.printPreviewTicket(target.order_id)
     // State is only touched from the async result — the dialog owns a single
     // target for its lifetime, so there is nothing to reset synchronously.
     request
@@ -72,14 +78,17 @@ export function PrintPreviewDialog({
   // CSS zoom reserves the complete scaled layout bounds for centering/scrolling.
   const previewScale = expanded ? 2 : 1.3
 
-  // Reprint goes through the EXISTING authoritative print pipeline.
   const reprint = () => {
     if (!canReprint) return
     setPrinting(true)
     const request: Promise<PrintOutcome> =
       target.kind === 'invoice'
         ? api.printInvoice(target.invoice_id)
-        : api.printTicket(target.order_id)
+        : target.kind === 'shift_report'
+          ? api.printShift(target.shift_id)
+          : target.kind === 'day_report'
+            ? api.printDay(target.day_id)
+            : api.printTicket(target.order_id)
     request
       .then((outcome) =>
         toast(

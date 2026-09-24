@@ -8,6 +8,9 @@ import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
 import '@/lib/i18n'
 import PosPage, { TableCard } from './PosPage'
+import { CurrentShiftPanel } from './CurrentShiftPanel'
+import { DayClosingPanel } from './DayClosingPanel'
+import type { ShiftRow } from '@/services/shiftApi'
 import type {
   OrderPreview,
   PosOrder,
@@ -31,7 +34,17 @@ const mocks = vi.hoisted(() => ({
   printPreviewOrder: vi.fn(),
   printPreviewInvoice: vi.fn(),
   printPreviewTicket: vi.fn(),
+  printPreviewShift: vi.fn(),
+  printShift: vi.fn(),
+  printDay: vi.fn(),
+  printPreviewDay: vi.fn(),
   state: vi.fn(),
+  previewShiftClose: vi.fn(),
+  closeShift: vi.fn(),
+  previewDaySettlement: vi.fn(),
+  settleDay: vi.fn(),
+  dayReport: vi.fn(),
+  closeDay: vi.fn(),
 }))
 
 vi.mock('@/services/posApi', () => ({
@@ -54,6 +67,10 @@ vi.mock('@/services/posApi', () => ({
     printPreviewOrder: mocks.printPreviewOrder,
     printPreviewInvoice: mocks.printPreviewInvoice,
     printPreviewTicket: mocks.printPreviewTicket,
+    printPreviewShift: mocks.printPreviewShift,
+    printShift: mocks.printShift,
+    printDay: mocks.printDay,
+    printPreviewDay: mocks.printPreviewDay,
     ticket: vi.fn(),
     orderCustomer: vi.fn().mockResolvedValue(null),
     detachCustomer: vi.fn().mockResolvedValue(undefined),
@@ -66,7 +83,15 @@ vi.mock('@/services/posApi', () => ({
 }))
 
 vi.mock('@/services/shiftApi', () => ({
-  shiftApi: { state: mocks.state },
+  shiftApi: {
+    state: mocks.state,
+    previewShiftClose: mocks.previewShiftClose,
+    closeShift: mocks.closeShift,
+    previewDaySettlement: mocks.previewDaySettlement,
+    settleDay: mocks.settleDay,
+    dayReport: mocks.dayReport,
+    closeDay: mocks.closeDay,
+  },
 }))
 
 function table(over: Partial<TableView> = {}): TableView {
@@ -95,6 +120,8 @@ function order(over: Partial<PosOrder> = {}): PosOrder {
     user_id: 1,
     status: 'OPEN',
     customer_id: null,
+    discount_mode: null,
+    discount_value: null,
     opened_at: '2026-01-05 10:00:00',
     waiting_no: null,
     takeaway_no: null,
@@ -224,7 +251,7 @@ describe('TableCard lifecycle UX', () => {
   it('occupied card never offers Close Empty', () => {
     renderCard(table({ status: 'OCCUPIED', order_id: 9 }))
 
-    expect(screen.getByRole('button', { name: /فتح الطلب/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /رؤية الطلب/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /إغلاق فارغ/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /فتح الطاولة/ })).not.toBeInTheDocument()
   })
@@ -301,7 +328,7 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
   it('offers exactly one مراجعة والدفع before the dialog — no request-payment step', async () => {
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
 
     expect(await screen.findByText('قهوة')).toBeInTheDocument()
 
@@ -327,7 +354,7 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
 
     const cash = await screen.findByPlaceholderText('0.00')
@@ -362,7 +389,7 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
 
     const cash = await screen.findByPlaceholderText('0.00')
@@ -402,7 +429,7 @@ describe('order panel identity (issue 3)', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
 
     expect(await screen.findByText('طاولة 01 · مفتوحة')).toBeInTheDocument()
   })
@@ -559,7 +586,7 @@ describe('print preview action beside the pay action', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
 
     const preview = await screen.findByRole('button', {
       name: 'معاينة الطباعة',
@@ -622,7 +649,7 @@ describe('print preview action beside the pay action', () => {
 
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'معاينة الطباعة' }))
 
     await waitFor(() => expect(mocks.printPreviewTicket).toHaveBeenCalledWith(9))
@@ -630,5 +657,200 @@ describe('print preview action beside the pay action', () => {
     expect(await screen.findByText('رقم الانتظار')).toBeInTheDocument()
 
     expect(screen.getByRole('button', { name: /إعادة طبع/ })).toBeEnabled()
+  })
+})
+
+describe('shift lifecycle UI', () => {
+  const shift: ShiftRow = {
+    id: 7,
+    business_day_id: 1,
+    user_id: 2,
+    user_name: 'Cashier One',
+    status: 'ACTIVE',
+    opened_at: '2026-09-24 16:00:00',
+    opening_cash: 1000,
+    closed_at: null,
+    cash_sales: 2000,
+    card_sales: 3000,
+    credit_sales: 500,
+    service_charges: 0,
+    discounts: 0,
+    invoices_count: 3,
+    expected_cash: 3000,
+    actual_cash: null,
+    cash_difference: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.previewShiftClose.mockResolvedValue({
+      shift,
+      closing_at: '2026-09-25 01:30:00',
+      cash_sales: 2000,
+      card_sales: 3000,
+      credit_sales: 500,
+      invoices_count: 3,
+      expected_cash: 3000,
+    })
+    mocks.closeShift.mockResolvedValue({
+      shift: { ...shift, status: 'CLOSED' },
+      expected_cash: 3000,
+      difference: 0,
+    })
+    mocks.printShift.mockResolvedValue({ duplicate_suppressed: false, job_id: 1 })
+    mocks.printPreviewShift.mockResolvedValue({
+      doc_type: 'SHIFT_REPORT',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        { kind: 'text', text: 'تقفيل وردية', align: 'center', bold: true, width: 1, height: 1 },
+      ],
+    })
+  })
+
+  it('opens the authoritative shift report preview with the current shift id', async () => {
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /معاينة قبل الطباعة/ }))
+
+    expect(await screen.findByText('تقفيل وردية')).toBeInTheDocument()
+    expect(mocks.printPreviewShift).toHaveBeenCalledWith(7)
+    expect(mocks.closeShift).not.toHaveBeenCalled()
+  })
+
+  it('shows the active shift period and closes with actual cash exactly once', async () => {
+    const onClosed = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={onClosed} />
+      </ToastProvider>,
+    )
+
+    expect(screen.getByText('24/09/2026 16:00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    expect(await screen.findByText('25/09/2026 01:30')).toBeInTheDocument()
+
+    const input = screen.getByPlaceholderText('0.00')
+    fireEvent.change(input, { target: { value: '30' } })
+    const buttons = screen.getAllByRole('button', { name: /تقفيل الوردية/ })
+    fireEvent.click(buttons[buttons.length - 1])
+    fireEvent.click(buttons[buttons.length - 1])
+
+    await waitFor(() => expect(mocks.closeShift).toHaveBeenCalledTimes(1))
+    expect(mocks.closeShift).toHaveBeenCalledWith(3000)
+    expect(onClosed).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mocks.printShift).toHaveBeenCalledWith(7))
+    expect(mocks.printShift.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.closeShift.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('keeps the dialog open and exposes a backend close error', async () => {
+    mocks.closeShift.mockRejectedValue(new Error('shift.not_open'))
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    fireEvent.change(await screen.findByPlaceholderText('0.00'), { target: { value: '30' } })
+    const buttons = screen.getAllByRole('button', { name: /تقفيل الوردية/ })
+    fireEvent.click(buttons[buttons.length - 1])
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('حدث خطأ غير متوقع، حاول مرة أخرى')
+  })
+})
+
+describe('day closing UI', () => {
+  const day = {
+    id: 1,
+    day: {
+      id: 1,
+      day_date: '2026-09-24',
+      status: 'OPEN',
+      opened_at: '2026-09-24 16:00:00',
+      closed_at: null,
+    },
+    totals: {
+      invoices_count: 1,
+      cafe_sales: 1000,
+      wash_sales: 2000,
+      subtotal: 3000,
+      discounts: 0,
+      service_charges: 0,
+      total_sales: 3000,
+      cash: 1000,
+      card: 2000,
+      credit: 0,
+      expenses: 0,
+    },
+    shifts: [],
+    expected_drawer_cash: 1000,
+    cash_differences: 0,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.dayReport.mockResolvedValue(day)
+    mocks.closeDay.mockResolvedValue(day.totals)
+    mocks.printDay.mockResolvedValue({ duplicate_suppressed: false, job_id: 1 })
+  })
+
+  it('uses the real day report and previews with the selected day id', async () => {
+    mocks.printPreviewDay.mockResolvedValue({
+      doc_type: 'DAY_REPORT',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        { kind: 'text', text: 'تقفيل يوم العمل', align: 'center', bold: true, width: 1, height: 1 },
+      ],
+    })
+    render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    fireEvent.click(screen.getByRole('button', { name: /معاينة قبل الطباعة/ }))
+    expect(await screen.findByText('تقفيل يوم العمل')).toBeInTheDocument()
+    expect(mocks.printPreviewDay).toHaveBeenCalledWith(1)
+    expect(mocks.closeDay).not.toHaveBeenCalled()
+  })
+
+  it('commits before printing and prevents double submit', async () => {
+    const onDone = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} onDone={onDone} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    const button = screen.getByRole('button', { name: /تأكيد تقفيل اليوم/ })
+    fireEvent.click(button)
+    fireEvent.click(button)
+    await waitFor(() => expect(mocks.closeDay).toHaveBeenCalledTimes(1))
+    expect(mocks.printDay).toHaveBeenCalledWith(1)
+    expect(mocks.printDay.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.closeDay.mock.invocationCallOrder[0],
+    )
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not print when final close fails', async () => {
+    mocks.closeDay.mockRejectedValue({ message: 'day.shifts_open' })
+    render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    fireEvent.click(screen.getByRole('button', { name: /تأكيد تقفيل اليوم/ }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(mocks.printDay).not.toHaveBeenCalled()
   })
 })
