@@ -25,6 +25,7 @@ export const catalogApi = {
       active_only: activeOnly ?? false,
     }),
   listCategories: () => call<Category[]>('list_categories'),
+  createCategory: (name: string) => call<number>('create_category', { name }),
   create: (input: NewProductInput) => call<number>('create_product', { input }),
   update: (product_id: number, input: NewProductInput) =>
     call<void>('update_product', { product_id, input }),

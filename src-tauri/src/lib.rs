@@ -73,6 +73,7 @@ pub fn run() {
             commands::auth::set_staff_status,
             commands::catalog::list_products,
             commands::catalog::list_categories,
+            commands::catalog::create_category,
             commands::catalog::create_product,
             commands::catalog::update_product,
             commands::catalog::set_product_price,
@@ -152,7 +153,7 @@ pub fn run() {
             commands::ops::print_day_report_cmd,
             commands::ops::list_print_jobs,
             commands::developer::clear_database,
-            commands::developer::load_demo_data,
+            commands::developer::load_official_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

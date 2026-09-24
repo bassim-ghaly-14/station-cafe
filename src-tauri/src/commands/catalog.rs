@@ -94,6 +94,32 @@ pub fn create_product(
     })
 }
 
+/// Create a category available to mandatory product/service assignment.
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_category(state: State<'_, AppState>, token: String, name: String) -> AppResult<i64> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::validation("catalog.category_name_required"));
+    }
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        if catalog::category_name_exists(conn, &name)? {
+            return Err(AppError::validation("catalog.category_name_taken"));
+        }
+        let id = catalog::insert_category(conn, &name)?;
+        crate::services::audit::record(
+            conn,
+            Some(actor.id),
+            Some(&actor.role),
+            "catalog.category_created",
+            "category",
+            Some(&id.to_string()),
+            None,
+            Some(&serde_json::json!({ "name": name })),
+        )?;
+        Ok(id)
+    })
+}
+
 /// Categories available for mandatory product/service assignment.
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_categories(state: State<'_, AppState>, token: String) -> AppResult<Vec<Category>> {

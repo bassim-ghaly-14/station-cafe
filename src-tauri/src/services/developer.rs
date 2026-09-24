@@ -14,7 +14,7 @@ pub fn clear_database(conn: &Db, actor: &User) -> AppResult<()> {
 }
 
 /// Explicit developer action that invokes the one canonical starter seed.
-pub fn load_demo_data(conn: &Db, actor: &User) -> AppResult<()> {
+pub fn load_official_data(conn: &Db, actor: &User) -> AppResult<()> {
     require_role(actor, "ADMIN")?;
     crate::seed::run_if_empty(conn)
 }
@@ -30,7 +30,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         migrate(&conn).unwrap();
-        load_demo_data(&conn, &user(1, "ADMIN")).unwrap();
+        load_official_data(&conn, &user(1, "ADMIN")).unwrap();
         conn
     }
 
@@ -100,6 +100,7 @@ mod tests {
         let conn = db();
         assert!(count(&conn, "users") > 0);
         assert!(count(&conn, "products") > 0);
+        assert!(count(&conn, "categories") > 0);
         assert!(count(&conn, "cafe_tables") > 0);
         let old_session = auth::login(
             &conn,
@@ -109,6 +110,36 @@ mod tests {
             },
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO business_days (day_date, opened_at, status, closed_at)
+             VALUES ('2026-01-01', datetime('now'), 'CLOSED', datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO shifts (business_day_id, user_id, status, closed_at)
+             VALUES (1, 1, 'CLOSED', datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO expenses
+                (category, amount, expense_date, business_day_id, user_id)
+             VALUES ('SUPPLIES', 100, '2026-01-01', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO day_closings
+                (business_day_id, closed_by, expenses, final_snapshot)
+             VALUES (1, 1, 100, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO day_closing_shifts VALUES (1, 1)", [])
+            .unwrap();
+        conn.execute("INSERT INTO day_closing_expenses VALUES (1, 1)", [])
+            .unwrap();
 
         clear_database(&conn, &user(1, "ADMIN")).unwrap();
 
@@ -158,7 +189,7 @@ mod tests {
         clear_database(&conn, &admin).unwrap();
         assert_eq!(count(&conn, "app_settings"), 0);
 
-        load_demo_data(&conn, &admin).unwrap();
+        load_official_data(&conn, &admin).unwrap();
 
         assert_eq!(count(&conn, "users"), 5);
         for name in ["Belly", "admin", "manager", "amira", "cashier"] {
@@ -177,7 +208,7 @@ mod tests {
         let markers: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM app_settings
-                 WHERE key IN ('seed.completed_at','seed.catalog.v2.completed_at')",
+                 WHERE key IN ('seed.completed_at','seed.catalog.v3.completed_at')",
                 [],
                 |r| r.get(0),
             )
@@ -199,7 +230,7 @@ mod tests {
     fn clear_resets_ids_and_implicit_integer_primary_keys() {
         let conn = db();
         clear_database(&conn, &user(1, "ADMIN")).unwrap();
-        load_demo_data(&conn, &user(1, "ADMIN")).unwrap();
+        load_official_data(&conn, &user(1, "ADMIN")).unwrap();
         let first_ids: (i64, i64) = conn
             .query_row("SELECT (SELECT id FROM users ORDER BY id LIMIT 1), (SELECT id FROM products ORDER BY id LIMIT 1)", [], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap();
@@ -224,7 +255,7 @@ mod tests {
                 Err(crate::error::AppError::Unauthorized(_))
             ));
             assert!(matches!(
-                load_demo_data(&conn, &actor),
+                load_official_data(&conn, &actor),
                 Err(crate::error::AppError::Unauthorized(_))
             ));
         }

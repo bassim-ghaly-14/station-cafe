@@ -6,9 +6,10 @@ use crate::repositories::Db;
 
 /// Audited from migrations v1-v14. `_migrations` is the only schema table
 /// intentionally excluded. The order is child-first for the current FK graph.
-/// Categories are system configuration and are intentionally preserved so the
-/// canonical seed can always satisfy the required product category FK.
 pub const APPLICATION_DATA_TABLES: &[&str] = &[
+    "day_closing_shifts",
+    "day_closing_expenses",
+    "day_closings",
     "credit_payments",
     "credit_accounts",
     "invoice_customers",
@@ -27,6 +28,7 @@ pub const APPLICATION_DATA_TABLES: &[&str] = &[
     "audit_log",
     "sessions",
     "products",
+    "categories",
     "cafe_tables",
     "cars",
     "customers",

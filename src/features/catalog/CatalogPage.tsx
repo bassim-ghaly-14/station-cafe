@@ -56,7 +56,7 @@ import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
 import { formatMinor, parseMajor } from '@/lib/utils'
 
-import { catalogApi, type NewProductInput } from '@/services/catalogApi'
+import { catalogApi, type Category, type NewProductInput } from '@/services/catalogApi'
 import type { Product } from '@/services/posApi'
 
 import { useSession } from '@/features/auth/useSession'
@@ -137,6 +137,8 @@ export default function CatalogPage() {
   const [status, setStatus] = useState<Status>('')
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [categoryCreateOpen, setCategoryCreateOpen] = useState(false)
+  const [categories, setCategories] = useState<Category[]>([])
   const [editing, setEditing] = useState<Product | null>(null)
   const [confirming, setConfirming] = useState<Product | null>(null)
 
@@ -156,9 +158,17 @@ export default function CatalogPage() {
       })
   }, [errText, toast])
 
+  const loadCategories = useCallback(() => {
+    catalogApi
+      .listCategories()
+      .then(setCategories)
+      .catch((error) => toast(errText(error), 'error'))
+  }, [errText, toast])
+
   useEffect(() => {
     load()
-  }, [load])
+    loadCategories()
+  }, [load, loadCategories])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -259,10 +269,20 @@ export default function CatalogPage() {
         </div>
 
         {canManageCatalog ? (
-          <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
-            <Plus size={16} aria-hidden />
-            {t('catalog.add')}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
+              <Plus size={16} aria-hidden />
+              {t('catalog.add')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setCategoryCreateOpen(true)}
+              className="w-full sm:w-auto"
+            >
+              <Plus size={16} aria-hidden />
+              {t('catalog.addCategory')}
+            </Button>
+          </div>
         ) : null}
       </header>
 
@@ -392,8 +412,21 @@ export default function CatalogPage() {
       {/* Dialogs                                                             */}
       {/* ================================================================== */}
 
+      {canManageCatalog && categoryCreateOpen ? (
+        <CreateCategoryDialog
+          existingCategories={categories}
+          onClose={() => setCategoryCreateOpen(false)}
+          onCreated={(name) => {
+            setCategoryCreateOpen(false)
+            toast(t('catalog.categoryCreated', { name }), 'success')
+            loadCategories()
+          }}
+        />
+      ) : null}
+
       {canManageCatalog && createOpen ? (
         <CreateProductDialog
+          categories={categories}
           onClose={() => setCreateOpen(false)}
           onCreated={(name) => {
             setCreateOpen(false)
@@ -406,6 +439,7 @@ export default function CatalogPage() {
       {canManageCatalog && editing ? (
         <EditProductDialog
           product={editing}
+          categories={categories}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
@@ -741,14 +775,88 @@ function CatalogSelect({
   )
 }
 
+function CreateCategoryDialog({
+  existingCategories,
+  onClose,
+  onCreated,
+}: {
+  existingCategories: Category[]
+  onClose: () => void
+  onCreated: (name: string) => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const errText = useErrText(t)
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setError(t('catalog.categoryNameRequired'))
+      return
+    }
+    if (
+      existingCategories.some(
+        (category) => category.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
+      )
+    ) {
+      setError(t('catalog.categoryNameTaken'))
+      return
+    }
+
+    setBusy(true)
+    try {
+      await catalogApi.createCategory(trimmed)
+      onCreated(trimmed)
+    } catch (cause) {
+      setError(errText(cause))
+      toast(errText(cause), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} title={t('catalog.addCategory')}>
+      <div className="flex flex-col gap-5">
+        <Field label={t('catalog.categoryName')} error={error}>
+          <Input
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value)
+              setError(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !busy) void save()
+            }}
+          />
+        </Field>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+          <Button variant="outline" onClick={onClose}>
+            {t('app.cancel')}
+          </Button>
+          <Button onClick={() => void save()} disabled={busy} loading={busy}>
+            {!busy ? <Save size={16} aria-hidden /> : null}
+            {t('app.save')}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 /* ========================================================================== */
 /* Create dialog                                                              */
 /* ========================================================================== */
 
 function CreateProductDialog({
+  categories,
   onClose,
   onCreated,
 }: {
+  categories: Category[]
   onClose: () => void
   onCreated: (name: string) => void
 }) {
@@ -765,14 +873,6 @@ function CreateProductDialog({
   const [tracked, setTracked] = useState(false)
   const [stockQuantity, setStockQuantity] = useState('0')
   const [stockError, setStockError] = useState<string | null>(null)
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
-
-  useEffect(() => {
-    catalogApi
-      .listCategories()
-      .then(setCategories)
-      .catch((error) => toast(errText(error), 'error'))
-  }, [errText, toast])
 
   const [busy, setBusy] = useState(false)
   const [priceError, setPriceError] = useState<string | null>(null)
@@ -796,8 +896,8 @@ function CreateProductDialog({
       return
     }
 
-    const quantity = tracked ? parseStockQuantity(stockQuantity) : null
-    if (tracked && quantity === null) {
+    const quantity = type === 'PRODUCT' && tracked ? parseStockQuantity(stockQuantity) : null
+    if (type === 'PRODUCT' && tracked && quantity === null) {
       setStockError(t('catalog.invalidStock'))
       return
     }
@@ -811,7 +911,7 @@ function CreateProductDialog({
         department,
         category_id: Number(categoryId),
         price_minor: minor,
-        track_inventory: tracked,
+        track_inventory: type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
       }
 
@@ -890,7 +990,14 @@ function CreateProductDialog({
           <Field label={t('catalog.type')}>
             <select
               value={type}
-              onChange={(event) => setType(event.target.value as ItemType)}
+              onChange={(event) => {
+                const value = event.target.value as ItemType
+                setType(value)
+                if (value === 'SERVICE') {
+                  setTracked(false)
+                  setStockError(null)
+                }
+              }}
               className="h-10 w-full border border-border-strong bg-surface px-3 text-base text-foreground outline-none focus:border-primary"
             >
               {TYPES.map((value) => (
@@ -932,20 +1039,22 @@ function CreateProductDialog({
             ))}
           </select>
         </Field>
-        <label className="text-body flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={tracked}
-            onChange={(event) => {
-              setTracked(event.target.checked)
-              setStockError(null)
-            }}
-            className="h-4 w-4 accent-primary"
-          />
-          {t('inventory.trackItem')}
-        </label>
+        {type === 'PRODUCT' ? (
+          <label className="text-body flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={tracked}
+              onChange={(event) => {
+                setTracked(event.target.checked)
+                setStockError(null)
+              }}
+              className="h-4 w-4 accent-primary"
+            />
+            {t('inventory.trackItem')}
+          </label>
+        ) : null}
 
-        {tracked ? (
+        {type === 'PRODUCT' && tracked ? (
           <Field label={t('inventory.quantity')} error={stockError}>
             <Input
               dir="ltr"
@@ -983,10 +1092,12 @@ function CreateProductDialog({
 
 function EditProductDialog({
   product,
+  categories,
   onClose,
   onSaved,
 }: {
   product: Product
+  categories: Category[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -1005,14 +1116,6 @@ function EditProductDialog({
   const [priceError, setPriceError] = useState<string | null>(null)
   const [categoryError, setCategoryError] = useState<string | null>(null)
   const [stockError, setStockError] = useState<string | null>(null)
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
-
-  useEffect(() => {
-    catalogApi
-      .listCategories()
-      .then(setCategories)
-      .catch((error) => toast(errText(error), 'error'))
-  }, [errText, toast])
 
   const department = product.department as Department
   const style = departmentStyles[department]
@@ -1033,8 +1136,9 @@ function EditProductDialog({
       return
     }
 
-    const quantity = tracked ? parseStockQuantity(stockQuantity) : null
-    if (tracked && quantity === null) {
+    const quantity =
+      product.item_type === 'PRODUCT' && tracked ? parseStockQuantity(stockQuantity) : null
+    if (product.item_type === 'PRODUCT' && tracked && quantity === null) {
       setStockError(t('catalog.invalidStock'))
       return
     }
@@ -1048,7 +1152,7 @@ function EditProductDialog({
         department: product.department,
         category_id: Number(categoryId),
         price_minor: minor,
-        track_inventory: tracked,
+        track_inventory: product.item_type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
       })
 
@@ -1120,20 +1224,22 @@ function EditProductDialog({
             ))}
           </select>
         </Field>
-        <label className="text-body flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={tracked}
-            onChange={(event) => {
-              setTracked(event.target.checked)
-              setStockError(null)
-            }}
-            className="h-4 w-4 accent-primary"
-          />
-          {t('inventory.trackItem')}
-        </label>
+        {product.item_type === 'PRODUCT' ? (
+          <label className="text-body flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={tracked}
+              onChange={(event) => {
+                setTracked(event.target.checked)
+                setStockError(null)
+              }}
+              className="h-4 w-4 accent-primary"
+            />
+            {t('inventory.trackItem')}
+          </label>
+        ) : null}
 
-        {tracked ? (
+        {product.item_type === 'PRODUCT' && tracked ? (
           <Field label={t('inventory.quantity')} error={stockError}>
             <Input
               dir="ltr"

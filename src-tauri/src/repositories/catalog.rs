@@ -76,6 +76,35 @@ pub fn category_exists(conn: &Db, id: i64) -> AppResult<bool> {
     )?)
 }
 
+pub fn category_name_exists(conn: &Db, name: &str) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE name = ?1)",
+        [name],
+        |r| r.get(0),
+    )?)
+}
+
+pub fn insert_category(conn: &Db, name: &str) -> AppResult<i64> {
+    conn.execute("INSERT INTO categories (name) VALUES (?1)", [name])?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Create a category only when the trimmed name is not already present.
+/// This is used by deterministic seed synchronization.
+pub fn ensure_category(conn: &Db, name: &str) -> AppResult<i64> {
+    if let Some(id) = conn
+        .query_row(
+            "SELECT id FROM categories WHERE name = ?1 ORDER BY id LIMIT 1",
+            [name],
+            |row| row.get(0),
+        )
+        .optional()?
+    {
+        return Ok(id);
+    }
+    insert_category(conn, name)
+}
+
 pub struct NewProduct<'a> {
     pub name: &'a str,
     pub item_type: &'a str,
@@ -291,6 +320,15 @@ mod tests {
             stock_quantity,
             user_id,
         }
+    }
+
+    #[test]
+    fn ensure_category_reuses_an_existing_case_insensitive_name() {
+        let conn = fresh();
+        let first = ensure_category(&conn, "Drinks").unwrap();
+        let second = ensure_category(&conn, "drinks").unwrap();
+        assert_eq!(first, second);
+        assert!(!insert_category(&conn, "drinks").is_ok());
     }
 
     /// A stock-managed item is created together with its inventory row and an

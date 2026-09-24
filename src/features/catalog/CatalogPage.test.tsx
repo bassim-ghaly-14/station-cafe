@@ -8,6 +8,7 @@ import type { Product } from '@/services/posApi'
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   listCategories: vi.fn(),
+  createCategory: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   setActive: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('@/services/catalogApi', () => ({
   catalogApi: {
     list: mocks.list,
     listCategories: mocks.listCategories,
+    createCategory: mocks.createCategory,
     create: mocks.create,
     update: mocks.update,
     setActive: mocks.setActive,
@@ -59,6 +61,7 @@ describe('CatalogPage category and stock UI', () => {
     vi.clearAllMocks()
     mocks.list.mockResolvedValue([product()])
     mocks.listCategories.mockResolvedValue([{ id: 1, name: 'عام' }])
+    mocks.createCategory.mockReset().mockResolvedValue(2)
     mocks.create.mockResolvedValue(2)
   })
 
@@ -121,5 +124,37 @@ describe('CatalogPage category and stock UI', () => {
         }),
       ),
     )
+  })
+
+  it('creates a category and refreshes it for product forms', async () => {
+    mocks.createCategory.mockResolvedValue(2)
+    mocks.listCategories.mockResolvedValueOnce([{ id: 1, name: 'عام' }]).mockResolvedValue([
+      { id: 1, name: 'عام' },
+      { id: 2, name: 'مشروبات' },
+    ])
+    page()
+    await screen.findByText('Test Item')
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة تصنيف جديد' }))
+    const dialog = screen.getByRole('dialog', { name: 'إضافة تصنيف جديد' })
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'مشروبات' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledWith('مشروبات'))
+    fireEvent.click(screen.getByRole('button', { name: 'صنف جديد' }))
+    expect(await screen.findByRole('option', { name: 'مشروبات' })).toBeInTheDocument()
+  })
+
+  it('rejects empty and duplicate categories before invoking the backend', async () => {
+    page()
+    await screen.findByText('Test Item')
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة تصنيف جديد' }))
+    const dialog = screen.getByRole('dialog', { name: 'إضافة تصنيف جديد' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+    expect(await within(dialog).findByText('اسم التصنيف مطلوب')).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'عام' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+    expect(await within(dialog).findByText('التصنيف موجود بالفعل')).toBeInTheDocument()
+    expect(mocks.createCategory).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+    expect(screen.queryByRole('dialog', { name: 'إضافة تصنيف جديد' })).not.toBeInTheDocument()
   })
 })

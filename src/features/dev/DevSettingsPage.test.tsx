@@ -5,7 +5,7 @@ import DevSettingsPage from './DevSettingsPage'
 
 const mocks = vi.hoisted(() => ({
   user: { role: 'ADMIN' as 'ADMIN' | 'STAFF' },
-  loadDemo: vi.fn(),
+  loadOfficial: vi.fn(),
   clear: vi.fn(),
   clearSessionToken: vi.fn(),
   clearLocalSession: vi.fn(),
@@ -19,11 +19,11 @@ vi.mock('@/features/auth/useSession', () => ({
 }))
 vi.mock('@/services/developerApi', () => ({
   developerApi: {
-    loadDemo: mocks.loadDemo,
+    loadOfficial: mocks.loadOfficial,
     clear: mocks.clear,
     setReseedToken: vi.fn(),
     takeReseedToken: () => 'one-time-grant',
-    consumeReseedToken: vi.fn(),
+    clearReseedToken: vi.fn(),
   },
 }))
 
@@ -38,7 +38,7 @@ function page() {
 describe('DevSettingsPage', () => {
   beforeEach(() => {
     mocks.user.role = 'ADMIN'
-    mocks.loadDemo.mockReset().mockResolvedValue(undefined)
+    mocks.loadOfficial.mockReset().mockResolvedValue(undefined)
     mocks.clear.mockReset().mockResolvedValue('one-time-grant')
     mocks.clearSessionToken.mockReset()
     mocks.clearLocalSession.mockReset()
@@ -50,10 +50,10 @@ describe('DevSettingsPage', () => {
     expect(screen.queryByRole('heading', { name: 'إعدادات المطوّر' })).not.toBeInTheDocument()
   })
 
-  it('loads canonical demo data and refreshes local application state', async () => {
+  it('loads official data and refreshes local application state', async () => {
     page()
-    fireEvent.click(screen.getByRole('button', { name: 'تحميل بيانات تجريبية' }))
-    await waitFor(() => expect(mocks.loadDemo).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'تحميل بيانات رسمية' }))
+    await waitFor(() => expect(mocks.loadOfficial).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mocks.clearLocalSession).toHaveBeenCalledTimes(1))
   })
 
@@ -64,7 +64,9 @@ describe('DevSettingsPage', () => {
     expect(within(dialog).getByText(/سيتم الاحتفاظ بحساب المطور ADMIN فقط/)).toBeInTheDocument()
     expect(mocks.clear).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }))
-    expect(screen.queryByRole('dialog', { name: 'تأكيد مسح قاعدة البيانات بالكامل' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('dialog', { name: 'تأكيد مسح قاعدة البيانات بالكامل' }),
+    ).not.toBeInTheDocument()
     expect(mocks.clear).not.toHaveBeenCalled()
   })
 

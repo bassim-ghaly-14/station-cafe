@@ -26,7 +26,7 @@ pub fn clear_database(state: State<'_, AppState>, token: String) -> AppResult<St
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn load_demo_data(
+pub fn load_official_data(
     state: State<'_, AppState>,
     token: Option<String>,
     reseed_token: Option<String>,
@@ -49,10 +49,10 @@ pub fn load_demo_data(
                 .as_ref()
                 .map(|(_, actor)| actor.clone())
                 .ok_or_else(|| crate::error::AppError::unauthorized("auth.invalid_session"))?;
-            developer::load_demo_data(conn, &actor)
+            developer::load_official_data(conn, &actor)
         } else {
             let actor = auth::require_user(conn, token.as_deref().unwrap_or_default())?;
-            developer::load_demo_data(conn, &actor)
+            developer::load_official_data(conn, &actor)
         }
     })?;
 
