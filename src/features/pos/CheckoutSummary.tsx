@@ -87,7 +87,7 @@ export function CheckoutSummary({
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
-        <Button variant="outline" size="sm" onClick={onDiscount}>
+        <Button variant="destructiveGhost" size="sm" onClick={onDiscount}>
           <Percent size={15} aria-hidden />
           {discountLabel ?? t('pos.discount')}
         </Button>

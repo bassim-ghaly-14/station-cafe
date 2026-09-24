@@ -722,7 +722,7 @@ export function TableCard({
             <Button
               className="min-w-0 flex-1"
               size="sm"
-              variant="ghost"
+              variant="destructiveGhost"
               onClick={onCloseEmpty}
               aria-label={`${t('pos.closeEmpty')} — ${tv.label}`}
             >
