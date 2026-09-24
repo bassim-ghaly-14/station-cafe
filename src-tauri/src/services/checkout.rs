@@ -12,6 +12,7 @@ use crate::repositories::pos;
 use crate::repositories::Db;
 use crate::services::auth::User;
 use crate::services::pos as pos_svc;
+use crate::services::settings;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -20,6 +21,8 @@ pub struct CheckoutInput {
     pub method: String, // CASH | CARD | CREDIT
     pub discount_mode: Option<String>,
     pub discount_value: Option<i64>,
+    pub discount_password: Option<String>,
+    pub service_charge_minor: Option<i64>,
     /// CASH only: what the customer handed over (≥ total).
     pub received: Option<i64>,
 }
@@ -54,13 +57,42 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
     if order.lines.is_empty() {
         return Err(AppError::business("pos.empty_order"));
     }
-    let preview = pos_svc::preview(
+    let subtotal: Money = order.lines.iter().map(|line| line.line_total).sum();
+    let discount_minor = pos_svc::validate_discount(
         &tx,
-        input.order_id,
+        subtotal,
         input.discount_mode.as_deref(),
         input.discount_value,
-    )?;
-    let total: Money = preview.total;
+    )
+    .map_err(|e| match e {
+        AppError::Validation(m) => AppError::business(m),
+        other => other,
+    })?;
+    let persisted_discount = matches!(
+        (order.discount_mode.as_deref(), order.discount_value),
+        (Some(stored_mode), Some(stored_value))
+            if input.discount_mode.as_deref() == Some(stored_mode)
+                && input.discount_value == Some(stored_value)
+    );
+    if discount_minor > 0 && !persisted_discount {
+        settings::authorize_discount(&tx, input.discount_password.as_deref())?;
+    }
+    let service_charge_minor = match input.service_charge_minor {
+        Some(0) => 0,
+        Some(amount) if settings::get_service_charge(&tx)?.amounts.contains(&amount) => amount,
+        Some(_) => return Err(AppError::business("settings.invalid_service_charge")),
+        None => 0,
+    };
+    let total: Money = subtotal - discount_minor + service_charge_minor;
+    let preview = pos_svc::OrderPreview {
+        subtotal,
+        discount_mode: input.discount_mode.clone(),
+        discount_value: input.discount_value,
+        discount_minor,
+        service_charge_minor,
+        total,
+        has_wash: order.lines.iter().any(|line| line.department == "WASH"),
+    };
     if total <= 0 {
         return Err(AppError::business("payment.zero_total"));
     }
@@ -80,6 +112,9 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
             let cid = order
                 .customer_id
                 .ok_or_else(|| AppError::business("credit.customer_required"))?;
+            if !settings::get_credit_config(&tx)?.enabled {
+                return Err(AppError::business("credit.disabled"));
+            }
             if !crate::services::settings::customer_allowed_credit(&tx, cid)? {
                 return Err(AppError::business("credit.not_allowed"));
             }

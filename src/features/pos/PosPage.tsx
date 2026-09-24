@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import {
   api,
+  settingsApi,
   type DiscountSel,
   type OrderPreview,
   type PosOrder,
@@ -45,6 +46,8 @@ export default function PosPage() {
   const [payOpen, setPayOpen] = useState(false)
   const [preview, setPreview] = useState<OrderPreview | null>(null)
   const [discount, setDiscount] = useState<DiscountSel>({ mode: null, value: null })
+  const [serviceCharge, setServiceCharge] = useState(0)
+  const [serviceChargeOptions, setServiceChargeOptions] = useState<number[]>([])
   const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<TableView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -67,15 +70,19 @@ export default function PosPage() {
   }, [refresh])
 
   useEffect(() => {
+    void settingsApi.serviceCharge().then((config) => setServiceChargeOptions(config.amounts))
+  }, [])
+
+  useEffect(() => {
     if (activeOrder) {
       api
-        .preview(activeOrder.id, discount.mode, discount.value)
+        .preview(activeOrder.id, discount.mode, discount.value, serviceCharge)
         .then(setPreview)
         .catch(() => setPreview(null))
     } else {
       setPreview(null)
     }
-  }, [activeOrder, discount.mode, discount.value])
+  }, [activeOrder, discount.mode, discount.value, serviceCharge])
 
   if (error) {
     return <ErrorState message={error} onRetry={() => void refresh()} retryLabel={t('app.retry')} />
@@ -346,6 +353,9 @@ export default function PosPage() {
                 order={activeOrder}
                 preview={preview}
                 discount={discount}
+                serviceCharge={serviceCharge}
+                serviceChargeOptions={serviceChargeOptions}
+                onServiceChargeChange={setServiceCharge}
                 onDiscountChange={(d: DiscountSel) => setDiscount(d)}
                 onChange={setActiveOrder}
                 onRefreshTables={() => void refresh()}
@@ -379,6 +389,7 @@ export default function PosPage() {
         <PaymentDialog
           orderId={activeOrder.id}
           discount={discount}
+          serviceCharge={serviceCharge}
           order={activeOrder}
           onClose={() => setPayOpen(false)}
           onDone={(invoiceId, outcome) => {

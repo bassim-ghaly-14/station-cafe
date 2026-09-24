@@ -72,7 +72,6 @@ export interface OrderPreview {
   discount_mode: string | null
   discount_value: number | null
   discount_minor: number
-  service_charge_mode: string
   service_charge_minor: number
   total: number
   has_wash: boolean
@@ -227,6 +226,7 @@ export interface PrintPreview {
 
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
+  setTableCount: (count: number) => call<void>('set_table_count', { count }),
   openTakeaways: () => call<TakeawayView[]>('list_open_takeaway_orders'),
   openTable: (table_id: number) => call<number>('open_table', { table_id }),
   closeEmptyTable: (table_id: number) => call<void>('close_empty_table', { table_id }),
@@ -242,10 +242,31 @@ export const api = {
     call<PosOrder>('remove_order_line', { order_id, line_id }),
   products: (department?: string) =>
     call<Product[]>('list_products', { department: department ?? null, active_only: true }),
-  preview: (order_id: number, discount_mode: string | null, discount_value: number | null) =>
-    call<OrderPreview>('preview_order', { order_id, discount_mode, discount_value }),
-  setDiscount: (order_id: number, discount_mode: string | null, discount_value: number | null) =>
-    call<PosOrder>('set_order_discount', { order_id, discount_mode, discount_value }),
+  preview: (
+    order_id: number,
+    discount_mode: string | null,
+    discount_value: number | null,
+    service_charge_minor: number,
+  ) =>
+    call<OrderPreview>('preview_order', {
+      order_id,
+      discount_mode,
+      discount_value,
+      discount_password: null,
+      service_charge_minor,
+    }),
+  setDiscount: (
+    order_id: number,
+    discount_mode: string | null,
+    discount_value: number | null,
+    discount_password: string | null = null,
+  ) =>
+    call<PosOrder>('set_order_discount', {
+      order_id,
+      discount_mode,
+      discount_value,
+      discount_password,
+    }),
   checkout: (input: CheckoutInput) => call<CheckoutResult>('checkout_order', { input }),
   getInvoice: (invoice_id: number) =>
     call<[InvoiceRow, InvoiceLine[]]>('get_invoice', { invoice_id }),
@@ -282,11 +303,13 @@ export const api = {
     order_id: number,
     discount_mode?: string | null,
     discount_value?: number | null,
+    service_charge_minor?: number,
   ) =>
     call<PrintPreview>('preview_order_document', {
       order_id,
       discount_mode: discount_mode ?? null,
       discount_value: discount_value ?? null,
+      service_charge_minor: service_charge_minor ?? 0,
     }),
   /** Read-only preview of a persisted invoice (never prints, never records). */
   printPreviewInvoice: (invoice_id: number) =>
@@ -315,14 +338,28 @@ export interface OrderCustomer {
   phone: string | null
 }
 
-export interface DiscountLimitConfig {
-  mode: 'NONE' | 'PERCENT' | 'FIXED'
-  value: number
+export interface ServiceChargeConfig {
+  amounts: number[]
+}
+
+export interface DiscountAuthorizationConfig {
+  configured: boolean
+}
+
+export interface CreditConfig {
+  enabled: boolean
+  mode: 'LIST' | 'ALL'
+  allowed_customer_ids: number[]
 }
 
 export const settingsApi = {
-  discountLimit: () => call<DiscountLimitConfig>('get_discount_limit'),
-  setDiscountLimit: (config: DiscountLimitConfig) => call<void>('set_discount_limit', { config }),
+  serviceCharge: () => call<ServiceChargeConfig>('get_service_charge'),
+  setServiceCharge: (config: ServiceChargeConfig) => call<void>('set_service_charge', { config }),
+  credit: () => call<CreditConfig>('get_credit_config'),
+  setCredit: (config: CreditConfig) => call<void>('set_credit_config', { config }),
+  discountAuthorization: () => call<DiscountAuthorizationConfig>('get_discount_authorization'),
+  setDiscountAuthorizationPassword: (password: string) =>
+    call<void>('set_discount_authorization_password', { password }),
 }
 
 export interface CheckoutInput {
@@ -330,6 +367,8 @@ export interface CheckoutInput {
   method: string
   discount_mode: string | null
   discount_value: number | null
+  discount_password?: string | null
+  service_charge_minor: number
   received: number | null
 }
 

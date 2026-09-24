@@ -28,6 +28,71 @@ pub fn list_tables(conn: &Db) -> AppResult<Vec<TableView>> {
     pos::list_tables(conn, day.map(|d| d.id))
 }
 
+/// Set the number of cafe tables. Table rows are retained for history: only
+/// tables outside the requested automatic sequence are deactivated.
+pub fn set_table_count(conn: &Db, actor: &User, count: i64) -> AppResult<()> {
+    if !(1..=99).contains(&count) {
+        return Err(AppError::validation("tables.invalid_count"));
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    let wanted: std::collections::HashSet<String> = (1..=count)
+        .map(|number| format!("طاولة {number:02}"))
+        .collect();
+
+    let active = {
+        let mut stmt = tx.prepare("SELECT id, label FROM cafe_tables WHERE is_active = 1")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let active = rows.collect::<Result<Vec<_>, _>>()?;
+        active
+    };
+
+    for (id, label) in &active {
+        if !wanted.contains(label) {
+            let busy: i64 = tx.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM table_sessions WHERE table_id = ?1 AND status = 'OPEN'
+                 ) OR EXISTS(
+                    SELECT 1 FROM orders WHERE table_id = ?1 AND status IN ('OPEN','READY_TO_PAY')
+                 )",
+                [id],
+                |row| row.get(0),
+            )?;
+            if busy != 0 {
+                return Err(AppError::conflict("tables.has_active_state"));
+            }
+            tx.execute("UPDATE cafe_tables SET is_active = 0 WHERE id = ?1", [id])?;
+        }
+    }
+
+    for number in 1..=count {
+        let label = format!("طاولة {number:02}");
+        tx.execute(
+            "INSERT OR IGNORE INTO cafe_tables (label) VALUES (?1)",
+            [&label],
+        )?;
+        tx.execute(
+            "UPDATE cafe_tables SET is_active = 1 WHERE label = ?1",
+            [&label],
+        )?;
+    }
+
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "table.count_changed",
+        "table",
+        None,
+        Some(&serde_json::json!({ "active_count": active.len() })),
+        Some(&serde_json::json!({ "active_count": count })),
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Gates shared by every order/session-creating POS action: an OPEN business
 /// day plus the caller's own ACTIVE shift (the order must belong to the shift
 /// that will later be closed, so shift totals stay correct).
@@ -42,8 +107,6 @@ fn require_day_and_shift(
     Ok((day, shift))
 }
 
-/// OPEN a table: starts an explicit lifecycle session. NO order is created —
-/// the customer may sit down and leave without ordering anything.
 pub fn open_table(conn: &Db, actor: &User, table_id: i64) -> AppResult<i64> {
     let tx = conn.unchecked_transaction()?;
     let (day, shift) = require_day_and_shift(&tx, actor)?;
@@ -255,7 +318,7 @@ pub fn set_discount(
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    validate_discount_against_limit(&tx, subtotal, discount_mode, discount_value)?;
+    validate_discount(&tx, subtotal, discount_mode, discount_value)?;
     pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;
     let refreshed = get_order(&tx, order_id)?;
     tx.commit()?;
@@ -340,54 +403,17 @@ pub fn order_customer(conn: &Db, order_id: i64) -> AppResult<Option<OrderCustome
     }
 }
 
-/// Backend-authoritative discount validation: shape checks PLUS the
-/// configured global ceiling (mode-aware). Called by preview (actor-aware)
-/// and checkout so a modified client can never bypass the limit.
-pub fn validate_discount_against_limit(
-    conn: &Db,
+pub fn validate_discount(
+    _conn: &Db,
     subtotal: i64,
     mode: Option<&str>,
     value: Option<i64>,
 ) -> AppResult<i64> {
-    let limit = settings::get_discount_limit(conn)?;
     match (mode, value) {
         (None, _) | (_, None) => Ok(0),
-        (Some("FIXED"), Some(v)) => {
-            if v < 0 || v > subtotal {
-                return Err(AppError::validation("discount.invalid"));
-            }
-            // Ceiling: NONE → 0; PERCENT limit → percent_of(subtotal); FIXED → value.
-            let ceiling = settings::discount_ceiling_minor(&limit, subtotal);
-            if v > ceiling {
-                return Err(AppError::validation("discount.over_limit"));
-            }
-            Ok(v)
-        }
-        (Some("PERCENT"), Some(v)) => {
-            if !(0..=money::RATE_SCALE).contains(&v) {
-                return Err(AppError::validation("discount.invalid"));
-            }
-            match limit.mode {
-                settings::DiscountLimitMode::None => {
-                    if v != 0 {
-                        return Err(AppError::validation("discount.over_limit"));
-                    }
-                    Ok(0)
-                }
-                settings::DiscountLimitMode::Percent => {
-                    if v > limit.value {
-                        return Err(AppError::validation("discount.over_limit"));
-                    }
-                    Ok(subtotal - money::apply_percent_discount(subtotal, v))
-                }
-                settings::DiscountLimitMode::Fixed => {
-                    let minor = subtotal - money::apply_percent_discount(subtotal, v);
-                    if minor > limit.value.max(0) || minor > subtotal {
-                        return Err(AppError::validation("discount.over_limit"));
-                    }
-                    Ok(minor)
-                }
-            }
+        (Some("FIXED"), Some(v)) if (0..=subtotal).contains(&v) => Ok(v),
+        (Some("PERCENT"), Some(v)) if (0..=money::RATE_SCALE).contains(&v) => {
+            Ok(subtotal - money::apply_percent_discount(subtotal, v))
         }
         _ => Err(AppError::validation("discount.invalid")),
     }
@@ -400,7 +426,6 @@ pub struct OrderPreview {
     pub discount_mode: Option<String>,
     pub discount_value: Option<i64>,
     pub discount_minor: i64,
-    pub service_charge_mode: String,
     pub service_charge_minor: i64,
     pub total: i64,
     pub has_wash: bool,
@@ -413,36 +438,34 @@ pub fn preview(
     order_id: i64,
     discount_mode: Option<&str>,
     discount_value: Option<i64>,
+    service_charge_minor: Option<i64>,
 ) -> AppResult<OrderPreview> {
     let order = get_order(conn, order_id)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
     let discount_minor =
-        validate_discount_against_limit(conn, subtotal, discount_mode, discount_value).map_err(
-            |e| match e {
-                AppError::Validation(m) => AppError::business(m),
-                other => other,
-            },
-        )?;
-    let base = subtotal - discount_minor;
-    let sc = settings::get_service_charge(conn)?;
-    let service_charge_minor = match sc.mode {
-        settings::ServiceChargeMode::None => 0,
-        settings::ServiceChargeMode::Fixed => sc.value.max(0),
-        settings::ServiceChargeMode::Percent => money::percent_of(base, sc.value),
-    };
-    let mode_str = match sc.mode {
-        settings::ServiceChargeMode::None => "NONE",
-        settings::ServiceChargeMode::Fixed => "FIXED",
-        settings::ServiceChargeMode::Percent => "PERCENT",
+        validate_discount(conn, subtotal, discount_mode, discount_value).map_err(|e| match e {
+            AppError::Validation(m) => AppError::business(m),
+            other => other,
+        })?;
+    let service_charge_minor = match service_charge_minor {
+        Some(0) => 0,
+        Some(amount)
+            if settings::get_service_charge(conn)?
+                .amounts
+                .contains(&amount) =>
+        {
+            amount
+        }
+        Some(_) => return Err(AppError::business("settings.invalid_service_charge")),
+        None => 0,
     };
     Ok(OrderPreview {
         subtotal,
         discount_mode: discount_mode.map(String::from),
         discount_value,
         discount_minor,
-        service_charge_mode: mode_str.to_string(),
         service_charge_minor,
-        total: base + service_charge_minor,
+        total: subtotal - discount_minor + service_charge_minor,
         has_wash: order.lines.iter().any(|l| l.department == "WASH"),
     })
 }
@@ -464,12 +487,19 @@ pub fn current_print_order(
     order_id: i64,
     discount_mode: Option<&str>,
     discount_value: Option<i64>,
+    service_charge_minor: Option<i64>,
 ) -> AppResult<CurrentPrintOrder> {
     let order = get_order(conn, order_id)?;
     if order.lines.is_empty() {
         return Err(AppError::business("pos.empty_order"));
     }
-    let totals = preview(conn, order_id, discount_mode, discount_value)?;
+    let totals = preview(
+        conn,
+        order_id,
+        discount_mode,
+        discount_value,
+        service_charge_minor,
+    )?;
     let customer = order_customer(conn, order_id)?;
     let (car_plate, car_model): (Option<String>, Option<String>) = match order.customer_id {
         Some(customer_id) => conn

@@ -23,6 +23,7 @@ export type PrintPreviewTarget =
       order_id: number
       discount_mode?: string | null
       discount_value?: number | null
+      service_charge_minor?: number
     }
   | { kind: 'invoice'; invoice_id: number }
   | { kind: 'shift_report'; shift_id: number }
@@ -51,7 +52,12 @@ export function PrintPreviewDialog({
   const load = useCallback(() => {
     const request: Promise<PrintPreview> =
       target.kind === 'order'
-        ? api.printPreviewOrder(target.order_id, target.discount_mode, target.discount_value)
+        ? api.printPreviewOrder(
+            target.order_id,
+            target.discount_mode,
+            target.discount_value,
+            target.service_charge_minor,
+          )
         : target.kind === 'invoice'
           ? api.printPreviewInvoice(target.invoice_id)
           : target.kind === 'shift_report'

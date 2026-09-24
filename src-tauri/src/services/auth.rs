@@ -45,7 +45,7 @@ pub fn hash_password(password: &str) -> AppResult<String> {
         .map_err(|e| AppError::internal(format!("password hashing failed: {e}")))
 }
 
-fn verify_password(password: &str, phc: &str) -> bool {
+pub fn verify_password(password: &str, phc: &str) -> bool {
     PasswordHash::new(phc)
         .map(|parsed| {
             Argon2::default()

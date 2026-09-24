@@ -199,9 +199,16 @@ pub fn preview_order_document(
     order_id: i64,
     discount_mode: Option<String>,
     discount_value: Option<i64>,
+    service_charge_minor: Option<i64>,
 ) -> AppResult<PrintPreview> {
     authorized(&state, &token, "STAFF", move |conn, _| {
-        printing::preview_order(conn, order_id, discount_mode.as_deref(), discount_value)
+        printing::preview_order(
+            conn,
+            order_id,
+            discount_mode.as_deref(),
+            discount_value,
+            service_charge_minor,
+        )
     })
 }
 

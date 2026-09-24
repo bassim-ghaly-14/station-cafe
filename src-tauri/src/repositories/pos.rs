@@ -145,9 +145,9 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
-
 pub fn get_table(conn: &Db, id: i64) -> AppResult<Option<(i64, String)>> {
-    let mut stmt = conn.prepare("SELECT id, label FROM cafe_tables WHERE id = ?1")?;
+    let mut stmt =
+        conn.prepare("SELECT id, label FROM cafe_tables WHERE id = ?1 AND is_active = 1")?;
     let mut rows = stmt.query([id])?;
     match rows.next()? {
         Some(r) => Ok(Some((r.get(0)?, r.get(1)?))),

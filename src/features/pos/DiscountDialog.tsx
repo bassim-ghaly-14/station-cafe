@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog, useToast } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
-import { Field, Input } from '@/components/ui/input'
+import { Field, Input, PasswordInput } from '@/components/ui/input'
 import { parseMajor } from '@/lib/utils'
 import { api, type DiscountSel, type PosOrder } from '@/services/posApi'
 
@@ -30,13 +30,19 @@ export function DiscountDialog({
         ? String(initial.value / 1000)
         : '10',
   )
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const persist = (d: DiscountSel) => {
+    if (d.value !== null && password.length < 6) {
+      setError(t('errors.discount.password_incorrect'))
+      return
+    }
+    setPassword('')
     setBusy(true)
     api
-      .setDiscount(orderId, d.mode, d.value)
+      .setDiscount(orderId, d.mode, d.value, d.value === null ? null : password)
       .then((o) => onApply(d, o))
       .catch((e) =>
         toast(
@@ -78,7 +84,14 @@ export function DiscountDialog({
             onChange={(e) => setValue(e.target.value)}
           />
         </Field>
-        <p className="text-xs text-foreground-subtle">{t('pos.discountLimitEnforced')}</p>
+        <Field label={t('pos.discountAuthorizationPassword')}>
+          <PasswordInput
+            value={password}
+            autoComplete="current-password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <p className="text-xs text-foreground-subtle">{t('pos.discountPasswordRequired')}</p>
         {error ? (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {error}

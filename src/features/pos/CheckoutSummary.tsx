@@ -9,9 +9,10 @@ export function CheckoutSummary({
   shown,
   customer,
   discountLabel,
+  serviceCharge,
+  serviceChargeOptions,
+  onServiceCharge,
   onDiscount,
-  onLimit,
-  canManageLimits,
   onCustomer,
   onDetachCustomer,
   detaching,
@@ -24,9 +25,10 @@ export function CheckoutSummary({
   shown: OrderPreview | null
   customer: OrderCustomer | null
   discountLabel: string | null
+  serviceCharge: number
+  serviceChargeOptions: number[]
+  onServiceCharge: (amount: number) => void
   onDiscount: () => void
-  onLimit: () => void
-  canManageLimits: boolean
   onCustomer: () => void
   onDetachCustomer: () => void
   detaching: boolean
@@ -91,10 +93,27 @@ export function CheckoutSummary({
           <Percent size={15} aria-hidden />
           {discountLabel ?? t('pos.discount')}
         </Button>
-        {canManageLimits ? (
-          <Button variant="ghost" size="sm" onClick={onLimit}>
-            {t('pos.discountLimitShort')}
-          </Button>
+        {serviceChargeOptions.length ? (
+          <div className="flex flex-wrap items-center gap-1 border-t border-border-subtle px-3 py-2">
+            <span className="text-xs text-foreground-muted">{t('pos.serviceCharge')}</span>
+            <Button
+              size="sm"
+              variant={serviceCharge === 0 ? 'default' : 'outline'}
+              onClick={() => onServiceCharge(0)}
+            >
+              {t('pos.noServiceCharge')}
+            </Button>
+            {serviceChargeOptions.map((amount) => (
+              <Button
+                key={amount}
+                size="sm"
+                variant={serviceCharge === amount ? 'default' : 'outline'}
+                onClick={() => onServiceCharge(amount)}
+              >
+                <MoneyDisplay amount={amount} />
+              </Button>
+            ))}
+          </div>
         ) : null}
         {onTicket ? (
           <Button variant="ghost" size="sm" onClick={onTicket}>

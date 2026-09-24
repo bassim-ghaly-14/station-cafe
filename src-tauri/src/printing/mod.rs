@@ -193,10 +193,16 @@ pub fn preview_order(
     order_id: i64,
     discount_mode: Option<&str>,
     discount_value: Option<i64>,
+    service_charge_minor: Option<i64>,
 ) -> AppResult<PrintPreview> {
     let cfg = get_config(conn)?;
-    let current =
-        crate::services::pos::current_print_order(conn, order_id, discount_mode, discount_value)?;
+    let current = crate::services::pos::current_print_order(
+        conn,
+        order_id,
+        discount_mode,
+        discount_value,
+        service_charge_minor,
+    )?;
     let doc = if current.order.order_type == "TAKEAWAY" {
         "TAKEAWAY_INVOICE"
     } else if current.totals.has_wash && current.order.lines.iter().any(|l| l.department == "CAFE")
@@ -453,6 +459,8 @@ mod tests {
                 method: "CASH".into(),
                 discount_mode: None,
                 discount_value: None,
+                discount_password: None,
+                service_charge_minor: None,
                 received: Some(1_000_000),
             },
         )
@@ -610,7 +618,7 @@ mod tests {
             count(&conn, "wash_tickets"),
             count(&conn, "print_jobs"),
         );
-        let preview = preview_order(&conn, order_id, None, None).unwrap();
+        let preview = preview_order(&conn, order_id, None, None, None).unwrap();
         assert_eq!(preview.doc_type, "CAFE_INVOICE");
         assert!(text_of(&preview).contains("قبل الدفع"));
         assert_eq!(
@@ -632,13 +640,13 @@ mod tests {
         let wash = order_with_wash(&conn, &staff);
         let before = count(&conn, "wash_tickets");
         assert_eq!(
-            preview_order(&conn, wash, None, None).unwrap().doc_type,
+            preview_order(&conn, wash, None, None, None).unwrap().doc_type,
             "WASH_INVOICE"
         );
         assert_eq!(count(&conn, "wash_tickets"), before);
         pos_svc::add_line(&conn, &staff, wash, product_id(&conn, "CAFE", "WATER"), 1).unwrap();
         assert_eq!(
-            preview_order(&conn, wash, None, None).unwrap().doc_type,
+            preview_order(&conn, wash, None, None, None).unwrap().doc_type,
             "HYBRID_INVOICE"
         );
         assert_eq!(count(&conn, "wash_tickets"), before);
@@ -658,7 +666,7 @@ mod tests {
         )
         .unwrap();
         let before = (count(&conn, "invoices"), count(&conn, "payments"));
-        let preview = preview_order(&conn, order_id, None, None).unwrap();
+        let preview = preview_order(&conn, order_id, None, None, None).unwrap();
         assert_eq!(preview.doc_type, "TAKEAWAY_INVOICE");
         assert_eq!((count(&conn, "invoices"), count(&conn, "payments")), before);
     }

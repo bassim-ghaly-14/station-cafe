@@ -17,6 +17,13 @@ pub fn list_tables(state: State<'_, AppState>, token: String) -> AppResult<Vec<T
     })
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_table_count(state: State<'_, AppState>, token: String, count: i64) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", |conn, actor| {
+        pos_svc::set_table_count(conn, actor, count)
+    })
+}
+
 /// Opening a table starts an explicit lifecycle session (no order is created).
 /// Requires an OPEN business day + the caller's ACTIVE shift.
 #[tauri::command(rename_all = "snake_case")]
@@ -142,8 +149,12 @@ pub fn set_order_discount(
     order_id: i64,
     discount_mode: Option<String>,
     discount_value: Option<i64>,
+    discount_password: Option<String>,
 ) -> AppResult<Order> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
+        if discount_value.is_some() {
+            crate::services::settings::authorize_discount(conn, discount_password.as_deref())?;
+        }
         pos_svc::set_discount(
             conn,
             actor,
@@ -203,9 +214,17 @@ pub fn preview_order(
     order_id: i64,
     discount_mode: Option<String>,
     discount_value: Option<i64>,
+    _discount_password: Option<String>,
+    service_charge_minor: Option<i64>,
 ) -> AppResult<pos_svc::OrderPreview> {
     authorized(&state, &token, "STAFF", move |conn, _| {
-        pos_svc::preview(conn, order_id, discount_mode.as_deref(), discount_value)
+        pos_svc::preview(
+            conn,
+            order_id,
+            discount_mode.as_deref(),
+            discount_value,
+            service_charge_minor,
+        )
     })
 }
 

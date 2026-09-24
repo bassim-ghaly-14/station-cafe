@@ -48,6 +48,9 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/services/posApi', () => ({
+  settingsApi: {
+    serviceCharge: vi.fn().mockResolvedValue({ amounts: [] }),
+  },
   api: {
     tables: mocks.tables,
     openTakeaways: mocks.openTakeaways,
@@ -75,10 +78,6 @@ vi.mock('@/services/posApi', () => ({
     orderCustomer: vi.fn().mockResolvedValue(null),
     detachCustomer: vi.fn().mockResolvedValue(undefined),
     attachCustomer: vi.fn().mockResolvedValue(undefined),
-    settingsApi: {
-      discountLimit: vi.fn().mockResolvedValue({ mode: 'NONE', value: 0 }),
-      setDiscountLimit: vi.fn().mockResolvedValue(undefined),
-    },
   },
 }))
 
@@ -150,7 +149,6 @@ function previewOf(total = 6000): OrderPreview {
     discount_mode: null,
     discount_value: null,
     discount_minor: 0,
-    service_charge_mode: 'NONE',
     service_charge_minor: 0,
     total,
     has_wash: false,
@@ -375,6 +373,8 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
         method: 'CASH',
         discount_mode: null,
         discount_value: null,
+        discount_password: null,
+        service_charge_minor: 0,
         received: 6000,
       }),
     )
@@ -508,7 +508,7 @@ describe('open takeaway lifecycle (issue 4)', () => {
     await waitFor(() => expect(mocks.getOrder).toHaveBeenCalledWith(7))
 
     expect(await screen.findByText('قهوة')).toBeInTheDocument()
-    expect(mocks.preview).toHaveBeenCalledWith(7, null, null)
+    expect(mocks.preview).toHaveBeenCalledWith(7, null, null, 0)
   })
 
   it('drops a paid takeaway from the open list and clears the panel', async () => {
@@ -596,7 +596,7 @@ describe('print preview action beside the pay action', () => {
 
     fireEvent.click(preview)
 
-    await waitFor(() => expect(mocks.printPreviewOrder).toHaveBeenCalledWith(9, null, null))
+    await waitFor(() => expect(mocks.printPreviewOrder).toHaveBeenCalledWith(9, null, null, 0))
 
     expect(await screen.findByText('معاينة الطلب — قبل الدفع')).toBeInTheDocument()
 

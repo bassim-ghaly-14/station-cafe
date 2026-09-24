@@ -15,18 +15,19 @@ import {
 } from '@/services/posApi'
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
-import { DiscountLimitDialog } from './DiscountLimitDialog'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
 import { ProductPad } from './ProductPad'
 import { QtyStepper } from './QtyStepper'
 import { DeptBadge } from './DeptBadge'
 import { CheckoutSummary } from './CheckoutSummary'
-import { useSession } from '@/features/auth/useSession'
 
 export function OrderPanel({
   order,
   preview,
   discount,
+  serviceCharge,
+  serviceChargeOptions,
+  onServiceChargeChange,
   onDiscountChange,
   onChange,
   onRefreshTables,
@@ -37,6 +38,9 @@ export function OrderPanel({
   order: PosOrder
   preview: OrderPreview | null
   discount: DiscountSel
+  serviceCharge: number
+  serviceChargeOptions: number[]
+  onServiceChargeChange: (amount: number) => void
   onDiscountChange: (d: DiscountSel) => void
   onChange: (o: PosOrder) => void
   onRefreshTables: () => void
@@ -46,15 +50,12 @@ export function OrderPanel({
 }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const { user } = useSession()
-  const canManageLimits = user?.role === 'MANAGER' || user?.role === 'ADMIN'
   const [products, setProducts] = useState<Product[] | null>(null)
   const [prodErr, setProdErr] = useState<string | null>(null)
   const [dept, setDept] = useState<'CAFE' | 'WASH'>('CAFE')
   const [query, setQuery] = useState('')
   const [qty, setQty] = useState(1)
   const [discountOpen, setDiscountOpen] = useState(false)
-  const [limitOpen, setLimitOpen] = useState(false)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [customer, setCustomer] = useState<OrderCustomer | null>(null)
   const [detaching, setDetaching] = useState(false)
@@ -103,6 +104,7 @@ export function OrderPanel({
           order_id: order.id,
           discount_mode: discount.mode,
           discount_value: discount.value,
+          service_charge_minor: serviceCharge,
         }
   const discountLabel = discount.mode
     ? discount.mode === 'PERCENT'
@@ -187,9 +189,10 @@ export function OrderPanel({
         shown={shown}
         customer={customer}
         discountLabel={discountLabel}
+        serviceCharge={serviceCharge}
+        serviceChargeOptions={serviceChargeOptions}
+        onServiceCharge={onServiceChargeChange}
         onDiscount={() => setDiscountOpen(true)}
-        onLimit={() => setLimitOpen(true)}
-        canManageLimits={canManageLimits}
         onCustomer={() => setCustomerOpen(true)}
         onDetachCustomer={detach}
         detaching={detaching}
@@ -225,9 +228,6 @@ export function OrderPanel({
             if (refreshed) onChange(refreshed)
           }}
         />
-      ) : null}
-      {limitOpen && canManageLimits ? (
-        <DiscountLimitDialog onClose={() => setLimitOpen(false)} />
       ) : null}
       {customerOpen ? (
         <CustomerPicker

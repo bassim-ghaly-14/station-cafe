@@ -712,6 +712,115 @@ const MIGRATIONS: &[Migration] = &[
             -- Runtime stock changes continue through inventory services.
         "#,
     },
+    Migration {
+        version: 15,
+        name: "canonical developer settings and credit enablement",
+        needs_fk_off: false,
+        sql: r#"
+            -- Legacy keys remain for compatibility with already-applied seeds.
+            -- Runtime accessors below use these canonical JSON keys only.
+            INSERT INTO app_settings (key, value) VALUES
+              ('service_charge', json_object(
+                'mode', json(COALESCE((SELECT value FROM app_settings WHERE key = 'service_charge.mode'), '"NONE"')),
+                'value', CAST(COALESCE((SELECT value FROM app_settings WHERE key = 'service_charge.value'), '0') AS INTEGER)
+              )),
+              ('credit', json_object(
+                'enabled', json('true'),
+                'mode', json(COALESCE((SELECT value FROM app_settings WHERE key = 'credit.mode'), '"LIST"')),
+                'allowed_customer_ids', json(COALESCE((SELECT value FROM app_settings WHERE key = 'credit.allowed_customer_ids'), '[]'))
+              )),
+              ('discount_limit', '{"mode":"PERCENT","value":100000}')
+            ON CONFLICT(key) DO NOTHING;
+        "#,
+    },
+    Migration {
+        version: 16,
+        name: "normalize legacy developer settings JSON",
+        needs_fk_off: false,
+        sql: r#"
+            -- Migration 15 wrapped legacy JSON fragments with json(...), which
+            -- encoded enum tokens and arrays as JSON strings. Normalize only
+            -- those observed shapes; valid canonical rows remain unchanged.
+            UPDATE app_settings
+            SET value = json_object(
+                'mode', CASE
+                    WHEN json_type(value, '$.mode') = 'text'
+                         AND json_valid(json_extract(value, '$.mode'))
+                        THEN json(json_extract(value, '$.mode'))
+                    ELSE json_extract(value, '$.mode')
+                END,
+                'value', CAST(json_extract(value, '$.value') AS INTEGER)
+            )
+            WHERE key = 'service_charge'
+              AND json_valid(value)
+              AND json_type(value, '$.mode') = 'text'
+              AND json_valid(json_extract(value, '$.mode'));
+
+            UPDATE app_settings
+            SET value = json_object(
+                'enabled', CASE
+                    WHEN json_type(value, '$.enabled') = 'true' THEN json('true')
+                    WHEN json_type(value, '$.enabled') = 'false' THEN json('false')
+                    ELSE json_extract(value, '$.enabled')
+                END,
+                'mode', CASE
+                    WHEN json_type(value, '$.mode') = 'text'
+                         AND json_valid(json_extract(value, '$.mode'))
+                        THEN json(json_extract(value, '$.mode'))
+                    ELSE json_extract(value, '$.mode')
+                END,
+                'allowed_customer_ids', CASE
+                    WHEN json_type(value, '$.allowed_customer_ids') = 'text'
+                         AND json_valid(json_extract(value, '$.allowed_customer_ids'))
+                        THEN json(json_extract(value, '$.allowed_customer_ids'))
+                    ELSE json_extract(value, '$.allowed_customer_ids')
+                END
+            )
+            WHERE key = 'credit'
+              AND json_valid(value)
+              AND (
+                    (json_type(value, '$.mode') = 'text'
+                     AND json_valid(json_extract(value, '$.mode')))
+                    OR (json_type(value, '$.allowed_customer_ids') = 'text'
+                        AND json_valid(json_extract(value, '$.allowed_customer_ids')))
+                  );
+        "#,
+    },
+    Migration {
+        version: 17,
+        name: "normalize credit enabled boolean",
+        needs_fk_off: false,
+        sql: r#"
+            -- Older JSON1 normalization could materialize a boolean as 0/1.
+            -- Preserve the domain boolean while repairing only those exact types.
+            UPDATE app_settings
+            SET value = json_set(value, '$.enabled',
+                CASE json_extract(value, '$.enabled')
+                    WHEN 0 THEN json('false')
+                    WHEN 1 THEN json('true')
+                    ELSE json_extract(value, '$.enabled')
+                END)
+            WHERE key = 'credit'
+              AND json_valid(value)
+              AND json_type(value, '$.enabled') = 'integer'
+              AND json_extract(value, '$.enabled') IN (0, 1);
+        "#,
+    },
+    Migration {
+        version: 18,
+        name: "fixed service charge options and discount authorization",
+        needs_fk_off: false,
+        sql: r#"
+            -- Percentage mode is replaced, never converted into a percentage.
+            INSERT INTO app_settings (key, value, updated_at) VALUES
+              ('service_charge', '[]', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET
+              value = excluded.value,
+              updated_at = excluded.updated_at;
+
+            DELETE FROM app_settings WHERE key = 'discount_limit';
+        "#,
+    },
 ];
 
 pub fn migration_count() -> i64 {
@@ -802,6 +911,68 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         conn
+    }
+    #[test]
+    fn settings_migration_normalizes_observed_legacy_json() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(15)).unwrap();
+        conn.execute_batch(
+            "UPDATE app_settings SET value = '{\"mode\":\"\\\"NONE\\\"\",\"value\":\"0\"}'
+               WHERE key = 'service_charge';
+             UPDATE app_settings SET value =
+               '{\"enabled\":true,\"mode\":\"\\\"LIST\\\"\",\"allowed_customer_ids\":\"[]\"}'
+               WHERE key = 'credit';",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let service: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(service, "[]");
+        let old_limit: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_limit'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(old_limit, 0);
+
+        let credit: (String, String, String) = conn
+            .query_row(
+                "SELECT value,
+                        json_type(value, '$.mode'),
+                        json_type(value, '$.allowed_customer_ids')
+                 FROM app_settings WHERE key = 'credit'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            credit,
+            (
+                "{\"enabled\":true,\"mode\":\"LIST\",\"allowed_customer_ids\":[]}".into(),
+                "text".into(),
+                "array".into()
+            )
+        );
+
+        // The migration is idempotent and does not touch business tables.
+        migrate(&conn).unwrap();
+        let same: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'credit'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(same, credit.0);
     }
 
     #[test]

@@ -40,7 +40,7 @@ Ordered tasks. Each task: goal → modules → risks → acceptance criteria.
 
 ### 1.6 Payments, credit & service charge
 
-- **Goal:** CASH/CARD/CREDIT; credit = authorized debtor with outstanding balance + settlement history (PAID/PARTIALLY_PAID/UNPAID); service charge as a configurable rule (fixed OR percent — pending business decision) applied at exactly one documented point.
+- **Goal:** CASH/CARD/credit; credit = authorized debtor with outstanding balance + settlement history (PAID/PARTIALLY_PAID/UNPAID); service charge as a developer-configured list of fixed selectable amounts applied at exactly one documented point.
 - **Modules:** `migrations v7 (payments, credit_accounts, credit_payments, service_charge config)`, `services/payments.rs` with explicit transaction boundaries.
 - **Risks:** accounting inconsistency if applied per-line vs per-order → single shared service function.
 - **Acceptance:** a credit invoice never counts as paid income; partial payments tracked; service charge snapshot stored per invoice.

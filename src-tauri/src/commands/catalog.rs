@@ -254,7 +254,26 @@ pub fn rename_product(
     })
 }
 
-// ---- settings (service charge / credit rules) ------------------------------
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_discount_authorization(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<crate::services::settings::DiscountAuthorizationConfig> {
+    authorized(&state, &token, "STAFF", |conn, _| {
+        crate::services::settings::get_discount_authorization(conn)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_discount_authorization_password(
+    state: State<'_, AppState>,
+    token: String,
+    password: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        crate::services::settings::set_discount_authorization_password(conn, actor, &password)
+    })
+}
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_service_charge(
@@ -298,25 +317,4 @@ pub fn set_credit_config(
     })
 }
 
-// ---- discount limit (global ceiling; MANAGER+ configures, STAFF+ reads) ----
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn get_discount_limit(
-    state: State<'_, AppState>,
-    token: String,
-) -> AppResult<crate::services::settings::DiscountLimitConfig> {
-    authorized(&state, &token, "STAFF", |conn, _| {
-        crate::services::settings::get_discount_limit(conn)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn set_discount_limit(
-    state: State<'_, AppState>,
-    token: String,
-    config: crate::services::settings::DiscountLimitConfig,
-) -> AppResult<()> {
-    authorized(&state, &token, "MANAGER", move |conn, actor| {
-        crate::services::settings::set_discount_limit(conn, actor, &config)
-    })
-}
+// ---- settings (service charge / discount authorization / credit rules) ------

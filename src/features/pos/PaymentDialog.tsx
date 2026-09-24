@@ -12,12 +12,14 @@ import { parseMajor } from '@/lib/utils'
 export function PaymentDialog({
   orderId,
   discount,
+  serviceCharge,
   order,
   onClose,
   onDone,
 }: {
   orderId: number
   discount: DiscountSel
+  serviceCharge: number
   order?: { order_type?: string; takeaway_no?: number | null } | null
   onClose: () => void
   onDone: (invoiceId: number, outcome: PrintOutcome | null) => void
@@ -34,7 +36,7 @@ export function PaymentDialog({
   // holds. No second discount editor lives here — one source of truth.
   useEffect(() => {
     api
-      .preview(orderId, discount.mode, discount.value)
+      .preview(orderId, discount.mode, discount.value, serviceCharge)
       .then((p) => {
         setPreview(p)
         setError(null)
@@ -42,7 +44,7 @@ export function PaymentDialog({
       .catch((e) =>
         setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error'])),
       )
-  }, [orderId, discount.mode, discount.value, t])
+  }, [orderId, discount.mode, discount.value, serviceCharge, t])
 
   const pay = () => {
     if (!preview || busy) return
@@ -67,6 +69,8 @@ export function PaymentDialog({
         method,
         discount_mode: discount.mode,
         discount_value: discount.value,
+        discount_password: null,
+        service_charge_minor: serviceCharge,
         received: receivedMinor,
       })
       .then((res) =>

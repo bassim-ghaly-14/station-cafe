@@ -51,35 +51,44 @@ fn wash_service(conn: &Connection, name: &str) -> i64 {
 }
 
 #[test]
-fn discount_limits_are_enforced_backend_side() {
+fn fixed_service_charge_options_and_authorized_discounts() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
+    let developer = login(&conn, "admin", "admin123");
+    let staff = login(&conn, "cashier", "cashier123");
 
-    // Create a dedicated staffer for this test.
-    let hash = auth::hash_password("hassan2123").unwrap();
-    crate::repositories::users::insert(
+    settings::set_service_charge(
         &conn,
-        &crate::repositories::users::NewUser {
-            name: "hassan2",
-            phone: None,
-            role: "STAFF",
-            password_hash: &hash,
-            is_seed: false,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000, 3_000, 5_000, 7_000, 10_000],
         },
     )
     .unwrap();
-
-    let staff = login(&conn, "hassan2", "hassan2123");
+    assert_eq!(
+        settings::get_service_charge(&conn).unwrap().amounts.len(),
+        5
+    );
+    assert!(settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000, 1_000],
+        }
+    )
+    .is_err());
+    assert!(settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig { amounts: vec![0] }
+    )
+    .is_err());
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
-
     let table = pos::list_tables(&conn, None).unwrap().remove(0);
     pos_svc::open_table(&conn, &staff, table.id).unwrap();
-
     let order_id = pos_svc::start_order(&conn, &staff, table.id).unwrap();
-
-    // CROISSANT ROMI = 74.00 EGP × 2 = 148.00 EGP.
     pos_svc::add_line(
         &conn,
         &staff,
@@ -89,196 +98,31 @@ fn discount_limits_are_enforced_backend_side() {
     )
     .unwrap();
 
-    let subtotal = 14_800;
+    let selected =
+        pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(3_000)).unwrap();
+    assert_eq!(selected.discount_minor, 2_960);
+    assert_eq!(selected.service_charge_minor, 3_000);
+    assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(2_500)).is_err());
 
-    // Zero discount always works.
+    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    assert!(
+        settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
+    let stored: String = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!stored.contains("approve123"));
+    assert!(settings::authorize_discount(&conn, Some("wrong123")).is_err());
+    settings::authorize_discount(&conn, Some("approve123")).unwrap();
     assert_eq!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, None, None).unwrap(),
-        0
-    );
-
-    // Valid percent + fixed within default 100% limit.
-    assert_eq!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("PERCENT"), Some(10_000))
-            .unwrap(),
-        1_480
-    );
-
-    assert_eq!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(1_000))
-            .unwrap(),
-        1_000
-    );
-
-    // Negative / over-subtotal / over-100% rejected.
-    assert!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(-5)).is_err()
-    );
-
-    assert!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(14_801))
-            .is_err()
-    );
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(150_000)
-    )
-    .is_err());
-
-    // Manager caps at 15% → staff 20% rejected, 10% allowed.
-    settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::Percent,
-            value: 15_000,
-        },
-    )
-    .unwrap();
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(20_000)
-    )
-    .is_err());
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(10_000)
-    )
-    .is_ok());
-
-    // Fixed 1000 on 14800 subtotal = 6.76% → within 15% ceiling.
-    assert!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(1_000))
-            .is_ok()
-    );
-
-    // Fixed 3000 on 14800 subtotal = 20.27% → over 15% ceiling.
-    assert!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(3_000))
-            .is_err()
-    );
-
-    // Manager switches to FIXED 1000 cap.
-    settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::Fixed,
-            value: 1_000,
-        },
-    )
-    .unwrap();
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(5_000)
-    )
-    .is_ok());
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(10_000)
-    )
-    .is_err());
-
-    // NONE mode → any nonzero discount rejected.
-    settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::None,
-            value: 0,
-        },
-    )
-    .unwrap();
-
-    assert!(pos_svc::validate_discount_against_limit(
-        &conn,
-        subtotal,
-        Some("PERCENT"),
-        Some(1_000)
-    )
-    .is_err());
-
-    assert!(
-        pos_svc::validate_discount_against_limit(&conn, subtotal, Some("FIXED"), Some(1)).is_err()
-    );
-
-    // STAFF cannot change the limit.
-    let staff_limit = settings::DiscountLimitConfig {
-        mode: settings::DiscountLimitMode::Percent,
-        value: 100_000,
-    };
-
-    assert!(settings::set_discount_limit(&conn, &staff, &staff_limit).is_err());
-
-    // Invalid limit values rejected even for managers.
-    assert!(settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::Percent,
-            value: 200_000,
-        },
-    )
-    .is_err());
-
-    assert!(settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::Fixed,
-            value: -1,
-        },
-    )
-    .is_err());
-
-    // End-to-end: capped percent flows through preview → checkout → snapshot.
-    settings::set_discount_limit(
-        &conn,
-        &manager,
-        &settings::DiscountLimitConfig {
-            mode: settings::DiscountLimitMode::Percent,
-            value: 15_000,
-        },
-    )
-    .unwrap();
-
-    let ok = pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(10_000)).unwrap();
-
-    assert_eq!(ok.discount_minor, 1_480);
-    assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000)).is_err());
-
-    pos_svc::mark_ready_to_pay(&conn, &staff, order_id).unwrap();
-
-    let denied = checkout::checkout(
-        &conn,
-        &staff,
-        &checkout::CheckoutInput {
-            order_id,
-            method: "CASH".into(),
-            discount_mode: Some("PERCENT".into()),
-            discount_value: Some(20_000),
-            received: Some(14_800),
-        },
-    );
-
-    assert!(
-        denied.is_err(),
-        "checkout must enforce the discount ceiling"
+        pos_svc::validate_discount(&conn, 14_800, Some("PERCENT"), Some(20_000)).unwrap(),
+        2_960
     );
 
     let paid = checkout::checkout(
@@ -288,18 +132,19 @@ fn discount_limits_are_enforced_backend_side() {
             order_id,
             method: "CASH".into(),
             discount_mode: Some("PERCENT".into()),
-            discount_value: Some(10_000),
-            received: Some(14_800),
+            discount_value: Some(20_000),
+            discount_password: Some("approve123".into()),
+            service_charge_minor: Some(3_000),
+            received: Some(15_000),
         },
     )
     .unwrap();
-
-    let (inv, _) = invoices::get_invoice_full(&conn, paid.invoice_id)
+    let (invoice, _) = invoices::get_invoice_full(&conn, paid.invoice_id)
         .unwrap()
         .unwrap();
-
-    assert_eq!(inv.discount_minor, 1_480);
-    assert_eq!(inv.total, 13_320);
+    assert_eq!(invoice.discount_minor, 2_960);
+    assert_eq!(invoice.service_charge, 3_000);
+    assert_eq!(invoice.total, 14_840);
 }
 
 #[test]
@@ -400,8 +245,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
         &conn,
         &manager,
         &settings::ServiceChargeConfig {
-            mode: settings::ServiceChargeMode::Fixed,
-            value: 2_000,
+            amounts: vec![2_000],
         },
     )
     .unwrap();
@@ -412,7 +256,16 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     // Discount = 3330
     // Service charge = 2000
     // Total = 31970
-    let preview = pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(10_000)).unwrap();
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![2_000],
+        },
+    )
+    .unwrap();
+    let preview =
+        pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(10_000), Some(2_000)).unwrap();
 
     assert_eq!(preview.subtotal, 33_300);
     assert_eq!(preview.discount_minor, 3_330);
@@ -421,6 +274,8 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
 
     pos_svc::mark_ready_to_pay(&conn, &staff, order_id).unwrap();
 
+    let developer = login(&conn, "admin", "admin123");
+    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
     // ---- pay CASH with change ---------------------------------------------
     let result = checkout::checkout(
         &conn,
@@ -430,6 +285,8 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
             method: "CASH".into(),
             discount_mode: Some("PERCENT".into()),
             discount_value: Some(10_000),
+            discount_password: Some("approve123".into()),
+            service_charge_minor: Some(2_000),
             received: Some(32_000),
         },
     )
@@ -836,6 +693,8 @@ fn credit_flow_tracks_outstanding_until_settled() {
         method: "CREDIT".into(),
         discount_mode: None,
         discount_value: None,
+        discount_password: None,
+        service_charge_minor: None,
         received: None,
     };
 
@@ -849,6 +708,7 @@ fn credit_flow_tracks_outstanding_until_settled() {
         &conn,
         &manager,
         &settings::CreditConfig {
+            enabled: true,
             mode: "LIST".into(),
             allowed_customer_ids: vec![customer_id],
         },
@@ -914,6 +774,8 @@ fn takeaway_order_has_takeaway_number_and_no_table_session() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(14_800),
         },
     )
@@ -958,6 +820,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(14_800),
         },
     )
@@ -1000,6 +864,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "BITCOIN".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: None,
         },
     )
@@ -1015,6 +881,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(14_000),
         },
     )
@@ -1031,6 +899,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(14_800),
         },
     )
@@ -1056,6 +926,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(14_800),
         },
     )
@@ -1129,6 +1001,8 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
             received: Some(15_800),
         },
     )
@@ -1168,6 +1042,16 @@ fn discount_survives_reload_and_reaches_invoice() {
     )
     .unwrap();
 
+    let developer = login(&conn, "admin", "admin123");
+    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![2_000],
+        },
+    )
+    .unwrap();
     // Persist a 10% discount on the order row itself.
     let saved =
         pos_svc::set_discount(&conn, &staff, order_id, Some("PERCENT"), Some(10_000)).unwrap();
@@ -1184,6 +1068,7 @@ fn discount_survives_reload_and_reaches_invoice() {
         order_id,
         reloaded.discount_mode.as_deref(),
         reloaded.discount_value,
+        Some(2_000),
     )
     .unwrap();
     assert_eq!(preview.discount_minor, 1_480);
@@ -1196,15 +1081,150 @@ fn discount_survives_reload_and_reaches_invoice() {
             method: "CARD".into(),
             discount_mode: reloaded.discount_mode.clone(),
             discount_value: reloaded.discount_value,
+            discount_password: None,
+            service_charge_minor: Some(2_000),
             received: None,
         },
     )
     .unwrap();
-    assert_eq!(paid.total, 14_800 - 1_480);
+    assert_eq!(paid.total, 15_320);
 
     let (inv, _) = invoices::get_invoice_full(&conn, paid.invoice_id)
         .unwrap()
         .unwrap();
     assert_eq!(inv.discount_minor, 1_480);
-    assert_eq!(inv.total, 14_800 - 1_480);
+    assert_eq!(inv.total, 15_320);
+}
+
+#[test]
+fn table_count_controls_active_sequence_and_reuses_ids() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let original: Vec<(i64, String)> = pos::list_tables(&conn, None)
+        .unwrap()
+        .into_iter()
+        .map(|table| (table.id, table.label))
+        .collect();
+
+    pos_svc::set_table_count(&conn, &manager, 13).unwrap();
+    let thirteen = pos::list_tables(&conn, None).unwrap();
+    assert_eq!(thirteen.len(), 13);
+    assert_eq!(thirteen[12].label, "طاولة 13");
+
+    pos_svc::set_table_count(&conn, &manager, 10).unwrap();
+    let ten = pos::list_tables(&conn, None).unwrap();
+    assert_eq!(ten.len(), 10);
+    assert_eq!(ten[9].label, "طاولة 10");
+
+    pos_svc::set_table_count(&conn, &manager, 12).unwrap();
+    let twelve = pos::list_tables(&conn, None).unwrap();
+    assert_eq!(
+        twelve.iter().map(|table| table.id).collect::<Vec<_>>(),
+        original.iter().map(|table| table.0).collect::<Vec<_>>()
+    );
+
+    pos_svc::set_table_count(&conn, &manager, 15).unwrap();
+    let fifteen = pos::list_tables(&conn, None).unwrap();
+    assert_eq!(fifteen.len(), 15);
+    assert_eq!(fifteen[12].label, "طاولة 13");
+    assert_eq!(fifteen[14].label, "طاولة 15");
+    assert_eq!(
+        fifteen[12].id, thirteen[12].id,
+        "existing table 13 is reused, not duplicated"
+    );
+    assert!(pos_svc::set_table_count(&conn, &manager, 0).is_err());
+    assert!(pos_svc::set_table_count(&conn, &manager, 100).is_err());
+}
+
+#[test]
+fn table_count_reduction_rejects_open_session_atomically() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &manager, 0).unwrap();
+    let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
+    pos_svc::open_table(&conn, &manager, twelfth.id).unwrap();
+
+    assert!(pos_svc::set_table_count(&conn, &manager, 10).is_err());
+    let active: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cafe_tables WHERE is_active = 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(active, 12, "no table may be disabled before rejection");
+}
+
+#[test]
+fn table_count_reduction_rejects_open_and_ready_orders() {
+    for ready in [false, true] {
+        let conn = fresh();
+        let manager = login(&conn, "manager", "manager123");
+        shift_svc::open_day(&conn, &manager).unwrap();
+        shift_svc::open_shift(&conn, &manager, 0).unwrap();
+        let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
+        pos_svc::open_table(&conn, &manager, twelfth.id).unwrap();
+        let order_id = pos_svc::start_order(&conn, &manager, twelfth.id).unwrap();
+        pos_svc::add_line(
+            &conn,
+            &manager,
+            order_id,
+            cafe_product(&conn, "CROISSANT ROMI"),
+            1,
+        )
+        .unwrap();
+        if ready {
+            pos_svc::mark_ready_to_pay(&conn, &manager, order_id).unwrap();
+        }
+
+        assert!(pos_svc::set_table_count(&conn, &manager, 10).is_err());
+        assert_eq!(pos::list_tables(&conn, None).unwrap().len(), 12);
+    }
+}
+
+#[test]
+fn table_count_deactivation_preserves_historical_order_references() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &manager, 0).unwrap();
+    let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
+    pos_svc::open_table(&conn, &manager, twelfth.id).unwrap();
+    let order_id = pos_svc::start_order(&conn, &manager, twelfth.id).unwrap();
+    pos_svc::add_line(
+        &conn,
+        &manager,
+        order_id,
+        cafe_product(&conn, "CROISSANT ROMI"),
+        1,
+    )
+    .unwrap();
+    checkout::checkout(
+        &conn,
+        &manager,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: None,
+            discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
+            received: Some(7_400),
+        },
+    )
+    .unwrap();
+
+    pos_svc::set_table_count(&conn, &manager, 10).unwrap();
+    let historical = pos_svc::get_order(&conn, order_id).unwrap();
+    assert_eq!(historical.table_id, Some(twelfth.id));
+    assert_eq!(historical.table_label.as_deref(), Some("طاولة 12"));
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cafe_tables WHERE id = ?1",
+            [twelfth.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(exists, 1);
 }
