@@ -10,14 +10,18 @@ pub struct StockRow {
     pub product_id: i64,
     pub product_name: String,
     pub department: String,
+    pub category_name: String,
+    pub item_type: String,
     pub quantity: i64,
     pub min_quantity: i64,
 }
 
 pub fn list_stock(conn: &Db) -> AppResult<Vec<StockRow>> {
     let mut stmt = conn.prepare(
-        "SELECT i.product_id, p.name, p.department, i.quantity, i.min_quantity
+        "SELECT i.product_id, p.name, p.department, c.name, p.item_type, i.quantity, i.min_quantity
          FROM inventory_items i JOIN products p ON p.id = i.product_id
+         JOIN categories c ON c.id = p.category_id
+         WHERE p.track_inventory = 1
          ORDER BY (i.quantity <= i.min_quantity) DESC, p.name",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -25,8 +29,10 @@ pub fn list_stock(conn: &Db) -> AppResult<Vec<StockRow>> {
             product_id: r.get(0)?,
             product_name: r.get(1)?,
             department: r.get(2)?,
-            quantity: r.get(3)?,
-            min_quantity: r.get(4)?,
+            category_name: r.get(3)?,
+            item_type: r.get(4)?,
+            quantity: r.get(5)?,
+            min_quantity: r.get(6)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)

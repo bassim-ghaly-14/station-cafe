@@ -6,9 +6,12 @@ export interface Product {
   name: string
   item_type: 'PRODUCT' | 'SERVICE'
   department: 'CAFE' | 'WASH'
+  category_id: number
+  category_name: string
   price_minor: number
   is_active: boolean
   track_inventory: boolean
+  stock_quantity: number
   is_seed: boolean
 }
 

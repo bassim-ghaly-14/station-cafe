@@ -3,7 +3,7 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 
-import ar from '@/locales/ar/common.json'
+import ar from '@/locales/ar/translations.json'
 
 export const DEFAULT_LOCALE = 'ar-EG'
 export const RTL_LOCALES = ['ar-EG'] as const

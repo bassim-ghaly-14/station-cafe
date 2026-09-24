@@ -6,7 +6,8 @@
 //! - Historical transaction data is never deleted.
 //! - Old catalog rows that are referenced by history are deactivated;
 //!   unreferenced old seed rows can be removed safely.
-//! - Categories are intentionally ignored until the category feature exists.
+//! - Categories are required for every catalog row; existing rows were
+//!   backfilled to a seeded system category during migration 14.
 
 use crate::db::Db;
 use crate::error::AppResult;
@@ -32,8 +33,7 @@ const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
 /// Tuple:
 /// (name, item_type, department, price in EGP)
 ///
-/// Category information from the source menu is intentionally not stored
-/// because the current schema has no category field yet.
+/// Every seeded row is assigned to the seeded system category ("عام").
 const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64)] = &[
     // ============================================================
     // BREAKFAST
@@ -361,8 +361,8 @@ fn insert_default_products(conn: &Db) -> AppResult<()> {
 
         conn.execute(
             "INSERT INTO products
-                (name, item_type, department, price_minor, is_active, is_seed)
-             VALUES (?1, ?2, ?3, ?4, 1, 1)",
+                (name, item_type, department, category_id, price_minor, is_active, is_seed)
+             VALUES (?1, ?2, ?3, (SELECT id FROM categories WHERE is_system = 1 ORDER BY id LIMIT 1), ?4, 1, 1)",
             rusqlite::params![name, item_type, department, price_minor],
         )?;
     }
@@ -473,16 +473,16 @@ mod tests {
 
         conn.execute(
             "INSERT INTO products
-                (name, item_type, department, price_minor, is_active, is_seed)
-             VALUES ('قهوة قديمة', 'PRODUCT', 'CAFE', 3000, 1, 1)",
+                (name, item_type, department, category_id, price_minor, is_active, is_seed)
+             VALUES ('قهوة قديمة', 'PRODUCT', 'CAFE', (SELECT id FROM categories WHERE is_system = 1), 3000, 1, 1)",
             [],
         )
         .unwrap();
 
         conn.execute(
             "INSERT INTO products
-                (name, item_type, department, price_minor, is_active, is_seed)
-             VALUES ('مغسلة قديمة', 'SERVICE', 'WASH', 5000, 1, 1)",
+                (name, item_type, department, category_id, price_minor, is_active, is_seed)
+             VALUES ('مغسلة قديمة', 'SERVICE', 'WASH', (SELECT id FROM categories WHERE is_system = 1), 5000, 1, 1)",
             [],
         )
         .unwrap();
@@ -535,8 +535,8 @@ mod tests {
 
         conn.execute(
             "INSERT INTO products
-                (name, item_type, department, price_minor, is_active, is_seed)
-             VALUES ('Legacy Coffee', 'PRODUCT', 'CAFE', 3000, 1, 1)",
+                (name, item_type, department, category_id, price_minor, is_active, is_seed)
+             VALUES ('Legacy Coffee', 'PRODUCT', 'CAFE', (SELECT id FROM categories WHERE is_system = 1), 3000, 1, 1)",
             [],
         )
         .unwrap();

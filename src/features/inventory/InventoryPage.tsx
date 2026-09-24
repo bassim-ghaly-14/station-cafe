@@ -72,7 +72,8 @@ export default function InventoryPage() {
                   <div className="min-w-40 flex-1">
                     <p className="text-body font-bold">{s.product_name}</p>
                     <p className="text-caption">
-                      {t(`catalog.${s.department}`)} · {t('inventory.min')}: {s.min_quantity}
+                      {t(`catalog.${s.department}`)} · {t('catalog.category')}: {s.category_name} ·{' '}
+                      {t(`catalog.${s.item_type}`)} · {t('inventory.min')}: {s.min_quantity}
                     </p>
                   </div>
                   <span
@@ -111,7 +112,7 @@ export default function InventoryPage() {
                   <p className="text-body">{m.product_name}</p>
                   <p className="text-caption" dir="ltr">
                     {m.created_at}
-                    {m.note ? ` · ${m.note}` : ''}
+                    {m.note ? ` · ${t([`inventory.note.${m.note}`, m.note])}` : ''}
                   </p>
                 </div>
                 <Badge tone={m.change > 0 ? 'success' : 'danger'}>

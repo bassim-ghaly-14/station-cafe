@@ -37,7 +37,9 @@ pub fn today_summary(conn: &Db) -> AppResult<TodaySummary> {
         None => 0,
     };
     let stock_alerts: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM inventory_items WHERE quantity <= min_quantity",
+        "SELECT COUNT(*) FROM inventory_items i
+         JOIN products p ON p.id = i.product_id
+         WHERE p.track_inventory = 1 AND i.quantity <= i.min_quantity",
         [],
         |r| r.get(0),
     )?;

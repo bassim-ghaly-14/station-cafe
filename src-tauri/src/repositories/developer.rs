@@ -4,8 +4,10 @@
 use crate::error::AppResult;
 use crate::repositories::Db;
 
-/// Audited from migrations v1-v7. `_migrations` is the only schema table
+/// Audited from migrations v1-v14. `_migrations` is the only schema table
 /// intentionally excluded. The order is child-first for the current FK graph.
+/// Categories are system configuration and are intentionally preserved so the
+/// canonical seed can always satisfy the required product category FK.
 pub const APPLICATION_DATA_TABLES: &[&str] = &[
     "credit_payments",
     "credit_accounts",

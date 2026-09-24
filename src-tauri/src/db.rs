@@ -665,6 +665,53 @@ const MIGRATIONS: &[Migration] = &[
                 ON business_days(status) WHERE status = 'OPEN';
         "#,
     },
+    Migration {
+        version: 14,
+        name: "required catalog categories and consistent stock state",
+        needs_fk_off: true,
+        sql: r#"
+            CREATE TABLE categories (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL COLLATE NOCASE UNIQUE
+                           CHECK (name = trim(name) AND length(name) > 0),
+                is_system  INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO categories (name, is_system) VALUES ('عام', 1);
+
+            CREATE TABLE products_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL,
+                item_type       TEXT NOT NULL CHECK (item_type IN ('PRODUCT','SERVICE')),
+                department      TEXT NOT NULL CHECK (department IN ('CAFE','WASH')),
+                category_id     INTEGER NOT NULL REFERENCES categories(id),
+                price_minor     INTEGER NOT NULL CHECK (price_minor >= 0),
+                is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+                track_inventory INTEGER NOT NULL DEFAULT 0 CHECK (track_inventory IN (0,1)),
+                is_seed         INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO products_new
+                (id, name, item_type, department, category_id, price_minor,
+                 is_active, track_inventory, is_seed, created_at, updated_at)
+            SELECT p.id, p.name, p.item_type, p.department,
+                   (SELECT id FROM categories WHERE is_system = 1 ORDER BY id LIMIT 1),
+                   p.price_minor, p.is_active, p.track_inventory, p.is_seed,
+                   p.created_at, p.updated_at
+            FROM products p;
+            DROP TABLE products;
+            ALTER TABLE products_new RENAME TO products;
+            CREATE INDEX idx_products_dept_active ON products(department, is_active);
+            CREATE INDEX idx_products_category ON products(category_id);
+
+            INSERT OR IGNORE INTO inventory_items (product_id, quantity, min_quantity)
+                SELECT id, 0, 0 FROM products WHERE track_inventory = 1;
+            -- Keep legacy inventory rows for history; list_stock filters to tracked items.
+            -- Runtime stock changes continue through inventory services.
+        "#,
+    },
 ];
 
 pub fn migration_count() -> i64 {
@@ -805,6 +852,69 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 1, "table {table} should exist");
         }
+    }
+
+    #[test]
+    fn catalog_migration_backfills_category_and_syncs_inventory() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(13)).unwrap();
+
+        conn.execute_batch(
+            "INSERT INTO products (name, item_type, department, price_minor, track_inventory)
+                 VALUES ('stocked', 'PRODUCT', 'CAFE', 1000, 1);
+             INSERT INTO products (name, item_type, department, price_minor, track_inventory)
+                 VALUES ('plain', 'PRODUCT', 'CAFE', 1000, 0);
+             INSERT INTO inventory_items (product_id, quantity, min_quantity)
+                 VALUES (2, 5, 1);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let system: (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(is_system), 0)
+                 FROM categories WHERE name = 'عام'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(system, (1, 1));
+
+        let system_id: i64 = conn
+            .query_row(
+                "SELECT id FROM categories WHERE is_system = 1 ORDER BY id LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let missing_categories: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM products WHERE category_id != ?1",
+                [system_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(missing_categories, 0);
+
+        let stocked: (i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM inventory_items WHERE product_id = 1),
+                        (SELECT quantity FROM inventory_items WHERE product_id = 2)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stocked, (1, 5));
+
+        // Required category is now enforced by the rebuilt table.
+        assert!(conn
+            .execute(
+                "INSERT INTO products (name, item_type, department, price_minor)
+                 VALUES ('missing-category', 'PRODUCT', 'CAFE', 1)",
+                [],
+            )
+            .is_err());
     }
 
     /// Production-like upgrade path: a database written by the previous schema

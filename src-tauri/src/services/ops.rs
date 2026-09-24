@@ -69,6 +69,11 @@ pub fn set_min_quantity(
     product_id: i64,
     min_quantity: i64,
 ) -> AppResult<()> {
+    let p = catalog::get(conn, product_id)?
+        .ok_or_else(|| AppError::not_found("catalog.item_not_found"))?;
+    if !p.track_inventory {
+        return Err(AppError::business("inventory.not_tracked"));
+    }
     ops::set_min_quantity(conn, product_id, min_quantity)?;
     crate::services::audit::record(
         conn,

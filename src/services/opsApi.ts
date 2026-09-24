@@ -6,6 +6,8 @@ export interface StockRow {
   product_id: number
   product_name: string
   department: string
+  category_name: string
+  item_type: 'PRODUCT' | 'SERVICE'
   quantity: number
   min_quantity: number
 }

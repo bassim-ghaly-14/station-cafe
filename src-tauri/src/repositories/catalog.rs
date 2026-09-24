@@ -2,7 +2,7 @@
 
 use crate::error::AppResult;
 use crate::repositories::Db;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,14 +11,17 @@ pub struct Product {
     pub name: String,
     pub item_type: String,  // PRODUCT | SERVICE
     pub department: String, // CAFE | WASH
+    pub category_id: i64,
+    pub category_name: String,
     pub price_minor: i64,
     pub is_active: bool,
     pub track_inventory: bool,
+    pub stock_quantity: i64,
     pub is_seed: bool,
 }
 
 const COLS: &str =
-    "id, name, item_type, department, price_minor, is_active, track_inventory, is_seed";
+    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), p.is_seed";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -26,23 +29,26 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
         name: row.get(1)?,
         item_type: row.get(2)?,
         department: row.get(3)?,
-        price_minor: row.get(4)?,
-        is_active: row.get::<_, i64>(5)? != 0,
-        track_inventory: row.get::<_, i64>(6)? != 0,
-        is_seed: row.get::<_, i64>(7)? != 0,
+        category_id: row.get(4)?,
+        category_name: row.get(5)?,
+        price_minor: row.get(6)?,
+        is_active: row.get::<_, i64>(7)? != 0,
+        track_inventory: row.get::<_, i64>(8)? != 0,
+        stock_quantity: row.get(9)?,
+        is_seed: row.get::<_, i64>(10)? != 0,
     })
 }
 
 /// Staff-facing list: active items only. Manager list: everything.
 pub fn list(conn: &Db, department: Option<&str>, active_only: bool) -> AppResult<Vec<Product>> {
-    let mut sql = format!("SELECT {COLS} FROM products WHERE 1=1");
+    let mut sql = format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE 1=1");
     if active_only {
-        sql.push_str(" AND is_active = 1");
+        sql.push_str(" AND p.is_active = 1");
     }
     if department.is_some() {
-        sql.push_str(" AND department = ?1");
+        sql.push_str(" AND p.department = ?1");
     }
-    sql.push_str(" ORDER BY department, name");
+    sql.push_str(" ORDER BY p.department, p.name");
     let mut stmt = conn.prepare(&sql)?;
     // The department placeholder only exists when a filter was appended;
     // binding unconditionally would fail with "Got 1, needed 0".
@@ -54,7 +60,7 @@ pub fn list(conn: &Db, department: Option<&str>, active_only: bool) -> AppResult
 }
 
 pub fn get(conn: &Db, id: i64) -> AppResult<Option<Product>> {
-    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM products WHERE id = ?1"))?;
+    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE p.id = ?1"))?;
     let mut rows = stmt.query(params![id])?;
     match rows.next()? {
         Some(r) => Ok(Some(row(r)?)),
@@ -62,27 +68,58 @@ pub fn get(conn: &Db, id: i64) -> AppResult<Option<Product>> {
     }
 }
 
+pub fn category_exists(conn: &Db, id: i64) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE id = ?1)",
+        [id],
+        |r| r.get(0),
+    )?)
+}
+
 pub struct NewProduct<'a> {
     pub name: &'a str,
     pub item_type: &'a str,
     pub department: &'a str,
+    pub category_id: i64,
     pub price_minor: i64,
     pub track_inventory: bool,
+    /// Opening stock quantity; only applied when `track_inventory` is true.
+    pub stock_quantity: i64,
+    /// Actor recorded on the opening stock movement.
+    pub user_id: i64,
 }
 
 pub fn insert(conn: &Db, p: &NewProduct<'_>) -> AppResult<i64> {
-    conn.execute(
-        "INSERT INTO products (name, item_type, department, price_minor, track_inventory)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "INSERT INTO products (name, item_type, department, category_id, price_minor, track_inventory)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             p.name,
             p.item_type,
             p.department,
+            p.category_id,
             p.price_minor,
             p.track_inventory as i64
         ],
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = tx.last_insert_rowid();
+    if p.track_inventory {
+        tx.execute(
+            "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, ?2)",
+            params![id, p.stock_quantity],
+        )?;
+        if p.stock_quantity != 0 {
+            tx.execute(
+                "INSERT INTO stock_movements
+                    (product_id, change, reason, note, ref_invoice_id, user_id)
+                 VALUES (?1, ?2, 'ADJUSTMENT', 'initial_stock', NULL, ?3)",
+                params![id, p.stock_quantity, p.user_id],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(id)
 }
 
 /// Returns the previous row state (name/price/active) for audit purposes.
@@ -97,6 +134,83 @@ pub fn update_price(conn: &Db, id: i64, price_minor: i64) -> AppResult<i64> {
         params![id, price_minor],
     )?;
     Ok(old)
+}
+
+pub fn update(
+    conn: &Db,
+    id: i64,
+    name: &str,
+    category_id: i64,
+    price_minor: i64,
+    track_inventory: bool,
+    stock_quantity: Option<i64>,
+    user_id: i64,
+) -> AppResult<bool> {
+    let tx = conn.unchecked_transaction()?;
+    let changed = tx.execute(
+        "UPDATE products SET name = ?2, category_id = ?3, price_minor = ?4,
+             track_inventory = ?5, updated_at = datetime('now') WHERE id = ?1",
+        params![id, name, category_id, price_minor, track_inventory as i64],
+    )?;
+    if changed == 0 {
+        tx.commit()?;
+        return Ok(false);
+    }
+
+    // Stock is optional: disabling tracking hides the item from inventory
+    // flows but deliberately keeps its last quantity for re-enabling.
+    if track_inventory {
+        let existing: Option<i64> = tx
+            .query_row(
+                "SELECT quantity FROM inventory_items WHERE product_id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let old_quantity = existing.unwrap_or(0);
+        if existing.is_none() {
+            tx.execute(
+                "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, 0)",
+                [id],
+            )?;
+        }
+        if let Some(target) = stock_quantity {
+            let change = target - old_quantity;
+            if change != 0 {
+                tx.execute(
+                    "UPDATE inventory_items
+                     SET quantity = ?2, updated_at = datetime('now')
+                     WHERE product_id = ?1",
+                    params![id, target],
+                )?;
+                tx.execute(
+                    "INSERT INTO stock_movements
+                        (product_id, change, reason, note, ref_invoice_id, user_id)
+                     VALUES (?1, ?2, 'ADJUSTMENT', 'product_edit', NULL, ?3)",
+                    params![id, change, user_id],
+                )?;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(true)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Category {
+    pub id: i64,
+    pub name: String,
+}
+
+pub fn list_categories(conn: &Db) -> AppResult<Vec<Category>> {
+    let mut stmt = conn.prepare("SELECT id, name FROM categories ORDER BY name")?;
+    let rows = stmt.query_map([], |r| {
+        Ok(Category {
+            id: r.get(0)?,
+            name: r.get(1)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 pub fn set_active(conn: &Db, id: i64, active: bool) -> AppResult<()> {
@@ -141,5 +255,112 @@ mod tests {
         assert!(active.iter().all(|p| p.is_active));
         let cafe = list(&conn, Some("CAFE"), false).unwrap();
         assert!(!cafe.is_empty() && cafe.iter().all(|p| p.department == "CAFE"));
+    }
+
+    fn system_category(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT id FROM categories WHERE is_system = 1 ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn admin_user(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT id FROM users WHERE role = 'ADMIN' ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn new_product<'a>(
+        category_id: i64,
+        track_inventory: bool,
+        stock_quantity: i64,
+        user_id: i64,
+    ) -> NewProduct<'a> {
+        NewProduct {
+            name: "Test Item",
+            item_type: "PRODUCT",
+            department: "CAFE",
+            category_id,
+            price_minor: 1000,
+            track_inventory,
+            stock_quantity,
+            user_id,
+        }
+    }
+
+    /// A stock-managed item is created together with its inventory row and an
+    /// auditable opening movement; a non-stock item creates no inventory row.
+    #[test]
+    fn insert_syncs_optional_inventory_state() {
+        let conn = fresh();
+        let category = system_category(&conn);
+        let admin = admin_user(&conn);
+
+        let tracked_id = insert(&conn, &new_product(category, true, 7, admin)).unwrap();
+        let quantity: i64 = conn
+            .query_row(
+                "SELECT quantity FROM inventory_items WHERE product_id = ?1",
+                [tracked_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(quantity, 7);
+        let movement: (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), COALESCE(MAX(change), 0)
+                 FROM stock_movements WHERE product_id = ?1",
+                [tracked_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(movement, (1, 7));
+
+        let plain_id = insert(&conn, &new_product(category, false, 99, admin)).unwrap();
+        let inventory_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM inventory_items WHERE product_id = ?1",
+                [plain_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(inventory_rows, 0);
+    }
+
+    /// Disabling stock management hides the item from inventory flows without
+    /// destroying the last quantity, so re-enabling is lossless.
+    #[test]
+    fn update_toggles_stock_management_without_data_loss() {
+        let conn = fresh();
+        let category = system_category(&conn);
+        let admin = admin_user(&conn);
+        let id = insert(&conn, &new_product(category, true, 5, admin)).unwrap();
+
+        assert!(update(&conn, id, "Test Item", category, 1000, true, Some(9), admin,).unwrap());
+        let adjustment: (i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*), COALESCE(SUM(change), 0)
+                 FROM stock_movements WHERE product_id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(adjustment, (2, 9));
+
+        update(&conn, id, "Test Item", category, 1000, false, None, admin).unwrap();
+        let disabled: (i64, i64) = conn
+            .query_row(
+                "SELECT p.track_inventory, i.quantity
+                 FROM products p JOIN inventory_items i ON i.product_id = p.id
+                 WHERE p.id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(disabled, (0, 9));
     }
 }
