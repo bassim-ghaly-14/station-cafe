@@ -28,6 +28,8 @@ use tauri::Manager;
 /// (SQLite is file-based; serialize access through a mutex).
 pub struct AppState {
     pub conn: Mutex<db::Db>,
+    /// One-time, non-persistent authorization for the mandated clear→seed flow.
+    pub developer_seed_grant: Mutex<Option<(String, services::auth::User)>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -56,6 +58,7 @@ pub fn run() {
 
             app.manage(AppState {
                 conn: Mutex::new(conn),
+                developer_seed_grant: Mutex::new(None),
             });
             Ok(())
         })
@@ -137,6 +140,8 @@ pub fn run() {
             commands::ops::print_shift_report,
             commands::ops::print_day_report_cmd,
             commands::ops::list_print_jobs,
+            commands::developer::clear_database,
+            commands::developer::load_demo_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

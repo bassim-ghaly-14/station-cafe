@@ -6,6 +6,7 @@ pub mod auth;
 pub mod catalog;
 pub mod common;
 pub mod customers;
+pub mod developer;
 pub mod ops;
 pub mod pos;
 pub mod shifts;

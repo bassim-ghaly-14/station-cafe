@@ -17,6 +17,7 @@ export type View =
   | 'reports'
   | 'audit'
   | 'settings'
+  | 'dev-settings'
 
 interface RouterCtx {
   view: View

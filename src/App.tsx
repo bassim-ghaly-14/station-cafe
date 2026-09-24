@@ -17,6 +17,7 @@ import CatalogPage from '@/features/catalog/CatalogPage'
 import ExpensesPage from '@/features/expenses/ExpensesPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import ReportsPage from '@/features/reports/ReportsPage'
+import DevSettingsPage from '@/features/dev/DevSettingsPage'
 
 interface DbStatus {
   ok: boolean
@@ -36,6 +37,8 @@ function RoutedViews() {
       return <InventoryPage />
     case 'reports':
       return <ReportsPage />
+    case 'dev-settings':
+      return <DevSettingsPage />
     case 'audit':
     case 'pos':
     default:
@@ -59,7 +62,10 @@ function Authed() {
 function BootScreen() {
   const { t } = useTranslation()
   return (
-    <main dir="rtl" className="flex h-screen flex-col items-center justify-center gap-6 bg-background">
+    <main
+      dir="rtl"
+      className="flex h-screen flex-col items-center justify-center gap-6 bg-background"
+    >
       <Logo size={88} />
       <LoadingState label={t('app.loading')} />
     </main>

@@ -1,6 +1,7 @@
 //! Repository layer — ALL SQL lives here (never in services, never in UI).
 pub mod catalog;
 pub mod customers;
+pub mod developer;
 pub mod invoices;
 pub mod ops;
 pub mod pos;

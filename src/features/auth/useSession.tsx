@@ -19,6 +19,8 @@ interface SessionCtx {
   loading: boolean
   login: (name: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  clearSessionToken: () => void
+  clearLocalSession: () => void
 }
 
 const Ctx = createContext<SessionCtx | null>(null)
@@ -63,7 +65,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout])
+  const clearSessionToken = useCallback(() => {
+    setSessionToken(null)
+  }, [])
+
+  const clearLocalSession = useCallback(() => {
+    setSessionToken(null)
+    setUser(null)
+  }, [])
+
+  const value = useMemo(
+    () => ({ user, loading, login, logout, clearSessionToken, clearLocalSession }),
+    [user, loading, login, logout, clearSessionToken, clearLocalSession],
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

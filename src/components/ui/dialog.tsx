@@ -50,6 +50,7 @@ export function Dialog({
         ref={ref}
         role="dialog"
         aria-modal="true"
+        aria-label={typeof title === 'string' ? title : undefined}
         className={cn(
           'max-h-[90vh] w-full overflow-y-auto rounded-lg border border-border bg-surface p-5 shadow-xl',
           wide ? 'max-w-2xl' : 'max-w-md',

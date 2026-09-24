@@ -693,13 +693,16 @@ export function TableCard({
       </div>
 
       {/* State-dependent actions */}
-      <div className="mt-3 flex min-h-9 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-3 flex min-h-9 items-center gap-2">
         {isEmpty ? (
           <Button
             className="w-full"
             size="sm"
             variant="outline"
-            onClick={onOpen}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen()
+            }}
             loading={busy === `open-${tv.id}`}
             aria-label={`${t('pos.openTable')} — ${tv.label}`}
           >
@@ -711,7 +714,10 @@ export function TableCard({
             <Button
               className="min-w-0 flex-1"
               size="sm"
-              onClick={onStartOrder}
+              onClick={(e) => {
+                e.stopPropagation()
+                onStartOrder()
+              }}
               loading={busy === `order-${tv.id}`}
               aria-label={`${t('pos.startOrder')} — ${tv.label}`}
             >
@@ -723,7 +729,10 @@ export function TableCard({
               className="min-w-0 flex-1"
               size="sm"
               variant="destructiveGhost"
-              onClick={onCloseEmpty}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCloseEmpty()
+              }}
               aria-label={`${t('pos.closeEmpty')} — ${tv.label}`}
             >
               <DoorClosed size={16} aria-hidden />
@@ -735,7 +744,10 @@ export function TableCard({
             className="w-full"
             size="sm"
             variant="secondary"
-            onClick={onOpenOrder}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenOrder()
+            }}
             aria-label={`${t('pos.openOrder')} — ${tv.label}`}
           >
             <ClipboardList size={16} aria-hidden />

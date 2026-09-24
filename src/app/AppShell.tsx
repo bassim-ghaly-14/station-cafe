@@ -12,6 +12,7 @@ import {
   Receipt,
   ScrollText,
   Store,
+  Settings,
   Users,
   type LucideIcon,
 } from '@/components/ui/icon'
@@ -21,7 +22,7 @@ import { Dialog } from '@/components/ui'
 
 interface NavItem {
   view: View
-  minRole: 'STAFF' | 'MANAGER'
+  minRole: 'STAFF' | 'MANAGER' | 'ADMIN'
   labelKey: string
   icon: LucideIcon
 }
@@ -34,6 +35,7 @@ const NAV: NavItem[] = [
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
   { view: 'audit', minRole: 'MANAGER', labelKey: 'nav.audit', icon: ScrollText },
   { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff', icon: Users },
+  { view: 'dev-settings', minRole: 'ADMIN', labelKey: 'nav.devSettings', icon: Settings },
 ]
 
 export default function AppShell({ children }: { children: ReactNode }) {

@@ -559,7 +559,19 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_print_jobs_hash ON print_jobs(content_hash);
         "#,
     },
+    Migration {
+        version: 9,
+        name: "remove demo data provenance",
+        needs_fk_off: false,
+        sql: r#"
+            DROP TABLE IF EXISTS demo_data_records;
+        "#,
+    },
 ];
+
+pub fn migration_count() -> i64 {
+    MIGRATIONS.len() as i64
+}
 
 pub fn migrate(conn: &Db) -> AppResult<()> {
     apply_migrations(conn, None)
