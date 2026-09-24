@@ -2,9 +2,13 @@
 
 use super::common::authorized;
 use crate::error::AppResult;
-use crate::repositories::shifts::{DayTotals, ShiftRow};
+use crate::repositories::shifts::{
+    ClosedBusinessDayReport, DayClosingRecord, DayTotals, SettlementPreview, ShiftRow,
+};
 use crate::services::reports::{self, DayReport, ShiftReport};
-use crate::services::shifts::{self as shift_svc, DayShiftState, ShiftClosing};
+use crate::services::shifts::{
+    self as shift_svc, DayShiftState, ShiftClosing, ShiftClosingPreview,
+};
 use crate::AppState;
 use tauri::State;
 
@@ -29,6 +33,16 @@ pub fn open_shift(state: State<'_, AppState>, token: String, opening_cash: i64) 
     })
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_shift_close(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<ShiftClosingPreview> {
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        shift_svc::preview_shift_close(conn, actor)
+    })
+}
+
 /// Closing returns expected vs actual and the explicit difference.
 #[tauri::command(rename_all = "snake_case")]
 pub fn close_shift(
@@ -42,9 +56,59 @@ pub fn close_shift(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+pub fn preview_day_settlement(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<SettlementPreview> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        shift_svc::preview_settlement(conn, actor)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn settle_day(state: State<'_, AppState>, token: String) -> AppResult<DayClosingRecord> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        shift_svc::settle_day(conn, actor)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn day_settlement_history(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<DayClosingRecord>> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        shift_svc::settlement_history(conn, actor)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn close_business_day(state: State<'_, AppState>, token: String) -> AppResult<DayTotals> {
     authorized(&state, &token, "MANAGER", |conn, actor| {
         shift_svc::close_day(conn, actor)
+    })
+}
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_closed_shifts(
+    state: State<'_, AppState>,
+    token: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> AppResult<Vec<ShiftRow>> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        crate::repositories::shifts::closed_shifts(conn, from.as_deref(), to.as_deref())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_closed_business_days(
+    state: State<'_, AppState>,
+    token: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> AppResult<Vec<ClosedBusinessDayReport>> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        crate::repositories::shifts::closed_business_days(conn, from.as_deref(), to.as_deref())
     })
 }
 

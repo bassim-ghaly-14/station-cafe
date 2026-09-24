@@ -78,6 +78,8 @@ pub struct Order {
     pub user_id: i64,
     pub status: String,
     pub customer_id: Option<i64>,
+    pub discount_mode: Option<String>,
+    pub discount_value: Option<i64>,
     pub opened_at: String,
     pub waiting_no: Option<i64>,
     pub takeaway_no: Option<i64>,
@@ -306,7 +308,8 @@ pub fn list_open_takeaways(conn: &Db, owner_id: i64) -> AppResult<Vec<TakeawayVi
 pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
     let head = conn
         .query_row(
-            "SELECT o.id, o.order_type, o.table_id, o.user_id, o.status, o.customer_id, o.opened_at,
+            "SELECT o.id, o.order_type, o.table_id, o.user_id, o.status, o.customer_id, o.discount_mode,
+                    o.discount_value, o.opened_at,
                     o.waiting_no, o.takeaway_no, o.shift_id, t.label
              FROM orders o
              LEFT JOIN cafe_tables t ON t.id = o.table_id
@@ -320,11 +323,13 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
                     r.get::<_, i64>(3)?,
                     r.get::<_, String>(4)?,
                     r.get::<_, Option<i64>>(5)?,
-                    r.get::<_, String>(6)?,
+                    r.get::<_, Option<String>>(6)?,
                     r.get::<_, Option<i64>>(7)?,
-                    r.get::<_, Option<i64>>(8)?,
+                    r.get::<_, String>(8)?,
                     r.get::<_, Option<i64>>(9)?,
-                    r.get::<_, Option<String>>(10)?,
+                    r.get::<_, Option<i64>>(10)?,
+                    r.get::<_, Option<i64>>(11)?,
+                    r.get::<_, Option<String>>(12)?,
                 ))
             },
         )
@@ -340,6 +345,8 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         user_id,
         status,
         customer_id,
+        discount_mode,
+        discount_value,
         opened_at,
         waiting_no,
         takeaway_no,
@@ -354,6 +361,8 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         user_id,
         status,
         customer_id,
+        discount_mode,
+        discount_value,
         opened_at,
         waiting_no,
         takeaway_no,
@@ -411,6 +420,21 @@ pub fn set_order_customer(conn: &Db, order_id: i64, customer_id: i64) -> AppResu
     conn.execute(
         "UPDATE orders SET customer_id = ?2 WHERE id = ?1",
         params![order_id, customer_id],
+    )?;
+    Ok(())
+}
+
+/// Persist the validated order-level discount selection on the order row.
+/// Checkout still re-validates it against the global ceiling.
+pub fn set_order_discount(
+    conn: &Db,
+    order_id: i64,
+    discount_mode: Option<&str>,
+    discount_value: Option<i64>,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE orders SET discount_mode = ?2, discount_value = ?3 WHERE id = ?1",
+        params![order_id, discount_mode, discount_value],
     )?;
     Ok(())
 }

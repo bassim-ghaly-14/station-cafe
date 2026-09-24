@@ -567,6 +567,104 @@ const MIGRATIONS: &[Migration] = &[
             DROP TABLE IF EXISTS demo_data_records;
         "#,
     },
+    Migration {
+        version: 10,
+        name: "incremental day settlements and single active shift",
+        needs_fk_off: false,
+        sql: r#"
+            -- Station is a single till: enforce the operational invariant in SQLite,
+            -- not only in the UI/service preflight checks.
+            CREATE UNIQUE INDEX idx_shifts_one_active_global
+                ON shifts((1)) WHERE status = 'ACTIVE';
+
+            -- A settlement is an immutable checkpoint. The existing
+            -- business_days CLOSED state remains the final operational closure.
+            CREATE TABLE day_closings (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                business_day_id   INTEGER NOT NULL REFERENCES business_days(id),
+                closed_by         INTEGER NOT NULL REFERENCES users(id),
+                closed_at         TEXT NOT NULL DEFAULT (datetime('now')),
+                invoices_count    INTEGER NOT NULL DEFAULT 0,
+                cafe_sales        INTEGER NOT NULL DEFAULT 0,
+                wash_sales        INTEGER NOT NULL DEFAULT 0,
+                subtotal          INTEGER NOT NULL DEFAULT 0,
+                discounts         INTEGER NOT NULL DEFAULT 0,
+                service_charges   INTEGER NOT NULL DEFAULT 0,
+                total_sales       INTEGER NOT NULL DEFAULT 0,
+                cash              INTEGER NOT NULL DEFAULT 0,
+                card              INTEGER NOT NULL DEFAULT 0,
+                credit            INTEGER NOT NULL DEFAULT 0,
+                expenses          INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX idx_day_closings_day ON day_closings(business_day_id, id);
+
+            CREATE TABLE day_closing_shifts (
+                day_closing_id INTEGER NOT NULL REFERENCES day_closings(id),
+                shift_id       INTEGER NOT NULL UNIQUE REFERENCES shifts(id),
+                PRIMARY KEY (day_closing_id, shift_id)
+            );
+            CREATE INDEX idx_day_closing_shifts_closing
+                ON day_closing_shifts(day_closing_id, shift_id);
+
+            -- Expenses are day-level today. Associate each with exactly one
+            -- checkpoint so later checkpoints cannot report it again.
+            CREATE TABLE day_closing_expenses (
+                day_closing_id INTEGER NOT NULL REFERENCES day_closings(id),
+                expense_id     INTEGER NOT NULL UNIQUE REFERENCES expenses(id),
+                PRIMARY KEY (day_closing_id, expense_id)
+            );
+        "#,
+    },
+    Migration {
+        version: 11,
+        name: "persist order discount selection",
+        needs_fk_off: false,
+        sql: r#"
+            -- Discount belongs to the persistent order, not React state:
+            -- refresh / reopen / restart must reconstruct it from SQLite.
+            ALTER TABLE orders ADD COLUMN discount_mode TEXT
+                CHECK (discount_mode IN ('FIXED','PERCENT'));
+            ALTER TABLE orders ADD COLUMN discount_value INTEGER;
+        "#,
+    },
+    Migration {
+        version: 12,
+        name: "final immutable business day report snapshot",
+        needs_fk_off: false,
+        sql: r#"
+            ALTER TABLE day_closings ADD COLUMN final_snapshot INTEGER NOT NULL DEFAULT 0;
+            CREATE UNIQUE INDEX idx_day_closings_one_final
+                ON day_closings(business_day_id) WHERE final_snapshot = 1;
+        "#,
+    },
+    Migration {
+        version: 13,
+        name: "one open business day and repeatable operational days",
+        needs_fk_off: true,
+        sql: r#"
+            -- Business-day identity is operational, not the calendar label.
+            -- Keep all historical rows while allowing a new day after an
+            -- explicit close even when both days have the same date.
+            CREATE TABLE business_days_new (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                day_date    TEXT NOT NULL,
+                opened_at   TEXT NOT NULL,
+                closed_at   TEXT,
+                status      TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','CLOSED')),
+                opened_by   INTEGER,
+                closed_by   INTEGER
+            );
+            INSERT INTO business_days_new
+                (id, day_date, opened_at, closed_at, status, opened_by, closed_by)
+            SELECT id, day_date, opened_at, closed_at, status, opened_by, closed_by
+            FROM business_days;
+            DROP TABLE business_days;
+            ALTER TABLE business_days_new RENAME TO business_days;
+            CREATE INDEX idx_bday_status ON business_days(status);
+            CREATE UNIQUE INDEX idx_business_days_one_open
+                ON business_days(status) WHERE status = 'OPEN';
+        "#,
+    },
 ];
 
 pub fn migration_count() -> i64 {

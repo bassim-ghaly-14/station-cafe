@@ -90,6 +90,19 @@ impl Serialize for AppError {
                 s.serialize_field("message", m)?;
                 s.serialize_field("code", &self.kind().as_str())?;
             }
+            AppError::Printer(m) => {
+                // Stable machine keys (e.g. "printer.not_configured") so the UI
+                // can distinguish print failures from financial failures.
+                // Dynamic backend details are sanitized to a stable prefix.
+                let stable = m.split(':').next().unwrap_or(m).trim();
+                s.serialize_field("message", stable)?;
+                s.serialize_field("code", &self.kind().as_str())?;
+            }
+            AppError::Db(e) => {
+                log::error!("backend db error: {e}");
+                s.serialize_field("message", "db.error")?;
+                s.serialize_field("code", &self.kind().as_str())?;
+            }
             // Technical errors: log full details, expose a generic message.
             _ => {
                 log::error!("backend error [{}]: {}", self.kind().as_str(), self);

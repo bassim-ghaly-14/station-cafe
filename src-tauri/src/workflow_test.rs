@@ -502,7 +502,10 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
         "double close must fail"
     );
 
-    // ---- close the business day -------------------------------------------
+    // ---- settlement checkpoint, then final business-day closure ----------
+    let settlement = shift_svc::settle_day(&conn, &manager).unwrap();
+    assert_eq!(settlement.shift_ids, vec![shift_id]);
+
     let totals = shift_svc::close_day(&conn, &manager).unwrap();
 
     assert_eq!(totals.invoices_count, 1);
@@ -565,6 +568,208 @@ fn table_cannot_be_opened_without_an_active_shift() {
     let err = pos_svc::open_table(&conn, &manager, table.id).unwrap_err();
 
     assert_eq!(err.kind(), crate::error::ErrorKind::BusinessRule);
+}
+
+#[test]
+fn flexible_sequential_shifts_and_incremental_settlement_do_not_double_count() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
+
+    for expected in 1..=4 {
+        shift_svc::open_shift(&conn, &staff, 0).unwrap();
+        shift_svc::close_shift(&conn, &staff, 0).unwrap();
+        assert_eq!(
+            shifts::shifts_of_day(&conn, day_id).unwrap().len(),
+            expected
+        );
+    }
+
+    let first = shift_svc::preview_settlement(&conn, &manager).unwrap();
+    assert_eq!(first.pending_shifts.len(), 4);
+    let first = shift_svc::settle_day(&conn, &manager).unwrap();
+    assert_eq!(first.shift_ids.len(), 4);
+    assert!(shift_svc::preview_settlement(&conn, &manager)
+        .unwrap()
+        .pending_shifts
+        .is_empty());
+    assert!(
+        shift_svc::settle_day(&conn, &manager).is_err(),
+        "empty settlement is forbidden"
+    );
+
+    // A new sequential shift may open after the checkpoint; only it is pending.
+    let fifth = shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+    let second = shift_svc::settle_day(&conn, &manager).unwrap();
+    assert_eq!(second.shift_ids, vec![fifth]);
+    assert!(!second.shift_ids.contains(&first.shift_ids[0]));
+    let history = shift_svc::settlement_history(&conn, &manager).unwrap();
+    assert_eq!(history.len(), 2);
+    shift_svc::close_day(&conn, &manager).unwrap();
+}
+
+#[test]
+fn shift_closing_and_settlement_reject_unsafe_states() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+
+    // Only one global ACTIVE shift, even for a different cashier.
+    let first = shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    assert!(shift_svc::open_shift(&conn, &manager, 0).is_err());
+    assert!(shift_svc::settle_day(&conn, &manager).is_err());
+    // A manager cannot close a shift they do not own.
+    assert!(shift_svc::close_shift(&conn, &manager, 0).is_err());
+
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+    assert!(
+        shift_svc::close_shift(&conn, &staff, 0).is_err(),
+        "double close is forbidden"
+    );
+    assert_eq!(
+        shifts::get_shift(&conn, first).unwrap().unwrap().status,
+        "CLOSED"
+    );
+}
+
+#[test]
+fn one_shift_business_day_can_be_settled_then_final_closed() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 100).unwrap();
+    shift_svc::close_shift(&conn, &staff, 100).unwrap();
+    let closing = shift_svc::settle_day(&conn, &manager).unwrap();
+    assert_eq!(closing.shift_ids.len(), 1);
+    shift_svc::close_day(&conn, &manager).unwrap();
+    assert!(shifts::current_day(&conn).unwrap().is_none());
+}
+
+#[test]
+fn active_shift_and_business_day_survive_restart_after_midnight() {
+    let dir = std::env::temp_dir().join(format!("station-midnight-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(crate::db::DB_FILE);
+    let (day_id, shift_id, staff_id) = {
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+        let manager = login(&conn, "manager", "manager123");
+        let staff = login(&conn, "cashier", "cashier123");
+        shift_svc::open_day(&conn, &manager).unwrap();
+        let day = shifts::current_day(&conn).unwrap().unwrap();
+        let shift = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
+        conn.execute(
+            "UPDATE shifts SET opened_at = '2026-09-24 23:59:00' WHERE id = ?1",
+            [shift],
+        )
+        .unwrap();
+        (day.id, shift, staff.id)
+    };
+
+    // Fresh process-equivalent connection at 00:30: no calendar lookup occurs.
+    let conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    migrate(&conn).unwrap();
+    let staff = auth::User {
+        id: staff_id,
+        name: "cashier".into(),
+        phone: None,
+        role: "STAFF".into(),
+        status: "ACTIVE".into(),
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+    let day = shifts::current_day(&conn).unwrap().unwrap();
+    let shift = shifts::active_shift_for(&conn, staff.id).unwrap().unwrap();
+    assert_eq!(day.id, day_id);
+    assert_eq!(shift.business_day_id, day_id);
+    assert_eq!(shift.id, shift_id);
+    assert_eq!(shift.opened_at, "2026-09-24 23:59:00");
+
+    let closed = shift_svc::close_shift_at(&conn, &staff, 10_000, "2026-09-25 00:30:00").unwrap();
+    assert_eq!(closed.shift.business_day_id, day_id);
+    assert_eq!(
+        closed.shift.closed_at.as_deref(),
+        Some("2026-09-25 00:30:00")
+    );
+    assert_eq!(shifts::current_day(&conn).unwrap().unwrap().id, day_id);
+    drop(conn);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn shift_opening_reuses_open_business_day() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    let day_id = shift_svc::open_day(&conn, &manager).unwrap();
+    let before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM business_days", [], |r| r.get(0))
+        .unwrap();
+
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+
+    let after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM business_days", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(
+        shifts::active_shift_for(&conn, staff.id)
+            .unwrap()
+            .unwrap()
+            .business_day_id,
+        day_id
+    );
+}
+
+#[test]
+fn shift_opening_implicitly_opens_a_day_after_close() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+    shift_svc::close_day(&conn, &manager).unwrap();
+    assert!(shifts::current_day(&conn).unwrap().is_none());
+
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    let shift = shifts::active_shift_for(&conn, staff.id).unwrap().unwrap();
+    assert!(shifts::current_day(&conn).unwrap().is_some());
+    assert_eq!(
+        shift.business_day_id,
+        shifts::current_day(&conn).unwrap().unwrap().id
+    );
+}
+
+#[test]
+fn shift_opening_preserves_duplicate_shift_protection() {
+    let conn = fresh();
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    assert!(shift_svc::open_shift(&conn, &staff, 0).is_err());
+}
+
+#[test]
+fn failed_business_day_creation_does_not_create_shift() {
+    let conn = fresh();
+    let staff = login(&conn, "cashier", "cashier123");
+    conn.execute_batch("CREATE TRIGGER fail_business_day BEFORE INSERT ON business_days BEGIN SELECT RAISE(ABORT, 'day creation failed'); END;").unwrap();
+    let err = shift_svc::open_shift(&conn, &staff, 0).unwrap_err();
+    assert_eq!(err.kind(), crate::error::ErrorKind::BusinessRule);
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM shifts", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -941,4 +1146,65 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
         "CLOSED",
         "paid takeaway is no longer open"
     );
+}
+
+/// Discount persistence regression: apply → persist → reload → same discount
+/// → payment carries it to the final invoice.
+#[test]
+fn discount_survives_reload_and_reaches_invoice() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+
+    let order_id = pos_svc::start_takeaway(&conn, &staff).unwrap();
+    pos_svc::add_line(
+        &conn,
+        &staff,
+        order_id,
+        cafe_product(&conn, "CROISSANT ROMI"),
+        2,
+    )
+    .unwrap();
+
+    // Persist a 10% discount on the order row itself.
+    let saved =
+        pos_svc::set_discount(&conn, &staff, order_id, Some("PERCENT"), Some(10_000)).unwrap();
+    assert_eq!(saved.discount_mode.as_deref(), Some("PERCENT"));
+    assert_eq!(saved.discount_value, Some(10_000));
+
+    // Refresh / reopen reads the SAME row — discount must still exist.
+    let reloaded = pos_svc::get_order(&conn, order_id).unwrap();
+    assert_eq!(reloaded.discount_mode.as_deref(), Some("PERCENT"));
+    assert_eq!(reloaded.discount_value, Some(10_000));
+
+    let preview = pos_svc::preview(
+        &conn,
+        order_id,
+        reloaded.discount_mode.as_deref(),
+        reloaded.discount_value,
+    )
+    .unwrap();
+    assert_eq!(preview.discount_minor, 1_480);
+
+    let paid = checkout::checkout(
+        &conn,
+        &staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CARD".into(),
+            discount_mode: reloaded.discount_mode.clone(),
+            discount_value: reloaded.discount_value,
+            received: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(paid.total, 14_800 - 1_480);
+
+    let (inv, _) = invoices::get_invoice_full(&conn, paid.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(inv.discount_minor, 1_480);
+    assert_eq!(inv.total, 14_800 - 1_480);
 }

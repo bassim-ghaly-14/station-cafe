@@ -241,6 +241,27 @@ pub fn remove_line(conn: &Db, actor: &User, line_id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// Persist the validated discount selection on the order and return the
+/// refreshed authoritative order. Validation stays backend-side so the
+/// discount survives refresh / reopen / restart (never React-only).
+pub fn set_discount(
+    conn: &Db,
+    actor: &User,
+    order_id: i64,
+    discount_mode: Option<&str>,
+    discount_value: Option<i64>,
+) -> AppResult<Order> {
+    let tx = conn.unchecked_transaction()?;
+    let order = get_order(&tx, order_id)?;
+    require_editable(&order, actor)?;
+    let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
+    validate_discount_against_limit(&tx, subtotal, discount_mode, discount_value)?;
+    pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;
+    let refreshed = get_order(&tx, order_id)?;
+    tx.commit()?;
+    Ok(refreshed)
+}
+
 pub fn mark_ready_to_pay(conn: &Db, actor: &User, order_id: i64) -> AppResult<()> {
     let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
@@ -435,6 +456,7 @@ pub struct CurrentPrintOrder {
     pub totals: OrderPreview,
     pub customer: Option<OrderCustomer>,
     pub car_plate: Option<String>,
+    pub car_model: Option<String>,
 }
 
 pub fn current_print_order(
@@ -449,19 +471,23 @@ pub fn current_print_order(
     }
     let totals = preview(conn, order_id, discount_mode, discount_value)?;
     let customer = order_customer(conn, order_id)?;
-    let car_plate = order.customer_id.and_then(|customer_id| {
-        conn.query_row(
-            "SELECT plate_no FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
-            [customer_id],
-            |r| r.get::<_, String>(0),
-        )
-        .ok()
-    });
+    let (car_plate, car_model): (Option<String>, Option<String>) = match order.customer_id {
+        Some(customer_id) => conn
+            .query_row(
+                "SELECT plate_no, car_model FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
+                [customer_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map(|(plate, model)| (Some(plate), model))
+            .unwrap_or((None, None)),
+        None => (None, None),
+    };
     Ok(CurrentPrintOrder {
         order,
         totals,
         customer,
         car_plate,
+        car_model,
     })
 }
 

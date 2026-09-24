@@ -214,6 +214,7 @@ pub fn preview_order(
         &current.totals,
         current.customer.as_ref(),
         current.car_plate.as_deref(),
+        current.car_model.as_deref(),
         cfg.logo,
     );
     Ok(PrintPreview::new(doc, &rendered))
@@ -266,11 +267,29 @@ pub fn print_shift_closing(conn: &Db, shift_id: i64, force: bool) -> AppResult<P
     )
 }
 
+/// Read-only preview of the shift-closing document: identical template and
+/// identical report snapshot as `print_shift_closing` — nothing is sent or
+/// recorded. The report is the final closed-shift snapshot, so preview and
+/// print can never diverge.
+pub fn preview_shift_closing(conn: &Db, shift_id: i64) -> AppResult<PrintPreview> {
+    let cfg = get_config(conn)?;
+    let report = crate::services::reports::shift_report(conn, shift_id)?;
+    let rendered = templates::shift_closing(mode_of(&cfg), cfg.codepage, &report, true);
+    Ok(PrintPreview::new("SHIFT_REPORT", &rendered))
+}
+
 pub fn print_day_report(conn: &Db, day_id: i64, force: bool) -> AppResult<PrintOutcome> {
     let cfg = get_config(conn)?;
     let report = crate::services::reports::day_report(conn, day_id)?;
     let rendered = templates::day_report(mode_of(&cfg), cfg.codepage, &report, true);
     send(conn, "DAY_REPORT", Some(day_id), &rendered.escpos, force)
+}
+
+pub fn preview_day_report(conn: &Db, day_id: i64) -> AppResult<PrintPreview> {
+    let cfg = get_config(conn)?;
+    let report = crate::services::reports::day_report(conn, day_id)?;
+    let rendered = templates::day_report(mode_of(&cfg), cfg.codepage, &report, true);
+    Ok(PrintPreview::new("DAY_REPORT", &rendered))
 }
 
 pub fn print_test(conn: &Db, force: bool) -> AppResult<PrintOutcome> {

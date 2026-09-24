@@ -4,7 +4,6 @@
 use crate::error::AppResult;
 use crate::repositories::shifts::{self, DayTotals, ShiftRow};
 use crate::repositories::Db;
-use rusqlite::params;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -68,8 +67,14 @@ pub struct SalesByDay {
     pub expenses: i64,
 }
 
-pub fn sales_by_day(conn: &Db, from: &str, to: &str) -> AppResult<Vec<SalesByDay>> {
-    let mut stmt = conn.prepare(
+pub fn sales_by_day(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<Vec<SalesByDay>> {
+    let filter = match (from.is_some(), to.is_some()) {
+        (true, true) => " AND d.day_date BETWEEN ?1 AND ?2",
+        (true, false) => " AND d.day_date >= ?1",
+        (false, true) => " AND d.day_date <= ?1",
+        (false, false) => "",
+    };
+    let mut stmt = conn.prepare(&format!(
         "SELECT d.id, d.day_date,
             COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN 1 ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.cafe_total ELSE 0 END), 0),
@@ -86,10 +91,16 @@ pub fn sales_by_day(conn: &Db, from: &str, to: &str) -> AppResult<Vec<SalesByDay
             (SELECT COALESCE(SUM(e.amount),0) FROM expenses e WHERE e.business_day_id = d.id)
          FROM business_days d
          LEFT JOIN invoices i ON i.business_day_id = d.id
-         WHERE d.day_date BETWEEN ?1 AND ?2
+         WHERE 1=1{filter}
          GROUP BY d.id ORDER BY d.day_date",
-    )?;
-    let rows = stmt.query_map(params![from, to], |r| {
+    ))?;
+    let values: Vec<Box<dyn rusqlite::ToSql>> = from
+        .iter()
+        .chain(to.iter())
+        .map(|value| Box::new(value.to_string()) as Box<dyn rusqlite::ToSql>)
+        .collect();
+    let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|value| value.as_ref()).collect();
+    let rows = stmt.query_map(value_refs.as_slice(), |r| {
         Ok(SalesByDay {
             day_id: r.get(0)?,
             day_date: r.get(1)?,
@@ -118,15 +129,31 @@ pub struct ProductSales {
 
 /// Product/service sales from IMMUTABLE invoice snapshots (never from the
 /// mutable catalog), so historical reports cannot drift.
-pub fn product_sales(conn: &Db, from: &str, to: &str) -> AppResult<Vec<ProductSales>> {
-    let mut stmt = conn.prepare(
+pub fn product_sales(
+    conn: &Db,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> AppResult<Vec<ProductSales>> {
+    let filter = match (from.is_some(), to.is_some()) {
+        (true, true) => " AND date(i.created_at) BETWEEN ?1 AND ?2",
+        (true, false) => " AND date(i.created_at) >= ?1",
+        (false, true) => " AND date(i.created_at) <= ?1",
+        (false, false) => "",
+    };
+    let mut stmt = conn.prepare(&format!(
         "SELECT l.product_name, l.department, SUM(l.quantity), SUM(l.line_total)
          FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
-         WHERE i.status != 'CANCELLED' AND date(i.created_at) BETWEEN ?1 AND ?2
+         WHERE i.status != 'CANCELLED'{filter}
          GROUP BY l.product_name, l.department
          ORDER BY SUM(l.line_total) DESC LIMIT 100",
-    )?;
-    let rows = stmt.query_map(params![from, to], |r| {
+    ))?;
+    let values: Vec<Box<dyn rusqlite::ToSql>> = from
+        .iter()
+        .chain(to.iter())
+        .map(|value| Box::new(value.to_string()) as Box<dyn rusqlite::ToSql>)
+        .collect();
+    let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|value| value.as_ref()).collect();
+    let rows = stmt.query_map(value_refs.as_slice(), |r| {
         Ok(ProductSales {
             product_name: r.get(0)?,
             department: r.get(1)?,
@@ -193,8 +220,13 @@ pub fn day_report(conn: &Db, day_id: i64) -> AppResult<DayReport> {
             },
         )
         .map_err(|_| crate::error::AppError::not_found("day.not_found"))?;
-    let totals = shifts::day_totals(conn, day_id)?;
     let shift_list = shifts::shifts_of_day(conn, day_id)?;
+    let totals = if day.status == "CLOSED" {
+        shifts::final_day_totals(conn, day_id)?
+            .ok_or_else(|| crate::error::AppError::not_found("day.closing_not_found"))?
+    } else {
+        shifts::day_totals(conn, day_id)?
+    };
     let openings: i64 = shift_list.iter().map(|s| s.opening_cash).sum();
     let diffs: i64 = shift_list.iter().filter_map(|s| s.cash_difference).sum();
     Ok(DayReport {

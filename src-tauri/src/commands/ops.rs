@@ -92,11 +92,11 @@ pub fn today_summary(state: State<'_, AppState>, token: String) -> AppResult<Tod
 pub fn sales_by_day(
     state: State<'_, AppState>,
     token: String,
-    from: String,
-    to: String,
+    from: Option<String>,
+    to: Option<String>,
 ) -> AppResult<Vec<SalesByDay>> {
     authorized(&state, &token, "MANAGER", move |conn, _| {
-        reports::sales_by_day(conn, &from, &to)
+        reports::sales_by_day(conn, from.as_deref(), to.as_deref())
     })
 }
 
@@ -104,11 +104,11 @@ pub fn sales_by_day(
 pub fn product_sales(
     state: State<'_, AppState>,
     token: String,
-    from: String,
-    to: String,
+    from: Option<String>,
+    to: Option<String>,
 ) -> AppResult<Vec<ProductSales>> {
     authorized(&state, &token, "MANAGER", move |conn, _| {
-        reports::product_sales(conn, &from, &to)
+        reports::product_sales(conn, from.as_deref(), to.as_deref())
     })
 }
 
@@ -240,6 +240,44 @@ pub fn print_shift_report(
 ) -> AppResult<PrintOutcome> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         printing::print_shift_closing(conn, shift_id, force.unwrap_or(false))
+    })
+}
+
+/// Read-only shift-closing preview (same template/report as printing).
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_shift_report(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: Option<i64>,
+) -> AppResult<PrintPreview> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        let id = match shift_id {
+            Some(v) => v,
+            None => crate::repositories::shifts::active_shift_for(conn, actor.id)?
+                .map(|s| s.id)
+                .or_else(|| {
+                    // After a successful close there is no ACTIVE shift; preview
+                    // the caller's latest closed shift so the post-close print
+                    // dialog can re-print the same final snapshot.
+                    crate::repositories::shifts::latest_shift_for(conn, actor.id)
+                        .ok()
+                        .flatten()
+                        .map(|s| s.id)
+                })
+                .ok_or_else(|| crate::error::AppError::not_found("shift.not_found"))?,
+        };
+        printing::preview_shift_closing(conn, id)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_day_report_cmd(
+    state: State<'_, AppState>,
+    token: String,
+    day_id: i64,
+) -> AppResult<PrintPreview> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        printing::preview_day_report(conn, day_id)
     })
 }
 

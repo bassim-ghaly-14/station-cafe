@@ -102,17 +102,36 @@ pub fn insert_invoice_customer(
 }
 
 /// Atomically take the next sequential invoice number.
+///
+/// Self-healing: a developer full-reset wipes `app_settings`, so the counter
+/// may be absent on a live database. Derive it from MAX(invoice_no) so
+/// checkout keeps working and numbers never collide after restore.
 pub fn next_invoice_no(conn: &Db) -> AppResult<i64> {
     // Stored as TEXT in app_settings; parse defensively.
-    let raw: String = conn.query_row(
-        "SELECT value FROM app_settings WHERE key = 'invoice.next_number'",
-        [],
-        |r| r.get(0),
-    )?;
-    let n: i64 = raw
-        .trim()
-        .parse()
-        .map_err(|_| crate::error::AppError::internal("invoice.next_number corrupt"))?;
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM app_settings WHERE key = 'invoice.next_number'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    let n: i64 = match raw {
+        Some(v) => v
+            .trim()
+            .parse()
+            .map_err(|_| crate::error::AppError::internal("invoice.next_number corrupt"))?,
+        None => {
+            let max: Option<i64> =
+                conn.query_row("SELECT MAX(invoice_no) FROM invoices", [], |r| r.get(0))?;
+            let next = max.unwrap_or(0) + 1;
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('invoice.next_number', ?1)
+                 ON CONFLICT(key) DO NOTHING",
+                [next.to_string()],
+            )?;
+            next
+        }
+    };
     conn.execute(
         "UPDATE app_settings SET value = ?1, updated_at = datetime('now')
          WHERE key = 'invoice.next_number'",
@@ -196,6 +215,7 @@ pub struct InvoiceRow {
     pub customer_name: Option<String>,
     pub customer_phone: Option<String>,
     pub car_plate: Option<String>,
+    pub car_model: Option<String>,
     pub created_at: String,
     pub shift_id: Option<i64>,
     pub business_day_id: Option<i64>,
@@ -203,7 +223,7 @@ pub struct InvoiceRow {
 
 const INV_COLS: &str = "i.id, i.invoice_no, i.table_label, i.order_type, i.takeaway_no, i.status,
     i.total, i.paid_amount, i.service_charge, i.discount_minor, i.subtotal, i.cafe_total,
-    i.wash_total, k.name, k.phone, ic.car_plate, i.created_at, i.shift_id, i.business_day_id";
+    i.wash_total, k.name, k.phone, ic.car_plate, ic.car_model, i.created_at, i.shift_id, i.business_day_id";
 
 fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
     Ok(InvoiceRow {
@@ -223,9 +243,10 @@ fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
         customer_name: r.get(13)?,
         customer_phone: r.get(14)?,
         car_plate: r.get(15)?,
-        created_at: r.get(16)?,
-        shift_id: r.get(17)?,
-        business_day_id: r.get(18)?,
+        car_model: r.get(16)?,
+        created_at: r.get(17)?,
+        shift_id: r.get(18)?,
+        business_day_id: r.get(19)?,
     })
 }
 

@@ -134,6 +134,26 @@ pub fn mark_ready_to_pay(
     })
 }
 
+/// Persist the order-level discount selection (validated server-side).
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_order_discount(
+    state: State<'_, AppState>,
+    token: String,
+    order_id: i64,
+    discount_mode: Option<String>,
+    discount_value: Option<i64>,
+) -> AppResult<Order> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        pos_svc::set_discount(
+            conn,
+            actor,
+            order_id,
+            discount_mode.as_deref(),
+            discount_value,
+        )
+    })
+}
+
 #[derive(Deserialize)]
 pub struct AttachCustomerInput {
     pub order_id: i64,
