@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   closeShift: vi.fn(),
   previewDaySettlement: vi.fn(),
   settleDay: vi.fn(),
+  daySettlementHistory: vi.fn(),
   dayReport: vi.fn(),
   closeDay: vi.fn(),
 }))
@@ -88,6 +89,7 @@ vi.mock('@/services/shiftApi', () => ({
     closeShift: mocks.closeShift,
     previewDaySettlement: mocks.previewDaySettlement,
     settleDay: mocks.settleDay,
+    daySettlementHistory: mocks.daySettlementHistory,
     dayReport: mocks.dayReport,
     closeDay: mocks.closeDay,
   },
@@ -767,8 +769,26 @@ describe('shift lifecycle UI', () => {
 })
 
 describe('day closing UI', () => {
+  const closedShift: ShiftRow = {
+    id: 7,
+    business_day_id: 1,
+    user_id: 2,
+    user_name: 'Cashier One',
+    status: 'CLOSED',
+    opened_at: '2026-09-24 16:00:00',
+    opening_cash: 1000,
+    closed_at: '2026-09-24 22:00:00',
+    cash_sales: 1000,
+    card_sales: 2000,
+    credit_sales: 0,
+    service_charges: 0,
+    discounts: 0,
+    invoices_count: 1,
+    expected_cash: 2000,
+    actual_cash: 2000,
+    cash_difference: 0,
+  }
   const day = {
-    id: 1,
     day: {
       id: 1,
       day_date: '2026-09-24',
@@ -789,25 +809,52 @@ describe('day closing UI', () => {
       credit: 0,
       expenses: 0,
     },
-    shifts: [],
-    expected_drawer_cash: 1000,
+    shifts: [closedShift],
+    expected_drawer_cash: 2000,
     cash_differences: 0,
   }
+  const settlement = { business_day_id: 1, pending_shifts: [closedShift], totals: day.totals }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.dayReport.mockResolvedValue(day)
+    mocks.previewDaySettlement.mockResolvedValue(settlement)
+    mocks.daySettlementHistory.mockResolvedValue([])
+    mocks.settleDay.mockResolvedValue({
+      id: 4,
+      business_day_id: 1,
+      closed_by: 1,
+      closed_at: '2026-09-24 23:00:00',
+      shift_ids: [7],
+      totals: day.totals,
+      final_snapshot: false,
+    })
     mocks.closeDay.mockResolvedValue(day.totals)
     mocks.printDay.mockResolvedValue({ duplicate_suppressed: false, job_id: 1 })
   })
 
-  it('uses the real day report and previews with the selected day id', async () => {
+  it('shows a recoverable load error and retries every reconciliation source', async () => {
+    mocks.dayReport.mockRejectedValueOnce({ message: 'day.not_open' })
+    render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    expect(await screen.findByText('لا يوجد يوم عمل مفتوح')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
+    expect(await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ })).toBeEnabled()
+    expect(mocks.dayReport).toHaveBeenCalledTimes(2)
+    expect(mocks.previewDaySettlement).toHaveBeenCalledTimes(2)
+    expect(mocks.daySettlementHistory).toHaveBeenCalledTimes(2)
+  })
+
+  it('settles pending shifts before final closure and previews the selected day', async () => {
     mocks.printPreviewDay.mockResolvedValue({
       doc_type: 'DAY_REPORT',
       paper_mm: 80,
       width_chars: 42,
       ops: [
-        { kind: 'text', text: 'تقفيل يوم العمل', align: 'center', bold: true, width: 1, height: 1 },
+        { kind: 'text', text: 'تقرير يوم العمل', align: 'center', bold: true, width: 1, height: 1 },
       ],
     })
     render(
@@ -815,25 +862,45 @@ describe('day closing UI', () => {
         <DayClosingPanel dayId={1} onDone={vi.fn()} />
       </ToastProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    fireEvent.click(await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ }))
     fireEvent.click(screen.getByRole('button', { name: /معاينة قبل الطباعة/ }))
-    expect(await screen.findByText('تقفيل يوم العمل')).toBeInTheDocument()
+    expect(await screen.findByText('تقرير يوم العمل')).toBeInTheDocument()
     expect(mocks.printPreviewDay).toHaveBeenCalledWith(1)
+    expect(mocks.closeDay).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /تأكيد حفظ التسوية/ }))
+    await waitFor(() => expect(mocks.settleDay).toHaveBeenCalledTimes(1))
     expect(mocks.closeDay).not.toHaveBeenCalled()
   })
 
-  it('commits before printing and prevents double submit', async () => {
+  it('closes a fully reconciled day once and prints after financial commit', async () => {
     const onDone = vi.fn().mockResolvedValue(undefined)
+    mocks.previewDaySettlement.mockResolvedValue({
+      business_day_id: 1,
+      pending_shifts: [],
+      totals: day.totals,
+    })
+    mocks.daySettlementHistory.mockResolvedValue([
+      {
+        id: 4,
+        business_day_id: 1,
+        closed_by: 1,
+        closed_at: '2026-09-24 23:00:00',
+        shift_ids: [7],
+        totals: day.totals,
+        final_snapshot: false,
+      },
+    ])
     render(
       <ToastProvider>
         <DayClosingPanel dayId={1} onDone={onDone} />
       </ToastProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    fireEvent.click(await screen.findByRole('button', { name: /إغلاق يوم العمل/ }))
     const button = screen.getByRole('button', { name: /تأكيد تقفيل اليوم/ })
     fireEvent.click(button)
     fireEvent.click(button)
     await waitFor(() => expect(mocks.closeDay).toHaveBeenCalledTimes(1))
+    expect(mocks.settleDay).not.toHaveBeenCalled()
     expect(mocks.printDay).toHaveBeenCalledWith(1)
     expect(mocks.printDay.mock.invocationCallOrder[0]).toBeGreaterThan(
       mocks.closeDay.mock.invocationCallOrder[0],
@@ -841,14 +908,19 @@ describe('day closing UI', () => {
     expect(onDone).toHaveBeenCalledTimes(1)
   })
 
-  it('does not print when final close fails', async () => {
-    mocks.closeDay.mockRejectedValue({ message: 'day.shifts_open' })
+  it('does not print when the final backend guard rejects closure', async () => {
+    mocks.previewDaySettlement.mockResolvedValue({
+      business_day_id: 1,
+      pending_shifts: [],
+      totals: day.totals,
+    })
+    mocks.closeDay.mockRejectedValue({ message: 'day.orders_open' })
     render(
       <ToastProvider>
         <DayClosingPanel dayId={1} onDone={vi.fn()} />
       </ToastProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: 'تقفيل اليوم' }))
+    fireEvent.click(await screen.findByRole('button', { name: /إغلاق يوم العمل/ }))
     fireEvent.click(screen.getByRole('button', { name: /تأكيد تقفيل اليوم/ }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(mocks.printDay).not.toHaveBeenCalled()
