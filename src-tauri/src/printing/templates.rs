@@ -81,12 +81,17 @@ pub fn takeaway_receipt(
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
-    header(&mut p, logo, "تيك أواي — ستيشن كافيه", "TAKEAWAY RECEIPT");
+    header(
+        &mut p,
+        logo,
+        "طلبات خارجية — ستيشن كافيه",
+        "TAKEAWAY RECEIPT",
+    );
     p.align(Align::Center);
     p.size(2, 2);
     p.bold(true);
     p.kv_line(
-        "رقم التيك أواي",
+        "رقم الطلب الخارجي",
         &inv.takeaway_no.unwrap_or_default().to_string(),
         WIDTH,
     );
@@ -175,7 +180,12 @@ pub fn current_order(
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
     if order.order_type == "TAKEAWAY" {
-        header(&mut p, logo, "تيك أواي — ستيشن كافيه", "TAKEAWAY RECEIPT");
+        header(
+            &mut p,
+            logo,
+            "طلبات خارجية — ستيشن كافيه",
+            "TAKEAWAY RECEIPT",
+        );
         if let Some(no) = order.takeaway_no {
             p.align(Align::Center);
             p.size(2, 2);

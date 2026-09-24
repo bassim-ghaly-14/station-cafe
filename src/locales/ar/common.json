@@ -226,7 +226,24 @@
     "qty": "الكمية",
     "pay": "الدفع",
     "confirmPay": "تأكيد الدفع",
-    "openTakeaways": "طلبات التيك أواي المفتوحة",
+    "openTakeaways": "الطلبات الخارجية",
+    "invoiceSearchHint": "رقم فاتورة / طاولة / طلب خارجي / عميل / لوحة",
+
+    "takeaway": "طلبات خارجية",
+    "startTakeaway": "بدء الطلب",
+    "takeawayActive": "طلب خارجي نشط",
+    "takeawayNo": "رقم الطلب الخارجي",
+    "takeawayStarted": "تم بدء الطلب الخارجي",
+    "takeawayHint": "بدون طاولة — يُستلم خارج الصالة",
+
+    "orderType": {
+      "TABLE": "صالة",
+      "TAKEAWAY": "طلب خارجي"
+    },
+
+    "docType": {
+      "TAKEAWAY_INVOICE": "إيصال طلب خارجي"
+    },
     "customerCar": "العميل والسيارة",
     "washTicket": "تذكرة المغسلة",
     "ticketIssued": "تم إصدار تذكرة المغسلة — رقم الانتظار {{no}}",
@@ -248,7 +265,6 @@
     "invalidDiscount": "قيمة الخصم غير صحيحة",
     "payHintDiscount": "الخصم والعميل من ملخص الطلب — والدفع هنا فقط",
     "invoiceSearch": "بحث في الفواتير",
-    "invoiceSearchHint": "رقم فاتورة / طاولة / تيك أواي / عميل / لوحة",
     "allStatuses": "كل الحالات",
     "allMethods": "كل الطرق",
     "noInvoices": "لا توجد فواتير اليوم بعد",
@@ -262,12 +278,6 @@
     "closeEmptyBody": "الطاولة {{label}} مفتوحة ولا يوجد عليها طلب. سيتم تحرير الطاولة بدون إنشاء فاتورة أو إيراد.",
     "startOrder": "بدء",
     "openOrder": "فتح الطلب",
-    "takeaway": "تيك أواي",
-    "startTakeaway": "طلب تيك أواي جديد",
-    "takeawayActive": "طلب تيك أواي نشط",
-    "takeawayNo": "رقم التيك أواي",
-    "takeawayStarted": "تم بدء طلب تيك أواي",
-    "takeawayHint": "طلب بدون طاولة — يأخذ رقمه عند الدفع",
     "discardOrder": "إلغاء الطلب الفارغ",
     "discardedMessage": "تم إلغاء الطلب الفارغ",
     "opensToday": "عدد الفتح",
@@ -282,10 +292,6 @@
       "OPEN": "مفتوحة",
       "OCCUPIED": "مشغولة",
       "READY_TO_PAY": "جاهزة للدفع"
-    },
-    "orderType": {
-      "TABLE": "صالة",
-      "TAKEAWAY": "تيك أواي"
     },
     "printPreview": "معاينة الطباعة",
     "printPreviewAfterPay": "لا يوجد مستند مطبوع لهذا الطلب بعد — تُتاح معاينة الفاتورة وإعادة طبعها بعد الدفع من «فواتير اليوم»",
@@ -333,7 +339,7 @@
       "CAFE_INVOICE": "فاتورة كافيه",
       "WASH_INVOICE": "فاتورة مغسلة",
       "HYBRID_INVOICE": "فاتورة كافيه ومغسلة",
-      "TAKEAWAY_INVOICE": "إيصال تيك أواي",
+      "TAKEAWAY_INVOICE": "إيصال طلب خارجي",
       "WASH_TICKET": "تذكرة مغسلة سيارة"
     }
   },

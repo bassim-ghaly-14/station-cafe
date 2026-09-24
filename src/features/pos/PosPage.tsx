@@ -1,5 +1,5 @@
 /** The main POS screen: safe table grid + live order panel + payment + takeaway.
- * Card click NEVER mutates state — only explicit buttons call the backend.
+ * Card click NEVER mutates table state — only explicit action buttons call the backend.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -40,6 +40,7 @@ export default function PosPage() {
   const refresh = useCallback(async () => {
     try {
       const [tv, tk, st] = await Promise.all([api.tables(), api.openTakeaways(), shiftApi.state()])
+
       setTables(tv)
       setTakeaways(tk)
       setDayReady(st.day !== null && st.my_shift !== null)
@@ -64,8 +65,9 @@ export default function PosPage() {
     }
   }, [activeOrder, discount.mode, discount.value])
 
-  if (error)
+  if (error) {
     return <ErrorState message={error} onRetry={() => void refresh()} retryLabel={t('app.retry')} />
+  }
 
   if (!tables) return <p>{t('app.loading')}</p>
 
@@ -73,6 +75,7 @@ export default function PosPage() {
 
   const report = (e: unknown) => {
     void refresh()
+
     toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
   }
 
@@ -84,7 +87,9 @@ export default function PosPage() {
 
     try {
       await api.openTable(tv.id)
+
       toast(t('pos.openedMessage', { label: tv.label }), 'success')
+
       await refresh()
     } catch (e) {
       report(e)
@@ -100,8 +105,11 @@ export default function PosPage() {
 
     try {
       await api.closeEmptyTable(closeTarget.id)
+
       toast(t('pos.closedEmptyMessage', { label: closeTarget.label }), 'success')
+
       setCloseTarget(null)
+
       await refresh()
     } catch (e) {
       setCloseTarget(null)
@@ -175,6 +183,7 @@ export default function PosPage() {
       await loadOrder(orderId)
 
       toast(t('pos.takeawayStarted'), 'success')
+
       await refresh()
     } catch (e) {
       report(e)
@@ -190,8 +199,11 @@ export default function PosPage() {
 
     try {
       await api.discardOrder(activeOrder.id)
+
       setActiveOrder(null)
+
       toast(t('pos.discardedMessage'), 'success')
+
       await refresh()
     } catch (e) {
       report(e)
@@ -226,23 +238,10 @@ export default function PosPage() {
         <CardHeader
           title={t('pos.tables')}
           actions={
-            <>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => void startTakeaway()}
-                disabled={busy === 'takeaway'}
-                loading={busy === 'takeaway'}
-              >
-                <ShoppingBag size={16} aria-hidden />
-                {t('pos.startTakeaway')}
-              </Button>
-
-              <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
-                <Receipt size={16} aria-hidden />
-                {t('pos.todayInvoices')}
-              </Button>
-            </>
+            <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+              <Receipt size={16} aria-hidden />
+              {t('pos.todayInvoices')}
+            </Button>
           }
         />
 
@@ -261,6 +260,9 @@ export default function PosPage() {
               : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5'
           }
         >
+          {/* Takeaway action card — always first */}
+          <TakeawayCard busy={busy === 'takeaway'} onStart={() => void startTakeaway()} />
+
           {tables.map((tv) => (
             <TableCard
               key={tv.id}
@@ -384,6 +386,117 @@ export default function PosPage() {
 }
 
 /**
+ * Dedicated action card for starting a new takeaway order.
+ *
+ * It intentionally matches the table-card geometry so takeaway becomes
+ * a first-class POS destination instead of looking like a toolbar action.
+ */
+export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => void }) {
+  const { t } = useTranslation()
+
+  return (
+    <article
+      aria-label={t('pos.startTakeaway')}
+      data-testid="takeaway-card"
+      className={[
+        'group relative flex min-h-56 flex-col overflow-hidden',
+        'rounded-lg border border-border-accent',
+        'bg-accent/40 p-4 text-start',
+        'transition-[border-color,background-color,box-shadow]',
+        'duration-200',
+        'hover:border-border-accent-hover hover:bg-accent/70',
+        'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus',
+      ].join(' ')}
+    >
+      {/* Takeaway identity stripe */}
+      <span aria-hidden className="absolute inset-y-0 inset-s-0 w-1 bg-primary" />
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+            {t('pos.takeaway')}
+          </p>
+
+          <p className="mt-1 truncate text-lg font-bold leading-tight text-foreground-strong">
+            {t('pos.startTakeaway')}
+          </p>
+        </div>
+
+        {/* Takeaway visual identity */}
+        <div
+          aria-hidden
+          className={[
+            'flex size-11 shrink-0 items-center justify-center',
+            'rounded-md border border-primary/30',
+            'bg-primary/10 text-primary',
+            'transition-transform duration-200',
+            'group-hover:scale-105',
+          ].join(' ')}
+        >
+          <ShoppingBag size={22} strokeWidth={2.2} />
+        </div>
+      </div>
+
+      {/* Order ticket surface */}
+      <div
+        className={[
+          'relative mt-4 flex flex-1 flex-col justify-center',
+          'overflow-hidden rounded-md',
+          'border border-border/80',
+          'bg-background/50',
+          'px-3 py-3',
+        ].join(' ')}
+      >
+        {/* Decorative ticket perforation */}
+        <span
+          aria-hidden
+          className="absolute -inset-s-1.5 top-1/2 size-3 -translate-y-1/2 rounded-full border border-border bg-surface"
+        />
+
+        <span
+          aria-hidden
+          className="absolute -inset-e-1.5 top-1/2 size-3 -translate-y-1/2 rounded-full border border-border bg-surface"
+        />
+
+        <div className="flex items-center gap-3 px-1">
+          <div
+            aria-hidden
+            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+          >
+            <ShoppingBag size={18} />
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-foreground-subtle">{t('pos.takeawayHint')}</p>
+
+            <p className="mt-0.5 truncate text-sm font-bold text-foreground-strong">
+              {t('pos.takeaway')}
+            </p>
+          </div>
+        </div>
+
+        <div aria-hidden className="mt-3 border-t border-dashed border-border/80" />
+      </div>
+
+      {/* Action */}
+      <div className="mt-3">
+        <Button
+          className="w-full"
+          size="sm"
+          onClick={onStart}
+          loading={busy}
+          aria-label={t('pos.startTakeaway')}
+        >
+          <ShoppingBag size={16} aria-hidden />
+          {t('pos.startTakeaway')}
+        </Button>
+      </div>
+    </article>
+  )
+}
+
+/**
  * Compact list of OPEN takeaway orders inside the existing POS workspace.
  * The backend is the source of truth: clicking a row reopens the persisted
  * order with all its data. Rows disappear once the order is paid.
@@ -422,14 +535,17 @@ export function OpenTakeaways({
               <span className="font-bold">
                 {t('pos.takeaway')} · {t('pos.order')} {tk.id}
               </span>
+
               {tk.opened_at ? (
                 <span className="text-xs opacity-70" dir="ltr">
                   {tk.opened_at.slice(11, 16)}
                 </span>
               ) : null}
+
               <span className="text-xs opacity-70">
                 {tk.items_count} {t('pos.items')}
               </span>
+
               <MoneyDisplay amount={tk.total_minor} />
             </Button>
           </li>

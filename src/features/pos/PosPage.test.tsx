@@ -161,6 +161,16 @@ function renderCard(tv: TableView) {
   )
 }
 
+function renderPage() {
+  return render(
+    <ToastProvider>
+      <SessionProvider>
+        <PosPage />
+      </SessionProvider>
+    </ToastProvider>,
+  )
+}
+
 describe('TableCard lifecycle UX', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -168,6 +178,7 @@ describe('TableCard lifecycle UX', () => {
 
   it('clicking the card body does not call any mutating command', () => {
     const onSelect = vi.fn()
+
     render(
       <ToastProvider>
         <SessionProvider>
@@ -185,7 +196,9 @@ describe('TableCard lifecycle UX', () => {
         </SessionProvider>
       </ToastProvider>,
     )
+
     fireEvent.click(screen.getByTestId('table-card-1'))
+
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(mocks.openTable).not.toHaveBeenCalled()
     expect(mocks.startOrder).not.toHaveBeenCalled()
@@ -194,18 +207,23 @@ describe('TableCard lifecycle UX', () => {
 
   it('EMPTY card offers Open only; OPEN card offers Start Order + Close Empty', () => {
     const { unmount } = renderCard(table({ status: 'EMPTY' }))
+
     expect(screen.getByRole('button', { name: /فتح الطاولة/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /إغلاق فارغ/ })).not.toBeInTheDocument()
+
     unmount()
 
     renderCard(table({ status: 'OPEN', session_id: 7 }))
+
     fireEvent.click(screen.getByRole('button', { name: /بدء/ }))
+
     expect(mocks.startOrder).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: /إغلاق فارغ/ })).toBeInTheDocument()
   })
 
   it('occupied card never offers Close Empty', () => {
     renderCard(table({ status: 'OCCUPIED', order_id: 9 }))
+
     expect(screen.getByRole('button', { name: /فتح الطلب/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /إغلاق فارغ/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /فتح الطاولة/ })).not.toBeInTheDocument()
@@ -213,9 +231,13 @@ describe('TableCard lifecycle UX', () => {
 
   it('shows EMPTY red vs OCCUPIED green status semantics', () => {
     const { unmount } = renderCard(table({ status: 'EMPTY' }))
+
     expect(screen.getByText('فارغة').className).toMatch(/destructive/)
+
     unmount()
+
     renderCard(table({ status: 'OCCUPIED', order_id: 9 }))
+
     expect(screen.getByText('مشغولة').className).toMatch(/success/)
   })
 })
@@ -223,72 +245,72 @@ describe('TableCard lifecycle UX', () => {
 describe('PosPage takeaway entry', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
     mocks.tables.mockResolvedValue([table()])
     mocks.openTakeaways.mockResolvedValue([])
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 }, any_active_shift: true })
-    mocks.getOrder.mockResolvedValue({
-      id: 5,
-      order_type: 'TAKEAWAY',
-      table_id: null,
-      user_id: 1,
-      status: 'OPEN',
-      customer_id: null,
-      opened_at: '',
-      waiting_no: null,
-      takeaway_no: null,
-      shift_id: 1,
-      table_label: null,
-      lines: [],
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+      any_active_shift: true,
     })
+
+    mocks.getOrder.mockResolvedValue(
+      order({
+        id: 5,
+        order_type: 'TAKEAWAY',
+        table_id: null,
+        table_label: null,
+        opened_at: '2026-01-05 10:00:00',
+        takeaway_no: null,
+        lines: [],
+      }),
+    )
+
     mocks.preview.mockResolvedValue(null)
     mocks.startTakeaway.mockResolvedValue(5)
   })
 
   it('takeaway entry point starts a table-less order without opening a table', async () => {
-    render(
-      <ToastProvider>
-        <SessionProvider>
-          <PosPage />
-        </SessionProvider>
-      </ToastProvider>,
-    )
-    fireEvent.click(await screen.findByRole('button', { name: /طلب تيك أواي جديد/ }))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /بدء الطلب/ }))
+
     await waitFor(() => expect(mocks.startTakeaway).toHaveBeenCalledTimes(1))
+
     expect(mocks.openTable).not.toHaveBeenCalled()
     expect(mocks.startOrder).not.toHaveBeenCalled()
-    await waitFor(() => expect(screen.getByText('طلب تيك أواي نشط')).toBeInTheDocument())
+
+    await waitFor(() => expect(screen.getByText('طلب خارجي نشط')).toBeInTheDocument())
   })
 })
-
-function renderPage() {
-  return render(
-    <ToastProvider>
-      <SessionProvider>
-        <PosPage />
-      </SessionProvider>
-    </ToastProvider>,
-  )
-}
 
 describe('payment entry — one direct action (issues 1 & 2)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
     mocks.tables.mockResolvedValue([table({ status: 'OCCUPIED', order_id: 9 })])
     mocks.openTakeaways.mockResolvedValue([])
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+    })
     mocks.getOrder.mockResolvedValue(order())
     mocks.preview.mockResolvedValue(previewOf())
   })
 
   it('offers exactly one مراجعة والدفع before the dialog — no request-payment step', async () => {
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
+
     expect(await screen.findByText('قهوة')).toBeInTheDocument()
 
     expect(screen.getAllByRole('button', { name: 'مراجعة والدفع' })).toHaveLength(1)
+
     expect(screen.queryByRole('button', { name: 'الدفع' })).not.toBeInTheDocument()
+
     expect(screen.queryByRole('button', { name: 'طلب الدفع' })).not.toBeInTheDocument()
-    // The removed request step must have no API surface left either.
+
     expect('readyToPay' in (await import('@/services/posApi')).api).toBe(false)
   })
 
@@ -300,17 +322,24 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
       change_given: 0,
       status: 'PAID',
     })
+
     mocks.printInvoice.mockResolvedValue(null)
 
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
 
-    // Dialog shows the authoritative review totals, then confirms payment.
     const cash = await screen.findByPlaceholderText('0.00')
+
     fireEvent.change(cash, { target: { value: '60' } })
-    const confirm = await screen.findByRole('button', { name: 'تأكيد الدفع' })
+
+    const confirm = await screen.findByRole('button', {
+      name: 'تأكيد الدفع',
+    })
+
     await waitFor(() => expect(confirm).not.toBeDisabled())
+
     fireEvent.click(confirm)
 
     await waitFor(() =>
@@ -322,7 +351,9 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
         received: 6000,
       }),
     )
+
     await screen.findByText('تم الدفع — فاتورة #77')
+
     expect(screen.queryByText('قهوة')).not.toBeInTheDocument()
   })
 
@@ -330,16 +361,24 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
     mocks.checkout.mockRejectedValue({ message: 'pos.empty_order' })
 
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
 
     const cash = await screen.findByPlaceholderText('0.00')
+
     fireEvent.change(cash, { target: { value: '60' } })
-    const confirm = await screen.findByRole('button', { name: 'تأكيد الدفع' })
+
+    const confirm = await screen.findByRole('button', {
+      name: 'تأكيد الدفع',
+    })
+
     await waitFor(() => expect(confirm).not.toBeDisabled())
+
     fireEvent.click(confirm)
 
     const alert = await screen.findByRole('alert')
+
     expect(alert).toHaveTextContent('الطلب فارغ — أضف أصنافًا أولًا')
     expect(screen.getByRole('button', { name: 'تأكيد الدفع' })).toBeInTheDocument()
   })
@@ -348,23 +387,29 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
 describe('order panel identity (issue 3)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
     mocks.tables.mockResolvedValue([table({ status: 'OCCUPIED', order_id: 9 })])
     mocks.openTakeaways.mockResolvedValue([])
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+    })
     mocks.preview.mockResolvedValue(previewOf())
   })
 
   it('shows the table number/label of a TABLE order', async () => {
     mocks.getOrder.mockResolvedValue(order())
+
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
 
-    // Subtitle: authoritative table label · order state.
     expect(await screen.findByText('طاولة 01 · مفتوحة')).toBeInTheDocument()
   })
 
-  it('never shows a table for a TAKEAWAY order', async () => {
+  it('identifies a TAKEAWAY order without rendering a table identity', async () => {
     mocks.startTakeaway.mockResolvedValue(9)
+
     mocks.getOrder.mockResolvedValue(
       order({
         id: 9,
@@ -372,23 +417,43 @@ describe('order panel identity (issue 3)', () => {
         table_id: null,
         table_label: null,
         opened_at: '2026-01-05 10:05:00',
+        takeaway_no: null,
       }),
     )
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /طلب تيك أواي جديد/ }))
 
-    // Order type stays clearly identifiable, with no fake table in the panel.
-    expect(await screen.findByText('تيك أواي · طلب 9')).toBeInTheDocument()
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /بدء الطلب/ }))
+
+    await waitFor(() => {
+      expect(mocks.startTakeaway).toHaveBeenCalledTimes(1)
+      expect(mocks.getOrder).toHaveBeenCalledWith(9)
+    })
+
+    // TAKEAWAY has its own explicit order-type identity.
+    expect(await screen.findByText('طلب خارجي نشط')).toBeInTheDocument()
+
+    // A takeaway order must never inherit or display the table identity.
     expect(screen.queryByText('طاولة 01 · مفتوحة')).not.toBeInTheDocument()
+
+    // The loaded order remains the active order shown by the order workspace.
+    expect(screen.getByRole('button', { name: 'مراجعة والدفع' })).toBeInTheDocument()
   })
 })
 
 describe('open takeaway lifecycle (issue 4)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
     mocks.tables.mockResolvedValue([table()])
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+    })
+
     mocks.preview.mockResolvedValue(previewOf())
+
     mocks.getOrder.mockResolvedValue(
       order({
         id: 7,
@@ -402,23 +467,26 @@ describe('open takeaway lifecycle (issue 4)', () => {
 
   it('keeps an open takeaway discoverable and reopens it with all its data', async () => {
     mocks.openTakeaways.mockResolvedValue([takeawayView()])
+
     renderPage()
 
-    // Discoverable with no active order (the user left the order view).
     const chip = await screen.findByTestId('open-takeaway-7')
-    expect(chip).toHaveTextContent('تيك أواي · طلب 7')
+
+    expect(chip).toHaveTextContent('طلبات خارجية · طلب 7')
     expect(chip).toHaveTextContent('10:00')
     expect(chip).toHaveTextContent('1 أصناف')
 
-    // Reopening loads the persisted order with its existing lines.
     fireEvent.click(chip)
+
     await waitFor(() => expect(mocks.getOrder).toHaveBeenCalledWith(7))
+
     expect(await screen.findByText('قهوة')).toBeInTheDocument()
     expect(mocks.preview).toHaveBeenCalledWith(7, null, null)
   })
 
   it('drops a paid takeaway from the open list and clears the panel', async () => {
     mocks.openTakeaways.mockResolvedValueOnce([takeawayView()]).mockResolvedValue([])
+
     mocks.checkout.mockResolvedValue({
       invoice_id: 78,
       invoice_no: 4,
@@ -426,22 +494,33 @@ describe('open takeaway lifecycle (issue 4)', () => {
       change_given: 0,
       status: 'PAID',
     })
+
     mocks.printInvoice.mockResolvedValue(null)
 
     renderPage()
+
     fireEvent.click(await screen.findByTestId('open-takeaway-7'))
+
     expect(await screen.findByText('قهوة')).toBeInTheDocument()
 
-    // One direct action → dialog → confirm.
     fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
+
     const cash = await screen.findByPlaceholderText('0.00')
+
     fireEvent.change(cash, { target: { value: '60' } })
-    const confirm = await screen.findByRole('button', { name: 'تأكيد الدفع' })
+
+    const confirm = await screen.findByRole('button', {
+      name: 'تأكيد الدفع',
+    })
+
     await waitFor(() => expect(confirm).not.toBeDisabled())
+
     fireEvent.click(confirm)
 
     await screen.findByText('تم الدفع — فاتورة #78')
+
     await waitFor(() => expect(screen.queryByTestId('open-takeaway-7')).not.toBeInTheDocument())
+
     expect(screen.queryByText('قهوة')).not.toBeInTheDocument()
   })
 })
@@ -449,29 +528,51 @@ describe('open takeaway lifecycle (issue 4)', () => {
 describe('print preview action beside the pay action', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
     mocks.tables.mockResolvedValue([table({ status: 'OCCUPIED', order_id: 9 })])
     mocks.openTakeaways.mockResolvedValue([])
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+    })
     mocks.preview.mockResolvedValue(previewOf())
   })
 
   it('previews a CAFE order before payment without finalizing it', async () => {
     mocks.getOrder.mockResolvedValue(order())
+
     mocks.printPreviewOrder.mockResolvedValue({
       doc_type: 'CAFE_INVOICE',
       paper_mm: 80,
       width_chars: 42,
-      ops: [{ kind: 'text', text: 'معاينة الطلب — قبل الدفع', align: 'center', bold: false, width: 1, height: 1 }],
+      ops: [
+        {
+          kind: 'text',
+          text: 'معاينة الطلب — قبل الدفع',
+          align: 'center',
+          bold: false,
+          width: 1,
+          height: 1,
+        },
+      ],
     })
 
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
-    const preview = await screen.findByRole('button', { name: 'معاينة الطباعة' })
+
+    const preview = await screen.findByRole('button', {
+      name: 'معاينة الطباعة',
+    })
+
     expect(preview).toBeEnabled()
+
     fireEvent.click(preview)
 
     await waitFor(() => expect(mocks.printPreviewOrder).toHaveBeenCalledWith(9, null, null))
+
     expect(await screen.findByText('معاينة الطلب — قبل الدفع')).toBeInTheDocument()
+
     expect(mocks.checkout).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /إعادة طبع/ })).not.toBeInTheDocument()
   })
@@ -495,24 +596,39 @@ describe('print preview action beside the pay action', () => {
         ],
       }),
     )
-    mocks.preview.mockResolvedValue({ ...previewOf(17500), has_wash: true })
+
+    mocks.preview.mockResolvedValue({
+      ...previewOf(17500),
+      has_wash: true,
+    })
+
     const ticket: PrintPreview = {
       doc_type: 'WASH_TICKET',
       paper_mm: 80,
       width_chars: 42,
       ops: [
-        { kind: 'text', text: 'رقم الانتظار', align: 'center', bold: true, width: 1, height: 1 },
+        {
+          kind: 'text',
+          text: 'رقم الانتظار',
+          align: 'center',
+          bold: true,
+          width: 1,
+          height: 1,
+        },
       ],
     }
+
     mocks.printPreviewTicket.mockResolvedValue(ticket)
 
     renderPage()
+
     fireEvent.click(await screen.findByRole('button', { name: /فتح الطلب/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'معاينة الطباعة' }))
 
     await waitFor(() => expect(mocks.printPreviewTicket).toHaveBeenCalledWith(9))
+
     expect(await screen.findByText('رقم الانتظار')).toBeInTheDocument()
-    // Reprint of the wash ticket reuses the existing print pipeline/id.
+
     expect(screen.getByRole('button', { name: /إعادة طبع/ })).toBeEnabled()
   })
 })
