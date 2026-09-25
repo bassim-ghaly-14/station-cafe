@@ -1,6 +1,7 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, minor, WIDTH};
+use super::shared::{footer, header, WIDTH};
+use crate::money::format_minor_for_print;
 use crate::repositories::pos::Order;
 
 pub fn current_order(
@@ -78,8 +79,8 @@ pub fn current_order(
             p.item(
                 &line.product_name,
                 &line.quantity.to_string(),
-                &minor(line.unit_price),
-                &minor(line.line_total),
+                &format_minor_for_print(line.unit_price),
+                &format_minor_for_print(line.line_total),
             );
         }
         if hybrid {
@@ -89,20 +90,36 @@ pub fn current_order(
                 .filter(|l| l.department == dept)
                 .map(|l| l.line_total)
                 .sum();
-            p.financial(&format!("{title} الفرعي"), &minor(dept_subtotal), false);
+            p.financial(
+                &format!("{title} الفرعي"),
+                &format_minor_for_print(dept_subtotal),
+                false,
+            );
         }
     }
     p.hr(WIDTH);
-    p.financial("الإجمالي الفرعي", &minor(totals.subtotal), false);
+    p.financial(
+        "الإجمالي الفرعي",
+        &format_minor_for_print(totals.subtotal),
+        false,
+    );
     if totals.discount_minor > 0 {
-        p.financial("الخصم", &minor(totals.discount_minor), false);
+        p.financial(
+            "الخصم",
+            &format_minor_for_print(totals.discount_minor),
+            false,
+        );
     }
     if totals.service_charge_minor > 0 {
-        p.financial("خدمة", &minor(totals.service_charge_minor), false);
+        p.financial(
+            "خدمة",
+            &format_minor_for_print(totals.service_charge_minor),
+            false,
+        );
     }
     p.bold(true);
     p.size(1, 2);
-    p.financial("الإجمالي", &minor(totals.total), true);
+    p.financial("الإجمالي", &format_minor_for_print(totals.total), true);
     p.size(1, 1);
     p.bold(false);
     p.align(Align::Center);

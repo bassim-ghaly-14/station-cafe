@@ -129,6 +129,7 @@ pub struct Expense {
     pub is_recurring: bool,
     pub recurrence: Option<String>,
     pub user_name: Option<String>,
+    pub user_role: Option<String>,
     pub created_at: String,
 }
 
@@ -170,7 +171,7 @@ pub fn list_expenses(
 ) -> AppResult<Vec<Expense>> {
     let mut sql = String::from(
         "SELECT e.id, e.category, e.amount, e.description, e.expense_date, e.is_recurring,
-                e.recurrence, u.name, e.created_at
+                e.recurrence, u.name, u.role, e.created_at
          FROM expenses e LEFT JOIN users u ON u.id = e.user_id WHERE 1=1",
     );
     let mut args: Vec<String> = Vec::new();
@@ -198,7 +199,8 @@ pub fn list_expenses(
             is_recurring: r.get::<_, i64>(5)? != 0,
             recurrence: r.get(6)?,
             user_name: r.get(7)?,
-            created_at: r.get(8)?,
+            user_role: r.get(8)?,
+            created_at: r.get(9)?,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)

@@ -52,6 +52,22 @@ pub fn apply_fixed_discount(amount: Money, discount_minor: Money) -> Money {
     (amount - discount_minor).max(0)
 }
 
+/// Presentation-only formatter for the 80mm print IR and its authoritative preview.
+///
+/// Print output intentionally omits grouping separators and a per-value currency
+/// suffix to preserve the existing fixed-width columns. The shared print header
+/// labels the document values as EGP once. Exact financial values retain
+/// Station's two-decimal piaster precision.
+pub fn format_minor_for_print(value: Money) -> String {
+    let sign = if value < 0 { "-" } else { "" };
+    let absolute = value.unsigned_abs();
+    format!(
+        "{sign}{}.{:02}",
+        absolute / MINOR_PER_MAJOR as u64,
+        absolute % MINOR_PER_MAJOR as u64
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +94,14 @@ mod tests {
         assert_eq!(div_round(5, 2), 3);
         assert_eq!(div_round(4, 2), 2);
         assert_eq!(div_round(-5, 2), -2); // symmetric half-up on magnitude
+    }
+
+    #[test]
+    fn print_money_is_exact_and_centralized() {
+        assert_eq!(format_minor_for_print(0), "0.00");
+        assert_eq!(format_minor_for_print(5), "0.05");
+        assert_eq!(format_minor_for_print(125_000), "1250.00");
+        assert_eq!(format_minor_for_print(-350), "-3.50");
+        assert_eq!(format_minor_for_print(i64::MIN), "-92233720368547758.08");
     }
 }

@@ -13,6 +13,7 @@ pub struct ShiftRow {
     pub business_day_id: i64,
     pub user_id: i64,
     pub user_name: Option<String>,
+    pub user_role: Option<String>,
     pub status: String,
     pub opened_at: String,
     pub opening_cash: i64,
@@ -28,7 +29,7 @@ pub struct ShiftRow {
     pub cash_difference: Option<i64>,
 }
 
-const SHIFT_COLS: &str = "s.id, s.business_day_id, s.user_id, u.name, s.status, s.opened_at,
+const SHIFT_COLS: &str = "s.id, s.business_day_id, s.user_id, u.name, u.role, s.status, s.opened_at,
     s.opening_cash, s.closed_at, s.cash_sales, s.card_sales, s.credit_sales,
     s.service_charges, s.discounts, s.invoices_count, s.expected_cash, s.actual_cash, s.cash_difference";
 
@@ -38,19 +39,20 @@ fn shift_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ShiftRow> {
         business_day_id: r.get(1)?,
         user_id: r.get(2)?,
         user_name: r.get(3)?,
-        status: r.get(4)?,
-        opened_at: r.get(5)?,
-        opening_cash: r.get(6)?,
-        closed_at: r.get(7)?,
-        cash_sales: r.get(8)?,
-        card_sales: r.get(9)?,
-        credit_sales: r.get(10)?,
-        service_charges: r.get(11)?,
-        discounts: r.get(12)?,
-        invoices_count: r.get(13)?,
-        expected_cash: r.get(14)?,
-        actual_cash: r.get(15)?,
-        cash_difference: r.get(16)?,
+        user_role: r.get(4)?,
+        status: r.get(5)?,
+        opened_at: r.get(6)?,
+        opening_cash: r.get(7)?,
+        closed_at: r.get(8)?,
+        cash_sales: r.get(9)?,
+        card_sales: r.get(10)?,
+        credit_sales: r.get(11)?,
+        service_charges: r.get(12)?,
+        discounts: r.get(13)?,
+        invoices_count: r.get(14)?,
+        expected_cash: r.get(15)?,
+        actual_cash: r.get(16)?,
+        cash_difference: r.get(17)?,
     })
 }
 

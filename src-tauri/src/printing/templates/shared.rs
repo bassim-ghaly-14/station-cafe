@@ -1,14 +1,9 @@
 use super::super::escpos::{Align, EscPos};
 use super::super::ir::PrintDoc;
+use crate::money::format_minor_for_print;
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 
 pub const WIDTH: usize = 42; // characters per line on 80mm at font A
-
-pub(crate) fn minor(v: i64) -> String {
-    let sign = if v < 0 { "-" } else { "" };
-    let a = v.abs();
-    format!("{sign}{}.{:02}", a / 100, a % 100)
-}
 
 pub(super) fn header(p: &mut EscPos, logo: bool, title: &str, subtitle: &str) {
     if logo {
@@ -22,6 +17,7 @@ pub(super) fn header(p: &mut EscPos, logo: bool, title: &str, subtitle: &str) {
     p.line(title);
     p.bold(false);
     p.line(subtitle);
+    p.line("المبالغ بالج.م");
     p.hr(WIDTH);
     p.align(Align::Right);
 }
@@ -62,8 +58,8 @@ pub(super) fn items_and_totals(
                 p.item(
                     &l.product_name,
                     &l.quantity.to_string(),
-                    &minor(l.unit_price),
-                    &minor(l.line_total),
+                    &format_minor_for_print(l.unit_price),
+                    &format_minor_for_print(l.line_total),
                 );
             }
             let dept_subtotal: i64 = if dept == "CAFE" {
@@ -71,33 +67,45 @@ pub(super) fn items_and_totals(
             } else {
                 inv.wash_total
             };
-            p.financial(&format!("{title} الفرعي"), &minor(dept_subtotal), false);
+            p.financial(
+                &format!("{title} الفرعي"),
+                &format_minor_for_print(dept_subtotal),
+                false,
+            );
         }
     } else {
         for l in lines {
             p.item(
                 &l.product_name,
                 &l.quantity.to_string(),
-                &minor(l.unit_price),
-                &minor(l.line_total),
+                &format_minor_for_print(l.unit_price),
+                &format_minor_for_print(l.line_total),
             );
         }
     }
     p.hr(WIDTH);
-    p.financial("الإجمالي الفرعي", &minor(inv.subtotal), false);
+    p.financial(
+        "الإجمالي الفرعي",
+        &format_minor_for_print(inv.subtotal),
+        false,
+    );
     if inv.discount_minor > 0 {
-        p.financial("الخصم", &minor(inv.discount_minor), false);
+        p.financial("الخصم", &format_minor_for_print(inv.discount_minor), false);
     }
     if inv.service_charge > 0 {
-        p.financial("خدمة", &minor(inv.service_charge), false);
+        p.financial("خدمة", &format_minor_for_print(inv.service_charge), false);
     }
     p.bold(true);
     p.size(1, 2);
-    p.financial("الإجمالي", &minor(inv.total), true);
+    p.financial("الإجمالي", &format_minor_for_print(inv.total), true);
     p.size(1, 1);
     p.bold(false);
-    p.financial("المدفوع", &minor(inv.paid_amount), false);
+    p.financial("المدفوع", &format_minor_for_print(inv.paid_amount), false);
     if inv.status == "CREDIT" {
-        p.financial("المتبقي (آجل)", &minor(inv.total - inv.paid_amount), false);
+        p.financial(
+            "المتبقي (آجل)",
+            &format_minor_for_print(inv.total - inv.paid_amount),
+            false,
+        );
     }
 }
