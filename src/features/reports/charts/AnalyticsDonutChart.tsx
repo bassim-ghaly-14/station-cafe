@@ -15,7 +15,7 @@ import { formatMinorMoney } from '@/lib/money'
 import { formatDate } from '@/lib/date'
 import { useFormattingPreferences } from '@/lib/formatting'
 import { cn } from '@/lib/utils'
-import type { AnalyticsChart } from './analyticsCharts'
+import { CATEGORY_LABEL_PREFIX, type AnalyticsChart } from './analyticsCharts'
 import { exportAnalyticsExcel, exportAnalyticsPng } from './exports'
 
 export function AnalyticsDonutChart({
@@ -33,6 +33,11 @@ export function AnalyticsDonutChart({
   const { t } = useTranslation()
   const toast = useToast()
   const Icon = chart.icon
+  // Titles and category labels travel as translation keys, so the copy stays in
+  // the catalogue and the view model carries no display strings.
+  const title = t(`reports.charts.${chart.titleKey}`)
+  const description = t(`reports.charts.${chart.descriptionKey}`)
+  const categoryLabel = (key: string) => t(`${CATEGORY_LABEL_PREFIX}${key}`)
   const [open, setOpen] = useState(false)
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const fullscreen = presentation === 'fullscreen'
@@ -43,11 +48,12 @@ export function AnalyticsDonutChart({
   const total = chart.total || 1
   const segments = chart.categories.map((category) => ({
     ...category,
+    label: categoryLabel(category.labelKey),
     fill: category.color,
     percent: (category.value / total) * 100,
   }))
   const chartConfig = {
-    value: { label: chart.title },
+    value: { label: title },
     ...Object.fromEntries(
       segments.map((segment) => [segment.id, { label: segment.label, color: segment.color }]),
     ),
@@ -146,8 +152,8 @@ export function AnalyticsDonutChart({
               <Icon size={19} aria-hidden />
             </span>
             <div className="min-w-0">
-              <h2 className="text-section text-start">{chart.title}</h2>
-              <p className="mt-0.5 text-caption">{chart.description}</p>
+              <h2 className="text-section text-start">{title}</h2>
+              <p className="mt-0.5 text-caption">{description}</p>
               {fullscreen ? (
                 <p className="mt-1 text-sm text-foreground-muted">
                   {t('reports.charts.period', { period })}
@@ -162,7 +168,7 @@ export function AnalyticsDonutChart({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label={`${t('reports.charts.fullscreen')}: ${chart.title}`}
+                aria-label={`${t('reports.charts.fullscreen')}: ${title}`}
                 title={t('reports.charts.fullscreen')}
                 onClick={() => setFullscreenOpen(true)}
               >
@@ -270,7 +276,7 @@ export function AnalyticsDonutChart({
           <span
             className="sr-only"
             role="img"
-            aria-label={`${chart.title}: ${formatMinorMoney(chart.total)}`}
+            aria-label={`${title}: ${formatMinorMoney(chart.total)}`}
           />
         </div>
         <div

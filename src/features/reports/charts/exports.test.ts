@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import i18n from '@/lib/i18n'
 import { exportAnalyticsPng } from './exports'
 import type { AnalyticsChart } from './analyticsCharts'
 
+/**
+ * The fixture is a real chart id, so `titleKey` / `descriptionKey` / `labelKey`
+ * resolve through the production catalogue exactly as they do on screen. The
+ * exporter must not need any display string of its own.
+ */
 const chart: AnalyticsChart = {
-  id: 'test',
-  title: 'Test',
-  description: 'Test',
+  id: 'cash-visa',
+  titleKey: 'cashVisaTitle',
+  descriptionKey: 'cashVisaDescription',
   total: 100,
   hasData: true,
   icon: (() => null) as unknown as AnalyticsChart['icon'],
   exportFilename: 'test',
-  categories: [{ id: 'one', label: 'واحد', value: 100, color: 'var(--primary)' }],
+  categories: [{ id: 'cash', labelKey: 'cash', value: 100, color: 'var(--primary)' }],
 }
 
 type TextFill = { text: string; color: string }
@@ -77,12 +83,17 @@ describe('AnalyticsDonutChart PNG total colors', () => {
       const totalIndex = fills.findIndex(
         ({ text }) =>
           text !== 'إجمالي' &&
-          text !== chart.title &&
-          text !== chart.description &&
+          text !== i18n.t('reports.charts.cashVisaTitle') &&
+          text !== i18n.t('reports.charts.cashVisaDescription') &&
           !text.startsWith('الفترة:') &&
           !text.includes(' — '),
       )
       expect(fills[totalIndex]?.color).toBe('#FFFFFF')
+      // The exported legend is labelled from the catalogue, not from a literal
+      // in the exporter, so the PNG matches the screen.
+      expect(
+        fills.some(({ text }) => text.startsWith(i18n.t('reports.charts.categories.cash'))),
+      ).toBe(true)
     },
   )
 })

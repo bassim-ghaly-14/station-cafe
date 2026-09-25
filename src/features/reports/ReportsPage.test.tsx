@@ -219,7 +219,10 @@ describe('ReportsPage period filter', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
-    expect(await screen.findByText('لا توجد بيانات لهذه الفترة')).toBeInTheDocument()
+    expect(await screen.findByText('لا توجد بيانات كافية لعرض التحليل')).toBeInTheDocument()
+    // The empty state explains itself rather than just reporting absence.
+    expect(screen.getByText(/ستظهر المؤشرات والرسوم البيانية هنا/)).toBeInTheDocument()
+    expect(screen.getByText(/لم تُسجَّل أي فواتير أو مصروفات خلال الفترة/)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'كاش مقابل فيزا' })).not.toBeInTheDocument()
   })
 
@@ -237,7 +240,10 @@ describe('ReportsPage period filter', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
-    await waitFor(() => expect(screen.getAllByText('لا توجد بيانات لهذه الفترة')).toHaveLength(3))
+    // Each card keeps its identity and explains its own emptiness.
+    await waitFor(() => expect(screen.getAllByText('لا توجد حركة في هذه الفترة')).toHaveLength(3))
+    expect(screen.getByRole('heading', { name: 'كاش مقابل فيزا' })).toBeInTheDocument()
+    expect(screen.getAllByText(/لم يُسجَّل أي مبلغ لهذا المؤشر/)).toHaveLength(3)
     // No chart pretends to hold data: nothing to expand or export.
     expect(screen.queryByRole('button', { name: /تكبير الرسم البياني:/ })).not.toBeInTheDocument()
   })
@@ -283,9 +289,11 @@ describe('ReportsPage period filter', () => {
     expect(mapped).toHaveLength(3)
     expect(mapped[0].total).toBe(30_000)
     expect(mapped[0].hasData).toBe(true)
+    // Categories carry a translation KEY, never a display string, so the copy
+    // lives in the catalogue rather than in the view model.
     expect(mapped[0].categories).toEqual([
-      { id: 'laundry', label: 'المغسلة', value: 20_000, color: 'var(--primary)' },
-      { id: 'cafe', label: 'كافيه', value: 10_000, color: 'var(--info)' },
+      { id: 'laundry', labelKey: 'laundry', value: 20_000, color: 'var(--primary)' },
+      { id: 'cafe', labelKey: 'cafe', value: 10_000, color: 'var(--info)' },
     ])
     expect(mapped.flatMap((chart) => chart.categories.map((category) => category.value))).toEqual([
       20_000, 10_000, 4_000, 1_000, 6_000, 3_000,

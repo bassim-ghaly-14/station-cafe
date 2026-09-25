@@ -9,24 +9,24 @@ import {
   Button,
   Card,
   CardHeader,
+  ChartGridSkeleton,
   DateRangePicker,
   EmployeeAvatar,
   MoneyDisplay,
   TableSkeleton,
 } from '@/components/ui'
-import { Field, Input } from '@/components/ui/input'
 import { BarChart3 } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
-import {
-  DisplayDate,
-  DisplayDateTime,
-  DisplayDateTimeRange,
-} from '@/components/ui/display-datetime'
-import { addDays, todayIso } from '@/lib/date'
-import { opsApi, type AuditEntry, type ProductSales, type SalesByDay } from '@/services/opsApi'
+import { DisplayDate, DisplayDateTimeRange } from '@/components/ui/display-datetime'
+import { addDays, formatDate, todayIso } from '@/lib/date'
+import { cn } from '@/lib/utils'
+import { opsApi, type ProductSales, type SalesByDay } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
-import { useAnalyticsCharts } from './charts/analyticsCharts'
+import { useAnalyticsCharts, type AnalyticsChart } from './charts/analyticsCharts'
 import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
+import { ChartEmptyReasons, ChartEmptyState } from './charts/ChartEmptyState'
+import { OperationHistoryPanel } from './audit/OperationHistoryPanel'
+import { ProgressBar } from '@/components/ui/progress-bar'
 import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
 import { PrintStatusPanel } from '@/features/printing/PrintStatusPanel'
 import type { ShiftRow } from '@/services/shiftApi'
@@ -103,7 +103,7 @@ export default function ReportsPage() {
       {tab === 'products' ? (
         <ProductSalesReport from={from} to={to} setFrom={setFrom} setTo={setTo} />
       ) : null}
-      {tab === 'audit' ? <AuditList /> : null}
+      {tab === 'audit' ? <OperationHistoryPanel /> : null}
       {tab === 'print' ? <PrintStatusPanel /> : null}
       {tab === 'shiftClosings' ? (
         <ClosingReports kind="shift" from={from} to={to} setFrom={setFrom} setTo={setTo} />
@@ -118,6 +118,19 @@ export default function ReportsPage() {
   )
 }
 
+/**
+ * The analytics view.
+ *
+ * The four states are deliberately distinct and none of them can be mistaken for
+ * another:
+ *
+ *  - first load   → chart-shaped skeletons, because a chart grid is not a table;
+ *  - error        → the failure, with a retry, and no charts behind it;
+ *  - empty        → the chart empty state, which still looks like a chart;
+ *  - refreshing   → the previous charts stay on screen, dimmed, under a
+ *                   progress hairline, instead of collapsing to a skeleton
+ *                   every time the period changes.
+ */
 function ChartsReport({
   from,
   to,
@@ -132,11 +145,14 @@ function ChartsReport({
   const report = useAnalyticsCharts(from, to)
   const { t } = useTranslation()
   const errorText = useErrText(t)
+  const scope = t('reports.charts.period', { period: `${formatDate(from)} — ${formatDate(to)}` })
+
   return (
     <div className="flex flex-col gap-4">
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
-      {report.loading ? (
-        <TableSkeleton rows={3} columns={2} />
+
+      {report.initialLoading ? (
+        <ChartGridSkeleton charts={3} />
       ) : report.error ? (
         <ErrorState
           message={errorText(report.error)}
@@ -144,24 +160,66 @@ function ChartsReport({
           retryLabel={t('app.retry')}
         />
       ) : report.data.length === 0 ? (
-        <EmptyState title={t('reports.charts.empty')} />
+        <div className="flex flex-col gap-5">
+          <ChartEmptyState scope={scope} hint={t('reports.charts.emptyHint')} />
+          <ChartEmptyReasons />
+        </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {report.data.map((chart) =>
-            chart.hasData ? (
-              <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
-            ) : (
-              <Card
-                key={chart.id}
-                className="flex min-h-88 flex-col items-center justify-center p-5 text-center"
-              >
-                <h2 className="text-section">{chart.title}</h2>
-                <p className="mt-2 text-sm text-foreground-muted">{t('reports.charts.empty')}</p>
-              </Card>
-            ),
-          )}
+        <div className="flex flex-col gap-2">
+          {report.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
+          <div
+            className={cn(
+              'grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3',
+              report.refreshing && 'opacity-60 transition-opacity',
+            )}
+            aria-busy={report.refreshing || undefined}
+          >
+            {report.data.map((chart) =>
+              chart.hasData ? (
+                <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
+              ) : (
+                <Card
+                  key={chart.id}
+                  className="flex min-h-88 flex-col p-0 shadow-none"
+                  data-testid={`empty-chart-${chart.id}`}
+                >
+                  <ChartCardHeading chart={chart} />
+                  <div className="flex flex-1 items-center justify-center border-t border-border-subtle p-4">
+                    <ChartEmptyState
+                      compact
+                      headingLevel="h3"
+                      scope={scope}
+                      title={t('reports.charts.emptyChartTitle')}
+                      body={t('reports.charts.emptyChartBody')}
+                      className="border-0 bg-transparent p-0"
+                    />
+                  </div>
+                </Card>
+              ),
+            )}
+          </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The card heading shared by a populated chart and its empty variant, so a card
+ * never changes identity just because the period has no numbers in it.
+ */
+function ChartCardHeading({ chart }: { chart: AnalyticsChart }) {
+  const { t } = useTranslation()
+  const Icon = chart.icon
+  return (
+    <div className="flex items-start gap-3 p-5 pb-4">
+      <span className="flex size-10 shrink-0 items-center justify-center bg-accent text-primary">
+        <Icon size={19} aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-section text-start">{t(`reports.charts.${chart.titleKey}`)}</h2>
+        <p className="mt-0.5 text-caption">{t(`reports.charts.${chart.descriptionKey}`)}</p>
+      </div>
     </div>
   )
 }
@@ -468,91 +526,6 @@ function ClosingReports({
         </Card>
       )}
       {target ? <PrintPreviewDialog target={target} onClose={() => setTarget(null)} /> : null}
-    </div>
-  )
-}
-
-function AuditList() {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const errText = useErrText(t)
-  const [rows, setRows] = useState<AuditEntry[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [action, setAction] = useState('')
-
-  const load = useCallback(() => {
-    setLoadError(null)
-
-    opsApi
-      .audit(100, action.trim() || undefined)
-      .then(setRows)
-      .catch((e) => {
-        setLoadError(errText(e))
-        toast(errText(e), 'error')
-      })
-  }, [action, toast, errText])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label={t('audit.actionFilter')}>
-          <Input
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            placeholder="catalog. / payment. / inventory."
-          />
-        </Field>
-      </div>
-      {rows === null ? (
-        loadError ? (
-          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <TableSkeleton rows={7} columns={3} />
-        )
-      ) : rows.length === 0 ? (
-        <EmptyState title={t('audit.empty')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('nav.audit')} subtitle={t('audit.hint')} />
-          <div className="flex flex-col divide-y divide-border-subtle">
-            {rows.map((a) => (
-              <div key={a.id} className="flex flex-wrap items-center gap-3 py-2">
-                <div className="min-w-48 flex-1">
-                  <p className="text-body font-bold">
-                    {t([`audit.actions.${a.action}`, a.action])}
-                  </p>
-                  <p className="min-w-0 text-caption">
-                    <DisplayDateTime value={a.created_at} separator="" />
-                    {a.entity_type
-                      ? ` · ${a.entity_type}${a.entity_id ? `#${a.entity_id}` : ''}`
-                      : ''}
-                  </p>
-                </div>
-                {a.actor_name ? (
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <EmployeeAvatar role={a.actor_role} size="sm" />
-                    <span className="truncate">{a.actor_name}</span>
-                    {a.actor_role ? (
-                      <span className="shrink-0 text-foreground-subtle">
-                        · {t(`roles.${a.actor_role}`)}
-                      </span>
-                    ) : null}
-                  </span>
-                ) : null}
-                {a.after_json ? (
-                  <span className="text-caption max-w-72 truncate" dir="ltr" title={a.after_json}>
-                    {a.after_json}
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   )
 }

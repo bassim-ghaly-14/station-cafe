@@ -1,7 +1,7 @@
 import { CURRENCY_LABEL, formatMinorMoney } from '@/lib/money'
 import { createStationReportSheet, downloadStationWorkbook, type ReportColumn } from './excelReport'
 import i18n from '@/lib/i18n'
-import type { AnalyticsChart } from './analyticsCharts'
+import { CATEGORY_LABEL_PREFIX, type AnalyticsChart } from './analyticsCharts'
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -10,6 +10,23 @@ function download(blob: Blob, filename: string) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+/**
+ * Resolved here rather than in the chart model: the exporters run outside React
+ * (canvas + xlsx), so they read the same catalogue through the i18n singleton.
+ * Titles and category labels therefore print identically to the screen.
+ */
+function chartTitle(chart: AnalyticsChart) {
+  return i18n.t(`reports.charts.${chart.titleKey}`)
+}
+
+function chartDescription(chart: AnalyticsChart) {
+  return i18n.t(`reports.charts.${chart.descriptionKey}`)
+}
+
+function categoryLabel(key: string) {
+  return i18n.t(`${CATEGORY_LABEL_PREFIX}${key}`)
 }
 
 export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) {
@@ -29,10 +46,10 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
   context.textAlign = 'right'
   context.fillStyle = strongText
   context.font = '700 42px Cairo, sans-serif'
-  context.fillText(chart.title, 1120, 90)
+  context.fillText(chartTitle(chart), 1120, 90)
   context.fillStyle = subtleText
   context.font = '24px Cairo, sans-serif'
-  context.fillText(chart.description, 1120, 135)
+  context.fillText(chartDescription(chart), 1120, 135)
   context.fillText(`الفترة: ${period}`, 1120, 180)
   const segmentColors = chart.categories.map((category) => {
     const token = category.color.match(/^var\((--[^)]+)\)$/)?.[1]
@@ -73,7 +90,7 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
     context.fillStyle = strongText
     context.font = '22px Cairo, sans-serif'
     context.fillText(
-      `${category.label} — ${formatMinorMoney(category.value, { compact: true })} (${Math.round((category.value / total) * 100)}%)`,
+      `${categoryLabel(category.labelKey)} — ${formatMinorMoney(category.value, { compact: true })} (${Math.round((category.value / total) * 100)}%)`,
       1080,
       y,
     )
@@ -96,7 +113,7 @@ export function exportAnalyticsExcel(chart: AnalyticsChart, period: string) {
     { header: 'النسبة', align: 'right', format: 'percent' },
   ]
   const rows = chart.categories.map((category) => [
-    category.label,
+    categoryLabel(category.labelKey),
     category.value / 100,
     category.value / chart.total,
   ])
@@ -108,8 +125,8 @@ export function exportAnalyticsExcel(chart: AnalyticsChart, period: string) {
     total: i18n.t('reports.charts.total'),
   }
   const { book } = createStationReportSheet({
-    title: chart.title,
-    description: chart.description,
+    title: chartTitle(chart),
+    description: chartDescription(chart),
     period,
     columns,
     rows,

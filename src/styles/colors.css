@@ -167,6 +167,13 @@
   --state-disabled: #96673a;
   --state-selected: #f3ead9;
 
+  /* Data-visualization surfaces. Charts and empty analytics states read these
+     instead of hardcoding grid/motif colors, so light and dark stay in step. */
+  --chart-frame: #d9b98f; /* plot frame / axis outline */
+  --chart-grid: #f0e4d1; /* gridlines */
+  --chart-motif: #f3ead9; /* decorative, non-data-bearing fills */
+  --chart-motif-strong: #e6d5b8; /* decorative accents with more presence */
+
   /* Badge and skeleton surfaces: one definition for every compact status UI. */
   --badge-neutral-bg: #faf6f0;
   --badge-neutral-border: #e6d5b8;
@@ -334,6 +341,11 @@
   --state-disabled: #77736d;
   --state-selected: #3a2d21;
 
+  --chart-frame: #49443e;
+  --chart-grid: #2c2a26;
+  --chart-motif: #25231f;
+  --chart-motif-strong: #33302b;
+
   --badge-neutral-bg: #25231f;
   --badge-neutral-border: #45413b;
   --badge-neutral-fg: #c8c0b5;
@@ -496,6 +508,11 @@
   --color-info-solid-hover: var(--info-solid-hover);
   --color-info-solid-active: var(--info-solid-active);
   --color-info-solid-foreground: var(--info-solid-foreground);
+
+  --color-chart-frame: var(--chart-frame);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-motif: var(--chart-motif);
+  --color-chart-motif-strong: var(--chart-motif-strong);
 
   --color-state-active: var(--state-active);
   --color-state-inactive: var(--state-inactive);

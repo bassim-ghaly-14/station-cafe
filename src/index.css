@@ -259,6 +259,29 @@ select:focus-visible {
   animation-play-state: paused;
 }
 
+@keyframes progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+.progress-sweep {
+  animation: progress-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-sweep {
+    animation: none;
+    inset-inline-start: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .boot-logo-enter,
   .boot-logo-breathe,

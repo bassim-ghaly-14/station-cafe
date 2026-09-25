@@ -59,6 +59,56 @@ export function TableSkeleton({
   )
 }
 
+/**
+ * Chart-grid loading placeholder.
+ *
+ * A chart surface is not a table, so a table skeleton is the wrong metaphor:
+ * it reserves the wrong space and implies columns that do not exist. This
+ * mirrors the real donut layout — header, square plot, legend rows — so the
+ * grid does not reflow when the report resolves. The whole block is one
+ * accessible status; the individual bars are decorative.
+ */
+export function ChartGridSkeleton({
+  charts = 3,
+  className,
+}: {
+  charts?: number
+  className?: string
+}) {
+  return (
+    <div
+      className={className}
+      role="status"
+      aria-label="جارٍ تحميل الرسوم البيانية"
+      aria-busy="true"
+    >
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: charts }, (_, index) => (
+          <Card key={index} className="min-h-88 space-y-5 p-5">
+            <div className="flex items-center gap-3">
+              <Skeleton variant="rect" className="size-10" accessibilityLabel="" />
+              <div className="flex-1 space-y-2">
+                <Skeleton variant="text" className="w-3/5" accessibilityLabel="" />
+                <Skeleton variant="text" className="h-3 w-2/5" accessibilityLabel="" />
+              </div>
+            </div>
+            <Skeleton variant="rect" className="mx-auto aspect-square w-56" accessibilityLabel="" />
+            <div className="space-y-2.5 border-t border-border-subtle pt-3">
+              {Array.from({ length: 2 }, (_, legendIndex) => (
+                <div key={legendIndex} className="flex items-center justify-between gap-3">
+                  <Skeleton variant="text" className="h-3 w-1/3" accessibilityLabel="" />
+                  <Skeleton variant="text" className="h-3 w-1/4" accessibilityLabel="" />
+                </div>
+              ))}
+            </div>
+          </Card>
+        ))}
+      </div>
+      <span className="sr-only">جارٍ تحميل الرسوم البيانية</span>
+    </div>
+  )
+}
+
 export function CardGridSkeleton({ cards = 6, className }: { cards?: number; className?: string }) {
   return (
     <div className={className} aria-label="جارٍ تحميل البيانات">
