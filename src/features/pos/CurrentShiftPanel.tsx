@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Card, Dialog, MoneyDisplay, useToast } from '@/components/ui'
-import { Clock, Eye, Lock, User } from '@/components/ui/icon'
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  EmployeeAvatar,
+  MoneyDisplay,
+  useToast,
+} from '@/components/ui'
+import { DisplayDateTime } from '@/components/ui/display-datetime'
+import { Clock, Eye, Lock } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
-import { formatSqlDateTime } from '@/lib/date'
 import { parseMajor } from '@/lib/utils'
 import { shiftApi, type ShiftClosingPreview, type ShiftRow } from '@/services/shiftApi'
 import { api } from '@/services/posApi'
@@ -119,20 +127,24 @@ export function CurrentShiftPanel({
   return (
     <>
       <Card className="flex h-full flex-col overflow-hidden p-0">
-        <div className="flex items-start justify-between gap-4 border-b border-border-subtle bg-surface-muted/50 px-4 py-3">
+        <div className="flex items-start justify-between gap-4 border-b border-border-subtle bg-surface-muted px-4 py-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-section">{t('shift.current')}</h2>
-              <Badge tone="success">{t('shift.open')}</Badge>
+              <Badge variant="success" size="sm" dot>
+                {t('shift.open')}
+              </Badge>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption">
-              <span className="flex items-center gap-1.5">
-                <User size={14} aria-hidden />
-                {shift.user_name ?? '—'}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <EmployeeAvatar role={shift.user_role} size="sm" />
+                <span className="truncate">{shift.user_name ?? '—'}</span>
               </span>
-              <span className="flex items-center gap-1.5">
-                <Clock size={14} aria-hidden />
-                <span dir="ltr">{formatSqlDateTime(shift.opened_at)}</span>
+              {/* A long localized date wraps onto its own line instead of
+                  colliding with the time, the AM/PM marker or the separator. */}
+              <span className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <Clock size={14} aria-hidden className="shrink-0" />
+                <DisplayDateTime value={shift.opened_at} />
                 <span>
                   · {t('shift.elapsed', { hours: Math.floor(elapsed / 60), minutes: elapsed % 60 })}
                 </span>
@@ -145,9 +157,13 @@ export function CurrentShiftPanel({
         </div>
         <div className="grid flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <section className="flex flex-col justify-center rounded-md bg-primary px-4 py-3 text-primary-foreground">
-            <p className="text-sm font-medium opacity-90">{t('shift.sales')}</p>
-            <MoneyDisplay amount={totalSales} className="mt-1 text-2xl font-bold tracking-tight" />
-            <p className="mt-1 text-sm opacity-90">
+            <p className="text-sm font-medium">{t('shift.sales')}</p>
+            <MoneyDisplay
+              amount={totalSales}
+              variant="auto"
+              className="mt-1 text-2xl font-bold tracking-tight"
+            />
+            <p className="mt-1 text-sm">
               {t('shift.invoiceCount')}:{' '}
               <span className="font-bold tabular-nums">{shift.invoices_count}</span>
             </p>
@@ -186,18 +202,21 @@ export function CurrentShiftPanel({
             <div className="grid gap-3 rounded-md bg-surface-muted p-3 sm:grid-cols-3">
               <div>
                 <p className="text-caption">{t('shift.cashier')}</p>
-                <p className="font-bold">{preview.shift.user_name ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-caption">{t('shift.from')}</p>
-                <p className="font-bold" dir="ltr">
-                  {formatSqlDateTime(preview.shift.opened_at)}
+                <p className="flex min-w-0 items-center gap-1.5 font-bold">
+                  <EmployeeAvatar role={preview.shift.user_role} size="sm" />
+                  <span className="truncate">{preview.shift.user_name ?? '—'}</span>
                 </p>
               </div>
-              <div>
+              <div className="min-w-0">
+                <p className="text-caption">{t('shift.from')}</p>
+                <p className="min-w-0 font-bold">
+                  <DisplayDateTime value={preview.shift.opened_at} />
+                </p>
+              </div>
+              <div className="min-w-0">
                 <p className="text-caption">{t('shift.to')}</p>
-                <p className="font-bold" dir="ltr">
-                  {formatSqlDateTime(preview.closing_at)}
+                <p className="min-w-0 font-bold">
+                  <DisplayDateTime value={preview.closing_at} />
                 </p>
               </div>
             </div>
@@ -244,7 +263,7 @@ export function CurrentShiftPanel({
                 </Field>
                 {variance !== null ? (
                   <div
-                    className={`mt-3 flex items-center justify-between gap-3 rounded-md border p-3 ${variance === 0 ? 'border-success/40 bg-success-soft text-success-foreground' : variance < 0 ? 'border-destructive-soft bg-destructive-soft text-destructive-soft-foreground' : 'border-warning-soft bg-warning-soft text-warning-foreground'}`}
+                    className={`mt-3 flex items-center justify-between gap-3 rounded-md border p-3 ${variance === 0 ? 'border-success-border bg-success-soft text-success-foreground' : variance < 0 ? 'border-destructive-border bg-destructive-soft text-destructive-soft-foreground' : 'border-warning-border bg-warning-soft text-warning-foreground'}`}
                   >
                     <span className="font-bold">
                       {variance === 0

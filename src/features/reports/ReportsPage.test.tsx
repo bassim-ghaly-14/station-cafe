@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import {
   addDays,
+  formatDate,
   formatIsoDate,
   formatIsoDateLong,
   isoDate,
@@ -17,6 +18,7 @@ import {
 } from '@/lib/date'
 import { ToastProvider } from '@/components/ui'
 import ReportsPage from './ReportsPage'
+import { getMockCharts } from './charts/mockCharts'
 
 const mocks = vi.hoisted(() => ({
   salesByDay: vi.fn(),
@@ -112,6 +114,84 @@ describe('ReportsPage period filter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'مسح' }))
 
     await waitFor(() => expect(mocks.salesByDay).toHaveBeenLastCalledWith('', ''))
+  })
+
+  it('shows the three static analytics charts with the shared period control', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
+
+    expect(screen.getByRole('button', { name: /الفترة الزمنية/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'المغسلة مقابل الكافيه' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'كاش مقابل فيزا' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'المبيعات مقابل المصروفات' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'إجراءات تصدير الرسوم البيانية' })[0])
+    expect(screen.getByRole('menuitem', { name: 'تصدير كصورة PNG' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'تصدير Excel' })).toBeInTheDocument()
+  })
+
+  it('uses only existing Station semantic tokens for chart segments', () => {
+    const colors = getMockCharts().data.flatMap((chart) =>
+      chart.categories.map((category) => category.color),
+    )
+
+    expect(colors).toEqual([
+      'var(--primary)',
+      'var(--info)',
+      'var(--success)',
+      'var(--info)',
+      'var(--success)',
+      'var(--destructive)',
+    ])
+    expect(colors.some((color) => color.includes(['--', 'chart-'].join('')))).toBe(false)
+  })
+
+  it('opens only the selected chart in fullscreen and closes it again', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
+
+    const fullscreenButtons = screen.getAllByRole('button', {
+      name: /تكبير الرسم البياني:/,
+    })
+    expect(fullscreenButtons).toHaveLength(3)
+
+    fullscreenButtons[1].focus()
+    fireEvent.click(fullscreenButtons[1])
+    const dialog = screen.getByRole('dialog', { name: 'تكبير الرسم البياني' })
+    expect(within(dialog).getByRole('heading', { name: 'كاش مقابل فيزا' })).toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('heading', { name: 'المغسلة مقابل الكافيه' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('heading', { name: 'المبيعات مقابل المصروفات' }),
+    ).not.toBeInTheDocument()
+    // The period is a presentation value: it goes through the central date
+    // formatter, not the raw ISO strings.
+    expect(
+      within(dialog).getByText(`الفترة: ${formatDate(weekAgo)} — ${formatDate(today)}`),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByRole('img', { name: /كاش مقابل فيزا:/ })).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'إجراءات تصدير الرسوم البيانية' }),
+    ).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق' }))
+    expect(screen.queryByRole('dialog', { name: 'تكبير الرسم البياني' })).not.toBeInTheDocument()
+    await waitFor(() => expect(fullscreenButtons[1]).toHaveFocus())
+  })
+
+  it('closes fullscreen with Escape', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /تكبير الرسم البياني:/ })[0])
+
+    expect(screen.getByRole('dialog', { name: 'تكبير الرسم البياني' })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'تكبير الرسم البياني' })).not.toBeInTheDocument()
   })
 
   it('shares the applied period with the product sales tab', async () => {

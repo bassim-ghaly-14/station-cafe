@@ -64,7 +64,7 @@ export function ShiftGate({ state, onReady }: { state: DayShiftState; onReady: (
           disabled={opening}
           loading={opening}
           onClick={() => void start()}
-          className="bg-success hover:bg-success/90 active:bg-success/80"
+          className="bg-success-solid text-success-solid-foreground hover:bg-success-solid-hover active:bg-success-solid-active"
         >
           {!opening ? <Power size={20} aria-hidden /> : null}
           {t('shift.openShift')}

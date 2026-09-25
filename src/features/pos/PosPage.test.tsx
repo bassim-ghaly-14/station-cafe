@@ -3,10 +3,11 @@
  * The card container selects/inspects only; open/start/close/takeaway mutate.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
 import '@/lib/i18n'
+import { resetFormattingPreferences, updateDateSettings } from '@/lib/formatting'
 import PosPage, { TableCard } from './PosPage'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
 import { DayClosingPanel } from './DayClosingPanel'
@@ -259,13 +260,13 @@ describe('TableCard lifecycle UX', () => {
   it('shows EMPTY red vs OCCUPIED green status semantics', () => {
     const { unmount } = renderCard(table({ status: 'EMPTY' }))
 
-    expect(screen.getByText('فارغة').className).toMatch(/destructive/)
+    expect(screen.getByText('فارغة').parentElement?.className).toMatch(/badge-danger/)
 
     unmount()
 
     renderCard(table({ status: 'OCCUPIED', order_id: 9 }))
 
-    expect(screen.getByText('مشغولة').className).toMatch(/success/)
+    expect(screen.getByText('مشغولة').parentElement?.className).toMatch(/badge-success/)
   })
 })
 
@@ -663,6 +664,8 @@ describe('print preview action beside the pay action', () => {
 })
 
 describe('shift lifecycle UI', () => {
+  // Display formatting is global state — restore it so these cases stay isolated.
+  afterEach(() => resetFormattingPreferences())
   const shift: ShiftRow = {
     id: 7,
     business_day_id: 1,
@@ -733,9 +736,14 @@ describe('shift lifecycle UI', () => {
       </ToastProvider>,
     )
 
-    expect(screen.getByText('24/09/2026 16:00')).toBeInTheDocument()
+    // The date and the time are separate slots in the closing card, so they are
+    // asserted as separate elements (a long localized date must never merge
+    // with the time or the separator).
+    expect(screen.getByText('24/09/2026')).toBeInTheDocument()
+    expect(screen.getByText('16:00')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
-    expect(await screen.findByText('25/09/2026 01:30')).toBeInTheDocument()
+    expect(await screen.findByText('25/09/2026')).toBeInTheDocument()
+    expect(await screen.findByText('01:30')).toBeInTheDocument()
 
     const input = screen.getByPlaceholderText('0.00')
     fireEvent.change(input, { target: { value: '30' } })
@@ -764,7 +772,49 @@ describe('shift lifecycle UI', () => {
     const buttons = screen.getAllByRole('button', { name: /تقفيل الوردية/ })
     fireEvent.click(buttons[buttons.length - 1])
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('حدث خطأ غير متوقع، حاول مرة أخرى')
+    // The backend rejection is surfaced verbatim through the error map
+    // (`errors.shift.not_open`), not as a generic failure.
+    expect(await screen.findByRole('alert')).toHaveTextContent('لا توجد وردية مفتوحة')
+  })
+
+  // Regression: with DD MMM YYYY + 12h the date and time have very different
+  // widths, and the Arabic AM/PM marker must not be reordered against them.
+  // The fix is structural — the card composes separate, isolated slots — so the
+  // assertion is that the parts are distinct elements, never one merged blob.
+  it.each([
+    ['DD/MM/YYYY', '24/09/2026', '16:00'],
+    ['DD MMM YYYY', '24 سبتمبر 2026', '16:00'],
+    ['YYYY-MM-DD', '2026-09-24', '16:00'],
+    ['DD-MM-YYYY', '24-09-2026', '16:00'],
+    ['MM/DD/YYYY', '09/24/2026', '16:00'],
+    ['MMM DD, YYYY', 'سبتمبر 24, 2026', '16:00'],
+  ])('keeps the closing card composed under %s', (dateFormat, expectedDate, expectedTime) => {
+    updateDateSettings({ dateFormat: dateFormat as 'DD/MM/YYYY', timeFormat: '24h' })
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    const date = screen.getByText(expectedDate)
+    const time = screen.getByText(expectedTime)
+    // Separate elements, each isolated from the surrounding RTL direction.
+    expect(date).not.toBe(time)
+    expect(date).toHaveAttribute('dir', 'ltr')
+    expect(time).toHaveAttribute('dir', 'ltr')
+    expect(date.closest('span[dir="ltr"]')).not.toBe(time.closest('span[dir="ltr"]'))
+  })
+
+  it('renders a 12-hour AM/PM time beside a long localized date without merging', () => {
+    updateDateSettings({ dateFormat: 'DD MMM YYYY', timeFormat: '12h' })
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    // The date is its own slot and the 12-hour time is its own slot, so the
+    // localized meridiem can never be reordered into the middle of the date.
+    expect(screen.getByText('24 سبتمبر 2026')).toBeInTheDocument()
+    expect(screen.getByText(/4:00/).textContent).toContain('4:00')
   })
 })
 
@@ -864,7 +914,9 @@ describe('day closing UI', () => {
     )
     fireEvent.click(await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ }))
     fireEvent.click(screen.getByRole('button', { name: /معاينة قبل الطباعة/ }))
-    expect(await screen.findByText('تقرير يوم العمل')).toBeInTheDocument()
+    // The document title appears in the dialog subtitle AND on the rendered
+    // paper, so assert both occurrences rather than assuming a single match.
+    await waitFor(() => expect(screen.getAllByText('تقرير يوم العمل')).toHaveLength(2))
     expect(mocks.printPreviewDay).toHaveBeenCalledWith(1)
     expect(mocks.closeDay).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /تأكيد حفظ التسوية/ }))

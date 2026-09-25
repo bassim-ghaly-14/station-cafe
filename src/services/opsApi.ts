@@ -30,6 +30,7 @@ export interface Expense {
   is_recurring: boolean
   recurrence: string | null
   user_name: string | null
+  user_role: string | null
   created_at: string
 }
 

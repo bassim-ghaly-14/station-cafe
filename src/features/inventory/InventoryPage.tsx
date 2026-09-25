@@ -4,8 +4,16 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { Badge, Button, Card, CardHeader, Dialog } from '@/components/ui'
+import { EmptyState, ErrorState } from '@/components/states'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Dialog,
+  DisplayDateTime,
+  ListRowsSkeleton,
+} from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Boxes, Save, SlidersHorizontal } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
@@ -57,7 +65,7 @@ export default function InventoryPage() {
         stockErr ? (
           <ErrorState message={stockErr} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <ListRowsSkeleton rows={5} />
         )
       ) : stock.length === 0 ? (
         <EmptyState title={t('inventory.empty')} />
@@ -82,7 +90,11 @@ export default function InventoryPage() {
                   >
                     {s.quantity}
                   </span>
-                  {low ? <Badge tone="warning">{t('inventory.low')}</Badge> : null}
+                  {low ? (
+                    <Badge variant="warning" size="sm" dot>
+                      {t('inventory.low')}
+                    </Badge>
+                  ) : null}
                   <Button variant="outline" size="sm" onClick={() => setAdjusting(s)}>
                     <SlidersHorizontal size={16} aria-hidden />
                     {t('inventory.adjust')}
@@ -100,7 +112,7 @@ export default function InventoryPage() {
           movErr ? (
             <ErrorState message={movErr} onRetry={load} retryLabel={t('app.retry')} />
           ) : (
-            <LoadingState />
+            <ListRowsSkeleton rows={4} />
           )
         ) : movements.length === 0 ? (
           <EmptyState title={t('inventory.noMovements')} />
@@ -110,12 +122,12 @@ export default function InventoryPage() {
               <div key={m.id} className="flex flex-wrap items-center gap-3 py-2">
                 <div className="min-w-40 flex-1">
                   <p className="text-body">{m.product_name}</p>
-                  <p className="text-caption" dir="ltr">
-                    {m.created_at}
+                  <p className="min-w-0 text-caption">
+                    <DisplayDateTime value={m.created_at} separator="" />
                     {m.note ? ` · ${t([`inventory.note.${m.note}`, m.note])}` : ''}
                   </p>
                 </div>
-                <Badge tone={m.change > 0 ? 'success' : 'danger'}>
+                <Badge variant={m.change > 0 ? 'success' : 'danger'} size="sm" dot>
                   {t(`inventory.reason.${m.reason}`)}
                 </Badge>
                 <span
@@ -194,7 +206,7 @@ function AdjustStockDialog({
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value as typeof reason)}
-            className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base"
+            className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-base"
           >
             {STOCK_REASONS.map((r) => (
               <option key={r} value={r}>

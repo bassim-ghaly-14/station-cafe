@@ -4,12 +4,26 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { Badge, Button, Card, CardHeader, DateRangePicker, MoneyDisplay } from '@/components/ui'
+import { EmptyState, ErrorState } from '@/components/states'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  DateRangePicker,
+  EmployeeAvatar,
+  MoneyDisplay,
+  TableSkeleton,
+} from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
 import { BarChart3, Printer } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
-import { addDays, formatSqlDateTime, todayIso } from '@/lib/date'
+import {
+  DisplayDate,
+  DisplayDateTime,
+  DisplayDateTimeRange,
+} from '@/components/ui/display-datetime'
+import { addDays, todayIso } from '@/lib/date'
 import {
   opsApi,
   type AuditEntry,
@@ -17,11 +31,14 @@ import {
   type ProductSales,
   type SalesByDay,
 } from '@/services/opsApi'
+import { printJobBadgeVariant } from '@/lib/status-badge'
 import { useErrText } from '@/lib/err'
+import { useAnalyticsCharts } from './charts/mockCharts'
+import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
 import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
 import type { ShiftRow } from '@/services/shiftApi'
 
-type Tab = 'sales' | 'products' | 'audit' | 'print' | 'shiftClosings' | 'dayClosings'
+type Tab = 'sales' | 'products' | 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts'
 const RANGE_KEY = 'station.reports.dateRange'
 
 function initialRange(): { from: string; to: string } {
@@ -59,6 +76,7 @@ export default function ReportsPage() {
     { id: 'print', label: t('reports.printJobs') },
     { id: 'shiftClosings', label: t('reports.shiftClosings') },
     { id: 'dayClosings', label: t('reports.dayClosings') },
+    { id: 'charts', label: t('reports.charts.title') },
   ]
 
   return (
@@ -100,6 +118,33 @@ export default function ReportsPage() {
       {tab === 'dayClosings' ? (
         <ClosingReports kind="day" from={from} to={to} setFrom={setFrom} setTo={setTo} />
       ) : null}
+      {tab === 'charts' ? (
+        <ChartsReport from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      ) : null}
+    </div>
+  )
+}
+
+function ChartsReport({
+  from,
+  to,
+  setFrom,
+  setTo,
+}: {
+  from: string
+  to: string
+  setFrom: (v: string) => void
+  setTo: (v: string) => void
+}) {
+  const report = useAnalyticsCharts()
+  return (
+    <div className="flex flex-col gap-4">
+      <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {report.data.map((chart) => (
+          <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -173,7 +218,7 @@ function SalesReport({
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <TableSkeleton rows={6} columns={7} />
         )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noData')} />
@@ -195,8 +240,8 @@ function SalesReport({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.day_id} className="border-b border-border-subtle">
-                  <td className="py-2 text-body" dir="ltr">
-                    {r.day_date}
+                  <td className="py-2 text-body">
+                    <DisplayDate value={r.day_date} />
                   </td>
                   <td className="py-2">{r.invoices_count}</td>
                   <td className="py-2">
@@ -263,7 +308,7 @@ function ProductSalesReport({
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <TableSkeleton rows={6} columns={4} />
         )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noData')} />
@@ -353,11 +398,14 @@ function ClosingReports({
             {shifts.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-3 py-3">
                 <div className="min-w-48 flex-1">
-                  <p className="font-bold" dir="ltr">
-                    #{s.id} · {s.user_name ?? '—'}
+                  <p className="flex min-w-0 items-center gap-1.5 font-bold">
+                    <span className="tabular-nums">#{s.id}</span>
+                    <span aria-hidden>·</span>
+                    <EmployeeAvatar role={s.user_role} size="sm" />
+                    <span className="truncate">{s.user_name ?? '—'}</span>
                   </p>
-                  <p className="text-caption" dir="ltr">
-                    {formatSqlDateTime(s.opened_at)} → {formatSqlDateTime(s.closed_at ?? '')}
+                  <p className="min-w-0 text-caption">
+                    <DisplayDateTimeRange from={s.opened_at} to={s.closed_at} />
                   </p>
                   <MoneyDisplay amount={s.expected_cash} />
                 </div>
@@ -379,11 +427,12 @@ function ClosingReports({
             {days.map((d) => (
               <div key={d.business_day_id} className="flex flex-wrap items-center gap-3 py-3">
                 <div className="min-w-48 flex-1">
-                  <p className="font-bold" dir="ltr">
-                    #{d.business_day_id} · {d.day_date}
+                  <p className="font-bold">
+                    <span className="tabular-nums">#{d.business_day_id}</span> ·{' '}
+                    <DisplayDate value={d.day_date} />
                   </p>
-                  <p className="text-caption" dir="ltr">
-                    {d.opened_at} → {d.closed_at}
+                  <p className="min-w-0 text-caption">
+                    <DisplayDateTimeRange from={d.opened_at} to={d.closed_at} />
                   </p>
                   <p>
                     {d.shift_count} · <MoneyDisplay amount={d.totals.total_sales} />
@@ -445,7 +494,7 @@ function AuditList() {
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <TableSkeleton rows={7} columns={3} />
         )
       ) : rows.length === 0 ? (
         <EmptyState title={t('audit.empty')} />
@@ -459,17 +508,23 @@ function AuditList() {
                   <p className="text-body font-bold">
                     {t([`audit.actions.${a.action}`, a.action])}
                   </p>
-                  <p className="text-caption" dir="ltr">
-                    {a.created_at}
+                  <p className="min-w-0 text-caption">
+                    <DisplayDateTime value={a.created_at} separator="" />
                     {a.entity_type
                       ? ` · ${a.entity_type}${a.entity_id ? `#${a.entity_id}` : ''}`
                       : ''}
                   </p>
                 </div>
                 {a.actor_name ? (
-                  <Badge tone="neutral">
-                    {a.actor_name} · {a.actor_role ? t(`roles.${a.actor_role}`) : ''}
-                  </Badge>
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <EmployeeAvatar role={a.actor_role} size="sm" />
+                    <span className="truncate">{a.actor_name}</span>
+                    {a.actor_role ? (
+                      <span className="shrink-0 text-foreground-subtle">
+                        · {t(`roles.${a.actor_role}`)}
+                      </span>
+                    ) : null}
+                  </span>
                 ) : null}
                 {a.after_json ? (
                   <span className="text-caption max-w-72 truncate" dir="ltr" title={a.after_json}>
@@ -538,7 +593,7 @@ function PrintJobsList() {
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <TableSkeleton rows={5} columns={3} />
         )
       ) : rows.length === 0 ? (
         <EmptyState title={t('reports.noPrintJobs')} />
@@ -549,19 +604,17 @@ function PrintJobsList() {
             {rows.map((j) => (
               <div key={j.id} className="flex flex-wrap items-center gap-3 py-2">
                 <div className="min-w-40 flex-1">
-                  <p className="text-body font-bold" dir="ltr">
-                    {j.doc_type} #{j.id}
+                  <p className="text-body font-bold">
+                    <span className="tabular-nums">{j.doc_type}</span>{' '}
+                    <span className="tabular-nums">#{j.id}</span>
                   </p>
-                  <p className="text-caption" dir="ltr">
-                    {j.created_at} · {t('reports.attempts')}: {j.attempts}
+                  <p className="min-w-0 text-caption">
+                    <DisplayDateTime value={j.created_at} separator="" /> · {t('reports.attempts')}:{' '}
+                    <span className="tabular-nums">{j.attempts}</span>
                   </p>
                 </div>
                 {j.error ? <span className="text-caption text-destructive">{j.error}</span> : null}
-                <Badge
-                  tone={
-                    j.status === 'DONE' ? 'success' : j.status === 'FAILED' ? 'danger' : 'warning'
-                  }
-                >
+                <Badge variant={printJobBadgeVariant(j.status)} size="sm" dot>
                   {t([`reports.job.${j.status}`, j.status])}
                 </Badge>
               </div>

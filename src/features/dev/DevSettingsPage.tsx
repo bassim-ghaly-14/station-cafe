@@ -1,12 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, CardHeader, Dialog, Field, Input, PasswordInput } from '@/components/ui'
-import { ArrowRight, Minus, Package, Plus, RefreshCw, Trash2 } from '@/components/ui/icon'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Dialog,
+  Field,
+  Input,
+  PasswordInput,
+} from '@/components/ui'
+import {
+  ArrowRight,
+  Minus,
+  Package,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Trash2,
+} from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { api, settingsApi, type CreditConfig } from '@/services/posApi'
 import { developerApi } from '@/services/developerApi'
 import { useErrText } from '@/lib/err'
+import {
+  COMPACT_THRESHOLD_OPTIONS,
+  DATE_FORMAT_OPTIONS,
+  cloneFormattingPreferences,
+  defaultFormattingPreferences,
+  formattingPreferencesEqual,
+  replaceFormattingPreferences,
+  useFormattingPreferences,
+  type FormattingPreferences,
+} from '@/lib/formatting'
 import { useSession } from '@/features/auth/useSession'
+import { FormattingPreview } from './FormattingPreview'
+
+/** Shared control styling for the formatting selects. */
+const SELECT =
+  'h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-foreground focus-visible:outline-2 focus-visible:outline-focus'
 
 export default function DevSettingsPage() {
   const { t } = useTranslation()
@@ -30,6 +63,46 @@ export default function DevSettingsPage() {
   const [busy, setBusy] = useState<'settings' | 'tables' | 'seed' | 'clear' | null>(null)
 
   const [confirmClear, setConfirmClear] = useState(false)
+
+  // ── Display formatting: draft vs saved ────────────────────────────────────
+  // Controls edit a local DRAFT. Only "Save Changes" commits it to the central
+  // store, so experimenting never changes the rest of the application.
+  // The store is only ever written from this page's own actions, so the draft
+  // is re-based explicitly in those handlers rather than by an effect.
+  const saved = useFormattingPreferences()
+  const [draft, setDraft] = useState<FormattingPreferences>(() => cloneFormattingPreferences(saved))
+
+  const formattingDirty = !formattingPreferencesEqual(draft, saved)
+
+  const patchDraft = useCallback(
+    (patch: {
+      money?: Partial<FormattingPreferences['money']>
+      date?: Partial<FormattingPreferences['date']>
+    }) => {
+      setDraft((current) => ({
+        money: { ...current.money, ...patch.money },
+        date: { ...current.date, ...patch.date },
+      }))
+    },
+    [],
+  )
+
+  const saveFormatting = () => {
+    replaceFormattingPreferences(draft)
+    // Re-base the draft on a detached copy so later edits never alias the store.
+    setDraft(cloneFormattingPreferences(draft))
+    toast(t('dev.formattingSaved'), 'success')
+  }
+
+  const resetDraft = () => {
+    setDraft(cloneFormattingPreferences(saved))
+  }
+
+  // Defaults land in the DRAFT (not the store) so they are previewed and saved
+  // like any other edit. No unrelated Dev Settings are touched.
+  const loadDefaultsIntoDraft = () => {
+    setDraft(defaultFormattingPreferences())
+  }
 
   useEffect(() => {
     if (user?.role !== 'ADMIN') return
@@ -258,7 +331,7 @@ export default function DevSettingsPage() {
                   className="
                     h-10 w-full rounded-md
                     border border-border-strong
-                    bg-surface px-3
+                    bg-surface-input px-3
                     text-foreground
                     focus-visible:outline-2
                     focus-visible:outline-offset-1
@@ -336,6 +409,181 @@ export default function DevSettingsPage() {
         <Button className="mt-4" loading={busy === 'settings'} onClick={() => void saveSettings()}>
           {t('dev.save')}
         </Button>
+      </Card>
+
+      {/* Global display formatting */}
+      <Card>
+        <CardHeader
+          title={t('dev.displayFormatting')}
+          subtitle={t('dev.displayFormattingDescription')}
+        />
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="flex flex-col gap-4">
+            <h3 className="font-bold text-foreground">{t('dev.moneyFormatting')}</h3>
+            <Field label={t('dev.decimalPlaces')}>
+              <select
+                aria-label={t('dev.decimalPlaces')}
+                className={SELECT}
+                value={draft.money.decimalPlaces}
+                onChange={(e) =>
+                  patchDraft({ money: { decimalPlaces: Number(e.target.value) as 0 | 1 | 2 } })
+                }
+              >
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+              </select>
+            </Field>
+            <Field label={t('dev.thousandsSeparator')}>
+              <input
+                type="checkbox"
+                aria-label={t('dev.thousandsSeparator')}
+                checked={draft.money.useThousandsSeparator}
+                onChange={(e) => patchDraft({ money: { useThousandsSeparator: e.target.checked } })}
+              />
+            </Field>
+            <Field label={t('dev.showCurrency')}>
+              <input
+                type="checkbox"
+                aria-label={t('dev.showCurrency')}
+                checked={draft.money.showCurrency}
+                onChange={(e) => patchDraft({ money: { showCurrency: e.target.checked } })}
+              />
+            </Field>
+            <Field label={t('dev.currencyPosition')}>
+              <select
+                aria-label={t('dev.currencyPosition')}
+                className={SELECT}
+                value={draft.money.currencyPosition}
+                onChange={(e) =>
+                  patchDraft({ money: { currencyPosition: e.target.value as 'after' | 'before' } })
+                }
+              >
+                <option value="after">{t('dev.currencyAfter')}</option>
+                <option value="before">{t('dev.currencyBefore')}</option>
+              </select>
+            </Field>
+            <Field label={t('dev.compactValues')}>
+              <input
+                type="checkbox"
+                aria-label={t('dev.compactValues')}
+                checked={draft.money.compactLargeValues}
+                onChange={(e) => patchDraft({ money: { compactLargeValues: e.target.checked } })}
+              />
+            </Field>
+            <Field label={t('dev.compactThreshold')} hint={t('dev.compactThresholdHelp')}>
+              <select
+                aria-label={t('dev.compactThreshold')}
+                className={SELECT}
+                value={draft.money.compactThreshold}
+                onChange={(e) =>
+                  patchDraft({ money: { compactThreshold: Number(e.target.value) } })
+                }
+              >
+                {COMPACT_THRESHOLD_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value.toLocaleString('en-US')}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <h3 className="font-bold text-foreground">{t('dev.dateTimeFormatting')}</h3>
+            <Field label={t('dev.dateFormat')}>
+              <select
+                aria-label={t('dev.dateFormat')}
+                className={SELECT}
+                value={draft.date.dateFormat}
+                onChange={(e) =>
+                  patchDraft({
+                    date: {
+                      dateFormat: e.target.value as FormattingPreferences['date']['dateFormat'],
+                    },
+                  })
+                }
+              >
+                {DATE_FORMAT_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t('dev.timeFormat')}>
+              <select
+                aria-label={t('dev.timeFormat')}
+                className={SELECT}
+                value={draft.date.timeFormat}
+                onChange={(e) =>
+                  patchDraft({ date: { timeFormat: e.target.value as '12h' | '24h' } })
+                }
+              >
+                <option value="24h">24h</option>
+                <option value="12h">12h</option>
+              </select>
+            </Field>
+            <Field label={t('dev.showSeconds')}>
+              <input
+                type="checkbox"
+                aria-label={t('dev.showSeconds')}
+                checked={draft.date.showSeconds}
+                onChange={(e) => patchDraft({ date: { showSeconds: e.target.checked } })}
+              />
+            </Field>
+
+            {/* The preview reads the DRAFT, so it updates on every change while the
+            rest of the application keeps using the saved preferences. */}
+            <div className="mt-6 flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex flex-wrap items-center gap-2 font-bold text-foreground">
+                  {t('dev.preview')}
+                  {formattingDirty ? (
+                    <Badge
+                      data-testid="formatting-dirty"
+                      variant="warning"
+                      size="sm"
+                      shape="pill"
+                      dot
+                    >
+                      {t('dev.unsavedChanges')}
+                    </Badge>
+                  ) : null}
+                </h3>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={resetDraft}
+                    disabled={!formattingDirty}
+                    data-testid="formatting-reset-draft"
+                  >
+                    <RotateCcw size={16} aria-hidden />
+                    {t('dev.resetChanges')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={loadDefaultsIntoDraft}
+                    data-testid="formatting-load-defaults"
+                  >
+                    {t('dev.resetFormatting')}
+                  </Button>
+                  <Button
+                    onClick={saveFormatting}
+                    disabled={!formattingDirty}
+                    data-testid="formatting-save"
+                  >
+                    <Save size={16} aria-hidden />
+                    {t('dev.saveFormatting')}
+                  </Button>
+                </div>
+              </div>
+
+              <FormattingPreview draft={draft} />
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* Tables */}

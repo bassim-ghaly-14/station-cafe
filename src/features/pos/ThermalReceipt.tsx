@@ -53,7 +53,7 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
       data-testid="print-receipt-paper"
       data-paper-mm={preview.paper_mm}
       data-width-chars={preview.width_chars}
-      className="receipt-paper relative box-border w-full overflow-hidden border border-[#d8cbb8] bg-[#fffdf8] font-mono text-[#211c17] shadow-[0_18px_45px_-18px_rgba(43,29,18,0.45)]"
+      className="receipt-paper relative box-border w-full overflow-hidden border border-print-border bg-print-paper font-mono text-print-ink shadow-paper"
       style={{ width: `${preview.paper_mm}mm` }}
     >
       <div className="receipt-content px-[2mm] py-[2.5mm]">
@@ -82,7 +82,7 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
                   <div
                     key={index}
                     role="separator"
-                    className="my-[1.5mm] h-px border-t border-dashed border-[#776b5e]"
+                    className="my-[1.5mm] h-px border-t border-dashed border-print-rule"
                   />
                 )
               }
@@ -119,7 +119,7 @@ function ItemColumnHeader() {
   return (
     <div
       data-testid="receipt-item-columns"
-      className="mb-[1.5mm] grid border-b border-[#776b5e] pb-[1mm] font-bold text-[#5c5146]"
+      className="mb-[1.5mm] grid border-b border-print-rule pb-[1mm] font-bold text-print-ink-muted"
       style={{ gridTemplateColumns: '22ch 3ch 7ch 7ch', columnGap: '1ch', fontSize: 7.5 }}
     >
       <span>ITEM</span>
@@ -135,7 +135,7 @@ function ItemRow({ op }: { op: PreviewItemOp }) {
     <div
       data-testid="receipt-item-row"
       dir="ltr"
-      className="grid min-h-[5mm] items-start border-b border-[#ded5c8] py-[1mm] last:border-b-0"
+      className="grid min-h-[5mm] items-start border-b border-print-rule-subtle py-[1mm] last:border-b-0"
       style={{ gridTemplateColumns: '22ch 3ch 7ch 7ch', columnGap: '1ch', fontSize: BODY_SIZE }}
     >
       <span dir="auto" className="min-w-0 wrap-anywhere font-semibold leading-tight">
@@ -157,7 +157,7 @@ function FinancialRow({ op }: { op: PreviewFinancialOp }) {
       dir="rtl"
       className={
         op.total
-          ? 'my-[2.5mm] grid grid-cols-[1fr_auto] items-baseline gap-[2ch] border-y-2 border-[#211c17] bg-[#f4eee4] px-[2mm] py-[2mm] text-[#17130f]'
+          ? 'my-[2.5mm] grid grid-cols-[1fr_auto] items-baseline gap-[2ch] border-y-2 border-print-ink bg-print-total-bg px-[2mm] py-[2mm] text-print-total-ink'
           : 'grid grid-cols-[1fr_auto] items-baseline gap-[2ch] px-[1mm] py-[0.7mm]'
       }
       style={{
@@ -207,5 +207,5 @@ function ScreenLogo({ align }: { align: 'left' | 'center' | 'right' }) {
 }
 
 function PaperCut() {
-  return <div data-testid="print-paper-cut" className="mt-[4mm] h-1.75 bg-[#776b5e]" />
+  return <div data-testid="print-paper-cut" className="mt-[4mm] h-1.75 bg-print-rule" />
 }

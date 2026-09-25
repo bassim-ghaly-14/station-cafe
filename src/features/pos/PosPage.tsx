@@ -3,9 +3,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Card, CardHeader, Dialog, MoneyDisplay } from '@/components/ui'
+import { Badge, Button, Card, CardHeader, Dialog, DisplayTime, MoneyDisplay } from '@/components/ui'
 import { ClipboardList, DoorClosed, DoorOpen, Receipt, ShoppingBag } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
+import { Loader } from '@/components/ui'
 import { useToast } from '@/components/ui'
 import {
   api,
@@ -17,6 +18,7 @@ import {
   type TakeawayView,
 } from '@/services/posApi'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
+import { tableBadgeVariant } from '@/lib/status-badge'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
 import { DayClosingPanel } from './DayClosingPanel'
@@ -31,7 +33,8 @@ import { TodayInvoices } from './TodayInvoices'
  * These actions mutate POS state and therefore intentionally use the
  * success identity with white content.
  */
-const startActionClassName = 'bg-success text-white hover:bg-success/90 active:bg-success/80'
+const startActionClassName =
+  'bg-success-solid text-success-solid-foreground hover:bg-success-solid-hover active:bg-success-solid-active'
 
 export default function PosPage() {
   const { t } = useTranslation()
@@ -88,9 +91,17 @@ export default function PosPage() {
     return <ErrorState message={error} onRetry={() => void refresh()} retryLabel={t('app.retry')} />
   }
 
-  if (!tables) return <p>{t('app.loading')}</p>
-
-  if (!shiftState) return <p>{t('app.loading')}</p>
+  if (!tables || !shiftState) {
+    return (
+      <div
+        role="status"
+        aria-label={t('app.loading')}
+        className="flex min-h-64 justify-center py-16"
+      >
+        <Loader size="lg" />
+      </div>
+    )
+  }
 
   if (!shiftState.day || !shiftState.my_shift) {
     return (
@@ -332,8 +343,7 @@ export default function PosPage() {
             <>
               {takeawayActive ? (
                 <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
-                  <Badge tone="info">
-                    <ShoppingBag size={14} aria-hidden />
+                  <Badge variant="info" size="sm" icon={ShoppingBag} dot>
                     {t('pos.takeawayActive')}
                   </Badge>
 
@@ -450,11 +460,11 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
       data-testid="takeaway-card"
       className={[
         'group relative flex min-h-56 flex-col overflow-hidden',
-        'rounded-lg border border-info/30',
-        'bg-info/10 p-4 text-start',
+        'rounded-lg border border-info-border',
+        'bg-info-soft p-4 text-start',
         'transition-[border-color,background-color,box-shadow]',
         'duration-200',
-        'hover:border-info/50 hover:bg-info/15',
+        'hover:border-info hover:bg-info-soft-hover',
         'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus',
       ].join(' ')}
     >
@@ -478,8 +488,8 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
           aria-hidden
           className={[
             'flex size-11 shrink-0 items-center justify-center',
-            'rounded-md border border-info/30',
-            'bg-info/10 text-info',
+            'rounded-md border border-info-border',
+            'bg-info-soft text-info',
             'transition-transform duration-200',
             'group-hover:scale-105',
           ].join(' ')}
@@ -493,8 +503,8 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
         className={[
           'relative mt-4 flex flex-1 flex-col justify-center',
           'overflow-hidden rounded-md',
-          'border border-border/80',
-          'bg-background/50',
+          'border border-border',
+          'bg-surface-muted',
           'px-3 py-3',
         ].join(' ')}
       >
@@ -512,7 +522,7 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
         <div className="flex items-center gap-3 px-1">
           <div
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-info/10 text-info"
+            className="flex size-9 shrink-0 items-center justify-center rounded-md bg-info-soft text-info"
           >
             <ShoppingBag size={18} />
           </div>
@@ -526,7 +536,7 @@ export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => 
           </div>
         </div>
 
-        <div aria-hidden className="mt-3 border-t border-dashed border-border/80" />
+        <div aria-hidden className="mt-3 border-t border-dashed border-border" />
       </div>
 
       {/* Action */}
@@ -565,7 +575,9 @@ export function OpenTakeaways({
   return (
     <section
       aria-label={t('pos.openTakeaways')}
-      className={['mb-3 rounded-md border border-info/30', 'bg-info/4', 'px-3 py-2.5'].join(' ')}
+      className={['mb-3 rounded-md border border-info-border', 'bg-info-soft px-3 py-2.5'].join(
+        ' ',
+      )}
     >
       <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-info">
         <ShoppingBag size={14} aria-hidden />
@@ -581,25 +593,25 @@ export function OpenTakeaways({
               <Button
                 variant="outline"
                 className={[
-                  'border-info/30',
+                  'border-info-border',
                   'transition-colors duration-150',
 
                   active
                     ? [
-                        'border-info',
-                        'bg-info text-white',
+                        'border-info-solid',
+                        'bg-info-solid text-info-solid-foreground',
                         'shadow-sm',
-                        'hover:border-info',
-                        'hover:bg-info/90',
-                        'active:bg-info/80',
+                        'hover:border-info-solid-hover',
+                        'hover:bg-info-solid-hover',
+                        'active:bg-info-solid-active',
                       ].join(' ')
                     : [
-                        'bg-info/3',
-                        'text-info',
-                        'hover:border-info/50',
-                        'hover:bg-info/10',
+                        'bg-info-soft',
+                        'text-info-foreground',
+                        'hover:border-info',
+                        'hover:bg-info-soft-hover',
                         'hover:text-info',
-                        'active:bg-info/16',
+                        'active:bg-info-soft-hover',
                       ].join(' '),
                 ].join(' ')}
                 size="sm"
@@ -614,16 +626,22 @@ export function OpenTakeaways({
                 </span>
 
                 {tk.opened_at ? (
-                  <span className={active ? 'text-white/70' : 'text-info/70'} dir="ltr">
-                    {tk.opened_at.slice(11, 16)}
+                  <span
+                    className={
+                      active
+                        ? 'flex items-center text-foreground'
+                        : 'flex items-center text-info-foreground'
+                    }
+                  >
+                    <DisplayTime value={tk.opened_at} />
                   </span>
                 ) : null}
 
-                <span className={active ? 'text-white/70' : 'text-info/70'}>
+                <span className={active ? 'text-foreground' : 'text-info-foreground'}>
                   {tk.items_count} {t('pos.items')}
                 </span>
 
-                <span className={active ? 'text-white' : 'text-info'}>
+                <span className={active ? 'text-foreground' : 'text-info'}>
                   <MoneyDisplay amount={tk.total_minor} />
                 </span>
               </Button>
@@ -658,14 +676,7 @@ export function TableCard({
 }) {
   const { t } = useTranslation()
 
-  const tone =
-    tv.status === 'EMPTY'
-      ? 'danger'
-      : tv.status === 'OPEN'
-        ? 'info'
-        : tv.status === 'OCCUPIED'
-          ? 'success'
-          : 'warning'
+  const variant = tableBadgeVariant(tv.status)
 
   const isEmpty = tv.status === 'EMPTY'
   const isOpen = tv.status === 'OPEN'
@@ -692,10 +703,10 @@ export function TableCard({
         'duration-200',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
         selected
-          ? 'border-primary bg-accent shadow-sm'
+          ? 'border-primary bg-surface-selected shadow-sm'
           : active
-            ? 'border-success-soft bg-success-soft/20'
-            : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-accent/60',
+            ? 'border-success-border bg-success-soft'
+            : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-surface-hover',
       ].join(' ')}
     >
       {/* Status accent */}
@@ -703,11 +714,11 @@ export function TableCard({
         aria-hidden
         className={[
           'absolute inset-y-0 inset-s-0 w-1',
-          tone === 'danger'
-            ? 'bg-danger'
-            : tone === 'info'
+          variant === 'danger'
+            ? 'bg-destructive'
+            : variant === 'info'
               ? 'bg-info'
-              : tone === 'success'
+              : variant === 'success'
                 ? 'bg-success'
                 : 'bg-warning',
         ].join(' ')}
@@ -719,7 +730,9 @@ export function TableCard({
           {tv.label}
         </p>
 
-        <Badge tone={tone}>{statusLabel}</Badge>
+        <Badge variant={variant} size="sm" dot>
+          {statusLabel}
+        </Badge>
       </div>
 
       {/* Main information */}
@@ -751,7 +764,7 @@ export function TableCard({
 
       {/* Daily counters */}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="min-w-0 rounded-md border border-border bg-background/40 px-2.5 py-2">
+        <div className="min-w-0 rounded-md border border-border bg-surface-muted px-2.5 py-2">
           <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
             {t('pos.opensToday')}
           </p>
@@ -761,7 +774,7 @@ export function TableCard({
           </p>
         </div>
 
-        <div className="min-w-0 rounded-md border border-border bg-background/40 px-2.5 py-2">
+        <div className="min-w-0 rounded-md border border-border bg-surface-muted px-2.5 py-2">
           <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
             {t('pos.closedEmptyToday')}
           </p>

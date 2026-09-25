@@ -1,11 +1,12 @@
 /** Staff management (MANAGER+). Create staff, set status, assign roles. */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Card, CardHeader } from '@/components/ui/card'
+import { EmptyState, ErrorState } from '@/components/states'
+import { Badge, Card, CardHeader, EmployeeAvatar, TableSkeleton } from '@/components/ui'
 import { Button } from '@/components/ui/button'
 import { Plus, Power } from '@/components/ui/icon'
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { useToast } from '@/components/ui/toast'
+import { staffBadgeVariant } from '@/lib/status-badge'
 import { call } from '@/services/ipc'
 import { useSession, type User } from '../auth/useSession'
 import { AddStaffDialog } from './AddStaffDialog'
@@ -57,7 +58,7 @@ export default function StaffPage() {
         {error ? (
           <ErrorState message={error} onRetry={refresh} retryLabel={t('app.retry')} />
         ) : !staff ? (
-          <LoadingState label={t('app.loading')} />
+          <TableSkeleton rows={6} columns={5} />
         ) : staff.length === 0 ? (
           <EmptyState title={t('staff.empty')} />
         ) : (
@@ -74,21 +75,22 @@ export default function StaffPage() {
             <tbody>
               {staff.map((u) => (
                 <tr key={u.id} className="border-b border-border-subtle">
-                  <td className="p-2 font-medium text-foreground-strong">{u.name}</td>
+                  <td className="p-2">
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground-strong">
+                      <EmployeeAvatar role={u.role} size="sm" />
+                      <span className="truncate">{u.name}</span>
+                    </span>
+                  </td>
                   <td className="p-2" dir="ltr">
                     {u.phone ?? '—'}
                   </td>
                   <td className="p-2">
-                    <Badge
-                      tone={
-                        u.role === 'ADMIN' ? 'danger' : u.role === 'MANAGER' ? 'info' : 'neutral'
-                      }
-                    >
+                    <Badge role={u.role} size="sm" dot>
                       {t(`roles.${u.role}`)}
                     </Badge>
                   </td>
                   <td className="p-2">
-                    <Badge tone={u.status === 'ACTIVE' ? 'success' : 'warning'}>
+                    <Badge variant={staffBadgeVariant(u.status)} size="sm" dot>
                       {u.status === 'ACTIVE' ? t('staff.active') : t('staff.suspended')}
                     </Badge>
                   </td>

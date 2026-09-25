@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, useToast } from '@/components/ui'
+import { Button, Dialog, Skeleton, useToast } from '@/components/ui'
 import { Maximize2, RotateCcw, X } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { api, type PrintOutcome, type PrintPreview } from '@/services/posApi'
@@ -137,12 +137,27 @@ export function PrintPreviewDialog({
       {error ? (
         <ErrorState message={error} onRetry={load} retryLabel={t('app.retry')} />
       ) : !preview ? (
-        <p>{t('app.loading')}</p>
+        <div
+          role="status"
+          aria-label={t('app.loading')}
+          className="flex min-h-64 items-start justify-center overflow-hidden rounded-md bg-surface-muted p-3"
+        >
+          <div className="w-64 space-y-4 rounded-sm bg-surface p-4 shadow-sm" aria-hidden="true">
+            <Skeleton variant="text" className="mx-auto w-24" accessibilityLabel="" />
+            <Skeleton variant="text" className="w-full" accessibilityLabel="" />
+            <Skeleton variant="text" className="w-4/5" accessibilityLabel="" />
+            <div className="space-y-2 border-t border-border-subtle pt-4">
+              {Array.from({ length: 5 }, (_, index) => (
+                <Skeleton key={index} variant="text" className="w-full" accessibilityLabel="" />
+              ))}
+            </div>
+          </div>
+        </div>
       ) : (
         <div
           dir="ltr"
           data-testid="print-preview-viewer"
-          className="viewer w-full min-h-0 overflow-x-hidden overflow-y-auto rounded-md bg-[#eee8df] p-3 shadow-inner"
+          className="viewer w-full min-h-0 overflow-x-hidden overflow-y-auto rounded-md bg-surface-muted p-3 shadow-inner"
         >
           <div
             data-testid="print-preview-centering"

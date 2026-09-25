@@ -1,7 +1,7 @@
 /** Manager expenses UI — list, filter by date, create. Backend authoritative. */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
+import { EmptyState, ErrorState } from '@/components/states'
 import {
   Badge,
   Button,
@@ -9,6 +9,9 @@ import {
   DatePicker,
   DateRangePicker,
   Dialog,
+  DisplayDate,
+  EmployeeAvatar,
+  ListRowsSkeleton,
   MoneyDisplay,
 } from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
@@ -72,7 +75,7 @@ export default function ExpensesPage() {
 
         <div className="ms-auto text-start">
           <p className="text-caption">{t('expenses.total')}</p>
-          <MoneyDisplay amount={total} className="text-money text-foreground-muted" />
+          <MoneyDisplay amount={total} compact className="text-money text-foreground-muted" />
         </div>
       </div>
 
@@ -80,7 +83,7 @@ export default function ExpensesPage() {
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <ListRowsSkeleton rows={5} />
         )
       ) : rows.length === 0 ? (
         <EmptyState title={t('expenses.empty')} />
@@ -91,16 +94,26 @@ export default function ExpensesPage() {
               <div className="min-w-40 flex-1">
                 <p className="text-body font-bold">{t(`expenses.cat.${r.category}`)}</p>
 
-                <p className="text-caption" dir="ltr">
-                  {r.expense_date}
-                  {r.is_recurring ? ` · ${t(`expenses.rec.${r.recurrence}`)}` : ''}
-                  {r.user_name ? ` · ${r.user_name}` : ''}
+                <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption">
+                  <DisplayDate value={r.expense_date} />
+                  {r.is_recurring ? <span>· {t(`expenses.rec.${r.recurrence}`)}</span> : null}
+                  {r.user_name ? (
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <span aria-hidden>·</span>
+                      <EmployeeAvatar role={r.user_role} size="sm" />
+                      <span className="truncate">{r.user_name}</span>
+                    </span>
+                  ) : null}
                 </p>
 
                 {r.description ? <p className="text-caption mt-1">{r.description}</p> : null}
               </div>
 
-              {r.is_recurring ? <Badge tone="info">{t('expenses.recurring')}</Badge> : null}
+              {r.is_recurring ? (
+                <Badge variant="info" size="sm" dot>
+                  {t('expenses.recurring')}
+                </Badge>
+              ) : null}
 
               <MoneyDisplay amount={r.amount} className="text-money min-w-24" />
             </Card>
@@ -186,7 +199,7 @@ function CreateExpenseDialog({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as typeof category)}
-            className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base"
+            className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-base"
           >
             {EXPENSE_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -225,7 +238,7 @@ function CreateExpenseDialog({
             <select
               value={recurrence}
               onChange={(e) => setRecurrence(e.target.value as typeof recurrence)}
-              className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base"
+              className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-base"
             >
               <option value="WEEKLY">{t('expenses.rec.WEEKLY')}</option>
               <option value="MONTHLY">{t('expenses.rec.MONTHLY')}</option>

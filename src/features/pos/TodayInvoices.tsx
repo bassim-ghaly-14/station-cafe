@@ -5,8 +5,10 @@ import { Badge, Button, Dialog, MoneyDisplay } from '@/components/ui'
 import { Eye, Printer, Search } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { ErrorState } from '@/components/states'
+import { ListRowsSkeleton } from '@/components/ui'
 import { useToast } from '@/components/ui'
 import { api, type InvoiceRow } from '@/services/posApi'
+import { invoiceBadgeVariant } from '@/lib/status-badge'
 import { shiftApi } from '@/services/shiftApi'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
 
@@ -70,7 +72,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           aria-label={t('pos.invoiceSearch')}
         />
         <select
-          className="h-10 rounded-md border border-border-strong bg-surface px-2 text-sm"
+          className="h-10 rounded-md border border-border-strong bg-surface-input px-2 text-sm"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           aria-label={t('app.status')}
@@ -83,7 +85,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
           ))}
         </select>
         <select
-          className="h-10 rounded-md border border-border-strong bg-surface px-2 text-sm"
+          className="h-10 rounded-md border border-border-strong bg-surface-input px-2 text-sm"
           value={method}
           onChange={(e) => setMethod(e.target.value)}
           aria-label={t('pay.methodLabel')}
@@ -104,7 +106,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <p>{t('app.loading')}</p>
+          <ListRowsSkeleton rows={5} />
         )
       ) : rows.length === 0 ? (
         <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noInvoices')}</p>
@@ -133,9 +135,7 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
                   · {r.customer_name ?? ''} · <span dir="ltr">{r.car_plate ?? ''}</span>
                 </span>
               </span>
-              <Badge
-                tone={r.status === 'PAID' ? 'success' : r.status === 'CREDIT' ? 'warning' : 'info'}
-              >
+              <Badge variant={invoiceBadgeVariant(r.status)} size="sm" dot>
                 {t(`invoice.status.${r.status}`)}
               </Badge>
               <MoneyDisplay amount={r.total} className="text-sm font-medium" />

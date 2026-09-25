@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/states'
-import { Badge, Button, Card, Dialog, MoneyDisplay, useToast } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  EmployeeAvatar,
+  MoneyDisplay,
+  Skeleton,
+  useToast,
+} from '@/components/ui'
+import {
+  DisplayDate,
+  DisplayDateTime,
+  DisplayDateTimeRange,
+} from '@/components/ui/display-datetime'
 import { Check, Clock, Eye, Lock, RefreshCw } from '@/components/ui/icon'
-import { formatSqlDateTime } from '@/lib/date'
 import {
   shiftApi,
   type DayClosingRecord,
@@ -12,6 +25,7 @@ import {
   type ShiftRow,
 } from '@/services/shiftApi'
 import { api } from '@/services/posApi'
+import { dayBadgeVariant } from '@/lib/status-badge'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
 
 function errorText(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
@@ -51,12 +65,13 @@ function ShiftRowItem({ shift }: { shift: ShiftRow }) {
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2.5 text-sm">
       <div className="min-w-0">
-        <p className="truncate font-bold">
-          {shift.user_name ?? '—'}{' '}
-          <span className="font-normal text-foreground-subtle">· #{shift.id}</span>
+        <p className="flex min-w-0 items-center gap-1.5 font-bold">
+          <EmployeeAvatar role={shift.user_role} size="sm" />
+          <span className="truncate">{shift.user_name ?? '—'}</span>
+          <span className="shrink-0 font-normal text-foreground-subtle">· #{shift.id}</span>
         </p>
-        <p className="text-caption" dir="ltr">
-          {formatSqlDateTime(shift.opened_at)} → {formatSqlDateTime(shift.closed_at ?? '')}
+        <p className="min-w-0 text-caption">
+          <DisplayDateTimeRange from={shift.opened_at} to={shift.closed_at} />
         </p>
       </div>
       <div className="text-end">
@@ -172,10 +187,22 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
 
   if (loading && !report)
     return (
-      <Card>
-        <p className="py-8 text-center text-foreground-muted" role="status">
+      <Card className="space-y-4 p-4" aria-label={t('settlement.loading')}>
+        <div className="flex items-center justify-between gap-3 border-b border-border-subtle pb-3">
+          <Skeleton variant="text" className="h-5 w-32" accessibilityLabel="" />
+          <Skeleton variant="text" className="h-6 w-20" accessibilityLabel="" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-28" accessibilityLabel="" />
+          <div className="space-y-3 py-1">
+            {Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={index} variant="text" className="w-full" accessibilityLabel="" />
+            ))}
+          </div>
+        </div>
+        <span className="sr-only" role="status">
           {t('settlement.loading')}
-        </p>
+        </span>
       </Card>
     )
   if (!report || !settlement)
@@ -212,17 +239,22 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
   return (
     <>
       <Card className="flex h-full flex-col overflow-hidden p-0">
-        <div className="flex items-start justify-between gap-3 border-b border-border-subtle bg-surface-muted/50 px-4 py-3">
-          <div>
+        <div className="flex min-w-0 items-start justify-between gap-3 border-b border-border-subtle bg-surface-muted px-4 py-3">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-section">{t('settlement.title')}</h2>
-              <Badge tone={report.day.status === 'OPEN' ? 'info' : 'success'}>
+              <Badge variant={dayBadgeVariant(report.day.status)} size="sm" dot>
                 {t(`settlement.dayStatus.${report.day.status}`)}
               </Badge>
             </div>
-            <p className="mt-1 text-caption">
-              <span dir="ltr">{report.day.day_date}</span> ·{' '}
-              <span dir="ltr">{formatSqlDateTime(report.day.opened_at)}</span>
+            {/* Date and time are separate slots with a real gap, so a long
+                localized date wraps instead of colliding with the time. */}
+            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption">
+              <DisplayDate value={report.day.day_date} />
+              <span aria-hidden className="shrink-0 text-foreground-faint select-none">
+                ·
+              </span>
+              <DisplayDateTime value={report.day.opened_at} separator="" />
             </p>
           </div>
           <Button
@@ -237,12 +269,12 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
         </div>
         <div className="grid flex-1 gap-4 p-4 sm:grid-cols-2">
           <section className="rounded-md bg-primary px-4 py-3 text-primary-foreground">
-            <p className="text-sm font-medium opacity-90">{t('settlement.totalSales')}</p>
+            <p className="text-sm font-medium">{t('settlement.totalSales')}</p>
             <MoneyDisplay
               amount={report.totals.total_sales}
               className="mt-1 text-2xl font-bold tracking-tight"
             />
-            <p className="mt-1 text-sm opacity-90">
+            <p className="mt-1 text-sm">
               {t('shift.invoiceCount')}:{' '}
               <span className="font-bold tabular-nums">{report.totals.invoices_count}</span>
             </p>
@@ -301,16 +333,16 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
         >
           <div className="max-h-[68vh] space-y-4 overflow-y-auto">
             <div className="grid gap-3 rounded-md bg-surface-muted p-3 sm:grid-cols-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-caption">{t('app.date')}</p>
-                <p className="font-bold" dir="ltr">
-                  {report.day.day_date}
+                <p className="min-w-0 font-bold">
+                  <DisplayDate value={report.day.day_date} />
                 </p>
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-caption">{t('shift.from')}</p>
-                <p className="font-bold" dir="ltr">
-                  {formatSqlDateTime(report.day.opened_at)}
+                <p className="min-w-0 font-bold">
+                  <DisplayDateTime value={report.day.opened_at} />
                 </p>
               </div>
               <div>
@@ -376,9 +408,17 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
                             key={item.id}
                             className="flex items-center justify-between gap-3 py-2 text-sm"
                           >
-                            <span className="text-caption" dir="ltr">
-                              {formatSqlDateTime(item.closed_at)} ·{' '}
-                              {t('settlement.settledShifts', { count: item.shift_ids.length })}
+                            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption">
+                              <DisplayDateTime value={item.closed_at} separator="" />
+                              <span
+                                aria-hidden
+                                className="shrink-0 text-foreground-faint select-none"
+                              >
+                                ·
+                              </span>
+                              <span className="min-w-0">
+                                {t('settlement.settledShifts', { count: item.shift_ids.length })}
+                              </span>
                             </span>
                             <MoneyDisplay amount={item.totals.total_sales} className="font-bold" />
                           </li>
@@ -389,7 +429,7 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
               </section>
             </div>
             <div
-              className={`rounded-md border p-3 ${actionMode === 'close' ? 'border-destructive-soft bg-destructive-soft' : 'border-info-soft bg-info-soft'}`}
+              className={`rounded-md border p-3 ${actionMode === 'close' ? 'border-destructive-border bg-destructive-soft' : 'border-info-border bg-info-soft'}`}
             >
               <p className="font-bold text-foreground-strong">
                 {actionMode === 'settle'

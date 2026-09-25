@@ -1,0 +1,106 @@
+import { utils, writeFile } from 'xlsx'
+import { CURRENCY_LABEL, formatMinorMoney } from '@/lib/money'
+import { formatDate, todayIso } from '@/lib/date'
+import type { AnalyticsChart } from './mockCharts'
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1200
+  canvas.height = 900
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Canvas unavailable')
+  const css = getComputedStyle(document.documentElement)
+  const background = css.getPropertyValue('--surface').trim()
+  const strongText = css.getPropertyValue('--foreground-strong').trim()
+  const bodyText = css.getPropertyValue('--foreground').trim()
+  const subtleText = css.getPropertyValue('--foreground-subtle').trim()
+  context.fillStyle = background
+  context.fillRect(0, 0, 1200, 900)
+  context.direction = 'rtl'
+  context.textAlign = 'right'
+  context.fillStyle = strongText
+  context.font = '700 42px Cairo, sans-serif'
+  context.fillText(chart.title, 1120, 90)
+  context.fillStyle = subtleText
+  context.font = '24px Cairo, sans-serif'
+  context.fillText(chart.description, 1120, 135)
+  context.fillText(`الفترة: ${period}`, 1120, 180)
+  const segmentColors = chart.categories.map((category) => {
+    const token = category.color.match(/^var\((--[^)]+)\)$/)?.[1]
+    return token ? css.getPropertyValue(token).trim() : category.color
+  })
+  const total = chart.total || 1
+  let start = -Math.PI / 2
+  const cx = 600
+  const cy = 470
+  const radius = 210
+  chart.categories.forEach((category, index) => {
+    context.fillStyle = segmentColors[index] ?? css.getPropertyValue('--primary')
+    const end = start + (category.value / total) * Math.PI * 2
+    context.beginPath()
+    context.moveTo(cx, cy)
+    context.arc(cx, cy, radius, start, end)
+    context.closePath()
+    context.fill()
+    start = end
+  })
+  context.globalCompositeOperation = 'destination-out'
+  context.beginPath()
+  context.arc(cx, cy, 112, 0, Math.PI * 2)
+  context.fill()
+  context.globalCompositeOperation = 'source-over'
+  context.textAlign = 'center'
+  context.fillStyle = bodyText
+  context.font = '800 34px Cairo, sans-serif'
+  context.fillText(formatMinorMoney(chart.total, { compact: true }), cx, cy + 8)
+  context.font = '20px Cairo, sans-serif'
+  context.fillText('إجمالي', cx, cy + 42)
+  context.textAlign = 'right'
+  chart.categories.forEach((category, index) => {
+    const y = 760 + index * 42
+    context.fillStyle = segmentColors[index] ?? css.getPropertyValue('--primary')
+    context.fillRect(1100, y - 16, 18, 18)
+    context.fillStyle = strongText
+    context.font = '22px Cairo, sans-serif'
+    context.fillText(
+      `${category.label} — ${formatMinorMoney(category.value, { compact: true })} (${Math.round((category.value / total) * 100)}%)`,
+      1080,
+      y,
+    )
+  })
+  await new Promise<void>((resolve, reject) =>
+    canvas.toBlob(
+      (blob) =>
+        blob
+          ? (download(blob, `${chart.exportFilename}.png`), resolve())
+          : reject(new Error('PNG export failed')),
+      'image/png',
+    ),
+  )
+}
+
+export function exportAnalyticsExcel(chart: AnalyticsChart, period: string) {
+  const rows = [
+    ['التقرير', 'الفترة', 'تاريخ التصدير'],
+    [chart.title, period, formatDate(todayIso())],
+    [],
+    ['الفئة', `القيمة (${CURRENCY_LABEL})`, 'النسبة'],
+    // Machine-readable value column: the raw amount, not a display string, so
+    // the sheet stays computable. The header states the unit.
+    ...chart.categories.map((c) => [c.label, c.value / 100, c.value / chart.total]),
+  ]
+  const sheet = utils.aoa_to_sheet(rows)
+  sheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }]
+  const book = utils.book_new()
+  utils.book_append_sheet(book, sheet, 'التحليلات')
+  writeFile(book, `${chart.exportFilename}.xlsx`)
+}

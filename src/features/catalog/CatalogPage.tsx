@@ -37,8 +37,8 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { Badge, Button, Card, Dialog, MoneyDisplay } from '@/components/ui'
+import { EmptyState, ErrorState } from '@/components/states'
+import { Badge, Button, Card, CardGridSkeleton, Dialog, MoneyDisplay } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
 import {
   Check,
@@ -54,7 +54,8 @@ import {
 import { useToast } from '@/components/ui/toast'
 
 import { useErrText } from '@/lib/err'
-import { formatMinor, parseMajor } from '@/lib/utils'
+import { formatMinorMoneyInput } from '@/lib/money'
+import { parseMajor } from '@/lib/utils'
 
 import { catalogApi, type Category, type NewProductInput } from '@/services/catalogApi'
 import type { Product } from '@/services/posApi'
@@ -102,8 +103,8 @@ const departmentStyles: Record<
     accentText: 'text-primary',
     soft: 'bg-accent',
     softStrong: 'bg-secondary',
-    border: 'border-primary/20',
-    mutedBorder: 'border-primary/10',
+    border: 'border-primary-border',
+    mutedBorder: 'border-primary-soft',
     price: 'text-primary',
   },
 
@@ -112,8 +113,8 @@ const departmentStyles: Record<
     accentText: 'text-info',
     soft: 'bg-info-soft',
     softStrong: 'bg-info-soft',
-    border: 'border-info/20',
-    mutedBorder: 'border-info/10',
+    border: 'border-info-border',
+    mutedBorder: 'border-info-soft',
     price: 'text-info',
   },
 }
@@ -390,7 +391,7 @@ export default function CatalogPage() {
         loadError ? (
           <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
         ) : (
-          <LoadingState label={t('app.loading')} />
+          <CardGridSkeleton cards={6} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" />
         )
       ) : filtered.length === 0 ? (
         <EmptyState title={t('catalog.empty')} />
@@ -663,7 +664,11 @@ function CatalogCard({
           </div>
 
           <div className="shrink-0">
-            <Badge tone={product.is_active ? 'success' : 'neutral'}>
+            <Badge
+              variant={product.is_active ? 'success' : 'neutral'}
+              size="sm"
+              dot={product.is_active}
+            >
               {product.is_active ? t('catalog.active') : t('catalog.inactive')}
             </Badge>
           </div>
@@ -674,7 +679,7 @@ function CatalogCard({
       <div className="flex flex-1 flex-col px-5 py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Badge tone="neutral" className="max-w-40 truncate">
+            <Badge variant="neutral" size="sm" className="max-w-40">
               {product.category_name}
             </Badge>
             {product.track_inventory ? (
@@ -764,10 +769,10 @@ function CatalogSelect({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className={[
-        'h-11 min-w-0 border border-border-strong bg-surface',
+        'h-11 min-w-0 border border-border-strong bg-surface-input',
         'px-3 text-sm text-foreground',
         'outline-none transition-colors',
-        'focus:border-primary focus:ring-1 focus:ring-primary/20',
+        'focus:border-primary focus:ring-1 focus:ring-primary',
       ].join(' ')}
     >
       {children}
@@ -977,7 +982,7 @@ function CreateProductDialog({
             <select
               value={department}
               onChange={(event) => setDepartment(event.target.value as Department)}
-              className="h-10 w-full border border-border-strong bg-surface px-3 text-base text-foreground outline-none focus:border-primary"
+              className="h-10 w-full border border-border-strong bg-surface-input px-3 text-base text-foreground outline-none focus:border-primary"
             >
               {DEPARTMENTS.map((value) => (
                 <option key={value} value={value}>
@@ -998,7 +1003,7 @@ function CreateProductDialog({
                   setStockError(null)
                 }
               }}
-              className="h-10 w-full border border-border-strong bg-surface px-3 text-base text-foreground outline-none focus:border-primary"
+              className="h-10 w-full border border-border-strong bg-surface-input px-3 text-base text-foreground outline-none focus:border-primary"
             >
               {TYPES.map((value) => (
                 <option key={value} value={value}>
@@ -1029,7 +1034,7 @@ function CreateProductDialog({
               setCategoryId(event.target.value)
               setCategoryError(null)
             }}
-            className="h-10 w-full border border-border-strong bg-surface px-3 text-base text-foreground outline-none focus:border-primary"
+            className="h-10 w-full border border-border-strong bg-surface-input px-3 text-base text-foreground outline-none focus:border-primary"
           >
             <option value="">{t('catalog.selectCategory')}</option>
             {categories.map((category) => (
@@ -1107,7 +1112,7 @@ function EditProductDialog({
 
   const [name, setName] = useState(product.name)
 
-  const [price, setPrice] = useState(formatMinor(product.price_minor))
+  const [price, setPrice] = useState(formatMinorMoneyInput(product.price_minor))
   const [categoryId, setCategoryId] = useState(String(product.category_id))
   const [tracked, setTracked] = useState(product.track_inventory)
   const [stockQuantity, setStockQuantity] = useState(String(product.stock_quantity))
@@ -1214,7 +1219,7 @@ function EditProductDialog({
               setCategoryId(event.target.value)
               setCategoryError(null)
             }}
-            className="h-10 w-full border border-border-strong bg-surface px-3 text-base text-foreground outline-none focus:border-primary"
+            className="h-10 w-full border border-border-strong bg-surface-input px-3 text-base text-foreground outline-none focus:border-primary"
           >
             <option value="">{t('catalog.selectCategory')}</option>
             {categories.map((category) => (

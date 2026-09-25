@@ -43,7 +43,7 @@ export function CheckoutSummary({
   return (
     <section
       aria-label={t('pos.checkoutSummary')}
-      className="mb-3 rounded-md border border-border bg-surface-muted/40"
+      className="mb-3 rounded-md border border-border bg-surface-muted"
     >
       <div className="flex flex-col gap-0.5 px-3 py-2 text-sm">
         <div className="flex items-center justify-between text-foreground-muted">
@@ -152,7 +152,7 @@ export function CheckoutSummary({
 export function TotalsBlock({ shown }: { shown: OrderPreview }) {
   const { t } = useTranslation()
   return (
-    <div className="mb-3 flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-muted/60 p-2.5 text-sm">
+    <div className="mb-3 flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-muted p-2.5 text-sm">
       <div className="flex justify-between text-foreground-muted">
         <span>{t('pos.subtotal')}</span>
         <MoneyDisplay amount={shown.subtotal} />

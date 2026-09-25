@@ -7,6 +7,7 @@ export interface ShiftRow {
   business_day_id: number
   user_id: number
   user_name: string | null
+  user_role?: string | null
   status: string
   opened_at: string
   opening_cash: number

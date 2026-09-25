@@ -30,8 +30,8 @@ export function AddStaffDialog({
 
   async function save() {
     const errs: Record<string, string> = {}
-    if (!name.trim()) errs.name = t('user.name_required')
-    if (password.length < 5) errs.password = t('user.password_too_short')
+    if (!name.trim()) errs.name = t('errors.user.name_required')
+    if (password.length < 5) errs.password = t('errors.user.password_too_short')
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     setBusy(true)
@@ -63,7 +63,7 @@ export function AddStaffDialog({
         </Field>
         <Field label={t('roles.title')}>
           <select
-            className="h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-sm"
+            className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-sm"
             value={role}
             onChange={(e) => setRole(e.target.value as 'STAFF' | 'MANAGER')}
           >

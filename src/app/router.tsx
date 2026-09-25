@@ -7,13 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 
 export type View =
-  | 'pos'
-  | 'staff'
-  | 'catalog'
-  | 'inventory'
-  | 'expenses'
-  | 'reports'
-  | 'dev-settings'
+  'pos' | 'staff' | 'catalog' | 'inventory' | 'expenses' | 'reports' | 'dev-settings'
 
 interface RouterCtx {
   view: View

@@ -1,7 +1,7 @@
 /** Payment dialog: method + live totals, cash tendered/change, print. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, MoneyDisplay } from '@/components/ui'
+import { Button, Dialog, Loader, MoneyDisplay } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
@@ -113,7 +113,13 @@ export function PaymentDialog({
           )}
         </p>
       ) : null}
-      {preview ? <TotalsBlock shown={preview} /> : <p>{t('app.loading')}</p>}
+      {preview ? (
+        <TotalsBlock shown={preview} />
+      ) : (
+        <div role="status" aria-label={t('app.loading')} className="flex justify-center py-8">
+          <Loader size="lg" />
+        </div>
+      )}
 
       <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label={t('pay.methodLabel')}>
         {(['CASH', 'CARD', 'CREDIT'] as const).map((m) => (
