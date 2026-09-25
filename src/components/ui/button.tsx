@@ -1,10 +1,10 @@
 import { cn } from '@/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 import type { ButtonHTMLAttributes } from 'react'
-import { Loader2 } from './icon'
+import { Loader } from './loader'
 
 const buttonVariants = cva(
-  'inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:shrink-0',
+  'inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.98] disabled:pointer-events-none disabled:text-foreground-disabled disabled:opacity-70 aria-disabled:pointer-events-none aria-disabled:text-foreground-disabled aria-disabled:opacity-70 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -17,7 +17,7 @@ const buttonVariants = cva(
         ghost:
           'text-foreground-muted hover:bg-surface-hover hover:text-foreground active:bg-surface-active',
         destructive:
-          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive-hover active:bg-destructive-active',
+          'bg-destructive-solid text-destructive-solid-foreground shadow-sm hover:bg-destructive-solid-hover active:bg-destructive-solid-active',
         destructiveGhost:
           'text-destructive-soft-foreground hover:bg-destructive-soft hover:text-destructive active:bg-destructive-soft-hover active:text-destructive',
         link: 'text-foreground-muted underline-offset-4 hover:text-foreground hover:underline',
@@ -63,7 +63,7 @@ export function Button({
       className={cn(buttonVariants({ variant, size }), loading && 'cursor-wait', className)}
       {...props}
     >
-      {loading ? <Loader2 size={16} aria-hidden className="animate-spin" /> : null}
+      {loading ? <Loader size="sm" /> : null}
       {children}
     </button>
   )

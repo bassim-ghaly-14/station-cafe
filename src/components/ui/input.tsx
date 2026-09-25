@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 import type { InputHTMLAttributes, LabelHTMLAttributes, TextareaHTMLAttributes } from 'react'
 
 const base =
-  'w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-foreground placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus disabled:opacity-50'
+  'w-full rounded-md border border-border-strong bg-surface-input px-3 py-2 text-base text-foreground placeholder:text-placeholder-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus disabled:border-border disabled:bg-surface-muted disabled:text-foreground-disabled disabled:opacity-70'
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(base, 'h-10', className)} {...props} />
@@ -20,11 +20,14 @@ export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElem
 export function Field({
   label,
   error,
+  hint,
   children,
   htmlFor,
 }: {
   label: string
   error?: string | null
+  /** Non-validating explanatory text shown under the control. */
+  hint?: string
   children: React.ReactNode
   htmlFor?: string
 }) {
@@ -32,6 +35,7 @@ export function Field({
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
+      {hint && !error ? <p className="text-caption">{hint}</p> : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

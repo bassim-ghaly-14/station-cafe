@@ -2,8 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/Logo'
-import { Badge } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Badge, Button, EmployeeAvatar, ThemeToggle } from '@/components/ui'
 import {
   BarChart3,
   Boxes,
@@ -13,7 +12,6 @@ import {
   Pin,
   PinOff,
   Receipt,
-  ScrollText,
   Store,
   Settings,
   Users,
@@ -36,7 +34,6 @@ const NAV: NavItem[] = [
   { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
   { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
-  { view: 'audit', minRole: 'MANAGER', labelKey: 'nav.audit', icon: ScrollText },
   { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff', icon: Users },
   { view: 'dev-settings', minRole: 'ADMIN', labelKey: 'nav.devSettings', icon: Settings },
 ]
@@ -199,22 +196,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* Main application area */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border bg-surface px-6 py-3">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-foreground-muted">{user?.name}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <EmployeeAvatar role={user?.role} size="sm" />
+            <span className="truncate text-sm font-medium text-foreground-muted">{user?.name}</span>
 
-            <Badge
-              tone={
-                user?.role === 'ADMIN' ? 'danger' : user?.role === 'MANAGER' ? 'info' : 'neutral'
-              }
-            >
+            <Badge role={user?.role} size="sm" dot>
               {user ? t(`roles.${user.role}`) : ''}
             </Badge>
           </div>
 
-          <Button variant="destructiveGhost" size="sm" onClick={() => setLogoutConfirmOpen(true)}>
-            <LogOut size={16} aria-hidden />
-            {t('auth.logout')}
-          </Button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <Button variant="destructiveGhost" size="sm" onClick={() => setLogoutConfirmOpen(true)}>
+              <LogOut size={16} aria-hidden />
+              {t('auth.logout')}
+            </Button>
+          </div>
         </header>
 
         <main className="min-w-0 flex-1 p-6">{children}</main>

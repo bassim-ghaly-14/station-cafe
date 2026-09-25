@@ -54,7 +54,7 @@ export default function LoginPage() {
 
       <form
         onSubmit={submit}
-        className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-surface p-6 shadow-sm"
+        className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border-strong bg-surface-dialog p-6 shadow-sm"
       >
         <Field
           label={t('auth.name')}

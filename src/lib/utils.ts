@@ -31,13 +31,6 @@ export function applyFixedDiscount(amount: Money, discount: Money): Money {
   return Math.max(0, amount - discount) as Money
 }
 
-/** Display string, e.g. -350 → "-3.50". */
-export function formatMinor(amount: Money): string {
-  const sign = amount < 0 ? '-' : ''
-  const abs = Math.abs(amount)
-  return `${sign}${Math.floor(abs / MINOR_PER_MAJOR)}.${String(abs % MINOR_PER_MAJOR).padStart(2, '0')}`
-}
-
 /** Parse "12.50" or "12,5" → 1250. Returns null when not a valid amount. */
 export function parseMajor(input: string): Money | null {
   const m = /^\d{1,7}([.,]\d{1,2})?$/.exec(input.trim())

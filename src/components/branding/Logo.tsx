@@ -2,15 +2,23 @@
  * The single branding entry point. Every logo usage in the app goes through
  * this component — never reference the asset directly elsewhere.
  * Renders the real logo from public/ with a graceful fallback mark.
+ *
+ * Sizing: width/height attributes pin the intrinsic ratio (no layout shift)
+ * while the rendered size resolves from `--logo-size` when an ancestor sets
+ * it (e.g. the boot screen's responsive clamp), falling back to `size` px.
  */
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
+import { cn } from '@/lib/utils'
 
 export function Logo({
   size = 64,
   withWordmark = false,
+  className,
 }: {
   size?: number
   withWordmark?: boolean
+  className?: string
 }) {
   const [failed, setFailed] = useState(false)
 
@@ -19,8 +27,17 @@ export function Logo({
       <div
         role="img"
         aria-label="Station Cafe"
-        className="flex items-center justify-center rounded-lg bg-accent font-bold text-foreground-muted select-none"
-        style={{ width: size, height: size, fontSize: size * 0.3 }}
+        className={cn(
+          'flex items-center justify-center rounded-lg bg-accent font-bold text-foreground-muted select-none',
+          className,
+        )}
+        style={
+          {
+            width: `var(--logo-size, ${size}px)`,
+            height: `var(--logo-size, ${size}px)`,
+            fontSize: `calc(var(--logo-size, ${size}px) * 0.3)`,
+          } as CSSProperties
+        }
       >
         <span dir="ltr">S</span>
       </div>
@@ -28,7 +45,7 @@ export function Logo({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <img
         role="img"
         aria-label="Station Cafe"
@@ -37,8 +54,13 @@ export function Logo({
         width={size}
         height={size}
         onError={() => setFailed(true)}
-        className="select-none object-contain"
-        style={{ width: size, height: size }}
+        className={cn('select-none object-contain', className)}
+        style={
+          {
+            width: `var(--logo-size, ${size}px)`,
+            height: `var(--logo-size, ${size}px)`,
+          } as CSSProperties
+        }
       />
       {withWordmark ? (
         <span dir="ltr" className="text-xl font-bold text-foreground-strong">

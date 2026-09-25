@@ -138,7 +138,7 @@ export function DatePicker({
 
   return (
     <div ref={rootRef} className={cn('relative w-full text-start sm:w-auto', className)}>
-      <div className="flex h-10 items-center rounded-md border border-border-strong bg-surface">
+      <div className="flex h-10 items-center rounded-md border border-border-strong bg-surface-input">
         <button
           ref={triggerRef}
           type="button"
@@ -147,7 +147,7 @@ export function DatePicker({
           aria-expanded={open}
           aria-label={hasValue ? `${labelText}: ${valueText}` : `${labelText}: ${placeholder}`}
           onClick={() => (open ? close() : openPicker())}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-start text-base whitespace-nowrap focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-start text-base whitespace-nowrap focus-visible:outline-2 focus-visible:outline-focus disabled:text-foreground-disabled disabled:opacity-70"
         >
           <CalendarDays size={16} aria-hidden className="shrink-0 text-foreground-subtle" />
 
@@ -178,7 +178,7 @@ export function DatePicker({
           role="dialog"
           aria-modal="false"
           aria-label={labelText}
-          className="absolute inset-s-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface p-2 shadow-lg"
+          className="absolute inset-s-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border-strong bg-surface-popover p-2 shadow-lg"
         >
           <div className="mb-1 flex items-center justify-between gap-1">
             <button
@@ -242,7 +242,8 @@ export function DatePicker({
                     'relative flex h-8 items-center justify-center rounded-md text-[13px] tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
                     !selected && 'text-foreground hover:bg-surface-hover active:bg-surface-active',
                     cell.iso === today && !selected && 'font-bold text-foreground-strong',
-                    selected && 'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+                    selected &&
+                      'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
                   )}
                 >
                   {cell.day}

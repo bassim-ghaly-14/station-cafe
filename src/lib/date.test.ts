@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
+import { resetFormattingPreferences, updateDateSettings } from './formatting'
 import {
   addDays,
   addMonths,
   daysInMonth,
   formatIsoDate,
+  formatDate,
+  formatDateTime,
+  formatDateTimeParts,
+  formatTime,
   formatIsoDateLong,
   formatMonthTitle,
   isoDate,
@@ -101,5 +106,71 @@ describe('calendar math', () => {
       'الخميس',
       'الجمعة',
     ])
+  })
+})
+
+describe('global display date and time formatting', () => {
+  afterEach(() => resetFormattingPreferences())
+
+  it('supports every date style and deterministic invalid values', () => {
+    expect(formatDate('2026-09-25', { locale: 'en-US' })).toBe('25/09/2026')
+    expect(formatDate('2026-09-25', { dateFormat: 'MM/DD/YYYY' })).toBe('09/25/2026')
+    expect(formatDate('2026-09-25', { dateFormat: 'YYYY-MM-DD' })).toBe('2026-09-25')
+    expect(formatDate('2026-09-25', { dateFormat: 'DD-MM-YYYY' })).toBe('25-09-2026')
+    expect(formatDate('2026-09-25', { dateFormat: 'DD MMM YYYY', locale: 'en-US' })).toBe(
+      '25 Sep 2026',
+    )
+    expect(formatDate('2026-09-25', { dateFormat: 'MMM DD, YYYY', locale: 'en-US' })).toBe(
+      'Sep 25, 2026',
+    )
+    expect(formatDate('bad')).toBe('bad')
+    expect(formatDate(null)).toBe('—')
+    expect(formatDate(undefined)).toBe('—')
+  })
+
+  it('supports 12/24 hour, seconds, and combined output', () => {
+    const value = '2026-09-25T14:35:27'
+    expect(formatTime(value, { timeFormat: '24h' })).toBe('14:35')
+    expect(formatTime(value, { timeFormat: '12h', locale: 'en-US' })).toBe('2:35 PM')
+    expect(formatTime(value, { timeFormat: '24h', showSeconds: true })).toBe('14:35:27')
+    expect(formatDateTime(value, { timeFormat: '24h', locale: 'en-US' })).toBe('25/09/2026 14:35')
+  })
+
+  it('reacts to the latest global preferences', () => {
+    updateDateSettings({ dateFormat: 'YYYY-MM-DD', timeFormat: '12h', showSeconds: true })
+    expect(formatDateTime('2026-09-25T14:35:27', { locale: 'en-US' })).toBe('2026-09-25 2:35:27 PM')
+  })
+
+  it('splits a stamp into independent date and time parts', () => {
+    expect(formatDateTimeParts('2026-09-25T14:35:27', { locale: 'en-US' })).toEqual({
+      date: '25/09/2026',
+      time: '14:35',
+    })
+    // A business date carries no time, so the composition has no time slot.
+    expect(formatDateTimeParts('2026-09-25')).toEqual({ date: '25/09/2026', time: null })
+    expect(formatDateTimeParts(null)).toBeNull()
+    // The parts always agree with the single-string formatter.
+    expect(formatDateTime('2026-09-25T14:35:27', { locale: 'en-US' })).toBe('25/09/2026 14:35')
+  })
+
+  it('splits long localized dates from their 12-hour time without merging', () => {
+    const parts = formatDateTimeParts('2026-09-25T09:56:00', {
+      dateFormat: 'DD MMM YYYY',
+      timeFormat: '12h',
+      locale: 'ar-EG',
+    })
+    expect(parts?.date).toBe('25 سبتمبر 2026')
+    // The Arabic meridiem belongs to the TIME slot only — it can never be
+    // reordered into the middle of the date by the surrounding bidi context.
+    expect(parts?.time).toContain('9:56')
+    expect(parts?.time).toContain('ص')
+  })
+
+  it('renders against an explicit draft without touching the saved settings', () => {
+    const draft = { dateFormat: 'YYYY-MM-DD', timeFormat: '12h', showSeconds: false } as const
+    expect(formatDate('2026-09-25', { settings: draft })).toBe('2026-09-25')
+    expect(formatTime('2026-09-25T14:35:27', { settings: draft })).toBe('2:35 م')
+    // The saved preferences are unchanged by rendering a draft.
+    expect(formatDate('2026-09-25')).toBe('25/09/2026')
   })
 })

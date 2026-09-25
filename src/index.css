@@ -26,6 +26,19 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Native selects do not inherit an input component, so keep their control and
+   option colors bound to the same semantic input roles in both themes. */
+select,
+select option {
+  background-color: var(--surface-input);
+  color: var(--foreground);
+}
+
+select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* Shared typography hierarchy — use these classes instead of per-component
    font-size overrides so every screen stays consistent. */
 @utility text-heading {
@@ -60,3 +73,209 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------------------------------------------------------------------------
+ * Boot screen (application startup loading state).
+ * Rendered size targets ~3–4× the previous 88px logo:
+ *   1280×800  → 308px (3.5×, capped)
+ *   1920×1080 → 308px (3.5×, capped)
+ *   390×844   → ~289px (3.3×)
+ *   360×640   → ~266px (3.0×)
+ *   1024×500  → ~290px (3.3×)
+ * Extremely short viewports resolve to the 240px floor (2.7×) so the logo +
+ * progress label always fit without scrolling; every other size sits in
+ * the 3–4× band.
+ * Entrance = fade + scale on the wrapper; breathing runs on the logo itself
+ * so the two animations never fight over the same transform property.
+ * All colors derive from the centralized theme tokens in styles/colors.css —
+ * no hardcoded palette values here. Direction-agnostic (physical transforms
+ * only) so RTL/Arabic behavior is unaffected.
+ * ------------------------------------------------------------------------- */
+@keyframes boot-logo-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes boot-logo-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.022);
+  }
+}
+
+@keyframes boot-halo-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes boot-bar-sweep {
+  0% {
+    transform: translateX(-110%) scaleX(0.6);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(30%) scaleX(1);
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(320%) scaleX(0.6);
+    opacity: 0;
+  }
+}
+
+.boot-screen-logo {
+  /* Responsive rendered size (~3–4× the old 88px), capped for large screens
+     and floored so very short viewports never overflow. */
+  --logo-size: clamp(240px, min(74vmin, 58vh, 74vw), 308px);
+}
+
+.boot-logo-enter {
+  animation: boot-logo-enter 640ms cubic-bezier(0.22, 0.9, 0.28, 1) both;
+  will-change: transform, opacity;
+}
+
+.boot-logo-breathe {
+  position: relative;
+  z-index: 1;
+  animation: boot-logo-breathe 3.2s ease-in-out 640ms infinite;
+  will-change: transform;
+  /* Soft brand halo around the mark; derived from the centralized --primary
+     token so light/dark themes follow automatically (no hardcoded palette). */
+  filter: drop-shadow(0 0 28px color-mix(in srgb, var(--primary) 30%, transparent));
+}
+
+.boot-logo-halo {
+  position: absolute;
+  z-index: 0;
+  inset: -12%;
+  border-radius: 9999px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--primary) 24%, transparent),
+    transparent 70%
+  );
+  animation: boot-halo-pulse 3.2s ease-in-out 640ms infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.boot-progress-track {
+  position: relative;
+  width: 100%;
+  max-width: 15rem;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: var(--border-subtle);
+}
+
+.boot-progress-bar {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 34%;
+  border-radius: inherit;
+  background-color: var(--primary);
+  animation: boot-bar-sweep 1.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes boot-screen-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes boot-logo-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes boot-content-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.boot-screen-overlay {
+  /* Overlay sits above the already-mounted app so the reveal is a seamless
+     crossfade — never a blank frame. Same token background as the app. */
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.boot-screen-overlay.boot-screen-exit {
+  animation: boot-screen-exit var(--boot-exit-duration, 450ms) ease-out both;
+  pointer-events: none;
+}
+
+/* During exit the logo settles gently (no bounce/spin), the halo and the
+   loading bar simply fade — all on their own elements so nothing fights. */
+.boot-screen-exit .boot-screen-logo {
+  animation: boot-logo-exit var(--boot-exit-duration, 450ms) ease-out both;
+}
+
+.boot-screen-exit .boot-logo-halo,
+.boot-screen-exit .boot-loading-block {
+  animation: boot-content-exit var(--boot-exit-duration, 450ms) ease-out both;
+}
+
+.boot-screen-exit .boot-logo-breathe,
+.boot-screen-exit .boot-progress-bar {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo-enter,
+  .boot-logo-breathe,
+  .boot-logo-halo,
+  .boot-progress-bar {
+    animation: none;
+  }
+  .boot-screen-overlay {
+    --boot-exit-duration: 120ms;
+  }
+  .boot-screen-overlay.boot-screen-exit,
+  .boot-screen-exit .boot-screen-logo,
+  .boot-screen-exit .boot-logo-halo,
+  .boot-screen-exit .boot-loading-block {
+    animation-duration: 120ms;
+  }
+  .boot-progress-track {
+    opacity: 0.85;
+  }
+}

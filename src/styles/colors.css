@@ -11,9 +11,9 @@
  *   - Components consume SEMANTIC tokens (never raw hex values or palette
  *     shades directly).
  *   - New application colors are added here, not in components.
- *   - Light values live in `:root`; dark values override them inside the
- *     `prefers-color-scheme: dark` block — the ONLY place the two themes
- *     differ. Theme meaning must stay stable; only values change.
+ *   - Light values live in `:root` and are also available explicitly through
+ *     `data-theme="light"`. Dark values are available through `data-theme="dark"`
+ *     and through the system preference when no explicit choice has been made.
  *   - To rebrand the app (e.g. change the primary brand color), edit the
  *     primitive palette / semantic tokens here and the whole UI follows.
  *
@@ -44,20 +44,29 @@
  * 2. Semantic tokens — LIGHT theme (default).
  * ------------------------------------------------------------------------- */
 :root {
-  /* Backgrounds & surfaces (hierarchy: background < surface < overlay). */
+  /* Backgrounds & surfaces (hierarchy: background < surface < card < overlay). */
   --background: #faf6f0; /* page / app background */
-  --surface: #fffdf9; /* raised panels: cards, dialogs, sidebar, header, inputs */
-  --surface-muted: #faf6f0; /* subtly tinted panels: totals, metric boxes, neutral badges */
-  --surface-hover: rgb(230 213 184 / 0.6); /* interactive surface hover */
+  --surface: #fffdf9; /* base raised panels: sidebar, header, cards, controls */
+  --surface-muted: #f4ede3; /* subdued panels, totals, metric boxes */
+  --surface-elevated: #fffaf4; /* menus, popovers, command surfaces */
+  --surface-card: #fffdf9; /* cards and data panels */
+  --surface-popover: #fffaf4; /* popovers, dropdowns, date pickers, tooltips */
+  --surface-dialog: #fffdf9; /* modal surfaces */
+  --surface-input: #faf6f0; /* controls recessed within their surrounding surface */
+  --surface-hover: #f0e4d1; /* interactive surface hover */
   --surface-active: #e6d5b8; /* interactive surface pressed */
-  --overlay: rgb(43 29 18 / 0.4); /* dialog / drawer scrim */
+  --surface-selected: #f3ead9; /* selected/active navigation and controls */
+  --overlay: rgb(43 29 18 / 0.46); /* dialog / drawer scrim */
 
   /* Foregrounds. */
   --foreground: #2b1d12; /* primary text */
   --foreground-strong: #432d1c; /* headings, emphasized values */
   --foreground-muted: #5e3f25; /* labels, nav, ghost text */
   --foreground-subtle: #96673a; /* captions, hints, secondary text */
-  --foreground-faint: #d9b98f; /* decorative: out-of-month days, dashes */
+  --foreground-faint: #96673a; /* decorative: out-of-month days, dashes */
+  --foreground-disabled: #96673a; /* disabled controls; exempt from WCAG text minimum */
+  --foreground-inverse: #fffdf9; /* text on primary, dark, and solid-state actions */
+  --placeholder-foreground: #7a5230; /* readable control placeholders */
 
   /* Borders. */
   --border: #e6d5b8; /* default separators */
@@ -65,6 +74,29 @@
   --border-strong: #d9b98f; /* inputs, selects, resting cards */
   --border-accent: #c69a63; /* outlined interactive resting border */
   --border-accent-hover: #b07f47; /* outlined interactive hover border */
+
+  /* Employee identity avatars. These are identity accents, not status colors:
+     deliberately separate from success/warning/destructive semantic colors. */
+  --role-admin-bg: #ede9fe;
+  --role-admin-fg: #5b21b6;
+  --role-admin-badge-bg: #ede9fe;
+  --role-admin-badge-border: #c4b5fd;
+  --role-admin-badge-fg: #5b21b6;
+  --role-manager-bg: #dff3ef;
+  --role-manager-fg: #115e59;
+  --role-manager-badge-bg: #dff3ef;
+  --role-manager-badge-border: #99d8cf;
+  --role-manager-badge-fg: #115e59;
+  --role-staff-bg: #e0edf8;
+  --role-staff-fg: #1e4f78;
+  --role-staff-badge-bg: #e0edf8;
+  --role-staff-badge-border: #9cc9e9;
+  --role-staff-badge-fg: #1e4f78;
+  --role-fallback-bg: #eee7dd;
+  --role-fallback-fg: #5e3f25;
+  --role-fallback-badge-bg: #faf6f0;
+  --role-fallback-badge-border: #e6d5b8;
+  --role-fallback-badge-fg: #5e3f25;
 
   /* Primary (brand action). */
   --primary: #7a5230;
@@ -81,77 +113,246 @@
   /* Accent tint (selected state, strong tinted surfaces). */
   --accent: #f3ead9;
   --accent-hover: #e6d5b8;
+  --primary-soft: #f3ead9;
+  --primary-soft-hover: #e6d5b8;
+  --primary-border: #d9b98f;
 
   /* Focus. */
   --focus: #96673a;
 
   /* Destructive. */
-  --destructive: #b91c1c; /* red-700 */
-  --destructive-hover: #991b1b; /* red-800 */
-  --destructive-active: #7f1d1d; /* red-900 */
-  --destructive-foreground: #ffffff;
-  --destructive-soft: #fee2e2; /* red-100: soft bg / border */
-  --destructive-soft-hover: #fecaca; /* red-200 */
+  --destructive: #b91c1c; /* indicator/icon */
+  --destructive-soft: #fee2e2; /* soft status background */
+  --destructive-soft-hover: #fecaca;
+  --destructive-soft-foreground: #991b1b;
+  --destructive-border: #fca5a5;
+  --destructive-solid: #b91c1c;
+  --destructive-solid-hover: #991b1b;
+  --destructive-solid-active: #7f1d1d;
+  --destructive-solid-foreground: #ffffff;
+
+  --success: #15803d; /* bright status indicator/icon */
+  --success-foreground: #166534; /* text on success-soft */
+  --success-soft: #dcfce7;
+  --success-soft-hover: #bbf7d0;
+  --success-border: #86efac;
+  --success-solid: #15803d; /* filled success action */
+  --success-solid-hover: #166534;
+  --success-solid-active: #14532d;
+  --success-solid-foreground: #ffffff;
+  --warning: #b45309; /* amber must remain distinct from Station brown */
+  --warning-foreground: #78350f;
+  --warning-soft: #fef3c7;
+  --warning-soft-hover: #fde68a;
+  --warning-border: #fcd34d;
+  --warning-solid: #b45309;
+  --warning-solid-hover: #92400e;
+  --warning-solid-active: #78350f;
+  --warning-solid-foreground: #ffffff;
+  --info: #0369a1;
+  --info-foreground: #075985;
+  --info-soft: #e0f2fe;
+  --info-soft-hover: #bae6fd;
+  --info-border: #7dd3fc;
+  --info-solid: #0369a1;
+  --info-solid-hover: #075985;
+  --info-solid-active: #0c4a6e;
+  --info-solid-foreground: #ffffff;
+
+  /* Workflow states. Pending deliberately maps to warning, while active and
+     inactive retain independent semantic badges/surfaces. */
+  --state-active: #15803d;
+  --state-inactive: #5e3f25;
+  --state-pending: #b45309;
+  --state-disabled: #96673a;
+  --state-selected: #f3ead9;
+
+  /* Badge and skeleton surfaces: one definition for every compact status UI. */
+  --badge-neutral-bg: #faf6f0;
+  --badge-neutral-border: #e6d5b8;
+  --badge-neutral-fg: #5e3f25;
+  --badge-success-bg: #dcfce7;
+  --badge-success-border: #86efac;
+  --badge-success-fg: #166534;
+  --badge-warning-bg: #fef3c7;
+  --badge-warning-border: #fcd34d;
+  --badge-warning-fg: #78350f;
+  --badge-danger-bg: #fee2e2;
+  --badge-danger-border: #fca5a5;
+  --badge-danger-fg: #991b1b;
+  --badge-info-bg: #e0f2fe;
+  --badge-info-border: #7dd3fc;
+  --badge-info-fg: #075985;
+  --badge-brand-bg: #f3ead9;
+  --badge-brand-border: #d9b98f;
+  --badge-brand-fg: #5e3f25;
+  --skeleton: #e6d5b8;
+
+  /* Print-preview paper is intentionally fixed in both UI themes so the
+     on-screen document remains an accurate representation of thermal output. */
+  --print-paper: #fffdf8;
+  --print-ink: #211c17;
+  --print-ink-muted: #5c5146;
+  --print-rule: #776b5e;
+  --print-rule-subtle: #ded5c8;
+  --print-border: #d8cbb8;
+  --print-total-bg: #f4eee4;
+  --print-total-ink: #17130f;
+  --shadow-paper: 0 18px 45px -18px rgb(43 29 18 / 0.45);
+}
 
 /* ---------------------------------------------------------------------------
  * 3. Semantic tokens — DARK theme. Same meanings, adjusted values only.
  * ------------------------------------------------------------------------- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #2b1d12;
-    --surface: #3a2a1b;
-    --surface-muted: rgb(255 255 255 / 0.05);
-    --surface-hover: rgb(255 255 255 / 0.1);
-    --surface-active: rgb(255 255 255 / 0.15);
-    --overlay: rgb(0 0 0 / 0.6);
+:root {
+  color-scheme: light;
+}
 
-    --foreground: #faf6f0;
-    --foreground-strong: #f3ead9;
-    --foreground-muted: #f3ead9;
-    --foreground-subtle: #c69a63;
-    --foreground-faint: #5e3f25;
+:root[data-theme='light'] {
+  color-scheme: light;
+}
 
-    --border: rgb(255 255 255 / 0.15);
-    --border-subtle: rgb(255 255 255 / 0.1);
-    --border-strong: rgb(255 255 255 / 0.2);
-    --border-accent: rgb(255 255 255 / 0.2);
-    --border-accent-hover: rgb(255 255 255 / 0.3);
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
 
-    --primary: #b07f47;
-    --primary-hover: #c69a63;
-    --primary-active: #d9b98f;
-    --primary-foreground: #2b1d12;
+/* Explicit dark theme. The startup initializer sets data-theme from the
+   persisted choice, or from the system preference when no choice exists. */
+:root[data-theme='dark'] {
+  /* Warm-neutral dark palette: surfaces are intentionally independent from
+     the Station brown brand ramp so cards, overlays, and controls stay legible. */
+  --background: #151412;
+  --surface: #1d1c1a;
+  --surface-muted: #25231f;
+  --surface-elevated: #2a2723;
+  --surface-card: #211f1c;
+  --surface-popover: #2a2723;
+  --surface-dialog: #24211d;
+  --surface-input: #181816;
+  --surface-hover: #302c27;
+  --surface-active: #3a342e;
+  --surface-selected: #3a2d21;
+  --overlay: rgb(5 5 4 / 0.76);
 
-    --secondary: rgb(255 255 255 / 0.1);
-    --secondary-hover: rgb(255 255 255 / 0.15);
-    --secondary-active: rgb(255 255 255 / 0.2);
-    --secondary-foreground: #faf6f0;
+  --foreground: #f5f1e8;
+  --foreground-strong: #fffaf2;
+  --foreground-muted: #c8c0b5;
+  --foreground-subtle: #aaa39a;
+  --foreground-faint: #77736d; /* decorative content only */
+  --foreground-disabled: #77736d;
+  --foreground-inverse: #1b120c;
+  --placeholder-foreground: #aaa39a;
 
-    --accent: rgb(255 255 255 / 0.1);
-    --accent-hover: rgb(255 255 255 / 0.15);
+  --border: #3a3732;
+  --border-subtle: #2c2a26;
+  --border-strong: #6b655d;
+  --border-accent: #49443e;
+  --border-accent-hover: #625b52;
 
-    --focus: #d9b98f;
+  /* Role identity colors use solid dark tints with bright, independent text. */
+  --role-admin-bg: #31235f;
+  --role-admin-fg: #ddd6fe;
+  --role-admin-badge-bg: #2a2050;
+  --role-admin-badge-border: #6d5aa7;
+  --role-admin-badge-fg: #ddd6fe;
+  --role-manager-bg: #173f3b;
+  --role-manager-fg: #bff7ec;
+  --role-manager-badge-bg: #173b38;
+  --role-manager-badge-border: #3f827a;
+  --role-manager-badge-fg: #bff7ec;
+  --role-staff-bg: #1c3c5a;
+  --role-staff-fg: #d7eaff;
+  --role-staff-badge-bg: #1b3852;
+  --role-staff-badge-border: #4c7191;
+  --role-staff-badge-fg: #d7eaff;
+  --role-fallback-bg: #2b2824;
+  --role-fallback-fg: #d8d2c9;
+  --role-fallback-badge-bg: #25231f;
+  --role-fallback-badge-border: #45413b;
+  --role-fallback-badge-fg: #c8c0b5;
 
-    --destructive: #dc2626;
-    --destructive-hover: #ef4444;
-    --destructive-active: #f87171;
-    --destructive-foreground: #ffffff;
-    --destructive-soft: rgb(239 68 68 / 0.15);
-    --destructive-soft-hover: rgb(239 68 68 / 0.25);
-    --destructive-soft-foreground: #fecaca;
+  /* Brown is reserved for Station actions; its dark-mode foreground is dark to
+     maintain contrast as hover/active actions become brighter. */
+  --primary: #ad763f;
+  --primary-hover: #bd824c;
+  --primary-active: #d09a68;
+  --primary-foreground: #1b120c;
 
-    --success: #4ade80;
-    --success-foreground: #86efac;
-    --success-soft: rgb(34 197 94 / 0.15);
+  --secondary: #2a2723;
+  --secondary-hover: #35312b;
+  --secondary-active: #403a33;
+  --secondary-foreground: #f5f1e8;
 
-    --warning: #fbbf24;
-    --warning-foreground: #fcd34d;
-    --warning-soft: rgb(245 158 11 / 0.15);
+  --accent: #3a2d21;
+  --accent-hover: #493929;
+  --primary-soft: #3a2d21;
+  --primary-soft-hover: #493929;
+  --primary-border: #705033;
+  --focus: #e0b77e;
 
-    --info: #38bdf8;
-    --info-foreground: #7dd3fc;
-    --info-soft: rgb(14 165 233 / 0.15);
-  }
+  --destructive: #f08a8a; /* bright indicator/icon on dark surfaces */
+  --destructive-soft: #3a2022;
+  --destructive-soft-hover: #4a272a;
+  --destructive-soft-foreground: #f4a1a1;
+  --destructive-border: #7f3438;
+  --destructive-solid: #b91c1c;
+  --destructive-solid-hover: #d12b2b;
+  --destructive-solid-active: #ef4444;
+  --destructive-solid-foreground: #ffffff;
+
+  --success: #63d693; /* indicator/icon on dark surfaces */
+  --success-foreground: #86d5a3; /* text on success-soft */
+  --success-soft: #1b3528;
+  --success-soft-hover: #244631;
+  --success-border: #2f6847;
+  --success-solid: #237a4e;
+  --success-solid-hover: #2b8c5b;
+  --success-solid-active: #35a269;
+  --success-solid-foreground: #ffffff;
+  --warning: #f4c66a;
+  --warning-foreground: #f4c66a;
+  --warning-soft: #392b14;
+  --warning-soft-hover: #493617;
+  --warning-border: #72551f;
+  --warning-solid: #9a5b08;
+  --warning-solid-hover: #b56a0b;
+  --warning-solid-active: #d17d10;
+  --warning-solid-foreground: #ffffff;
+  --info: #6fc8e8;
+  --info-foreground: #7dd0ee;
+  --info-soft: #152f3c;
+  --info-soft-hover: #1c3c4d;
+  --info-border: #2e6077;
+  --info-solid: #0876a8;
+  --info-solid-hover: #0b88bf;
+  --info-solid-active: #13a4df;
+  --info-solid-foreground: #ffffff;
+
+  --state-active: #63d693;
+  --state-inactive: #aaa39a;
+  --state-pending: #f4c66a;
+  --state-disabled: #77736d;
+  --state-selected: #3a2d21;
+
+  --badge-neutral-bg: #25231f;
+  --badge-neutral-border: #45413b;
+  --badge-neutral-fg: #c8c0b5;
+  --badge-success-bg: #1b3528;
+  --badge-success-border: #2f6847;
+  --badge-success-fg: #86d5a3;
+  --badge-warning-bg: #392b14;
+  --badge-warning-border: #72551f;
+  --badge-warning-fg: #f4c66a;
+  --badge-danger-bg: #3a2022;
+  --badge-danger-border: #7f3438;
+  --badge-danger-fg: #f4a1a1;
+  --badge-info-bg: #152f3c;
+  --badge-info-border: #2e6077;
+  --badge-info-fg: #7dd0ee;
+  --badge-brand-bg: #3a2d21;
+  --badge-brand-border: #705033;
+  --badge-brand-fg: #e8c49d;
+  --skeleton: #302c27;
 }
 
 /* ---------------------------------------------------------------------------
@@ -163,8 +364,14 @@
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-card: var(--surface-card);
+  --color-surface-popover: var(--surface-popover);
+  --color-surface-dialog: var(--surface-dialog);
+  --color-surface-input: var(--surface-input);
   --color-surface-hover: var(--surface-hover);
   --color-surface-active: var(--surface-active);
+  --color-surface-selected: var(--surface-selected);
   --color-overlay: var(--overlay);
 
   --color-foreground: var(--foreground);
@@ -172,6 +379,9 @@
   --color-foreground-muted: var(--foreground-muted);
   --color-foreground-subtle: var(--foreground-subtle);
   --color-foreground-faint: var(--foreground-faint);
+  --color-foreground-disabled: var(--foreground-disabled);
+  --color-foreground-inverse: var(--foreground-inverse);
+  --color-placeholder-foreground: var(--placeholder-foreground);
 
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
@@ -191,44 +401,105 @@
 
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-hover: var(--primary-soft-hover);
+  --color-primary-border: var(--primary-border);
 
   --color-focus: var(--focus);
 
+  --color-role-admin-bg: var(--role-admin-bg);
+  --color-role-admin-fg: var(--role-admin-fg);
+  --color-role-admin-badge-bg: var(--role-admin-badge-bg);
+  --color-role-admin-badge-border: var(--role-admin-badge-border);
+  --color-role-admin-badge-fg: var(--role-admin-badge-fg);
+  --color-role-manager-bg: var(--role-manager-bg);
+  --color-role-manager-fg: var(--role-manager-fg);
+  --color-role-manager-badge-bg: var(--role-manager-badge-bg);
+  --color-role-manager-badge-border: var(--role-manager-badge-border);
+  --color-role-manager-badge-fg: var(--role-manager-badge-fg);
+  --color-role-staff-bg: var(--role-staff-bg);
+  --color-role-staff-fg: var(--role-staff-fg);
+  --color-role-staff-badge-bg: var(--role-staff-badge-bg);
+  --color-role-staff-badge-border: var(--role-staff-badge-border);
+  --color-role-staff-badge-fg: var(--role-staff-badge-fg);
+  --color-role-fallback-bg: var(--role-fallback-bg);
+  --color-role-fallback-fg: var(--role-fallback-fg);
+  --color-role-fallback-badge-bg: var(--role-fallback-badge-bg);
+  --color-role-fallback-badge-border: var(--role-fallback-badge-border);
+  --color-role-fallback-badge-fg: var(--role-fallback-badge-fg);
+  --color-badge-neutral-bg: var(--badge-neutral-bg);
+  --color-badge-neutral-border: var(--badge-neutral-border);
+  --color-badge-neutral-fg: var(--badge-neutral-fg);
+  --color-badge-success-bg: var(--badge-success-bg);
+  --color-badge-success-border: var(--badge-success-border);
+  --color-badge-success-fg: var(--badge-success-fg);
+  --color-badge-warning-bg: var(--badge-warning-bg);
+  --color-badge-warning-border: var(--badge-warning-border);
+  --color-badge-warning-fg: var(--badge-warning-fg);
+  --color-badge-danger-bg: var(--badge-danger-bg);
+  --color-badge-danger-border: var(--badge-danger-border);
+  --color-badge-danger-fg: var(--badge-danger-fg);
+  --color-badge-info-bg: var(--badge-info-bg);
+  --color-badge-info-border: var(--badge-info-border);
+  --color-badge-info-fg: var(--badge-info-fg);
+  --color-badge-brand-bg: var(--badge-brand-bg);
+  --color-badge-brand-border: var(--badge-brand-border);
+  --color-badge-brand-fg: var(--badge-brand-fg);
+  --color-skeleton: var(--skeleton);
+
+  --color-print-paper: var(--print-paper);
+  --color-print-ink: var(--print-ink);
+  --color-print-ink-muted: var(--print-ink-muted);
+  --color-print-rule: var(--print-rule);
+  --color-print-rule-subtle: var(--print-rule-subtle);
+  --color-print-border: var(--print-border);
+  --color-print-total-bg: var(--print-total-bg);
+  --color-print-total-ink: var(--print-total-ink);
+  --shadow-paper: var(--shadow-paper);
+
   --color-destructive: var(--destructive);
-  --color-destructive-hover: var(--destructive-hover);
-  --color-destructive-active: var(--destructive-active);
-  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-destructive-solid-hover: var(--destructive-solid-hover);
+  --color-destructive-solid-active: var(--destructive-solid-active);
+  --color-destructive-solid-foreground: var(--destructive-solid-foreground);
   --color-destructive-soft: var(--destructive-soft);
   --color-destructive-soft-hover: var(--destructive-soft-hover);
   --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+  --color-destructive-border: var(--destructive-border);
 
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-soft: var(--success-soft);
+  --color-success-soft-hover: var(--success-soft-hover);
+  --color-success-border: var(--success-border);
+  --color-success-solid: var(--success-solid);
+  --color-success-solid-hover: var(--success-solid-hover);
+  --color-success-solid-active: var(--success-solid-active);
+  --color-success-solid-foreground: var(--success-solid-foreground);
 
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-hover: var(--warning-soft-hover);
+  --color-warning-border: var(--warning-border);
+  --color-warning-solid: var(--warning-solid);
+  --color-warning-solid-hover: var(--warning-solid-hover);
+  --color-warning-solid-active: var(--warning-solid-active);
+  --color-warning-solid-foreground: var(--warning-solid-foreground);
 
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-info-soft: var(--info-soft);
-}
+  --color-info-soft-hover: var(--info-soft-hover);
+  --color-info-border: var(--info-border);
+  --color-info-solid: var(--info-solid);
+  --color-info-solid-hover: var(--info-solid-hover);
+  --color-info-solid-active: var(--info-solid-active);
+  --color-info-solid-foreground: var(--info-solid-foreground);
 
-  --destructive-soft-foreground: #991b1b; /* red-800 */
-
-  /* Success. */
-  --success: #15803d; /* green-700 */
-  --success-foreground: #166534; /* green-800 */
-  --success-soft: #dcfce7; /* green-100 */
-
-  /* Warning. */
-  --warning: #d97706; /* amber-600 */
-  --warning-foreground: #92400e; /* amber-800 */
-  --warning-soft: #fef3c7; /* amber-100 */
-
-  /* Info. */
-  --info: #0284c7; /* sky-600 */
-  --info-foreground: #075985; /* sky-800 */
-  --info-soft: #e0f2fe; /* sky-100 */
+  --color-state-active: var(--state-active);
+  --color-state-inactive: var(--state-inactive);
+  --color-state-pending: var(--state-pending);
+  --color-state-disabled: var(--state-disabled);
+  --color-state-selected: var(--state-selected);
 }

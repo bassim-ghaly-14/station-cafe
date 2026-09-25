@@ -155,7 +155,7 @@ export function DateRangePicker({
 
   return (
     <div ref={rootRef} className={cn('relative w-full text-start sm:w-auto', className)}>
-      <div className="flex h-10 items-center rounded-md border border-border-strong bg-surface">
+      <div className="flex h-10 items-center rounded-md border border-border-strong bg-surface-input">
         <button
           ref={triggerRef}
           type="button"
@@ -163,7 +163,7 @@ export function DateRangePicker({
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => (open ? close() : openPicker())}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-start text-base whitespace-nowrap focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-start text-base whitespace-nowrap focus-visible:outline-2 focus-visible:outline-focus disabled:text-foreground-disabled disabled:opacity-70"
         >
           <CalendarDays size={16} aria-hidden className="shrink-0 text-foreground-subtle" />
           <span className="sr-only">{labelText}: </span>
@@ -199,7 +199,7 @@ export function DateRangePicker({
           role="dialog"
           aria-modal="false"
           aria-label={labelText}
-          className="absolute inset-s-0 z-40 mt-2 w-88 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface p-3 shadow-lg"
+          className="absolute inset-s-0 z-40 mt-2 w-88 max-w-[calc(100vw-2rem)] rounded-lg border border-border-strong bg-surface-popover p-3 shadow-lg"
         >
           {/* Draft summary — an unfinished range is visible before it is applied. */}
           <div className="mb-2 flex flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2">
@@ -273,9 +273,12 @@ export function DateRangePicker({
                   className={cn(
                     'relative flex h-9 items-center justify-center rounded-md text-sm tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
                     !isEdge && inRange(cell.iso) && 'bg-accent text-foreground',
-                    !isEdge && !inRange(cell.iso) && 'text-foreground hover:bg-surface-hover active:bg-surface-active',
+                    !isEdge &&
+                      !inRange(cell.iso) &&
+                      'text-foreground hover:bg-surface-hover active:bg-surface-active',
                     cell.iso === today && !isEdge && 'font-bold text-foreground-strong',
-                    isEdge && 'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+                    isEdge &&
+                      'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
                   )}
                 >
                   {cell.day}

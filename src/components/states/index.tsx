@@ -1,14 +1,26 @@
 /**
- * Shared loading / empty / error states.
- * Every data-driven screen must use these — never ship a blank screen.
+ * Shared empty / error states and the specialized boot progress indicator.
  */
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from '@/components/ui/icon'
-export function LoadingState({ label }: { label?: string }) {
+
+/**
+ * Boot-screen progress indicator — the restrained companion to the large
+ * Station logo on application startup. A thin indeterminate bar sweep
+ * (theme tokens only) instead of a competing circular spinner.
+ * Language-independent: the sweep uses physical transforms only.
+ */
+export function BootLoadingIndicator({ label }: { label?: string }) {
   return (
-    <div role="status" aria-live="polite" className="flex flex-col items-center gap-3">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
+    <div
+      role="status"
+      aria-live="polite"
+      className="boot-loading-block flex w-full max-w-60 flex-col items-center gap-3"
+    >
+      <div aria-hidden="true" dir="ltr" className="boot-progress-track">
+        <div className="boot-progress-bar" />
+      </div>
       {label ? <p className="text-sm text-foreground-muted">{label}</p> : null}
     </div>
   )
@@ -36,7 +48,7 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="flex flex-col items-center gap-3 rounded-lg border border-destructive-soft bg-destructive-soft/40 p-6 text-center"
+      className="flex flex-col items-center gap-3 rounded-lg border border-destructive-border bg-destructive-soft p-6 text-center"
     >
       <p className="font-medium text-destructive-soft-foreground">{message}</p>
       {onRetry ? (
