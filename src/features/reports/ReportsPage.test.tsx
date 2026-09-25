@@ -66,6 +66,10 @@ const mocks = vi.hoisted(() => ({
   printJobs: vi.fn(),
   printConfig: vi.fn(),
   printTest: vi.fn(),
+  closedShifts: vi.fn(),
+  closedBusinessDays: vi.fn(),
+  printPreviewShift: vi.fn(),
+  printPreviewDay: vi.fn(),
 }))
 
 vi.mock('@/services/opsApi', () => ({
@@ -77,6 +81,21 @@ vi.mock('@/services/opsApi', () => ({
     printJobs: mocks.printJobs,
     printConfig: mocks.printConfig,
     printTest: mocks.printTest,
+    closedShifts: mocks.closedShifts,
+    closedBusinessDays: mocks.closedBusinessDays,
+  },
+}))
+
+vi.mock('@/services/posApi', () => ({
+  api: {
+    printPreviewShift: mocks.printPreviewShift,
+    printPreviewDay: mocks.printPreviewDay,
+    printInvoice: vi.fn(),
+    printShift: vi.fn(),
+    printDay: vi.fn(),
+    printPreviewOrder: vi.fn(),
+    printPreviewInvoice: vi.fn(),
+    printPreviewTicket: vi.fn(),
   },
 }))
 
@@ -131,6 +150,10 @@ describe('ReportsPage period filter', () => {
       duplicate_window_secs: 60,
     })
     mocks.printTest.mockReset()
+    mocks.closedShifts.mockReset().mockResolvedValue([])
+    mocks.closedBusinessDays.mockReset().mockResolvedValue([])
+    mocks.printPreviewShift.mockReset()
+    mocks.printPreviewDay.mockReset()
   })
 
   afterEach(async () => {
@@ -188,6 +211,104 @@ describe('ReportsPage period filter', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'إجراءات تصدير الرسوم البيانية' })[0])
     expect(screen.getByRole('menuitem', { name: 'تصدير كصورة PNG' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'تصدير Excel' })).toBeInTheDocument()
+  })
+
+  // Regression: the closed-day list used to render and address rows with
+  // `business_day_id` / `day_date` / `opened_at` that the backend nested under
+  // `day`. The identifiers were therefore `undefined`, the preview command was
+  // invoked with `day_id: undefined` and every historical closing failed with
+  // the generic "unexpected error". The row must carry its own id, and the
+  // preview must be requested with exactly that id.
+  it('opens the historical day-closing preview with the row’s own business day id', async () => {
+    mocks.closedBusinessDays.mockResolvedValue([
+      {
+        closing_id: 9,
+        business_day_id: 42,
+        day_date: '2026-09-20',
+        status: 'CLOSED',
+        opened_at: '2026-09-20 08:00:00Z',
+        closed_at: '2026-09-20 23:30:00Z',
+        closed_by: 1,
+        shift_count: 2,
+        totals: {
+          invoices_count: 7,
+          cafe_sales: 10_000,
+          wash_sales: 20_000,
+          subtotal: 30_000,
+          discounts: 0,
+          service_charges: 0,
+          total_sales: 30_000,
+          cash: 30_000,
+          card: 0,
+          credit: 0,
+          expenses: 0,
+        },
+      },
+    ])
+    mocks.printPreviewDay.mockResolvedValue({
+      doc_type: 'DAY_REPORT',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        { kind: 'text', text: 'تقفيل يوم العمل', align: 'center', bold: true, width: 1, height: 1 },
+      ],
+    })
+
+    renderPage()
+    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('tab', { name: 'تقفيلات أيام العمل' }))
+
+    // The row is keyed and identified by its own id — never by `undefined`.
+    expect(await screen.findByText('#42')).toBeInTheDocument()
+    // The business date is present (it used to be nested under `day` and never
+    // reached the screen), and it is rendered through the shared date formatter.
+    expect(screen.getAllByText(formatDate('2026-09-20')).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'معاينة' }))
+
+    await waitFor(() => expect(mocks.printPreviewDay).toHaveBeenCalledWith(42))
+    expect(mocks.printPreviewDay).not.toHaveBeenCalledWith(undefined)
+    expect(await screen.findAllByText('تقفيل يوم العمل')).not.toHaveLength(0)
+  })
+
+  it('opens the historical shift-closing preview with the row’s own shift id', async () => {
+    mocks.closedShifts.mockResolvedValue([
+      {
+        id: 31,
+        business_day_id: 42,
+        user_id: 2,
+        user_name: 'Cashier One',
+        user_role: 'STAFF',
+        status: 'CLOSED',
+        opened_at: '2026-09-20 08:00:00Z',
+        opening_cash: 1_000,
+        closed_at: '2026-09-20 20:00:00Z',
+        cash_sales: 30_000,
+        card_sales: 0,
+        credit_sales: 0,
+        service_charges: 0,
+        discounts: 0,
+        invoices_count: 7,
+        expected_cash: 31_000,
+        actual_cash: 31_000,
+        cash_difference: 0,
+      },
+    ])
+    mocks.printPreviewShift.mockResolvedValue({
+      doc_type: 'SHIFT_REPORT',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        { kind: 'text', text: 'تقفيل وردية', align: 'center', bold: true, width: 1, height: 1 },
+      ],
+    })
+
+    renderPage()
+    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('tab', { name: 'تقفيلات الورديات' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'معاينة' }))
+    await waitFor(() => expect(mocks.printPreviewShift).toHaveBeenCalledWith(31))
   })
 
   it('refreshes all three charts when the applied period changes', async () => {

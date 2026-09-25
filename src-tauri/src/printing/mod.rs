@@ -448,7 +448,7 @@ mod tests {
             conn,
             staff,
             order_id,
-            product_id(conn, "CAFE", "CROISSANT ROMI"),
+            product_id(conn, "CAFE", "كرواسون رومي"),
             2,
         )
         .unwrap();
@@ -476,7 +476,7 @@ mod tests {
     /// Table order holding cafe AND wash items → HYBRID_INVOICE.
     fn hybrid_invoice(conn: &Connection, staff: &auth::User) -> i64 {
         let order_id = order_with_wash(conn, staff);
-        pos_svc::add_line(conn, staff, order_id, product_id(conn, "CAFE", "WATER"), 1).unwrap();
+        pos_svc::add_line(conn, staff, order_id, product_id(conn, "CAFE", "مياه"), 1).unwrap();
         pay(conn, staff, order_id)
     }
 
@@ -503,7 +503,7 @@ mod tests {
     /// Takeaway order with cafe items → TAKEAWAY_INVOICE.
     fn takeaway_invoice(conn: &Connection, staff: &auth::User) -> i64 {
         let order_id = pos_svc::start_takeaway(conn, staff).unwrap();
-        pos_svc::add_line(conn, staff, order_id, product_id(conn, "CAFE", "WATER"), 1).unwrap();
+        pos_svc::add_line(conn, staff, order_id, product_id(conn, "CAFE", "مياه"), 1).unwrap();
         pay(conn, staff, order_id)
     }
 
@@ -613,7 +613,7 @@ mod tests {
             &conn,
             &staff,
             order_id,
-            product_id(&conn, "CAFE", "CROISSANT ROMI"),
+            product_id(&conn, "CAFE", "كرواسون رومي"),
             2,
         )
         .unwrap();
@@ -651,7 +651,7 @@ mod tests {
             "WASH_INVOICE"
         );
         assert_eq!(count(&conn, "wash_tickets"), before);
-        pos_svc::add_line(&conn, &staff, wash, product_id(&conn, "CAFE", "WATER"), 1).unwrap();
+        pos_svc::add_line(&conn, &staff, wash, product_id(&conn, "CAFE", "مياه"), 1).unwrap();
         assert_eq!(
             preview_order(&conn, wash, None, None, None)
                 .unwrap()
@@ -670,7 +670,7 @@ mod tests {
             &conn,
             &staff,
             order_id,
-            product_id(&conn, "CAFE", "WATER"),
+            product_id(&conn, "CAFE", "مياه"),
             1,
         )
         .unwrap();

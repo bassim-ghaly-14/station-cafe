@@ -11,12 +11,13 @@ import {
   Skeleton,
   useToast,
 } from '@/components/ui'
+
 import {
   DisplayDate,
   DisplayDateTime,
   DisplayDateTimeRange,
 } from '@/components/ui/display-datetime'
-import { Check, Clock, Eye, Lock, RefreshCw } from '@/components/ui/icon'
+import { Check, CalendarDays, Clock, Eye, Lock, RefreshCw } from '@/components/ui/icon'
 import {
   shiftApi,
   type DayClosingRecord,
@@ -27,6 +28,7 @@ import {
 import { api } from '@/services/posApi'
 import { dayBadgeVariant } from '@/lib/status-badge'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
+import { ClosingCard } from './ClosingCard'
 
 function errorText(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
   return t([`errors.${(error as { message: string }).message}`, 'errors.internal_error'])
@@ -85,7 +87,22 @@ function ShiftRowItem({ shift }: { shift: ShiftRow }) {
   )
 }
 
-export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () => Promise<void> }) {
+export function DayClosingPanel({
+  dayId,
+  revision,
+  onDone,
+}: {
+  dayId: number
+  /**
+   * POS data revision. The POS page owns the single invalidation signal for
+   * the screen and bumps it whenever it reloads POS state (a completed sale,
+   * a shift closing, a day settlement). The day card re-reads its sources
+   * from that signal, so it can never be a second, stale copy of the data —
+   * without polling and without any duplicated global state.
+   */
+  revision: number
+  onDone: () => Promise<void>
+}) {
   const { t } = useTranslation()
   const toast = useToast()
   const [report, setReport] = useState<DayReportData | null>(null)
@@ -126,9 +143,11 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
     [dayId, t],
   )
 
+  // Initial load, then a silent reload on every POS data revision. `load` is
+  // stable for a given day, so this fires on mount and on revision bumps only.
   useEffect(() => {
     void load(true)
-  }, [load])
+  }, [load, revision])
 
   const pending = settlement?.pending_shifts ?? []
   const hasActiveShift = report?.shifts.some((shift) => shift.status === 'ACTIVE') ?? false
@@ -238,25 +257,63 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
 
   return (
     <>
-      <Card className="flex h-full flex-col overflow-hidden p-0">
-        <div className="flex min-w-0 items-start justify-between gap-3 border-b border-border-subtle bg-surface-muted px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-section">{t('settlement.title')}</h2>
-              <Badge variant={dayBadgeVariant(report.day.status)} size="sm" dot>
-                {t(`settlement.dayStatus.${report.day.status}`)}
-              </Badge>
-            </div>
-            {/* Date and time are separate slots with a real gap, so a long
-                localized date wraps instead of colliding with the time. */}
-            <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption">
-              <DisplayDate value={report.day.day_date} />
-              <span aria-hidden className="shrink-0 text-foreground-faint select-none">
-                ·
-              </span>
-              <DisplayDateTime value={report.day.opened_at} separator="" />
+      <ClosingCard
+        accent="day"
+        title={t('settlement.title')}
+        icon={<CalendarDays size={18} aria-hidden />}
+        status={
+          <Badge variant={dayBadgeVariant(report.day.status)} size="sm" dot>
+            {t(`settlement.dayStatus.${report.day.status}`)}
+          </Badge>
+        }
+        meta={
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <DisplayDate value={report.day.day_date} />
+            <span aria-hidden className="shrink-0 text-foreground-faint select-none">
+              ·
+            </span>
+            <DisplayDateTime value={report.day.opened_at} separator="" />
+          </span>
+        }
+        primaryLabel={t('settlement.totalSales')}
+        primaryAmount={report.totals.total_sales}
+        primaryNote={
+          <p>
+            {t('shift.invoiceCount')}:{' '}
+            <span className="font-bold tabular-nums">{report.totals.invoices_count}</span>
+          </p>
+        }
+        metrics={
+          <>
+            <SummaryRow label={t('settlement.cash')} amount={report.totals.cash} />
+            <SummaryRow label={t('settlement.card')} amount={report.totals.card} />
+            <SummaryRow label={t('settlement.credit')} amount={report.totals.credit} />
+            <SummaryRow label={t('settlement.expenses')} amount={report.totals.expenses} />
+          </>
+        }
+        highlight={
+          <div className="font-bold">
+            <SummaryRow
+              label={t('settlement.expectedDrawer')}
+              amount={report.expected_drawer_cash}
+              strong
+            />
+          </div>
+        }
+        footerNote={
+          <div>
+            <p className="text-sm font-bold">
+              {t('settlement.progress', {
+                pending: pending.length,
+                settled: reconciled.length,
+              })}
+            </p>
+            <p className="text-caption">
+              {t(actionMode === 'blocked' ? 'settlement.blockedHint' : 'settlement.readyHint')}
             </p>
           </div>
+        }
+        headerAction={
           <Button
             variant="ghost"
             size="icon-sm"
@@ -266,44 +323,15 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
           >
             <RefreshCw size={16} aria-hidden />
           </Button>
-        </div>
-        <div className="grid flex-1 gap-4 p-4 sm:grid-cols-2">
-          <section className="rounded-md bg-primary px-4 py-3 text-primary-foreground">
-            <p className="text-sm font-medium">{t('settlement.totalSales')}</p>
-            <MoneyDisplay
-              amount={report.totals.total_sales}
-              className="mt-1 text-2xl font-bold tracking-tight"
-            />
-            <p className="mt-1 text-sm">
-              {t('shift.invoiceCount')}:{' '}
-              <span className="font-bold tabular-nums">{report.totals.invoices_count}</span>
-            </p>
-          </section>
-          <section className="grid grid-cols-2 gap-x-5 text-sm">
-            <SummaryRow label={t('settlement.cash')} amount={report.totals.cash} />
-            <SummaryRow label={t('settlement.card')} amount={report.totals.card} />
-            <SummaryRow label={t('settlement.credit')} amount={report.totals.credit} />
-            <SummaryRow label={t('settlement.expenses')} amount={report.totals.expenses} />
-            <div className="col-span-2 mt-1 border-t border-border-subtle pt-2">
-              <SummaryRow
-                label={t('settlement.expectedDrawer')}
-                amount={report.expected_drawer_cash}
-                strong
-              />
-            </div>
-          </section>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
-          <div>
-            <p className="text-sm font-bold">
-              {t('settlement.progress', { pending: pending.length, settled: reconciled.length })}
-            </p>
-            <p className="text-caption">
-              {t(actionMode === 'blocked' ? 'settlement.blockedHint' : 'settlement.readyHint')}
-            </p>
-          </div>
+        }
+        action={
           <Button
-            variant={actionMode === 'blocked' ? 'outline' : 'destructive'}
+            variant={actionMode === 'blocked' ? 'outline' : 'default'}
+            className={
+              actionMode === 'blocked'
+                ? undefined
+                : 'bg-closing-day-solid text-closing-day-solid-foreground hover:bg-closing-day-solid-hover active:bg-closing-day-solid-active'
+            }
             disabled={actionMode === 'blocked' || !dataValid || busy}
             loading={busy}
             onClick={() => setOpen(true)}
@@ -317,8 +345,8 @@ export function DayClosingPanel({ dayId, onDone }: { dayId: number; onDone: () =
             )}
             {actionLabel}
           </Button>
-        </div>
-      </Card>
+        }
+      />
       {error && !open ? (
         <div className="mt-2">
           <ErrorState message={error} onRetry={() => void load(true)} retryLabel={t('app.retry')} />

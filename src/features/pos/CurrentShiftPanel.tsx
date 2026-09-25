@@ -1,22 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Badge,
-  Button,
-  Card,
-  Dialog,
-  EmployeeAvatar,
-  MoneyDisplay,
-  useToast,
-} from '@/components/ui'
+import { Badge, Button, Dialog, EmployeeAvatar, MoneyDisplay, useToast } from '@/components/ui'
 import { DisplayDateTime } from '@/components/ui/display-datetime'
 import { Clock, Eye, Lock } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
+import { ListRowsSkeleton, Skeleton } from '@/components/ui'
+import { ErrorState } from '@/components/states'
 import { parseMajor } from '@/lib/utils'
 import { normalizeToUtcIso } from '@/lib/date'
 import { shiftApi, type ShiftClosingPreview, type ShiftRow } from '@/services/shiftApi'
 import { api } from '@/services/posApi'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
+import { ClosingCard, ClosingMetric } from './ClosingCard'
 
 function errorText(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
   return t([`errors.${(error as { message: string }).message}`, 'errors.internal_error'])
@@ -61,6 +56,7 @@ export function CurrentShiftPanel({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [actualCash, setActualCash] = useState('')
   const [preview, setPreview] = useState<ShiftClosingPreview | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
   const [printPreview, setPrintPreview] = useState<PrintPreviewTarget | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -76,20 +72,31 @@ export function CurrentShiftPanel({
     return () => window.clearInterval(timer)
   }, [])
 
-  async function openDialog() {
-    if (busy) return
-    setBusy(true)
-    setError(null)
-    setActualCash('')
-    setPreview(null)
+  // The closing preview is read when the dialog opens, from the SAME command
+  // that produced the card's numbers — the dialog never becomes the only place
+  // where correct shift totals are visible.
+  const loadPreview = useCallback(async () => {
+    setLoadingPreview(true)
     try {
       setPreview(await shiftApi.previewShiftClose())
-      setDialogOpen(true)
+      setError(null)
     } catch (e) {
+      setPreview(null)
       setError(errorText(t, e))
     } finally {
-      setBusy(false)
+      setLoadingPreview(false)
     }
+  }, [t])
+
+  // The dialog opens immediately and shows its own loading state; opening is
+  // never blocked on a network round-trip.
+  function openDialog() {
+    if (busy) return
+    setActualCash('')
+    setPreview(null)
+    setError(null)
+    setDialogOpen(true)
+    void loadPreview()
   }
 
   async function close() {
@@ -130,98 +137,114 @@ export function CurrentShiftPanel({
 
   return (
     <>
-      <Card className="flex h-full flex-col overflow-hidden p-0">
-        <div className="flex items-start justify-between gap-4 border-b border-border-subtle bg-surface-muted px-4 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-section">{t('shift.current')}</h2>
-              <Badge variant="success" size="sm" dot>
-                {t('shift.open')}
-              </Badge>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <EmployeeAvatar role={shift.user_role} size="sm" />
-                <span className="truncate">{shift.user_name ?? '—'}</span>
+      <ClosingCard
+        accent="shift"
+        title={t('shift.current')}
+        icon={<Clock size={18} aria-hidden />}
+        status={
+          <Badge variant="success" size="sm" dot>
+            {t('shift.open')}
+          </Badge>
+        }
+        meta={
+          <>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <EmployeeAvatar role={shift.user_role} size="sm" />
+              <span className="truncate">{shift.user_name ?? '—'}</span>
+            </span>
+            <span className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <Clock size={14} aria-hidden className="shrink-0" />
+              <DisplayDateTime value={shift.opened_at} />
+              <span>
+                · {t('shift.elapsed', { hours: Math.floor(elapsed / 60), minutes: elapsed % 60 })}
               </span>
-              {/* A long localized date wraps onto its own line instead of
-                  colliding with the time, the AM/PM marker or the separator. */}
-              <span className="flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                <Clock size={14} aria-hidden className="shrink-0" />
-                <DisplayDateTime value={shift.opened_at} />
-                <span>
-                  · {t('shift.elapsed', { hours: Math.floor(elapsed / 60), minutes: elapsed % 60 })}
-                </span>
-              </span>
-            </div>
+            </span>
+          </>
+        }
+        primaryLabel={t('shift.sales')}
+        primaryAmount={totalSales}
+        primaryNote={
+          <p>
+            {t('shift.invoiceCount')}:{' '}
+            <span className="font-bold tabular-nums">{shift.invoices_count}</span>
+          </p>
+        }
+        metrics={
+          <>
+            <ClosingMetric label={t('shift.cashSales')} amount={shift.cash_sales} />
+            <ClosingMetric label={t('shift.cardSales')} amount={shift.card_sales} />
+            <ClosingMetric label={t('shift.creditSales')} amount={shift.credit_sales} />
+            <ClosingMetric label={t('shift.openingCash')} amount={shift.opening_cash} />
+          </>
+        }
+        highlight={
+          <div className="font-bold">
+            <SummaryRow label={t('shift.expectedCash')} amount={shift.expected_cash} strong />
           </div>
+        }
+        footerNote={<p className="max-w-sm text-caption">{t('shift.closeHint')}</p>}
+        headerAction={
           <span className="hidden text-xs font-medium text-foreground-subtle sm:block">
             #{shift.id}
           </span>
-        </div>
-        <div className="grid flex-1 gap-4 p-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <section className="flex flex-col justify-center rounded-md bg-primary px-4 py-3 text-primary-foreground">
-            <p className="text-sm font-medium">{t('shift.sales')}</p>
-            <MoneyDisplay
-              amount={totalSales}
-              variant="auto"
-              className="mt-1 text-2xl font-bold tracking-tight"
-            />
-            <p className="mt-1 text-sm">
-              {t('shift.invoiceCount')}:{' '}
-              <span className="font-bold tabular-nums">{shift.invoices_count}</span>
-            </p>
-          </section>
-          <section className="grid grid-cols-2 gap-x-5 text-sm">
-            <SummaryRow label={t('shift.cashSales')} amount={shift.cash_sales} />
-            <SummaryRow label={t('shift.cardSales')} amount={shift.card_sales} />
-            <SummaryRow label={t('shift.creditSales')} amount={shift.credit_sales} />
-            <SummaryRow label={t('shift.openingCash')} amount={shift.opening_cash} />
-            <div className="col-span-2 mt-1 border-t border-border-subtle pt-2">
-              <SummaryRow label={t('shift.expectedCash')} amount={shift.expected_cash} strong />
-            </div>
-          </section>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
-          <p className="max-w-sm text-caption">{t('shift.closeHint')}</p>
+        }
+        action={
           <Button
-            variant="destructive"
-            onClick={() => void openDialog()}
+            variant="outline"
+            onClick={openDialog}
             loading={busy}
             disabled={busy}
+            className="border-closing-shift-border text-closing-shift-foreground hover:bg-closing-shift-soft"
           >
             {!busy ? <Lock size={16} aria-hidden /> : null}
             {t('shift.close')}
           </Button>
-        </div>
-      </Card>
-      {dialogOpen && preview ? (
+        }
+      />
+      {dialogOpen ? (
         <Dialog
           open
           onClose={() => !busy && setDialogOpen(false)}
           title={t('shift.closeTitle')}
           wide
         >
+          {/* The form is rendered from the first commit, so the cash field exists
+              — and holds initial focus — before the closing figures arrive. Only
+              the SERVER-DERIVED values show a loading state; the input never
+              does, and the user is never asked to open a dialog to refresh
+              anything. */}
           <div className="max-h-[65vh] space-y-4 overflow-y-auto">
             <div className="grid gap-3 rounded-md bg-surface-muted p-3 sm:grid-cols-3">
               <div>
                 <p className="text-caption">{t('shift.cashier')}</p>
-                <p className="flex min-w-0 items-center gap-1.5 font-bold">
-                  <EmployeeAvatar role={preview.shift.user_role} size="sm" />
-                  <span className="truncate">{preview.shift.user_name ?? '—'}</span>
-                </p>
+                {preview ? (
+                  <p className="flex min-w-0 items-center gap-1.5 font-bold">
+                    <EmployeeAvatar role={preview.shift.user_role} size="sm" />
+                    <span className="truncate">{preview.shift.user_name ?? '—'}</span>
+                  </p>
+                ) : (
+                  <Skeleton variant="text" className="h-5 w-24" accessibilityLabel="" />
+                )}
               </div>
               <div className="min-w-0">
                 <p className="text-caption">{t('shift.from')}</p>
-                <p className="min-w-0 font-bold">
-                  <DisplayDateTime value={preview.shift.opened_at} />
-                </p>
+                {preview ? (
+                  <p className="min-w-0 font-bold">
+                    <DisplayDateTime value={preview.shift.opened_at} />
+                  </p>
+                ) : (
+                  <Skeleton variant="text" className="h-5 w-28" accessibilityLabel="" />
+                )}
               </div>
               <div className="min-w-0">
                 <p className="text-caption">{t('shift.to')}</p>
-                <p className="min-w-0 font-bold">
-                  <DisplayDateTime value={preview.closing_at} />
-                </p>
+                {preview ? (
+                  <p className="min-w-0 font-bold">
+                    <DisplayDateTime value={preview.closing_at} />
+                  </p>
+                ) : (
+                  <Skeleton variant="text" className="h-5 w-28" accessibilityLabel="" />
+                )}
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -229,25 +252,36 @@ export function CurrentShiftPanel({
                 <h3 className="mb-1 font-bold text-foreground-strong">
                   {t('shift.financialSummary')}
                 </h3>
-                <div className="flex justify-between py-1.5 text-foreground-muted">
-                  <span>{t('shift.invoiceCount')}</span>
-                  <span className="font-bold tabular-nums">{preview.invoices_count}</span>
-                </div>
-                <SummaryRow label={t('shift.cashSales')} amount={preview.cash_sales} />
-                <SummaryRow label={t('shift.cardSales')} amount={preview.card_sales} />
-                <SummaryRow label={t('shift.creditSales')} amount={preview.credit_sales} />
-                <div className="mt-1 border-t border-border-subtle pt-1.5">
-                  <SummaryRow
-                    label={t('shift.expectedCash')}
-                    amount={preview.expected_cash}
-                    strong
-                  />
-                </div>
+                {preview ? (
+                  <>
+                    <div className="flex justify-between py-1.5 text-foreground-muted">
+                      <span>{t('shift.invoiceCount')}</span>
+                      <span className="font-bold tabular-nums">{preview.invoices_count}</span>
+                    </div>
+                    <SummaryRow label={t('shift.cashSales')} amount={preview.cash_sales} />
+                    <SummaryRow label={t('shift.cardSales')} amount={preview.card_sales} />
+                    <SummaryRow label={t('shift.creditSales')} amount={preview.credit_sales} />
+                    <div className="mt-1 border-t border-border-subtle pt-1.5">
+                      <SummaryRow
+                        label={t('shift.expectedCash')}
+                        amount={preview.expected_cash}
+                        strong
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div role="status" aria-label={t('app.loading')}>
+                    <ListRowsSkeleton rows={4} />
+                  </div>
+                )}
               </section>
               <section>
                 <Field
                   label={t('shift.actualCash')}
-                  error={actualCash.trim() && parsedCash === null ? t('shift.invalidCash') : error}
+                  // Field-level feedback is validation only. A failed LOAD is
+                  // reported once, by the alert below, so the same problem is
+                  // never announced twice.
+                  error={actualCash.trim() && parsedCash === null ? t('shift.invalidCash') : null}
                   htmlFor="actual-cash"
                 >
                   <Input
@@ -256,6 +290,11 @@ export function CurrentShiftPanel({
                     dir="ltr"
                     inputMode="decimal"
                     autoComplete="off"
+                    // Declares THIS control as the dialog's initial focus target.
+                    // The dialog primitive honours the marker once per opening;
+                    // the field then behaves like any other controlled input for
+                    // the rest of its life — no refocus, no timer, no remount.
+                    data-dialog-autofocus=""
                     value={actualCash}
                     onChange={(e) => {
                       setActualCash(e.target.value)
@@ -282,21 +321,38 @@ export function CurrentShiftPanel({
                 <p className="mt-3 text-caption">{t('shift.countHint')}</p>
               </section>
             </div>
+            {/* A failed load is reported once, with a retry, because the figures the
+                user must reconcile against do not exist yet. A failed SUBMISSION
+                is reported inline — the dialog stays open with the amount intact. */}
+            {error && !preview ? (
+              <ErrorState
+                message={error}
+                onRetry={() => void loadPreview()}
+                retryLabel={t('app.retry')}
+              />
+            ) : null}
+            {error && preview ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle pt-4">
               <Button variant="outline" disabled={busy} onClick={() => setDialogOpen(false)}>
                 {t('app.cancel')}
               </Button>
               <Button
                 variant="ghost"
-                disabled={busy}
+                disabled={busy || loadingPreview}
                 onClick={() => setPrintPreview({ kind: 'shift_report', shift_id: shift.id })}
               >
                 <Eye size={16} aria-hidden />
                 {t('pos.printPreviewBeforePrint')}
               </Button>
               <Button
-                variant="destructive"
-                disabled={busy || parsedCash === null}
+                variant="outline"
+                className="border-closing-shift-border text-closing-shift-foreground hover:bg-closing-shift-soft"
+                // Never confirm against figures the backend has not returned yet.
+                disabled={busy || loadingPreview || !preview || parsedCash === null}
                 loading={busy}
                 onClick={() => void close()}
               >
@@ -309,11 +365,6 @@ export function CurrentShiftPanel({
       ) : null}
       {printPreview ? (
         <PrintPreviewDialog target={printPreview} onClose={() => setPrintPreview(null)} />
-      ) : null}
-      {error && !dialogOpen ? (
-        <p role="alert" className="mt-2 text-sm text-destructive">
-          {error}
-        </p>
       ) : null}
     </>
   )

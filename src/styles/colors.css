@@ -167,6 +167,32 @@
   --state-disabled: #96673a;
   --state-selected: #f3ead9;
 
+  /* Closing identities. Shift closing and day closing are one closing system
+     with two deliberately different meanings, so each gets its own semantic
+     accent family instead of borrowing an unrelated state color:
+       shift — teal, the LIVE cashier/operator period currently in progress;
+       day   — indigo, the whole business day and its financial reconciliation.
+     Components reference only these tokens (never raw hex). */
+  --closing-shift: #0f766e;
+  --closing-shift-foreground: #0b5f58;
+  --closing-shift-soft: #d7f0ec;
+  --closing-shift-soft-hover: #c3e6e0;
+  --closing-shift-border: #7fc9be;
+  --closing-shift-solid: #0f766e;
+  --closing-shift-solid-hover: #0b5f58;
+  --closing-shift-solid-active: #134e4a;
+  --closing-shift-solid-foreground: #ffffff;
+
+  --closing-day: #4338ca;
+  --closing-day-foreground: #3730a3;
+  --closing-day-soft: #e4e5fb;
+  --closing-day-soft-hover: #d3d5f8;
+  --closing-day-border: #a5a9ec;
+  --closing-day-solid: #4338ca;
+  --closing-day-solid-hover: #3730a3;
+  --closing-day-solid-active: #2b2680;
+  --closing-day-solid-foreground: #ffffff;
+
   /* Data-visualization surfaces. Charts and empty analytics states read these
      instead of hardcoding grid/motif colors, so light and dark stay in step. */
   --chart-frame: #d9b98f; /* plot frame / axis outline */
@@ -340,6 +366,29 @@
   --state-pending: #f4c66a;
   --state-disabled: #77736d;
   --state-selected: #3a2d21;
+
+  /* Closing identities (dark): same two meanings, re-tuned for dark surfaces.
+     The solid fills brighten while their foreground stays light so the action
+     contrast is preserved. */
+  --closing-shift: #2dd4bf;
+  --closing-shift-foreground: #8fe7db;
+  --closing-shift-soft: #0f2f2c;
+  --closing-shift-soft-hover: #16403c;
+  --closing-shift-border: #2a6b64;
+  --closing-shift-solid: #2dd4bf;
+  --closing-shift-solid-hover: #5ee0cf;
+  --closing-shift-solid-active: #14b8a6;
+  --closing-shift-solid-foreground: #04211f;
+
+  --closing-day: #a5a3f5;
+  --closing-day-foreground: #c7c6fb;
+  --closing-day-soft: #1e1f47;
+  --closing-day-soft-hover: #2a2b5c;
+  --closing-day-border: #4c4e8a;
+  --closing-day-solid: #6d6ae0;
+  --closing-day-solid-hover: #8583ea;
+  --closing-day-solid-active: #5451c4;
+  --closing-day-solid-foreground: #ffffff;
 
   --chart-frame: #49443e;
   --chart-grid: #2c2a26;
@@ -519,4 +568,24 @@
   --color-state-pending: var(--state-pending);
   --color-state-disabled: var(--state-disabled);
   --color-state-selected: var(--state-selected);
+
+  --color-closing-shift: var(--closing-shift);
+  --color-closing-shift-foreground: var(--closing-shift-foreground);
+  --color-closing-shift-soft: var(--closing-shift-soft);
+  --color-closing-shift-soft-hover: var(--closing-shift-soft-hover);
+  --color-closing-shift-border: var(--closing-shift-border);
+  --color-closing-shift-solid: var(--closing-shift-solid);
+  --color-closing-shift-solid-hover: var(--closing-shift-solid-hover);
+  --color-closing-shift-solid-active: var(--closing-shift-solid-active);
+  --color-closing-shift-solid-foreground: var(--closing-shift-solid-foreground);
+
+  --color-closing-day: var(--closing-day);
+  --color-closing-day-foreground: var(--closing-day-foreground);
+  --color-closing-day-soft: var(--closing-day-soft);
+  --color-closing-day-soft-hover: var(--closing-day-soft-hover);
+  --color-closing-day-border: var(--closing-day-border);
+  --color-closing-day-solid: var(--closing-day-solid);
+  --color-closing-day-solid-hover: var(--closing-day-solid-hover);
+  --color-closing-day-solid-active: var(--closing-day-solid-active);
+  --color-closing-day-solid-foreground: var(--closing-day-solid-foreground);
 }

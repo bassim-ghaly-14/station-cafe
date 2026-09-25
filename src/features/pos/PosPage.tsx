@@ -54,6 +54,16 @@ export default function PosPage() {
   const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<TableView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  /**
+   * Single POS data-revision signal.
+   *
+   * `refresh()` is the screen's one invalidation point — it already re-reads
+   * every POS source after a sale, a table change or a closing. Bumping this
+   * counter there lets dependent panels (the day-closing card) reload from
+   * their own commands without polling, without a timer, and without a second
+   * copy of the shared data.
+   */
+  const [revision, setRevision] = useState(0)
 
   const refresh = useCallback(async () => {
     try {
@@ -65,6 +75,8 @@ export default function PosPage() {
       setError(null)
     } catch (e) {
       setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
+    } finally {
+      setRevision((value) => value + 1)
     }
   }, [t])
 
@@ -107,7 +119,7 @@ export default function PosPage() {
     return (
       <div className="space-y-4">
         {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
-          <DayClosingPanel dayId={shiftState.day.id} onDone={refresh} />
+          <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
         ) : null}
 
         <ShiftGate state={shiftState} onReady={() => void refresh()} />
@@ -281,7 +293,7 @@ export default function PosPage() {
         />
 
         {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
-          <DayClosingPanel dayId={shiftState.day.id} onDone={refresh} />
+          <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
         ) : null}
       </div>
 

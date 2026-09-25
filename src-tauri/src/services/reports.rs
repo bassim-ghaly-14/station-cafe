@@ -190,8 +190,13 @@ pub struct ShiftReport {
 }
 
 pub fn shift_report(conn: &Db, shift_id: i64) -> AppResult<ShiftReport> {
-    let s = shifts::get_shift(conn, shift_id)?
+    let mut s = shifts::get_shift(conn, shift_id)?
         .ok_or_else(|| crate::error::AppError::not_found("shift.not_found"))?;
+    // An ACTIVE shift has no persisted closing snapshot yet, so its report is
+    // hydrated from live transactions. A CLOSED shift is served straight from
+    // the immutable snapshot written at close time and is never recomputed —
+    // that is what keeps historical shift reports reproducible.
+    shifts::hydrate_active_totals(conn, &mut s)?;
     Ok(ShiftReport {
         invoices_count: s.invoices_count,
         cash_sales: s.cash_sales,

@@ -20,9 +20,21 @@ pub struct DayShiftState {
 }
 
 pub fn state(conn: &Db, actor: &User) -> AppResult<DayShiftState> {
+    // The caller's ACTIVE shift is returned as a LIVE view: its aggregate
+    // columns are hydrated from the transactions booked against it, because
+    // those columns are only persisted when the shift closes. Without this the
+    // POS closing card would read column defaults forever, and correct totals
+    // would only ever appear inside the closing dialog.
+    let my_shift = match shifts::active_shift_for(conn, actor.id)? {
+        Some(mut shift) => {
+            shifts::hydrate_active_totals(conn, &mut shift)?;
+            Some(shift)
+        }
+        None => None,
+    };
     Ok(DayShiftState {
         day: shifts::current_day(conn)?,
-        my_shift: shifts::active_shift_for(conn, actor.id)?,
+        my_shift,
         any_active_shift: shifts::any_active_shift(conn)?.is_some(),
     })
 }
@@ -120,16 +132,17 @@ pub struct ShiftClosingPreview {
 }
 
 pub fn preview_shift_close(conn: &Db, actor: &User) -> AppResult<ShiftClosingPreview> {
-    let shift = shifts::active_shift_for(conn, actor.id)?
+    // Read through the SAME hydration `state()` uses, so the dialog can never
+    // quote a different number than the card it was opened from.
+    let mut shift = shifts::active_shift_for(conn, actor.id)?
         .ok_or_else(|| AppError::business("shift.not_open"))?;
-    let (cash, card, _, _, count) = shifts::compute_shift_totals(conn, shift.id)?;
-    let credit = shifts::shift_credit_sales(conn, shift.id)?;
+    shifts::hydrate_active_totals(conn, &mut shift)?;
     Ok(ShiftClosingPreview {
-        expected_cash: shift.opening_cash + cash,
-        cash_sales: cash,
-        card_sales: card,
-        credit_sales: credit,
-        invoices_count: count,
+        expected_cash: shift.expected_cash,
+        cash_sales: shift.cash_sales,
+        card_sales: shift.card_sales,
+        credit_sales: shift.credit_sales,
+        invoices_count: shift.invoices_count,
         closing_at: shifts::sqlite_now(conn)?,
         shift,
     })

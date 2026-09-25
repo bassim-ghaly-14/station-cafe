@@ -269,6 +269,38 @@ pub fn shift_credit_sales(conn: &Db, shift_id: i64) -> AppResult<i64> {
     )?)
 }
 
+/// Recompute the aggregate columns of an ACTIVE shift from its live
+/// transactions.
+///
+/// The aggregate columns on `shifts` are the immutable CLOSING SNAPSHOT: they
+/// are written exactly once by `save_shift_closing` and are what every
+/// historical shift report is reproduced from. While a shift is still ACTIVE
+/// that snapshot does not exist yet, so a row read straight from `shifts`
+/// carries only column defaults and can never show the shift's sales.
+///
+/// This hydrates the LIVE VIEW of an ACTIVE shift using the very same
+/// authoritative helpers `close_shift` persists from, so the POS card, the
+/// closing dialog and the persisted closing snapshot can never disagree.
+/// A CLOSED shift is returned untouched — historical data is never recomputed.
+pub fn hydrate_active_totals(conn: &Db, shift: &mut ShiftRow) -> AppResult<()> {
+    if shift.status != "ACTIVE" {
+        return Ok(());
+    }
+    let (cash, card, service_charges, discounts, invoices_count) =
+        compute_shift_totals(conn, shift.id)?;
+    shift.cash_sales = cash;
+    shift.card_sales = card;
+    shift.credit_sales = shift_credit_sales(conn, shift.id)?;
+    shift.service_charges = service_charges;
+    shift.discounts = discounts;
+    shift.invoices_count = invoices_count;
+    // Cash expenses are tracked at day level, so expected drawer cash for a
+    // shift is its opening float plus the cash it actually took — the exact
+    // expression `close_shift` persists.
+    shift.expected_cash = shift.opening_cash + cash;
+    Ok(())
+}
+
 /// Persist computed closing aggregates + expected cash.
 pub fn save_shift_closing(
     conn: &Db,
@@ -333,12 +365,24 @@ pub struct DayClosingRecord {
     pub final_snapshot: bool,
 }
 
+/// One historical (closed) business day as the reports screen consumes it.
+///
+/// The shape is FLAT on purpose: `business_day_id` / `day_date` / `status` /
+/// `opened_at` / `closed_at` describe the business day itself, while
+/// `closing_id` / `closed_by` / `shift_count` / `totals` describe the immutable
+/// final closing snapshot the row is read from. The reports list addresses a
+/// day by `business_day_id` to open its report preview, so that identifier must
+/// exist on the row itself — a nested `day` object left it `undefined` on the
+/// client and every preview request was rejected at the IPC boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClosedBusinessDayReport {
-    pub day: BusinessDay,
+    pub business_day_id: i64,
+    pub day_date: String,
+    pub status: String,
+    pub opened_at: String,
+    pub closed_at: String,
     pub closing_id: i64,
     pub closed_by: i64,
-    pub closed_at: String,
     pub shift_count: i64,
     pub totals: DayTotals,
 }
@@ -549,7 +593,7 @@ pub fn closed_business_days(
 ) -> AppResult<Vec<ClosedBusinessDayReport>> {
     let mut sql = String::from(
         "SELECT d.id, d.day_date, d.status, d.opened_at, d.closed_at,
-                c.id, c.closed_by, c.closed_at,
+                c.id, c.closed_by,
                 (SELECT COUNT(*) FROM shifts s WHERE s.business_day_id = d.id),
                 c.invoices_count, c.cafe_sales, c.wash_sales, c.subtotal,
                 c.discounts, c.service_charges, c.total_sales, c.cash, c.card,
@@ -570,29 +614,26 @@ pub fn closed_business_days(
         rusqlite::params_from_iter([from, to].into_iter().flatten()),
         |r| {
             Ok(ClosedBusinessDayReport {
-                day: BusinessDay {
-                    id: r.get(0)?,
-                    day_date: r.get(1)?,
-                    status: r.get(2)?,
-                    opened_at: r.get(3)?,
-                    closed_at: r.get(4)?,
-                },
+                business_day_id: r.get(0)?,
+                day_date: r.get(1)?,
+                status: r.get(2)?,
+                opened_at: r.get(3)?,
+                closed_at: r.get(4)?,
                 closing_id: r.get(5)?,
                 closed_by: r.get(6)?,
-                closed_at: r.get(7)?,
-                shift_count: r.get(8)?,
+                shift_count: r.get(7)?,
                 totals: DayTotals {
-                    invoices_count: r.get(9)?,
-                    cafe_sales: r.get(10)?,
-                    wash_sales: r.get(11)?,
-                    subtotal: r.get(12)?,
-                    discounts: r.get(13)?,
-                    service_charges: r.get(14)?,
-                    total_sales: r.get(15)?,
-                    cash: r.get(16)?,
-                    card: r.get(17)?,
-                    credit: r.get(18)?,
-                    expenses: r.get(19)?,
+                    invoices_count: r.get(8)?,
+                    cafe_sales: r.get(9)?,
+                    wash_sales: r.get(10)?,
+                    subtotal: r.get(11)?,
+                    discounts: r.get(12)?,
+                    service_charges: r.get(13)?,
+                    total_sales: r.get(14)?,
+                    cash: r.get(15)?,
+                    card: r.get(16)?,
+                    credit: r.get(17)?,
+                    expenses: r.get(18)?,
                 },
             })
         },

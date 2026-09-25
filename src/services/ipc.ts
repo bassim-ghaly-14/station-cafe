@@ -43,7 +43,13 @@ export async function callPublic<T>(cmd: string, args?: Record<string, unknown>)
 
 export function toApiError(raw: unknown): ApiError {
   if (typeof raw === 'string') {
-    return new ApiError({ kind: 'internal', message: raw })
+    // A rejected command that is NOT a serialized AppError is a protocol
+    // failure (e.g. the backend rejected the argument shape). The technical
+    // detail stays in the console for developers; users get a stable Arabic
+    // message instead of a raw serializer string that no translation key can
+    // ever match.
+    console.error('[station/ipc] command rejected with a non-domain error:', raw)
+    return new ApiError({ kind: 'ipc', message: 'ipc.contract_violation' })
   }
   const obj = (raw ?? {}) as Partial<AppErrorShape>
   return new ApiError({

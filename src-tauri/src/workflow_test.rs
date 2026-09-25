@@ -93,7 +93,7 @@ fn fixed_service_charge_options_and_authorized_discounts() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         2,
     )
     .unwrap();
@@ -210,12 +210,12 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         2,
     )
     .unwrap();
 
-    pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "WATER"), 1).unwrap();
+    pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "مياه"), 1).unwrap();
 
     pos_svc::add_line(
         &conn,
@@ -334,7 +334,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     );
 
     // ---- a later price change must NOT move history -----------------------
-    catalog::update_price(&conn, cafe_product(&conn, "CROISSANT ROMI"), 9_900).unwrap();
+    catalog::update_price(&conn, cafe_product(&conn, "كرواسون رومي"), 9_900).unwrap();
 
     let (inv_again, _) = invoices::get_invoice_full(&conn, result.invoice_id)
         .unwrap()
@@ -675,14 +675,7 @@ fn credit_flow_tracks_outstanding_until_settled() {
     let order_id = pos_svc::start_order(&conn, &manager, table.id).unwrap();
 
     // ESPRESSO = 52.00 EGP × 2 = 104.00 EGP.
-    pos_svc::add_line(
-        &conn,
-        &manager,
-        order_id,
-        cafe_product(&conn, "ESPRESSO"),
-        2,
-    )
-    .unwrap();
+    pos_svc::add_line(&conn, &manager, order_id, cafe_product(&conn, "إسبريسو"), 2).unwrap();
 
     pos_svc::attach_customer(&conn, order_id, customer_id, None).unwrap();
 
@@ -759,7 +752,7 @@ fn takeaway_order_has_takeaway_number_and_no_table_session() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         2,
     )
     .unwrap();
@@ -844,7 +837,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         2,
     )
     .unwrap();
@@ -954,7 +947,7 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
     let b = pos_svc::start_takeaway(&conn, &staff).unwrap();
 
     // CROISSANT ROMI × 2 = 14800.
-    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "CROISSANT ROMI"), 2).unwrap();
+    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "كرواسون رومي"), 2).unwrap();
 
     // 3-5. They remain open and discoverable.
     let open = pos_svc::list_open_takeaways(&conn, &staff).unwrap();
@@ -991,7 +984,7 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
     assert_eq!(view.total_minor, 14_800);
 
     // 8-9. Continue editing, then review + pay directly.
-    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "WATER"), 1).unwrap();
+    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "مياه"), 1).unwrap();
 
     checkout::checkout(
         &conn,
@@ -1037,7 +1030,7 @@ fn discount_survives_reload_and_reaches_invoice() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         2,
     )
     .unwrap();
@@ -1170,7 +1163,7 @@ fn table_count_reduction_rejects_open_and_ready_orders() {
             &conn,
             &manager,
             order_id,
-            cafe_product(&conn, "CROISSANT ROMI"),
+            cafe_product(&conn, "كرواسون رومي"),
             1,
         )
         .unwrap();
@@ -1196,7 +1189,7 @@ fn table_count_deactivation_preserves_historical_order_references() {
         &conn,
         &manager,
         order_id,
-        cafe_product(&conn, "CROISSANT ROMI"),
+        cafe_product(&conn, "كرواسون رومي"),
         1,
     )
     .unwrap();
@@ -1227,4 +1220,265 @@ fn table_count_deactivation_preserves_historical_order_references() {
         )
         .unwrap();
     assert_eq!(exists, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Shift / day closing synchronization and historical-report contracts.
+//
+// These cover the defects that made the POS closing cards show frozen numbers
+// and the historical day-closing preview fail:
+//   * an ACTIVE shift must be served as a LIVE aggregate view, so the card and
+//     the closing dialog can never disagree;
+//   * a CLOSED shift must keep the snapshot persisted at close time;
+//   * a closed business day must be addressable by its own id from the reports
+//     list, and its report must be reproducible from the stored snapshot.
+use crate::services::reports;
+
+/// One cash sale of a seeded cafe product, booked against the active shift.
+fn sell_cafe_cash(conn: &Connection, actor: &auth::User, product: &str) -> i64 {
+    let table = pos::list_tables(conn, None).unwrap().remove(0);
+    pos_svc::open_table(conn, actor, table.id).unwrap();
+    let order_id = pos_svc::start_order(conn, actor, table.id).unwrap();
+    pos_svc::add_line(conn, actor, order_id, cafe_product(conn, product), 1).unwrap();
+    let result = checkout::checkout(
+        conn,
+        actor,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: None,
+            discount_value: None,
+            discount_password: None,
+            service_charge_minor: None,
+            // Tender far above the line total: a shift's cash sales are the
+            // invoiced amounts, not the change handed back.
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap();
+    // Settling the invoice releases the table again.
+    result.invoice_id
+}
+
+fn invoice_total(conn: &Connection, invoice_id: i64) -> i64 {
+    invoices::get_invoice_full(conn, invoice_id)
+        .unwrap()
+        .unwrap()
+        .0
+        .total
+}
+
+#[test]
+fn closed_shift_snapshot_is_never_recomputed() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+
+    // A frozen copy of the persisted closing snapshot.
+    let frozen = shifts::get_shift(&conn, shift_id).unwrap().unwrap();
+    assert_eq!(frozen.status, "CLOSED");
+    assert!(frozen.cash_sales > 0);
+
+    // Reading the report twice must keep returning the immutable snapshot.
+    let first = reports::shift_report(&conn, shift_id).unwrap();
+    let second = reports::shift_report(&conn, shift_id).unwrap();
+    assert_eq!(first.cash_sales, frozen.cash_sales);
+    assert_eq!(first.expected_cash, frozen.expected_cash);
+    assert_eq!(first.actual_cash, frozen.actual_cash);
+    assert_eq!(second.cash_sales, frozen.cash_sales);
+    assert_eq!(second.expected_cash, frozen.expected_cash);
+
+    // Hydration is a no-op for a closed shift: the stored row is untouched.
+    let mut reread = shifts::get_shift(&conn, shift_id).unwrap().unwrap();
+    shifts::hydrate_active_totals(&conn, &mut reread).unwrap();
+    assert_eq!(reread.cash_sales, frozen.cash_sales);
+    assert_eq!(reread.expected_cash, frozen.expected_cash);
+    assert_eq!(reread.invoices_count, frozen.invoices_count);
+}
+
+#[test]
+fn a_closed_shift_is_no_longer_treated_as_active() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+
+    let state = shift_svc::state(&conn, &staff).unwrap();
+    assert!(
+        state.my_shift.is_none(),
+        "a closed shift is not an active shift"
+    );
+    assert!(!state.any_active_shift);
+    assert!(shift_svc::preview_shift_close(&conn, &staff).is_err());
+}
+
+#[test]
+fn active_shift_state_reports_live_totals_after_every_completed_sale() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
+
+    // A freshly opened shift has no closing snapshot yet: the stored aggregate
+    // columns are still their defaults, which is exactly why reading the raw row
+    // made the POS card permanently show zero.
+    let raw = shifts::get_shift(&conn, shift_id).unwrap().unwrap();
+    assert_eq!(raw.cash_sales, 0, "no snapshot is written before closing");
+    assert_eq!(raw.invoices_count, 0);
+
+    let before = shift_svc::state(&conn, &staff).unwrap().my_shift.unwrap();
+    assert_eq!(before.cash_sales, 0);
+    assert_eq!(before.invoices_count, 0);
+    assert_eq!(before.expected_cash, 10_000, "opening float only");
+
+    // ---- complete a sale ---------------------------------------------------
+    let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "كرواسون رومي"));
+
+    // The card is refreshed from `day_shift_state` after a sale; it must now
+    // carry the real figures without opening any dialog.
+    let after = shift_svc::state(&conn, &staff).unwrap().my_shift.unwrap();
+    assert_eq!(after.cash_sales, total);
+    assert_eq!(after.card_sales, 0);
+    assert_eq!(after.invoices_count, 1);
+    assert_eq!(after.expected_cash, 10_000 + total);
+
+    // ---- a second sale stacks onto the same live view -----------------------
+    let second_total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
+    let after_two = shift_svc::state(&conn, &staff).unwrap().my_shift.unwrap();
+    assert_eq!(after_two.invoices_count, 2);
+    assert_eq!(after_two.cash_sales, total + second_total);
+    assert_eq!(after_two.expected_cash, 10_000 + total + second_total);
+}
+
+#[test]
+fn shift_closing_dialog_and_card_always_agree() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
+    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+
+    let card = shift_svc::state(&conn, &staff).unwrap().my_shift.unwrap();
+    let preview = shift_svc::preview_shift_close(&conn, &staff).unwrap();
+
+    assert_eq!(preview.cash_sales, card.cash_sales);
+    assert_eq!(preview.card_sales, card.card_sales);
+    assert_eq!(preview.credit_sales, card.credit_sales);
+    assert_eq!(preview.invoices_count, card.invoices_count);
+    assert_eq!(preview.expected_cash, card.expected_cash);
+    assert_eq!(preview.shift.expected_cash, card.expected_cash);
+}
+
+#[test]
+fn closing_persists_the_same_numbers_the_live_view_reported() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 1_000).unwrap();
+    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+
+    let preview = shift_svc::preview_shift_close(&conn, &staff).unwrap();
+    let expected = preview.expected_cash;
+    let closing = shift_svc::close_shift(&conn, &staff, expected).unwrap();
+
+    assert_eq!(closing.expected_cash, expected);
+    assert_eq!(closing.difference, 0);
+    assert_eq!(closing.shift.cash_sales, preview.cash_sales);
+    assert_eq!(closing.shift.invoices_count, preview.invoices_count);
+    assert_eq!(closing.shift.status, "CLOSED");
+}
+
+#[test]
+fn closed_business_days_are_addressable_by_their_own_id_for_the_reports_list() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
+    let day_date: String = conn
+        .query_row(
+            "SELECT day_date FROM business_days WHERE id = ?1",
+            [day_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+    shift_svc::settle_day(&conn, &manager).unwrap();
+    shift_svc::close_day(&conn, &manager).unwrap();
+
+    let days = shifts::closed_business_days(&conn, None, None).unwrap();
+    assert_eq!(days.len(), 1);
+    let day = &days[0];
+
+    // The identifier the reports list renders AND sends to the preview command
+    // must exist on the row itself — this is what the nested payload lost.
+    assert_eq!(day.business_day_id, day_id);
+    assert_eq!(day.day_date, day_date);
+    assert_eq!(day.status, "CLOSED");
+    assert!(!day.opened_at.is_empty());
+    assert!(!day.closed_at.is_empty());
+    assert!(day.closing_id > 0);
+    assert_eq!(day.closed_by, manager.id);
+    assert_eq!(day.shift_count, 1);
+    assert_eq!(day.totals.total_sales, total);
+}
+
+#[test]
+fn a_historical_day_report_is_reproducible_from_the_stored_snapshot() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
+    shift_svc::open_shift(&conn, &staff, 2_000).unwrap();
+    let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
+    shift_svc::close_shift(&conn, &staff, 2_000 + total).unwrap();
+    shift_svc::settle_day(&conn, &manager).unwrap();
+    shift_svc::close_day(&conn, &manager).unwrap();
+
+    // The report a manager opens from "تقفيلات أيام العمل" is served from the
+    // immutable final snapshot, and reading it twice yields the same document.
+    let first = reports::day_report(&conn, day_id).unwrap();
+    let second = reports::day_report(&conn, day_id).unwrap();
+    assert_eq!(first.day.status, "CLOSED");
+    assert_eq!(first.totals.total_sales, total);
+    assert_eq!(second.totals.total_sales, total);
+    assert_eq!(first.expected_drawer_cash, second.expected_drawer_cash);
+    assert_eq!(first.shifts.len(), 1);
+    assert_eq!(first.shifts[0].status, "CLOSED");
+}
+
+#[test]
+fn an_unknown_day_reference_is_a_controlled_domain_error_not_a_crash() {
+    let conn = fresh();
+    let err = reports::day_report(&conn, 987_654).unwrap_err();
+    assert_eq!(err.to_string(), "not found: day.not_found");
+
+    let err = reports::shift_report(&conn, 987_654).unwrap_err();
+    assert_eq!(err.to_string(), "not found: shift.not_found");
+
+    // A closed day whose snapshot is missing is reported as a domain error too,
+    // never as a generic internal failure.
+    let manager = login(&conn, "manager", "manager123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
+    conn.execute(
+        "UPDATE business_days SET status = 'CLOSED' WHERE id = ?1",
+        [day_id],
+    )
+    .unwrap();
+    let err = reports::day_report(&conn, day_id).unwrap_err();
+    assert_eq!(err.to_string(), "not found: day.closing_not_found");
 }

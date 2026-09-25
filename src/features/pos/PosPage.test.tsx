@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
 import '@/lib/i18n'
+import { formatMinorMoney } from '@/lib/money'
 import { resetFormattingPreferences, updateDateSettings } from '@/lib/formatting'
 import PosPage, { TableCard } from './PosPage'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
@@ -779,6 +780,109 @@ describe('shift lifecycle UI', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('لا توجد وردية مفتوحة')
   })
 
+  // The cash field is a plain controlled string. It must behave like any other
+  // input: multi-character entry, insertion, deletion, replacement and paste,
+  // with focus never leaving it and no focus-restoration machinery anywhere.
+  it('accepts a normal multi-character amount without losing focus', async () => {
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    const input = (await screen.findByPlaceholderText('0.00')) as HTMLInputElement
+    // The dialog hands initial focus to the cash field, not to the close button.
+    expect(input).toHaveFocus()
+
+    for (const char of ['1', '2', '3']) {
+      fireEvent.change(input, { target: { value: input.value + char } })
+      expect(input).toHaveFocus()
+    }
+    expect(input.value).toBe('123')
+
+    // Insert a decimal part, then delete back down, then replace the whole value.
+    fireEvent.change(input, { target: { value: '123.50' } })
+    expect(input).toHaveFocus()
+    expect(input.value).toBe('123.50')
+
+    fireEvent.change(input, { target: { value: '123.5' } })
+    expect(input.value).toBe('123.5')
+    fireEvent.change(input, { target: { value: '123.' } })
+    expect(input.value).toBe('123.')
+    fireEvent.change(input, { target: { value: '12' } })
+    expect(input.value).toBe('12')
+    fireEvent.change(input, { target: { value: '' } })
+    expect(input).toHaveFocus()
+    expect(input.value).toBe('')
+
+    // A pasted value lands verbatim and keeps focus.
+    fireEvent.change(input, { target: { value: '45.75' } })
+    expect(input).toHaveFocus()
+    expect(input.value).toBe('45.75')
+  })
+
+  it('validates the typed amount and shows the live variance', async () => {
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    const input = (await screen.findByPlaceholderText('0.00')) as HTMLInputElement
+    const confirm = () => screen.getAllByRole('button', { name: /تأكيد تقفيل الوردية/ }).at(-1)!
+
+    // Expected cash is 30.00. An empty amount cannot be confirmed.
+    expect(confirm()).toBeDisabled()
+
+    fireEvent.change(input, { target: { value: 'abc' } })
+    expect(await screen.findByText('قيمة النقدية غير صحيحة')).toBeInTheDocument()
+    expect(confirm()).toBeDisabled()
+    expect(mocks.closeShift).not.toHaveBeenCalled()
+
+    // Exactly the expected amount → balanced.
+    fireEvent.change(input, { target: { value: '30' } })
+    expect(await screen.findByText('النقد مطابق')).toBeInTheDocument()
+    expect(confirm()).toBeEnabled()
+
+    // Short → deficit; over → surplus. The action stays available either way.
+    fireEvent.change(input, { target: { value: '25' } })
+    expect(await screen.findByText('نقص في النقد')).toBeInTheDocument()
+    expect(confirm()).toBeEnabled()
+
+    fireEvent.change(input, { target: { value: '35' } })
+    expect(await screen.findByText('زيادة في النقد')).toBeInTheDocument()
+  })
+
+  // The card must not be the dialog's responsibility: the numbers the card
+  // renders come from `day_shift_state` and must change on their own.
+  it('renders the card totals from the shift row it is given, with no dialog open', () => {
+    // Money is asserted through the central formatter, never a hardcoded string.
+    const money = (amount: number) => formatMinorMoney(amount, { variant: 'auto' })
+    const { rerender, container } = render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    // 2000 + 3000 + 500 = 5500 minor units.
+    expect(container.textContent).toContain(money(5500))
+    expect(container.textContent).toContain(money(2000))
+    expect(container.textContent).toContain(money(3000))
+    expect(mocks.previewShiftClose).not.toHaveBeenCalled()
+
+    rerender(
+      <ToastProvider>
+        <CurrentShiftPanel
+          shift={{ ...shift, cash_sales: 2500, card_sales: 3000, credit_sales: 500 }}
+          onClosed={vi.fn()}
+        />
+      </ToastProvider>,
+    )
+    // 2500 + 3000 + 500 = 6000 minor units: the card followed the new data.
+    expect(container.textContent).toContain(money(6000))
+    expect(container.textContent).toContain(money(2500))
+    expect(mocks.previewShiftClose).not.toHaveBeenCalled()
+  })
+
   // Regression: with DD MMM YYYY + 12h the date and time have very different
   // widths, and the Arabic AM/PM marker must not be reordered against them.
   // The fix is structural — the card composes separate, isolated slots — so the
@@ -818,6 +922,79 @@ describe('shift lifecycle UI', () => {
     // The shift opened at 16:00 UTC = 19:00 Cairo.
     expect(screen.getByText('24 سبتمبر 2026')).toBeInTheDocument()
     expect(screen.getByText(/7:00/).textContent).toContain('7:00')
+  })
+
+  // Opening must never be blocked on a round-trip: the dialog appears at once,
+  // the cash field is usable and focused immediately, and only the
+  // server-derived figures show a loading state. Confirming is blocked until
+  // those figures exist, so stale numbers can never be submitted.
+  it('opens the dialog immediately, focuses the field, and blocks confirm until loaded', async () => {
+    let resolvePreview: (value: unknown) => void = () => {}
+    mocks.previewShiftClose.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreview = resolve
+      }),
+    )
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+
+    // Synchronously open, with the input already mounted and focused.
+    const input = screen.getByPlaceholderText('0.00') as HTMLInputElement
+    expect(input).toHaveFocus()
+    fireEvent.change(input, { target: { value: '30' } })
+    expect(input).toHaveFocus()
+
+    // Figures still loading → confirm is unavailable, nothing is submitted.
+    const confirm = screen.getAllByRole('button', { name: /تأكيد تقفيل الوردية/ }).at(-1)!
+    expect(confirm).toBeDisabled()
+    fireEvent.click(confirm)
+    expect(mocks.closeShift).not.toHaveBeenCalled()
+
+    resolvePreview({
+      shift,
+      closing_at: '2026-09-25 01:30:00Z',
+      cash_sales: 2000,
+      card_sales: 3000,
+      credit_sales: 500,
+      invoices_count: 3,
+      expected_cash: 3000,
+    })
+
+    await waitFor(() => expect(confirm).toBeEnabled())
+    expect(await screen.findByText('النقد مطابق')).toBeInTheDocument()
+    // The typed value survived the load — no remount, no reset.
+    expect(input).toHaveValue('30')
+  })
+
+  it('surfaces a domain error inside the dialog and allows a retry', async () => {
+    mocks.previewShiftClose.mockRejectedValueOnce({ message: 'shift.not_open' })
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('لا توجد وردية مفتوحة')
+    // The form stays usable while the error is shown.
+    expect(screen.getByPlaceholderText('0.00')).toBeInTheDocument()
+
+    mocks.previewShiftClose.mockResolvedValue({
+      shift,
+      closing_at: '2026-09-25 01:30:00Z',
+      cash_sales: 2000,
+      card_sales: 3000,
+      credit_sales: 500,
+      invoices_count: 3,
+      expected_cash: 3000,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
+    expect(await screen.findByText('النقد المتوقع')).toBeInTheDocument()
   })
 })
 
@@ -890,7 +1067,7 @@ describe('day closing UI', () => {
     mocks.dayReport.mockRejectedValueOnce({ message: 'day.not_open' })
     render(
       <ToastProvider>
-        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+        <DayClosingPanel dayId={1} revision={0} onDone={vi.fn()} />
       </ToastProvider>,
     )
     expect(await screen.findByText('لا يوجد يوم عمل مفتوح')).toBeInTheDocument()
@@ -912,7 +1089,7 @@ describe('day closing UI', () => {
     })
     render(
       <ToastProvider>
-        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+        <DayClosingPanel dayId={1} revision={0} onDone={vi.fn()} />
       </ToastProvider>,
     )
     fireEvent.click(await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ }))
@@ -947,7 +1124,7 @@ describe('day closing UI', () => {
     ])
     render(
       <ToastProvider>
-        <DayClosingPanel dayId={1} onDone={onDone} />
+        <DayClosingPanel dayId={1} revision={0} onDone={onDone} />
       </ToastProvider>,
     )
     fireEvent.click(await screen.findByRole('button', { name: /إغلاق يوم العمل/ }))
@@ -972,12 +1149,191 @@ describe('day closing UI', () => {
     mocks.closeDay.mockRejectedValue({ message: 'day.orders_open' })
     render(
       <ToastProvider>
-        <DayClosingPanel dayId={1} onDone={vi.fn()} />
+        <DayClosingPanel dayId={1} revision={0} onDone={vi.fn()} />
       </ToastProvider>,
     )
     fireEvent.click(await screen.findByRole('button', { name: /إغلاق يوم العمل/ }))
     fireEvent.click(screen.getByRole('button', { name: /تأكيد تقفيل اليوم/ }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(mocks.printDay).not.toHaveBeenCalled()
+  })
+
+  // The day card is a POS panel, not an independent cache: the POS page bumps a
+  // revision whenever it reloads POS state, and the panel must re-read its own
+  // sources from that signal. Without it, a completed sale left the day totals
+  // frozen until the user opened the dialog.
+  it('reloads its reconciliation sources whenever the POS data revision changes', async () => {
+    const updated = formatMinorMoney(999_900, { variant: 'auto' })
+    const { rerender, container } = render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} revision={0} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ })
+    expect(container.textContent).not.toContain(updated)
+    expect(mocks.dayReport).toHaveBeenCalledTimes(1)
+    expect(mocks.previewDaySettlement).toHaveBeenCalledTimes(1)
+    expect(mocks.daySettlementHistory).toHaveBeenCalledTimes(1)
+
+    // A completed sale lands: the POS page refreshes and bumps the revision.
+    mocks.dayReport.mockResolvedValue({
+      ...day,
+      totals: { ...day.totals, total_sales: 999_900, cash: 999_900 },
+    })
+    rerender(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} revision={1} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+
+    await waitFor(() => expect(mocks.dayReport).toHaveBeenCalledTimes(2))
+    expect(mocks.previewDaySettlement).toHaveBeenCalledTimes(2)
+    expect(mocks.daySettlementHistory).toHaveBeenCalledTimes(2)
+    // The card itself now shows the new figure — no dialog was ever opened.
+    await waitFor(() => expect(container.textContent).toContain(updated))
+  })
+
+  it('does not reload when the revision is unchanged', async () => {
+    const { rerender } = render(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} revision={3} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    await screen.findByRole('button', { name: /مراجعة وتسوية الورديات/ })
+    rerender(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} revision={3} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    rerender(
+      <ToastProvider>
+        <DayClosingPanel dayId={1} revision={3} onDone={vi.fn()} />
+      </ToastProvider>,
+    )
+    expect(mocks.dayReport).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Closing cards are ONE system with two identities: the same structure and the
+// same spacing/typography system, expressed through two different semantic
+// accent families from Station's centralized palette.
+describe('closing card system', () => {
+  const shiftRow: ShiftRow = {
+    id: 7,
+    business_day_id: 1,
+    user_id: 2,
+    user_name: 'Cashier One',
+    user_role: 'STAFF',
+    status: 'ACTIVE',
+    opened_at: '2026-09-24 16:00:00Z',
+    opening_cash: 1000,
+    closed_at: null,
+    cash_sales: 2000,
+    card_sales: 3000,
+    credit_sales: 500,
+    service_charges: 0,
+    discounts: 0,
+    invoices_count: 3,
+    expected_cash: 3000,
+    actual_cash: null,
+    cash_difference: null,
+  }
+  const totals = {
+    invoices_count: 1,
+    cafe_sales: 1000,
+    wash_sales: 2000,
+    subtotal: 3000,
+    discounts: 0,
+    service_charges: 0,
+    total_sales: 3000,
+    cash: 3000,
+    card: 0,
+    credit: 0,
+    expenses: 0,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.previewShiftClose.mockResolvedValue({
+      shift: shiftRow,
+      closing_at: '2026-09-25 01:30:00Z',
+      cash_sales: 2000,
+      card_sales: 3000,
+      credit_sales: 500,
+      invoices_count: 3,
+      expected_cash: 3000,
+    })
+    mocks.dayReport.mockResolvedValue({
+      day: {
+        id: 1,
+        day_date: '2026-09-24',
+        status: 'OPEN',
+        opened_at: '2026-09-24T08:00:00Z',
+        closed_at: null,
+      },
+      totals,
+      shifts: [{ ...shiftRow, status: 'CLOSED', closed_at: '2026-09-24 23:00:00Z' }],
+      expected_drawer_cash: 3000,
+      cash_differences: 0,
+    })
+    mocks.previewDaySettlement.mockResolvedValue({
+      business_day_id: 1,
+      pending_shifts: [],
+      totals,
+    })
+    mocks.daySettlementHistory.mockResolvedValue([])
+  })
+
+  afterEach(() => resetFormattingPreferences())
+
+  it('gives both cards the same structure with distinct accent identities', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <CurrentShiftPanel shift={shiftRow} onClosed={vi.fn()} />
+          <DayClosingPanel dayId={1} revision={0} onDone={vi.fn()} />
+        </div>
+      </ToastProvider>,
+    )
+    await screen.findByRole('button', { name: /إغلاق يوم العمل/ })
+
+    const cards = container.querySelectorAll('[data-closing]')
+    expect(cards).toHaveLength(2)
+    const [shiftCard, dayCard] = Array.from(cards)
+    expect(shiftCard).toHaveAttribute('data-closing', 'shift')
+    expect(dayCard).toHaveAttribute('data-closing', 'day')
+
+    // Same structure: identity rail, title, primary metric, metric grid and a
+    // single action — with only the accent family differing.
+    const parts = (el: Element) => ({
+      rail: el.querySelector('[aria-hidden="true"]')?.className ?? '',
+      primary: el.querySelector('section')?.className ?? '',
+    })
+    const shift = parts(shiftCard)
+    const day = parts(dayCard)
+    expect(shift.rail.replaceAll('closing-shift', 'closing-X')).toBe(
+      day.rail.replaceAll('closing-day', 'closing-X'),
+    )
+    expect(shift.primary.replaceAll('closing-shift', 'closing-X')).toBe(
+      day.primary.replaceAll('closing-day', 'closing-X'),
+    )
+
+    // Distinct, intentional identities, taken from Station's tokens only.
+    expect(shift.rail).toContain('bg-closing-shift-soft')
+    expect(day.rail).toContain('bg-closing-day-soft')
+    expect(shift.primary).toContain('bg-closing-shift-soft')
+    expect(day.primary).toContain('bg-closing-day-soft')
+
+    // No card introduces a raw palette value: every accent class on the accent
+    // surfaces is a Station `closing-*` semantic token behind a utility prefix.
+    const accentClasses = [shift.rail, day.rail, shift.primary, day.primary]
+      .join(' ')
+      .split(/\s+/)
+      .filter((cls) => cls.includes('closing-'))
+    expect(accentClasses.length).toBeGreaterThan(0)
+    for (const cls of accentClasses) {
+      expect(cls).toMatch(/^(bg|text|border)-(closing-(shift|day)(-(soft|foreground|border))?)$/)
+    }
   })
 })
