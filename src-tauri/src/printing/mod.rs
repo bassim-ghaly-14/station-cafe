@@ -67,7 +67,7 @@ pub fn set_config(conn: &Db, cfg: &PrintConfig) -> AppResult<()> {
     let json = serde_json::to_string(cfg).unwrap_or_else(|_| "{}".into());
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES ('printer', ?1)
-         ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = datetime('now')",
+         ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = station_now()",
         [json],
     )?;
     Ok(())
@@ -104,11 +104,16 @@ fn send(
     };
 
     if !force && cfg.duplicate_window_secs > 0 {
+        // Cutoff computed from the canonical clock so it compares correctly
+        // against the explicit-UTC `created_at` values now stored.
+        let cutoff = crate::time::to_db_timestamp(
+            crate::time::now_utc() - chrono::Duration::seconds(cfg.duplicate_window_secs),
+        );
         let recent: i64 = conn.query_row(
             "SELECT COUNT(*) FROM print_jobs
              WHERE content_hash = ?1 AND status = 'PRINTED'
-               AND created_at > datetime('now', ?2)",
-            rusqlite::params![hash, format!("-{} seconds", cfg.duplicate_window_secs)],
+               AND created_at > ?2",
+            rusqlite::params![hash, cutoff],
             |r| r.get(0),
         )?;
         if recent > 0 {
@@ -640,13 +645,17 @@ mod tests {
         let wash = order_with_wash(&conn, &staff);
         let before = count(&conn, "wash_tickets");
         assert_eq!(
-            preview_order(&conn, wash, None, None, None).unwrap().doc_type,
+            preview_order(&conn, wash, None, None, None)
+                .unwrap()
+                .doc_type,
             "WASH_INVOICE"
         );
         assert_eq!(count(&conn, "wash_tickets"), before);
         pos_svc::add_line(&conn, &staff, wash, product_id(&conn, "CAFE", "WATER"), 1).unwrap();
         assert_eq!(
-            preview_order(&conn, wash, None, None, None).unwrap().doc_type,
+            preview_order(&conn, wash, None, None, None)
+                .unwrap()
+                .doc_type,
             "HYBRID_INVOICE"
         );
         assert_eq!(count(&conn, "wash_tickets"), before);

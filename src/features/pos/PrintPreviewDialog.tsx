@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { Button, Dialog, Skeleton, useToast } from '@/components/ui'
 import { Maximize2, RotateCcw, X } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
+import { printDocumentLabel } from '@/lib/print-presentation'
 import { api, type PrintOutcome, type PrintPreview } from '@/services/posApi'
 import { ThermalReceipt } from './ThermalReceipt'
 
@@ -121,7 +122,7 @@ export function PrintPreviewDialog({
         <p className="text-xs text-foreground-subtle">
           {t('print.previewHint', { paper: preview?.paper_mm ?? 80 })} ·{' '}
           <span className="font-medium text-foreground-muted">
-            {preview ? t([`print.docType.${preview.doc_type}`, preview.doc_type]) : ''}
+            {preview ? printDocumentLabel(t, preview.doc_type) : ''}
           </span>
         </p>
         <Button

@@ -95,7 +95,7 @@ pub fn insert(conn: &Db, u: &NewUser<'_>) -> AppResult<Option<i64>> {
 
 pub fn set_status(conn: &Db, id: i64, status: &str) -> AppResult<usize> {
     conn.execute(
-        "UPDATE users SET status = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE users SET status = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, status],
     )
     .map_err(Into::into)
@@ -103,7 +103,7 @@ pub fn set_status(conn: &Db, id: i64, status: &str) -> AppResult<usize> {
 
 pub fn set_password(conn: &Db, id: i64, hash: &str) -> AppResult<usize> {
     conn.execute(
-        "UPDATE users SET password_hash = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE users SET password_hash = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, hash],
     )
     .map_err(Into::into)
@@ -111,7 +111,7 @@ pub fn set_password(conn: &Db, id: i64, hash: &str) -> AppResult<usize> {
 
 pub fn set_role(conn: &Db, id: i64, role: &str) -> AppResult<usize> {
     conn.execute(
-        "UPDATE users SET role = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE users SET role = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, role],
     )
     .map_err(Into::into)
@@ -119,7 +119,7 @@ pub fn set_role(conn: &Db, id: i64, role: &str) -> AppResult<usize> {
 
 pub fn update(conn: &Db, id: i64, name: &str, phone: Option<&str>) -> AppResult<usize> {
     conn.execute(
-        "UPDATE users SET name = ?2, phone = ?3, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE users SET name = ?2, phone = ?3, updated_at = station_now() WHERE id = ?1",
         params![id, name, phone],
     )
     .map_err(Into::into)

@@ -13,6 +13,7 @@ import { DisplayDateTime } from '@/components/ui/display-datetime'
 import { Clock, Eye, Lock } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { parseMajor } from '@/lib/utils'
+import { normalizeToUtcIso } from '@/lib/date'
 import { shiftApi, type ShiftClosingPreview, type ShiftRow } from '@/services/shiftApi'
 import { api } from '@/services/posApi'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
@@ -21,10 +22,13 @@ function errorText(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
   return t([`errors.${(error as { message: string }).message}`, 'errors.internal_error'])
 }
 
+/** Minutes elapsed since the shift opened, from the canonical clock. */
 function elapsedMinutes(openedAt: string, now: number) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(openedAt)
-  if (!match) return 0
-  const opened = Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5])
+  // `openedAt` is a UTC instant and `now` is an epoch instant, so the elapsed
+  // time is computed on the timeline — no timezone involved. This stays correct
+  // regardless of which business day either value falls on.
+  const opened = Date.parse(normalizeToUtcIso(openedAt))
+  if (Number.isNaN(opened)) return 0
   return Math.max(0, Math.floor((now - opened) / 60_000))
 }
 

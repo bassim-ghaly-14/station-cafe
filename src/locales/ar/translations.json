@@ -29,6 +29,9 @@
     "lightTheme": "المظهر الفاتح",
     "darkTheme": "المظهر الداكن"
   },
+  "boot": {
+    "statement": "مكانك، مزاجك، راحتك"
+  },
   "dateRange": {
     "label": "الفترة الزمنية",
     "placeholder": "اختر الفترة",
@@ -238,28 +241,23 @@
     "invoices": "الفواتير",
     "noData": "لا توجد بيانات في هذه الفترة",
     "printJobs": "حالة الطباعة",
-    "printJobsHint": "آخر عمليات الطباعة وحالتها",
-    "noPrintJobs": "لا توجد عمليات طباعة بعد",
-    "printTest": "طباعة اختبار",
     "preview": "معاينة",
     "shiftClosings": "تقفيلات الورديات",
     "dayClosings": "تقفيلات أيام العمل",
-    "attempts": "المحاولات",
-    "job.DONE": "تمت",
-    "job.FAILED": "فشلت",
-    "job.PENDING": "بانتظار الطابعة",
-    "job.PRINTED": "تمت",
-    "job.PRINT_FAILED": "فشلت",
     "charts": {
       "title": "الرسوم البيانية",
       "total": "إجمالي",
       "actions": "إجراءات تصدير الرسوم البيانية",
+      "empty": "لا توجد بيانات لهذه الفترة",
       "fullscreen": "تكبير الرسم البياني",
       "period": "الفترة: {{period}}",
       "png": "تصدير كصورة PNG",
       "excel": "تصدير Excel",
       "exportedPng": "تم تصدير الصورة بنجاح",
       "exportedExcel": "تم تصدير ملف Excel بنجاح",
+      "generated": "تاريخ التصدير:",
+      "summary": "ملخص التقرير",
+      "details": "تفاصيل التقرير",
       "exportError": "تعذر إكمال التصدير"
     }
   },
@@ -382,9 +380,6 @@
       "TAKEAWAY": "طلب خارجي"
     },
 
-    "docType": {
-      "TAKEAWAY_INVOICE": "إيصال طلب خارجي"
-    },
     "customerCar": "العميل والسيارة",
     "washTicket": "تذكرة المغسلة",
     "ticketIssued": "تم إصدار تذكرة المغسلة — رقم الانتظار {{no}}",
@@ -473,14 +468,43 @@
     "collapse": "تصغير المعاينة",
     "reprint": "إعادة طبع",
     "cut": "قطع الورق",
-    "docType": {
-      "CAFE_INVOICE": "فاتورة كافيه",
-      "WASH_INVOICE": "فاتورة مغسلة",
-      "HYBRID_INVOICE": "فاتورة كافيه ومغسلة",
-      "TAKEAWAY_INVOICE": "إيصال طلب خارجي",
-      "WASH_TICKET": "تذكرة مغسلة سيارة",
-      "SHIFT_REPORT": "تقرير وردية",
-      "DAY_REPORT": "تقرير يوم العمل"
+    "statusTitle": "حالة الطباعة",
+    "statusSubtitle": "آخر عمليات الطباعة وحالتها ونتيجتها",
+    "refresh": "تحديث",
+    "testPrint": "طباعة اختبار",
+    "empty": "لا توجد عمليات طباعة بعد",
+    "jobNumber": "رقم العملية",
+    "attempts": "المحاولات",
+    "document": {
+      "cafeInvoice": "فاتورة كافيه",
+      "washInvoice": "فاتورة مغسلة",
+      "hybridInvoice": "فاتورة كافيه ومغسلة",
+      "takeawayInvoice": "إيصال طلب خارجي",
+      "washTicket": "تذكرة مغسلة سيارة",
+      "shiftReport": "تقرير وردية",
+      "dayReport": "تقرير يوم العمل",
+      "testPage": "صفحة اختبار الطباعة",
+      "unknown": "مستند طباعة"
+    },
+    "status": {
+      "pending": "بانتظار الطباعة",
+      "pendingHint": "لم تصدر نتيجة لهذه العملية بعد",
+      "printed": "تمت الطباعة",
+      "failed": "فشلت الطباعة",
+      "unknown": "حالة غير معروفة"
+    },
+    "error": {
+      "notConfigured": "لم يتم إعداد الطابعة بعد",
+      "unavailable": "الطابعة غير متاحة حاليًا",
+      "openFailed": "تعذر الوصول إلى الطابعة",
+      "writeFailed": "تعذر إرسال البيانات إلى الطابعة",
+      "flushFailed": "تعذر إتمام إرسال البيانات إلى الطابعة",
+      "spoolFailed": "تعذر إرسال مهمة الطباعة إلى قائمة الطباعة",
+      "jobRejected": "رفضت الطابعة مهمة الطباعة",
+      "unknown": "حدث خطأ أثناء الطباعة."
+    },
+    "printer": {
+      "notConfiguredHint": "لن تتم طباعة الفواتير والتذاكر من هذا الجهاز حتى يتم ضبط إعدادات الطابعة."
     }
   },
   "dev": {

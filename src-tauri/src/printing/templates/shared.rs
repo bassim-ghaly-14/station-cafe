@@ -5,6 +5,16 @@ use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 
 pub const WIDTH: usize = 42; // characters per line on 80mm at font A
 
+/// Format a stored instant for paper, in Station business time.
+///
+/// A receipt must never disagree with the screen: both go through the same
+/// canonical business-time conversion, so a sale at 17:30 prints 17:30 rather
+/// than the raw UTC digits. An unparseable value is passed through unchanged
+/// so a document is never left blank.
+pub(super) fn stamp(value: &str) -> String {
+    crate::time::to_business_datetime(value)
+}
+
 pub(super) fn header(p: &mut EscPos, logo: bool, title: &str, subtitle: &str) {
     if logo {
         if let Some((w, h, data)) = super::super::logo::logo_raster() {

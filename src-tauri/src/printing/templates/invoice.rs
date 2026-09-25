@@ -1,6 +1,6 @@
 use super::super::escpos::{ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, WIDTH};
+use super::shared::{footer, header, items_and_totals, stamp, WIDTH};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 
 /// Cafe / Wash / Hybrid invoice. The hybrid layout is the same template with
@@ -21,7 +21,7 @@ pub fn invoice(
         "Station Cafe - Cafe & Car Wash",
     );
     p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
-    p.kv_line("التاريخ", &inv.created_at, WIDTH);
+    p.kv_line("التاريخ", &stamp(&inv.created_at), WIDTH);
     if let Some(t) = &inv.table_label {
         p.kv_line("الطاولة", t, WIDTH);
     }
@@ -108,5 +108,47 @@ mod tests {
             )
             .count();
         assert_eq!(hrs, 5);
+    }
+
+    /// The printed timestamp must be Station business time, not the raw UTC
+    /// digits that are stored. This is the receipt-agrees-with-screen rule.
+    #[test]
+    fn printed_timestamp_is_business_local_time_not_utc() {
+        let mut inv = crate::repositories::invoices::InvoiceRow {
+            id: 1,
+            invoice_no: 7,
+            table_label: None,
+            order_type: "TAKEAWAY".into(),
+            takeaway_no: Some(1),
+            status: "PAID".into(),
+            total: 100_00,
+            paid_amount: 100_00,
+            service_charge: 0,
+            discount_minor: 0,
+            subtotal: 100_00,
+            cafe_total: 100_00,
+            wash_total: 0,
+            customer_name: None,
+            customer_phone: None,
+            car_plate: None,
+            car_model: None,
+            // A sale made at 17:30 in Cairo is stored as 14:30 UTC.
+            created_at: "2026-09-25 14:30:00Z".into(),
+            shift_id: Some(1),
+            business_day_id: Some(1),
+        };
+        let lines = vec![];
+        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false, false);
+        assert!(
+            bytes_has(&doc.escpos, "2026-09-25 17:30"),
+            "the receipt must print 17:30 (Cairo), not 14:30 (UTC)"
+        );
+        assert!(!bytes_has(&doc.escpos, "14:30"));
+
+        // A legacy unmarked value converts identically — same instant, same
+        // printed result, so historical invoices reprint consistently.
+        inv.created_at = "2026-09-25 14:30:00".into();
+        let legacy = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false, false);
+        assert!(bytes_has(&legacy.escpos, "2026-09-25 17:30"));
     }
 }

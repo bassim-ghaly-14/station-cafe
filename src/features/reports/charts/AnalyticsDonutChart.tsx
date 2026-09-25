@@ -15,7 +15,7 @@ import { formatMinorMoney } from '@/lib/money'
 import { formatDate } from '@/lib/date'
 import { useFormattingPreferences } from '@/lib/formatting'
 import { cn } from '@/lib/utils'
-import type { AnalyticsChart } from './mockCharts'
+import type { AnalyticsChart } from './analyticsCharts'
 import { exportAnalyticsExcel, exportAnalyticsPng } from './exports'
 
 export function AnalyticsDonutChart({

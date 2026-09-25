@@ -2,9 +2,18 @@
 //! Numbers here must reconcile exactly with shift/day closing totals.
 
 use crate::error::AppResult;
+use crate::repositories::analytics::AnalyticsCharts;
 use crate::repositories::shifts::{self, DayTotals, ShiftRow};
 use crate::repositories::Db;
 use serde::Serialize;
+
+pub fn analytics_charts(
+    conn: &Db,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> AppResult<AnalyticsCharts> {
+    crate::repositories::analytics::analytics_charts(conn, from, to)
+}
 
 #[derive(Debug, Serialize)]
 pub struct TodaySummary {

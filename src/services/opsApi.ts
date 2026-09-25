@@ -1,6 +1,20 @@
+export interface AnalyticsCategoryValue {
+  id: string
+  value: number
+}
+export interface AnalyticsChartValue {
+  id: string
+  total: number
+  has_data: boolean
+  categories: AnalyticsCategoryValue[]
+}
+export interface AnalyticsCharts {
+  charts: AnalyticsChartValue[]
+}
+
 /** Typed wrappers over inventory / expenses / reports / audit commands. */
 import { call } from './ipc'
-import type { DayTotals } from './posApi'
+import type { DayTotals, PrintOutcome } from './posApi'
 
 export interface StockRow {
   product_id: number
@@ -77,6 +91,19 @@ export interface PrintJobRow {
   created_at: string
 }
 
+/**
+ * Printer configuration owned by the printing service. `target` is the only
+ * field the UI reasons about (`none`/empty = printing is not set up on this
+ * device); the rest is device/runtime detail.
+ */
+export interface PrintConfig {
+  target: string
+  arabic_mode: string
+  codepage: number
+  logo: boolean
+  duplicate_window_secs: number
+}
+
 export interface ClosedBusinessDay {
   closing_id: number
   business_day_id: number
@@ -132,12 +159,17 @@ export const opsApi = {
   audit: (limit = 100, actionLike?: string) =>
     call<AuditEntry[]>('list_audit', { limit, action_like: actionLike ?? null }),
   printJobs: (limit = 30) => call<PrintJobRow[]>('list_print_jobs', { limit }),
+  /** Printer configuration — read-only; `target: "none"` means not set up. */
+  printConfig: () => call<PrintConfig>('get_print_config'),
   closedShifts: (from?: string, to?: string) =>
     call<import('@/services/shiftApi').ShiftRow[]>('list_closed_shifts', {
       from: from ?? null,
       to: to ?? null,
     }),
+  analyticsCharts: (from?: string, to?: string) =>
+    call<AnalyticsCharts>('analytics_charts', { from: from ?? null, to: to ?? null }),
+
   closedBusinessDays: (from?: string, to?: string) =>
     call<ClosedBusinessDay[]>('list_closed_business_days', { from: from ?? null, to: to ?? null }),
-  printTest: () => call<{ duplicate_suppressed: boolean }>('print_test'),
+  printTest: () => call<PrintOutcome>('print_test'),
 }

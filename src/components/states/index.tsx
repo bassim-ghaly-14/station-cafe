@@ -7,11 +7,16 @@ import { RefreshCw } from '@/components/ui/icon'
 
 /**
  * Boot-screen progress indicator — the restrained companion to the large
- * Station logo on application startup. A thin indeterminate bar sweep
- * (theme tokens only) instead of a competing circular spinner.
- * Language-independent: the sweep uses physical transforms only.
+ * Station logo on application startup: a thin indeterminate bar sweep plus the
+ * Station brand statement (theme tokens only).
+ *
+ * The statement is brand copy, not a loading-status description: it is passed
+ * in already translated and rendered as the screen's closing line. The bar
+ * carries the loading meaning visually; the block keeps `role="status"` so the
+ * screen is announced without inventing a second loading phrase.
+ * Language-independent animation: the sweep uses physical transforms only.
  */
-export function BootLoadingIndicator({ label }: { label?: string }) {
+export function BootLoadingIndicator({ statement }: { statement?: string }) {
   return (
     <div
       role="status"
@@ -21,7 +26,7 @@ export function BootLoadingIndicator({ label }: { label?: string }) {
       <div aria-hidden="true" dir="ltr" className="boot-progress-track">
         <div className="boot-progress-bar" />
       </div>
-      {label ? <p className="text-sm text-foreground-muted">{label}</p> : null}
+      {statement ? <p className="text-section text-center text-balance">{statement}</p> : null}
     </div>
   )
 }

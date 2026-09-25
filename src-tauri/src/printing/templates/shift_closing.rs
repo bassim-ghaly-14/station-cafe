@@ -1,6 +1,6 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{header, WIDTH};
+use super::shared::{header, stamp, WIDTH};
 use crate::money::format_minor_for_print;
 use crate::services::reports::ShiftReport;
 
@@ -8,8 +8,8 @@ pub fn shift_closing(mode: ArabicMode, codepage: u8, r: &ShiftReport, logo: bool
     let mut p = EscPos::new(mode, codepage);
     header(&mut p, logo, "تقفيل وردية", "SHIFT CLOSING");
     p.kv_line("الموظف", r.shift.user_name.as_deref().unwrap_or("-"), WIDTH);
-    p.kv_line("فتح", &r.shift.opened_at, WIDTH);
-    p.kv_line("إغلاق", r.shift.closed_at.as_deref().unwrap_or("-"), WIDTH);
+    p.kv_line("فتح", &stamp(&r.shift.opened_at), WIDTH);
+    p.kv_line("إغلاق", &r.shift.closed_at.as_deref().map(stamp).unwrap_or_else(|| "-".into()), WIDTH);
     p.hr(WIDTH);
     p.kv_line("عدد الفواتير", &r.invoices_count.to_string(), WIDTH);
     p.kv_line("نقدي", &format_minor_for_print(r.cash_sales), WIDTH);

@@ -112,13 +112,13 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO business_days (day_date, opened_at, status, closed_at)
-             VALUES ('2026-01-01', datetime('now'), 'CLOSED', datetime('now'))",
+             VALUES ('2026-01-01', station_now(), 'CLOSED', station_now())",
             [],
         )
         .unwrap();
         conn.execute(
             "INSERT INTO shifts (business_day_id, user_id, status, closed_at)
-             VALUES (1, 1, 'CLOSED', datetime('now'))",
+             VALUES (1, 1, 'CLOSED', station_now())",
             [],
         )
         .unwrap();

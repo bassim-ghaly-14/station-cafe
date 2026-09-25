@@ -3,6 +3,7 @@
 use super::common::authorized;
 use crate::error::AppResult;
 use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome, PrintPreview};
+use crate::repositories::analytics::AnalyticsCharts;
 use crate::repositories::ops::{Expense, MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
 use crate::services::reports::{self, AuditEntry, ProductSales, SalesByDay, TodaySummary};
@@ -109,6 +110,18 @@ pub fn product_sales(
 ) -> AppResult<Vec<ProductSales>> {
     authorized(&state, &token, "MANAGER", move |conn, _| {
         reports::product_sales(conn, from.as_deref(), to.as_deref())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn analytics_charts(
+    state: State<'_, AppState>,
+    token: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> AppResult<AnalyticsCharts> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        reports::analytics_charts(conn, from.as_deref(), to.as_deref())
     })
 }
 

@@ -1,7 +1,7 @@
-import { utils, writeFile } from 'xlsx'
 import { CURRENCY_LABEL, formatMinorMoney } from '@/lib/money'
-import { formatDate, todayIso } from '@/lib/date'
-import type { AnalyticsChart } from './mockCharts'
+import { createStationReportSheet, downloadStationWorkbook, type ReportColumn } from './excelReport'
+import i18n from '@/lib/i18n'
+import type { AnalyticsChart } from './analyticsCharts'
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -21,8 +21,8 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
   const css = getComputedStyle(document.documentElement)
   const background = css.getPropertyValue('--surface').trim()
   const strongText = css.getPropertyValue('--foreground-strong').trim()
-  const bodyText = css.getPropertyValue('--foreground').trim()
   const subtleText = css.getPropertyValue('--foreground-subtle').trim()
+  const totalTextColor = '#FFFFFF'
   context.fillStyle = background
   context.fillRect(0, 0, 1200, 900)
   context.direction = 'rtl'
@@ -59,9 +59,10 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
   context.fill()
   context.globalCompositeOperation = 'source-over'
   context.textAlign = 'center'
-  context.fillStyle = bodyText
+  context.fillStyle = totalTextColor
   context.font = '800 34px Cairo, sans-serif'
   context.fillText(formatMinorMoney(chart.total, { compact: true }), cx, cy + 8)
+  context.fillStyle = totalTextColor
   context.font = '20px Cairo, sans-serif'
   context.fillText('إجمالي', cx, cy + 42)
   context.textAlign = 'right'
@@ -89,18 +90,36 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
 }
 
 export function exportAnalyticsExcel(chart: AnalyticsChart, period: string) {
-  const rows = [
-    ['التقرير', 'الفترة', 'تاريخ التصدير'],
-    [chart.title, period, formatDate(todayIso())],
-    [],
-    ['الفئة', `القيمة (${CURRENCY_LABEL})`, 'النسبة'],
-    // Machine-readable value column: the raw amount, not a display string, so
-    // the sheet stays computable. The header states the unit.
-    ...chart.categories.map((c) => [c.label, c.value / 100, c.value / chart.total]),
+  const columns: ReportColumn[] = [
+    { header: 'الفئة', align: 'right', format: 'text' },
+    { header: `القيمة (${CURRENCY_LABEL})`, align: 'right', format: 'currency' },
+    { header: 'النسبة', align: 'right', format: 'percent' },
   ]
-  const sheet = utils.aoa_to_sheet(rows)
-  sheet['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }]
-  const book = utils.book_new()
-  utils.book_append_sheet(book, sheet, 'التحليلات')
-  writeFile(book, `${chart.exportFilename}.xlsx`)
+  const rows = chart.categories.map((category) => [
+    category.label,
+    category.value / 100,
+    category.value / chart.total,
+  ])
+  const labels = {
+    period: i18n.t('reports.charts.period', { period: '' }).trim(),
+    generated: i18n.t('reports.charts.generated'),
+    summary: i18n.t('reports.charts.summary'),
+    details: i18n.t('reports.charts.details'),
+    total: i18n.t('reports.charts.total'),
+  }
+  const { book } = createStationReportSheet({
+    title: chart.title,
+    description: chart.description,
+    period,
+    columns,
+    rows,
+    summary: [
+      { label: 'إجمالي القيمة', value: chart.total / 100, format: 'currency' },
+      { label: 'عدد الفئات', value: chart.categories.length, format: 'integer' },
+    ],
+    total: [labels.total, chart.total / 100, 1],
+    sheetName: 'التقرير',
+    labels,
+  })
+  downloadStationWorkbook(book, `${chart.exportFilename}.xlsx`)
 }

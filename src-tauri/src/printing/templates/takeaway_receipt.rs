@@ -1,6 +1,6 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, WIDTH};
+use super::shared::{footer, header, items_and_totals, stamp, WIDTH};
 use crate::money::format_minor_for_print;
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 use crate::repositories::pos::Order;
@@ -45,7 +45,7 @@ pub(crate) fn takeaway_order(
     takeaway_identity(&mut p, order.takeaway_no);
     p.align(Align::Right);
     p.kv_line("الطلب", &order.id.to_string(), WIDTH);
-    p.kv_line("التاريخ", &order.opened_at, WIDTH);
+    p.kv_line("التاريخ", &stamp(&order.opened_at), WIDTH);
     if let Some(c) = customer {
         p.kv_line("العميل", &c.name, WIDTH);
         if let Some(phone) = &c.phone {
@@ -146,7 +146,7 @@ pub fn takeaway_receipt(
     takeaway_identity(&mut p, inv.takeaway_no);
     p.align(Align::Right);
     p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
-    p.kv_line("التاريخ", &inv.created_at, WIDTH);
+    p.kv_line("التاريخ", &stamp(&inv.created_at), WIDTH);
     if let Some(c) = &inv.customer_name {
         p.kv_line("العميل", c, WIDTH);
     }

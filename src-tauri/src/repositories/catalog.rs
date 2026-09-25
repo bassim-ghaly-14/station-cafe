@@ -159,7 +159,7 @@ pub fn update_price(conn: &Db, id: i64, price_minor: i64) -> AppResult<i64> {
         |r| r.get(0),
     )?;
     conn.execute(
-        "UPDATE products SET price_minor = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE products SET price_minor = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, price_minor],
     )?;
     Ok(old)
@@ -178,7 +178,7 @@ pub fn update(
     let tx = conn.unchecked_transaction()?;
     let changed = tx.execute(
         "UPDATE products SET name = ?2, category_id = ?3, price_minor = ?4,
-             track_inventory = ?5, updated_at = datetime('now') WHERE id = ?1",
+             track_inventory = ?5, updated_at = station_now() WHERE id = ?1",
         params![id, name, category_id, price_minor, track_inventory as i64],
     )?;
     if changed == 0 {
@@ -208,7 +208,7 @@ pub fn update(
             if change != 0 {
                 tx.execute(
                     "UPDATE inventory_items
-                     SET quantity = ?2, updated_at = datetime('now')
+                     SET quantity = ?2, updated_at = station_now()
                      WHERE product_id = ?1",
                     params![id, target],
                 )?;
@@ -244,7 +244,7 @@ pub fn list_categories(conn: &Db) -> AppResult<Vec<Category>> {
 
 pub fn set_active(conn: &Db, id: i64, active: bool) -> AppResult<()> {
     conn.execute(
-        "UPDATE products SET is_active = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE products SET is_active = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, active as i64],
     )?;
     Ok(())
@@ -252,7 +252,7 @@ pub fn set_active(conn: &Db, id: i64, active: bool) -> AppResult<()> {
 
 pub fn rename(conn: &Db, id: i64, name: &str) -> AppResult<()> {
     conn.execute(
-        "UPDATE products SET name = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE products SET name = ?2, updated_at = station_now() WHERE id = ?1",
         params![id, name],
     )?;
     Ok(())

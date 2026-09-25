@@ -53,7 +53,7 @@ pub fn adjust(
     }
     conn.execute(
         "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, ?2)
-         ON CONFLICT(product_id) DO UPDATE SET quantity = quantity + ?2, updated_at = datetime('now')",
+         ON CONFLICT(product_id) DO UPDATE SET quantity = quantity + ?2, updated_at = station_now()",
         params![product_id, change],
     )?;
     conn.execute(
@@ -70,7 +70,7 @@ pub fn set_min_quantity(conn: &Db, product_id: i64, min_quantity: i64) -> AppRes
     }
     conn.execute(
         "INSERT INTO inventory_items (product_id, min_quantity) VALUES (?1, ?2)
-         ON CONFLICT(product_id) DO UPDATE SET min_quantity = ?2, updated_at = datetime('now')",
+         ON CONFLICT(product_id) DO UPDATE SET min_quantity = ?2, updated_at = station_now()",
         params![product_id, min_quantity],
     )?;
     Ok(())

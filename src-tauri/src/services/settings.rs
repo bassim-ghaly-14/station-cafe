@@ -41,7 +41,7 @@ fn write_json(conn: &Db, key: &str, value: &impl Serialize) -> AppResult<()> {
         .map_err(|e| AppError::internal(format!("serialize settings {key}: {e}")))?;
     conn.execute(
         "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+         ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = station_now()",
         params![key, json],
     )?;
     Ok(())

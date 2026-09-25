@@ -51,6 +51,12 @@ function RoutedViews() {
   }
 }
 
+/**
+ * Branded startup screen. The only visible copy is the Station brand statement
+ * (`boot.statement`) — it is marketing, not a loading-status description; the
+ * progress bar and `role="status"` carry the loading meaning. Initialization,
+ * timing and the exit transition are unchanged.
+ */
 function BootScreen({ exiting }: { exiting?: boolean }) {
   const { t } = useTranslation()
   return (
@@ -68,7 +74,7 @@ function BootScreen({ exiting }: { exiting?: boolean }) {
             --logo-size (~3–3.5×, responsive clamp) defined in index.css. */}
         <Logo size={88} className="boot-logo-breathe" />
       </div>
-      <BootLoadingIndicator label={t('app.loading')} />
+      <BootLoadingIndicator statement={t('boot.statement')} />
     </main>
   )
 }

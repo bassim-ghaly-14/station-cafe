@@ -88,14 +88,17 @@ pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
     rand::thread_rng().fill_bytes(&mut raw);
     let token = hex(&raw);
 
+    // Session expiry is an instant, computed from the canonical clock rather
+    // than SQLite's `datetime('now', ...)`, so it is stored in the same
+    // explicit-UTC form as every other timestamp.
+    let expires_at = crate::time::to_db_timestamp(
+        crate::time::now_utc() + chrono::Duration::hours(SESSION_TTL_HOURS),
+    );
+
     conn.execute(
         "INSERT INTO sessions (user_id, token_hash, expires_at)
-         VALUES (?1, ?2, datetime('now', ?3))",
-        params![
-            record.user.id,
-            token_hash(&token),
-            format!("+{SESSION_TTL_HOURS} hours")
-        ],
+         VALUES (?1, ?2, ?3)",
+        params![record.user.id, token_hash(&token), expires_at],
     )?;
 
     crate::services::audit::record(
@@ -155,50 +158,28 @@ fn rank(role: &str) -> u8 {
 /// Revoke the session (logout).
 pub fn logout(conn: &Db, token: &str) -> AppResult<()> {
     conn.execute(
-        "UPDATE sessions SET revoked_at = datetime('now') WHERE token_hash = ?1",
+        "UPDATE sessions SET revoked_at = station_now() WHERE token_hash = ?1",
         params![token_hash(token)],
     )?;
 
     Ok(())
 }
 
-/// Current time in SQLite `datetime('now')` format (UTC), offline-safe.
+/// Current instant in the canonical explicit-UTC storage format.
+///
+/// This delegates to the one canonical clock (`time::now_db_timestamp`)
+/// instead of maintaining a second, hand-rolled calendar conversion. Station is
+/// offline: the value comes from the operating system clock and nothing else.
 pub fn sqlite_now() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| {
-            let secs = d.as_secs() as i64;
-            let days = secs.div_euclid(86_400);
-            let rem = secs.rem_euclid(86_400);
-            let (y, m, dd) = civil_from_days(days);
-            format!(
-                "{y:04}-{m:02}-{dd:02} {:02}:{:02}:{:02}",
-                rem / 3600,
-                (rem % 3600) / 60,
-                rem % 60
-            )
-        })
-        .unwrap_or_default()
+    crate::time::now_db_timestamp()
 }
 
-/// Current UTC date in SQLite `date('now')` format (YYYY-MM-DD).
+/// Current BUSINESS date in Station's timezone (`YYYY-MM-DD`).
+///
+/// Previously this returned the UTC date, which disagreed with the UI between
+/// midnight and 03:00 Cairo and could file an expense under the wrong day.
 pub fn sqlite_today() -> String {
-    sqlite_now()[..10].to_string()
-}
-
-/// Days since epoch → (year, month, day). Howard Hinnant's civil algorithm.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-
-    (if m <= 2 { y + 1 } else { y }, m, d)
+    crate::time::today_business_date()
 }
 
 pub fn change_password(

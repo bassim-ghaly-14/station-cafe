@@ -212,7 +212,7 @@ pub fn set_session_order(conn: &Db, session_id: i64, order_id: i64) -> AppResult
 /// "opened and closed without an order" event.
 pub fn close_session(conn: &Db, session_id: i64, user_id: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE table_sessions SET status = 'CLOSED', closed_at = datetime('now'), closed_by = ?2
+        "UPDATE table_sessions SET status = 'CLOSED', closed_at = station_now(), closed_by = ?2
          WHERE id = ?1 AND status = 'OPEN'",
         params![session_id, user_id],
     )?;
@@ -222,7 +222,7 @@ pub fn close_session(conn: &Db, session_id: i64, user_id: i64) -> AppResult<()> 
 /// Close the open session of a table (used when its order is settled).
 pub fn close_open_session_of_table(conn: &Db, table_id: i64, user_id: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE table_sessions SET status = 'CLOSED', closed_at = datetime('now'), closed_by = ?2
+        "UPDATE table_sessions SET status = 'CLOSED', closed_at = station_now(), closed_by = ?2
          WHERE table_id = ?1 AND status = 'OPEN'",
         params![table_id, user_id],
     )?;
@@ -408,8 +408,8 @@ pub fn active_order_on_table(conn: &Db, table_id: i64) -> AppResult<Option<i64>>
 pub fn set_order_status(conn: &Db, order_id: i64, status: &str) -> AppResult<()> {
     conn.execute(
         "UPDATE orders SET status = ?2,
-            ready_at = CASE WHEN ?2 = 'READY_TO_PAY' THEN datetime('now') ELSE ready_at END,
-            closed_at = CASE WHEN ?2 IN ('CLOSED','CANCELLED') THEN datetime('now') ELSE closed_at END
+            ready_at = CASE WHEN ?2 = 'READY_TO_PAY' THEN station_now() ELSE ready_at END,
+            closed_at = CASE WHEN ?2 IN ('CLOSED','CANCELLED') THEN station_now() ELSE closed_at END
          WHERE id = ?1",
         params![order_id, status],
     )?;

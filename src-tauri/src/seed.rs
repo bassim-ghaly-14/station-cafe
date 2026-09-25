@@ -1,7 +1,7 @@
 //! Deterministic seed infrastructure.
 //!
 //! - Runs the full starter seed only on a fresh database.
-//! - Catalog v2 is synchronized once for existing installations.
+//! - Catalog v3 is synchronized once for existing installations.
 //! - Seed catalog entries are flagged (`is_seed = 1`).
 //! - Historical transaction data is never deleted.
 //! - Old catalog rows that are referenced by history are deactivated;
@@ -36,231 +36,196 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     // ============================================================
     // BREAKFAST
     // ============================================================
-    ("CROISSANT ROMI", "PRODUCT", "CAFE", 74, "BREAKFAST", None),
-    ("CROISSANT TURKEY", "PRODUCT", "CAFE", 98, "BREAKFAST", None),
-    ("CROISSANT BEEF", "PRODUCT", "CAFE", 108, "BREAKFAST", None),
-    ("GREECE SALAD", "PRODUCT", "CAFE", 59, "BREAKFAST", None),
+    ("كرواسون رومي", "PRODUCT", "CAFE", 74, "الإفطار", None),
+    ("كرواسون تركي", "PRODUCT", "CAFE", 98, "الإفطار", None),
+    ("كرواسون لحم بقري", "PRODUCT", "CAFE", 108, "الإفطار", None),
+    ("سلطة يونانية", "PRODUCT", "CAFE", 59, "الإفطار", None),
     // ============================================================
     // CLASSIC & COFFEE
     // ============================================================
+    ("شاي كلاسيك", "PRODUCT", "CAFE", 25, "كلاسيك وقهوة", None),
+    ("شاي نكهات", "PRODUCT", "CAFE", 28, "كلاسيك وقهوة", None),
+    ("أعشاب", "PRODUCT", "CAFE", 32, "كلاسيك وقهوة", None),
+    ("قهوة تركي صغير", "PRODUCT", "CAFE", 39, "كلاسيك وقهوة", None),
+    ("قهوة تركي دبل", "PRODUCT", "CAFE", 44, "كلاسيك وقهوة", None),
     (
-        "CLASSIC TEA",
-        "PRODUCT",
-        "CAFE",
-        25,
-        "CLASSIC & COFFEE",
-        None,
-    ),
-    (
-        "FLAVOR TEA",
-        "PRODUCT",
-        "CAFE",
-        28,
-        "CLASSIC & COFFEE",
-        None,
-    ),
-    ("HERBS", "PRODUCT", "CAFE", 32, "CLASSIC & COFFEE", None),
-    (
-        "TURKISH COFFEE (S)",
-        "PRODUCT",
-        "CAFE",
-        39,
-        "CLASSIC & COFFEE",
-        None,
-    ),
-    (
-        "TURKISH COFFEE (D)",
-        "PRODUCT",
-        "CAFE",
-        44,
-        "CLASSIC & COFFEE",
-        None,
-    ),
-    (
-        "TURKISH COFFEE (MS)",
+        "قهوة تركي وسط صغير",
         "PRODUCT",
         "CAFE",
         49,
-        "CLASSIC & COFFEE",
+        "كلاسيك وقهوة",
         None,
     ),
     (
-        "TURKISH COFFEE (MD)",
+        "قهوة تركي وسط دبل",
         "PRODUCT",
         "CAFE",
         54,
-        "CLASSIC & COFFEE",
+        "كلاسيك وقهوة",
         None,
     ),
-    (
-        "FRENCH COFFEE",
-        "PRODUCT",
-        "CAFE",
-        54,
-        "CLASSIC & COFFEE",
-        None,
-    ),
-    (
-        "HAZELNUT COFFEE",
-        "PRODUCT",
-        "CAFE",
-        59,
-        "CLASSIC & COFFEE",
-        None,
-    ),
+    ("قهوة فرنسية", "PRODUCT", "CAFE", 54, "كلاسيك وقهوة", None),
+    ("قهوة بالبندق", "PRODUCT", "CAFE", 59, "كلاسيك وقهوة", None),
     // ============================================================
     // HOT DRINK
     // ============================================================
-    ("ESPRESSO", "PRODUCT", "CAFE", 52, "HOT DRINK", None),
-    ("MOCHA POT", "PRODUCT", "CAFE", 79, "HOT DRINK", None),
-    ("AMERICANO", "PRODUCT", "CAFE", 69, "HOT DRINK", None),
-    ("MICATO", "PRODUCT", "CAFE", 54, "HOT DRINK", None),
-    ("CORTADO", "PRODUCT", "CAFE", 69, "HOT DRINK", None),
-    ("CAPPUCCINO", "PRODUCT", "CAFE", 74, "HOT DRINK", None),
-    ("LATTE", "PRODUCT", "CAFE", 79, "HOT DRINK", None),
-    ("FLAT WHITE", "PRODUCT", "CAFE", 84, "HOT DRINK", None),
-    ("MOCHA", "PRODUCT", "CAFE", 89, "HOT DRINK", None),
+    ("إسبريسو", "PRODUCT", "CAFE", 52, "مشروبات ساخنة", None),
+    ("موكا بوت", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
+    ("أمريكانو", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("ماكياتو", "PRODUCT", "CAFE", 54, "مشروبات ساخنة", None),
+    ("كورتادو", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("كابتشينو", "PRODUCT", "CAFE", 74, "مشروبات ساخنة", None),
+    ("لاتيه", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
+    ("فلات وايت", "PRODUCT", "CAFE", 84, "مشروبات ساخنة", None),
+    ("موكا", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
     (
-        "CARAMEL MACCHIATO",
+        "كراميل ماكياتو",
         "PRODUCT",
         "CAFE",
         89,
-        "HOT DRINK",
+        "مشروبات ساخنة",
         None,
     ),
     (
-        "SALTED MACCHIATO CREAM",
+        "كريمة ماكياتو بالملح",
         "PRODUCT",
         "CAFE",
         99,
-        "HOT DRINK",
+        "مشروبات ساخنة",
         None,
     ),
     (
-        "CHOCOLATE CLASSIC",
+        "شوكولاتة كلاسيك",
         "PRODUCT",
         "CAFE",
         74,
-        "HOT DRINK",
+        "مشروبات ساخنة",
         None,
     ),
-    ("CHOCOLATE ORIO", "PRODUCT", "CAFE", 79, "HOT DRINK", None),
-    ("CHOCOLATE CREAM", "PRODUCT", "CAFE", 89, "HOT DRINK", None),
     (
-        "CHOCOLATE MARSHEILO",
+        "شوكولاتة أوريو",
+        "PRODUCT",
+        "CAFE",
+        79,
+        "مشروبات ساخنة",
+        None,
+    ),
+    (
+        "شوكولاتة بالكريمة",
+        "PRODUCT",
+        "CAFE",
+        89,
+        "مشروبات ساخنة",
+        None,
+    ),
+    (
+        "شوكولاتة مارشميلو",
         "PRODUCT",
         "CAFE",
         84,
-        "HOT DRINK",
+        "مشروبات ساخنة",
         None,
     ),
-    ("CARAMEL HOT", "PRODUCT", "CAFE", 69, "HOT DRINK", None),
-    ("HOT CIDER", "PRODUCT", "CAFE", 75, "HOT DRINK", None),
+    ("كراميل ساخن", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("سيدر ساخن", "PRODUCT", "CAFE", 75, "مشروبات ساخنة", None),
     // ============================================================
     // FRESH JUICE
     // ============================================================
-    ("ORANGE", "PRODUCT", "CAFE", 85, "FRESH JUICE", None),
-    ("LEMON", "PRODUCT", "CAFE", 69, "FRESH JUICE", None),
-    ("MANGO", "PRODUCT", "CAFE", 89, "FRESH JUICE", None),
-    ("DATE", "PRODUCT", "CAFE", 87, "FRESH JUICE", None),
-    ("GUAVA", "PRODUCT", "CAFE", 79, "FRESH JUICE", None),
-    ("STRAWBERRY", "PRODUCT", "CAFE", 87, "FRESH JUICE", None),
-    ("WATERMELON", "PRODUCT", "CAFE", 85, "FRESH JUICE", None),
+    ("برتقال", "PRODUCT", "CAFE", 85, "عصائر طازجة", None),
+    ("ليمون", "PRODUCT", "CAFE", 69, "عصائر طازجة", None),
+    ("مانجو", "PRODUCT", "CAFE", 89, "عصائر طازجة", None),
+    ("تمر", "PRODUCT", "CAFE", 87, "عصائر طازجة", None),
+    ("جوافة", "PRODUCT", "CAFE", 79, "عصائر طازجة", None),
+    ("فراولة", "PRODUCT", "CAFE", 87, "عصائر طازجة", None),
+    ("بطيخ", "PRODUCT", "CAFE", 85, "عصائر طازجة", None),
     // ============================================================
-    // DEZZERT
+    // DESSERT
     // ============================================================
-    ("MOLTEN", "PRODUCT", "CAFE", 94, "DEZZERT", None),
-    ("CHOCOLATE", "PRODUCT", "CAFE", 85, "DEZZERT", None),
-    ("LUTOS", "PRODUCT", "CAFE", 89, "DEZZERT", None),
-    ("REDVALVET", "PRODUCT", "CAFE", 85, "DEZZERT", None),
-    ("CHEESS CAKE", "PRODUCT", "CAFE", 89, "DEZZERT", None),
-    ("CINNABON", "PRODUCT", "CAFE", 120, "DEZZERT", None),
-    ("DONUTS", "PRODUCT", "CAFE", 70, "DEZZERT", None),
-    ("WAFFEL", "PRODUCT", "CAFE", 90, "DEZZERT", None),
-    ("PANCAKE", "PRODUCT", "CAFE", 99, "DEZZERT", None),
+    ("مولتن", "PRODUCT", "CAFE", 94, "حلويات", None),
+    ("شوكولاتة", "PRODUCT", "CAFE", 85, "حلويات", None),
+    ("لوتس", "PRODUCT", "CAFE", 89, "حلويات", None),
+    ("ريد فيلفت", "PRODUCT", "CAFE", 85, "حلويات", None),
+    ("تشيز كيك", "PRODUCT", "CAFE", 89, "حلويات", None),
+    ("سينابون", "PRODUCT", "CAFE", 120, "حلويات", None),
+    ("دونات", "PRODUCT", "CAFE", 70, "حلويات", None),
+    ("وافل", "PRODUCT", "CAFE", 90, "حلويات", None),
+    ("بان كيك", "PRODUCT", "CAFE", 99, "حلويات", None),
     // ============================================================
     // SOFT DRINK
     // ============================================================
-    ("FAYROUZ", "PRODUCT", "CAFE", 40, "SOFT DRINK", Some(0)),
-    ("PEPSI", "PRODUCT", "CAFE", 30, "SOFT DRINK", Some(0)),
-    ("RED BULL", "PRODUCT", "CAFE", 80, "SOFT DRINK", Some(0)),
-    ("WATER", "PRODUCT", "CAFE", 10, "SOFT DRINK", Some(0)),
+    ("فيروز", "PRODUCT", "CAFE", 40, "مشروبات غازية", Some(0)),
+    ("بيبسي", "PRODUCT", "CAFE", 30, "مشروبات غازية", Some(0)),
+    ("ريد بول", "PRODUCT", "CAFE", 80, "مشروبات غازية", Some(0)),
+    ("مياه", "PRODUCT", "CAFE", 10, "مشروبات غازية", Some(0)),
     // ============================================================
-    // EXTERA
+    // EXTRAS
     // ============================================================
-    ("MILK", "PRODUCT", "CAFE", 19, "EXTERA", Some(0)),
-    ("ICE CREAM", "PRODUCT", "CAFE", 30, "EXTERA", Some(0)),
-    ("NUTEILA", "PRODUCT", "CAFE", 24, "EXTERA", Some(0)),
-    ("SAUS", "PRODUCT", "CAFE", 20, "EXTERA", Some(0)),
-    ("PUREE", "PRODUCT", "CAFE", 24, "EXTERA", Some(0)),
-    ("PISTACHIO", "PRODUCT", "CAFE", 30, "EXTERA", Some(0)),
-    ("HAZELNUT", "PRODUCT", "CAFE", 15, "EXTERA", Some(0)),
-    ("SHOT", "PRODUCT", "CAFE", 30, "EXTERA", Some(0)),
+    ("لبن", "PRODUCT", "CAFE", 19, "إضافات", Some(0)),
+    ("آيس كريم", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
+    ("نوتيلا", "PRODUCT", "CAFE", 24, "إضافات", Some(0)),
+    ("صوص", "PRODUCT", "CAFE", 20, "إضافات", Some(0)),
+    ("بوريه", "PRODUCT", "CAFE", 24, "إضافات", Some(0)),
+    ("فستق", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
+    ("بندق", "PRODUCT", "CAFE", 15, "إضافات", Some(0)),
+    ("شوت", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
     // ============================================================
     // ICED COFFEE
     // ============================================================
-    ("ICE AMERICANO", "PRODUCT", "CAFE", 87, "ICED COFFEE", None),
-    ("ICE LATTE", "PRODUCT", "CAFE", 89, "ICED COFFEE", None),
-    ("ICE MOCHA", "PRODUCT", "CAFE", 93, "ICED COFFEE", None),
+    ("آيس أمريكانو", "PRODUCT", "CAFE", 87, "قهوة مثلجة", None),
+    ("آيس لاتيه", "PRODUCT", "CAFE", 89, "قهوة مثلجة", None),
+    ("آيس موكا", "PRODUCT", "CAFE", 93, "قهوة مثلجة", None),
+    ("آيس وايت موكا", "PRODUCT", "CAFE", 96, "قهوة مثلجة", None),
     (
-        "ICE WHITE MOCHA",
-        "PRODUCT",
-        "CAFE",
-        96,
-        "ICED COFFEE",
-        None,
-    ),
-    (
-        "ICE CARAMEL MACCHIATO",
+        "آيس كراميل ماكياتو",
         "PRODUCT",
         "CAFE",
         93,
-        "ICED COFFEE",
+        "قهوة مثلجة",
         None,
     ),
-    ("SPANISH LATTE", "PRODUCT", "CAFE", 99, "ICED COFFEE", None),
+    ("سبانيش لاتيه", "PRODUCT", "CAFE", 99, "قهوة مثلجة", None),
     (
-        "ICE SALTED CARAMEL",
+        "آيس كراميل مملح",
         "PRODUCT",
         "CAFE",
         124,
-        "ICED COFFEE",
+        "قهوة مثلجة",
         None,
     ),
     // ============================================================
     // FRAPPE
     // ============================================================
-    ("VANILLA FRAPPE", "PRODUCT", "CAFE", 85, "FRAPPE", None),
-    ("MOCHA FRAPPE", "PRODUCT", "CAFE", 89, "FRAPPE", None),
-    ("CARAMEL FRAPPE", "PRODUCT", "CAFE", 89, "FRAPPE", None),
-    ("PISTACHIO FRAPPE", "PRODUCT", "CAFE", 99, "FRAPPE", None),
+    ("فرابيه فانيليا", "PRODUCT", "CAFE", 85, "فرابيه", None),
+    ("فرابيه موكا", "PRODUCT", "CAFE", 89, "فرابيه", None),
+    ("فرابيه كراميل", "PRODUCT", "CAFE", 89, "فرابيه", None),
+    ("فرابيه فستق", "PRODUCT", "CAFE", 99, "فرابيه", None),
     // ============================================================
-    // SMOTHIE
+    // SMOOTHIE
     // ============================================================
-    ("LIMON MINT", "PRODUCT", "CAFE", 69, "SMOTHIE", None),
-    ("WATERMELON", "PRODUCT", "CAFE", 85, "SMOTHIE", None),
-    ("BLUEBERRY", "PRODUCT", "CAFE", 88, "SMOTHIE", None),
-    ("MANGO PASSION", "PRODUCT", "CAFE", 99, "SMOTHIE", None),
-    ("STRAWBERRY", "PRODUCT", "CAFE", 87, "SMOTHIE", None),
-    ("GREEN APPLE", "PRODUCT", "CAFE", 79, "SMOTHIE", None),
+    ("ليمون بالنعناع", "PRODUCT", "CAFE", 69, "سموذي", None),
+    ("بطيخ", "PRODUCT", "CAFE", 85, "سموذي", None),
+    ("توت أزرق", "PRODUCT", "CAFE", 88, "سموذي", None),
+    ("مانجو باشن", "PRODUCT", "CAFE", 99, "سموذي", None),
+    ("فراولة", "PRODUCT", "CAFE", 87, "سموذي", None),
+    ("تفاح أخضر", "PRODUCT", "CAFE", 79, "سموذي", None),
     // ============================================================
     // MILKSHAKE
     // ============================================================
-    ("VANILLA", "PRODUCT", "CAFE", 87, "MILKSHAKE", None),
-    ("CHOCOLATE", "PRODUCT", "CAFE", 89, "MILKSHAKE", None),
-    ("LOTUS", "PRODUCT", "CAFE", 97, "MILKSHAKE", None),
-    ("OREO", "PRODUCT", "CAFE", 97, "MILKSHAKE", None),
-    ("MOCHA", "PRODUCT", "CAFE", 99, "MILKSHAKE", None),
-    ("BLUEBERRY", "PRODUCT", "CAFE", 99, "MILKSHAKE", None),
+    ("ميلك شيك فانيليا", "PRODUCT", "CAFE", 87, "ميلك شيك", None),
+    ("ميلك شيك شوكولاتة", "PRODUCT", "CAFE", 89, "ميلك شيك", None),
+    ("ميلك شيك لوتس", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
+    ("ميلك شيك أوريو", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
+    ("ميلك شيك موكا", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
+    ("ميلك شيك توت أزرق", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
     // ============================================================
     // MOCKTAIL
     // ============================================================
-    ("BLUE SKY", "PRODUCT", "CAFE", 87, "MOCKTAIL", None),
-    ("GREEN APPLE", "PRODUCT", "CAFE", 88, "MOCKTAIL", None),
-    ("PASSION FRUIT", "PRODUCT", "CAFE", 83, "MOCKTAIL", None),
-    ("BLUEBERRY", "PRODUCT", "CAFE", 87, "MOCKTAIL", None),
-    ("STRAWBERRY", "PRODUCT", "CAFE", 88, "MOCKTAIL", None),
-    ("CANDY LOVERS", "PRODUCT", "CAFE", 123, "MOCKTAIL", None),
+    ("بلو سكاي", "PRODUCT", "CAFE", 87, "موكتيل", None),
+    ("تفاح أخضر", "PRODUCT", "CAFE", 88, "موكتيل", None),
+    ("باشن فروت", "PRODUCT", "CAFE", 83, "موكتيل", None),
+    ("توت أزرق", "PRODUCT", "CAFE", 87, "موكتيل", None),
+    ("فراولة", "PRODUCT", "CAFE", 88, "موكتيل", None),
+    ("كاندي لافرز", "PRODUCT", "CAFE", 123, "موكتيل", None),
     // ============================================================
     // CAR WASH SERVICES
     // ============================================================
@@ -269,7 +234,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         175,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -277,7 +242,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         85,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -285,7 +250,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         200,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -293,7 +258,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         95,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -301,7 +266,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         250,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -309,7 +274,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         600,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -317,7 +282,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         750,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -325,7 +290,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         350,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -333,7 +298,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         80,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -341,7 +306,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         100,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -349,7 +314,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         60,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -357,7 +322,7 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         100,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -365,15 +330,15 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         150,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
-        "كنية كيماوي",
+        "كنبة كيماوي",
         "SERVICE",
         "WASH",
         300,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -381,23 +346,23 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         100,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
-        "كاركير كامل (Car Care)",
+        "كار كير كامل",
         "SERVICE",
         "WASH",
         1500,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
-        "تلميع مرحلة",
+        "تلميع مرحلة واحدة",
         "SERVICE",
         "WASH",
         1500,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
@@ -405,15 +370,15 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
         "SERVICE",
         "WASH",
         1800,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
     (
-        "تلميع 3 مراحل",
+        "تلميع ثلاث مراحل",
         "SERVICE",
         "WASH",
         2500,
-        "CAR WASH SERVICES",
+        "خدمات غسيل السيارات",
         None,
     ),
 ];
@@ -432,14 +397,14 @@ pub fn run_if_empty(conn: &Db) -> AppResult<()> {
         let result = seed_content(conn).and_then(|_| {
             conn.execute(
                 "INSERT INTO app_settings (key, value)
-                 VALUES (?1, datetime('now'))
+                 VALUES (?1, station_now())
                  ON CONFLICT(key) DO NOTHING",
                 [SEED_MARKER],
             )?;
 
             conn.execute(
                 "INSERT INTO app_settings (key, value)
-                 VALUES (?1, datetime('now'))
+                 VALUES (?1, station_now())
                  ON CONFLICT(key) DO NOTHING",
                 [CATALOG_SEED_MARKER],
             )?;
@@ -527,7 +492,7 @@ fn sync_catalog_if_needed(conn: &Db) -> AppResult<()> {
         Ok(_) => {
             conn.execute(
                 "INSERT INTO app_settings (key, value)
-                 VALUES (?1, datetime('now'))
+                 VALUES (?1, station_now())
                  ON CONFLICT(key) DO NOTHING",
                 [CATALOG_SEED_MARKER],
             )?;
@@ -552,7 +517,7 @@ fn sync_catalog(conn: &Db) -> AppResult<()> {
     conn.execute(
         "UPDATE products
          SET is_active = 0,
-             updated_at = datetime('now')
+             updated_at = station_now()
          WHERE is_seed = 1",
         [],
     )?;
@@ -595,8 +560,10 @@ fn insert_default_products(conn: &Db) -> AppResult<()> {
                 "price overflow while seeding product: {name}"
             ))
         })?;
+
         let category_id = catalog::ensure_category(conn, category_name)?;
         let track_inventory = stock_quantity.is_some();
+
         conn.execute(
             "INSERT INTO products
                 (name, item_type, department, category_id, price_minor,
@@ -611,18 +578,25 @@ fn insert_default_products(conn: &Db) -> AppResult<()> {
                 track_inventory as i64
             ],
         )?;
+
         if let Some(quantity) = stock_quantity {
             let product_id = conn.last_insert_rowid();
+
             conn.execute(
-                "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, ?2)",
+                "INSERT INTO inventory_items (product_id, quantity)
+                 VALUES (?1, ?2)",
                 rusqlite::params![product_id, quantity],
             )?;
+
             if *quantity != 0 {
                 conn.execute(
                     "INSERT INTO stock_movements
                         (product_id, change, reason, note, ref_invoice_id, user_id)
                      VALUES (?1, ?2, 'ADJUSTMENT', 'initial_stock', NULL,
-                        (SELECT id FROM users WHERE role = 'ADMIN' ORDER BY id LIMIT 1))",
+                        (SELECT id FROM users
+                         WHERE role = 'ADMIN'
+                         ORDER BY id
+                         LIMIT 1))",
                     rusqlite::params![product_id, quantity],
                 )?;
             }
@@ -699,7 +673,7 @@ mod tests {
             .query_row(
                 "SELECT price_minor
                  FROM products
-                 WHERE name = 'CROISSANT ROMI'",
+                 WHERE name = 'كرواسون رومي'",
                 [],
                 |r| r.get(0),
             )
@@ -711,7 +685,7 @@ mod tests {
             .query_row(
                 "SELECT item_type, department, price_minor
                  FROM products
-                 WHERE name = 'كاركير كامل (Car Care)'",
+                 WHERE name = 'كار كير كامل'",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
@@ -728,20 +702,26 @@ mod tests {
 
         let breakfast_category: i64 = conn
             .query_row(
-                "SELECT category_id FROM products WHERE name = 'CROISSANT ROMI'",
+                "SELECT category_id
+                 FROM products
+                 WHERE name = 'كرواسون رومي'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
+
         let breakfast_name: String = conn
             .query_row(
-                "SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
-                 WHERE p.name = 'CROISSANT ROMI'",
+                "SELECT c.name
+                 FROM products p
+                 JOIN categories c ON c.id = p.category_id
+                 WHERE p.name = 'كرواسون رومي'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(breakfast_name, "BREAKFAST");
+
+        assert_eq!(breakfast_name, "الإفطار");
 
         let water: (i64, String, i64) = conn
             .query_row(
@@ -749,21 +729,25 @@ mod tests {
                  FROM products p
                  JOIN categories c ON c.id = p.category_id
                  JOIN inventory_items i ON i.product_id = p.id
-                 WHERE p.name = 'WATER'",
+                 WHERE p.name = 'مياه'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(water, (water.0, "SOFT DRINK".to_string(), 0));
+
+        assert_eq!(water, (water.0, "مشروبات غازية".to_string(), 0));
+
         let stock_visible: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM inventory_items i
+                "SELECT COUNT(*)
+                 FROM inventory_items i
                  JOIN products p ON p.id = i.product_id
                  WHERE p.track_inventory = 1",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
+
         assert_eq!(
             stock_visible,
             DEFAULT_PRODUCTS
@@ -774,23 +758,29 @@ mod tests {
 
         let service_stock: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM products
-                 WHERE item_type = 'SERVICE' AND track_inventory = 1",
+                "SELECT COUNT(*)
+                 FROM products
+                 WHERE item_type = 'SERVICE'
+                   AND track_inventory = 1",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
+
         assert_eq!(service_stock, 0);
 
         let category_name: String = conn
             .query_row(
-                "SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
-                 WHERE p.name = 'كاركير كامل (Car Care)'",
+                "SELECT c.name
+                 FROM products p
+                 JOIN categories c ON c.id = p.category_id
+                 WHERE p.name = 'كار كير كامل'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(category_name, "CAR WASH SERVICES");
+
+        assert_eq!(category_name, "خدمات غسيل السيارات");
         assert!(breakfast_category > 0);
     }
 
@@ -799,32 +789,38 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
+
         let categories: i64 = conn
             .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
             .unwrap();
+
         let products: i64 = conn
             .query_row("SELECT COUNT(*) FROM products", [], |row| row.get(0))
             .unwrap();
+
         run_if_empty(&conn).unwrap();
+
         let categories_after: i64 = conn
             .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
             .unwrap();
+
         let products_after: i64 = conn
             .query_row("SELECT COUNT(*) FROM products", [], |row| row.get(0))
             .unwrap();
+
         assert_eq!(categories_after, categories);
         assert_eq!(products_after, products);
     }
 
     #[test]
-    fn catalog_v2_replaces_old_unreferenced_seed_data() {
+    fn catalog_v3_replaces_old_unreferenced_seed_data() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
 
         // Simulate an existing installation with the old seed marker.
         conn.execute(
             "INSERT INTO app_settings (key, value)
-             VALUES (?1, datetime('now'))",
+             VALUES (?1, station_now())",
             [SEED_MARKER],
         )
         .unwrap();
@@ -832,7 +828,15 @@ mod tests {
         conn.execute(
             "INSERT INTO products
                 (name, item_type, department, category_id, price_minor, is_active, is_seed)
-             VALUES ('قهوة قديمة', 'PRODUCT', 'CAFE', (SELECT id FROM categories WHERE is_system = 1), 3000, 1, 1)",
+             VALUES (
+                'قهوة قديمة',
+                'PRODUCT',
+                'CAFE',
+                (SELECT id FROM categories WHERE is_system = 1),
+                3000,
+                1,
+                1
+             )",
             [],
         )
         .unwrap();
@@ -840,7 +844,15 @@ mod tests {
         conn.execute(
             "INSERT INTO products
                 (name, item_type, department, category_id, price_minor, is_active, is_seed)
-             VALUES ('مغسلة قديمة', 'SERVICE', 'WASH', (SELECT id FROM categories WHERE is_system = 1), 5000, 1, 1)",
+             VALUES (
+                'مغسلة قديمة',
+                'SERVICE',
+                'WASH',
+                (SELECT id FROM categories WHERE is_system = 1),
+                5000,
+                1,
+                1
+             )",
             [],
         )
         .unwrap();
@@ -894,7 +906,15 @@ mod tests {
         conn.execute(
             "INSERT INTO products
                 (name, item_type, department, category_id, price_minor, is_active, is_seed)
-             VALUES ('Legacy Coffee', 'PRODUCT', 'CAFE', (SELECT id FROM categories WHERE is_system = 1), 3000, 1, 1)",
+             VALUES (
+                'Legacy Coffee',
+                'PRODUCT',
+                'CAFE',
+                (SELECT id FROM categories WHERE is_system = 1),
+                3000,
+                1,
+                1
+             )",
             [],
         )
         .unwrap();
@@ -918,7 +938,7 @@ mod tests {
 
         conn.execute(
             "INSERT INTO app_settings (key, value)
-             VALUES (?1, datetime('now'))",
+             VALUES (?1, station_now())",
             [SEED_MARKER],
         )
         .unwrap();
@@ -939,7 +959,8 @@ mod tests {
 
         let order_line_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM order_lines
+                "SELECT COUNT(*)
+                 FROM order_lines
                  WHERE product_id = 1",
                 [],
                 |r| r.get(0),

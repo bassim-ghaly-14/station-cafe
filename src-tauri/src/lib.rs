@@ -10,6 +10,8 @@
 // remove this attribute once Phase 2 wiring is complete.
 #![allow(dead_code)]
 
+#[cfg(test)]
+mod analytics_test;
 mod commands;
 mod db;
 mod error;
@@ -20,6 +22,8 @@ mod seed;
 mod services;
 #[cfg(test)]
 mod workflow_test;
+
+pub mod time;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -139,6 +143,7 @@ pub fn run() {
             commands::ops::today_summary,
             commands::ops::sales_by_day,
             commands::ops::product_sales,
+            commands::ops::analytics_charts,
             commands::ops::list_audit,
             commands::ops::get_print_config,
             commands::ops::set_print_config,

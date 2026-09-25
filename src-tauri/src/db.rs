@@ -5,10 +5,40 @@
 //! Never edit an applied migration — always add a new numbered file.
 
 use crate::error::{AppError, AppResult};
+use rusqlite::functions::FunctionFlags;
 use rusqlite::Connection;
 use std::path::Path;
 
 pub type Db = Connection;
+
+/// Register the canonical Station clock as SQLite scalar functions.
+///
+/// This is the centralized clock abstraction: SQL anywhere in the application
+/// asks for the time through these functions instead of embedding its own
+/// notion of "now". It also means the *same* OS clock drives the backend, with
+/// no internet time source and no attempt to change the machine's clock.
+///
+/// * `station_now()`  — the current instant, explicit UTC (`...Z`).
+/// * `station_today()` — today's *business* date in `Africa/Cairo`.
+///
+/// `migrate` calls this for every connection, so tests and production share
+/// one clock definition.
+pub fn register_clock(conn: &Db) -> AppResult<()> {
+    // Both functions take zero arguments.
+    conn.create_scalar_function(
+        "station_now",
+        0,
+        FunctionFlags::SQLITE_UTF8,
+        |_ctx| Ok(crate::time::now_db_timestamp()),
+    )?;
+    conn.create_scalar_function(
+        "station_today",
+        0,
+        FunctionFlags::SQLITE_UTF8,
+        |_ctx| Ok(crate::time::today_business_date()),
+    )?;
+    Ok(())
+}
 
 /// The single active SQLite database file.
 pub const DB_FILE: &str = "station_cafe.db";
@@ -17,6 +47,9 @@ pub fn open(data_dir: &Path) -> AppResult<Db> {
     std::fs::create_dir_all(data_dir)?;
     let db_path = data_dir.join(DB_FILE);
     let conn = Connection::open(&db_path)?;
+
+    // The canonical clock must exist before any migration default or query uses it.
+    register_clock(&conn)?;
 
     // Durability settings appropriate for a financial POS:
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -51,7 +84,7 @@ const MIGRATIONS: &[Migration] = &[
         CREATE TABLE IF NOT EXISTS app_settings (
             key         TEXT PRIMARY KEY,
             value       TEXT NOT NULL,          -- JSON encoded
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at  TEXT NOT NULL DEFAULT (station_now())
         );
 
         -- Business day lifecycle: OPEN -> CLOSED
@@ -75,7 +108,7 @@ const MIGRATIONS: &[Migration] = &[
             entity_id   TEXT,
             before_json TEXT,
             after_json  TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at  TEXT NOT NULL DEFAULT (station_now())
         );
 
         CREATE INDEX IF NOT EXISTS idx_audit_action   ON audit_log(action);
@@ -100,8 +133,8 @@ const MIGRATIONS: &[Migration] = &[
                 status        TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','SUSPENDED')),
                 password_hash TEXT NOT NULL,              -- Argon2id PHC string
                 is_seed       INTEGER NOT NULL DEFAULT 0, -- demo-data flag (admin reset)
-                created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at    TEXT NOT NULL DEFAULT (station_now()),
+                updated_at    TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_name ON users(name);
             CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status);
@@ -111,7 +144,7 @@ const MIGRATIONS: &[Migration] = &[
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id    INTEGER NOT NULL REFERENCES users(id),
                 token_hash TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at TEXT NOT NULL DEFAULT (station_now()),
                 expires_at TEXT NOT NULL,
                 revoked_at TEXT
             );
@@ -129,8 +162,8 @@ const MIGRATIONS: &[Migration] = &[
                 is_active      INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
                 track_inventory INTEGER NOT NULL DEFAULT 0 CHECK (track_inventory IN (0,1)),
                 is_seed        INTEGER NOT NULL DEFAULT 0,
-                created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at     TEXT NOT NULL DEFAULT (station_now()),
+                updated_at     TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_products_dept_active ON products(department, is_active);
 
@@ -142,8 +175,8 @@ const MIGRATIONS: &[Migration] = &[
                 name       TEXT NOT NULL,
                 phone      TEXT,
                 notes      TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (station_now()),
+                updated_at TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
             CREATE INDEX IF NOT EXISTS idx_customers_name  ON customers(name);
@@ -154,8 +187,8 @@ const MIGRATIONS: &[Migration] = &[
                 plate_no    TEXT NOT NULL,
                 car_model   TEXT,
                 notes       TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (station_now()),
+                updated_at  TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cars_plate ON cars(plate_no);
             CREATE INDEX IF NOT EXISTS idx_cars_customer ON cars(customer_id);
@@ -188,7 +221,7 @@ const MIGRATIONS: &[Migration] = &[
                 shift_id     INTEGER,
                 status       TEXT NOT NULL DEFAULT 'OPEN'
                              CHECK (status IN ('OPEN','READY_TO_PAY','CLOSED','CANCELLED')),
-                opened_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                opened_at    TEXT NOT NULL DEFAULT (station_now()),
                 ready_at     TEXT,
                 closed_at    TEXT
             );
@@ -208,7 +241,7 @@ const MIGRATIONS: &[Migration] = &[
                 quantity       INTEGER NOT NULL CHECK (quantity > 0),
                 discount_minor INTEGER NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
                 line_total     INTEGER NOT NULL CHECK (line_total >= 0),
-                created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at     TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_order_lines_order ON order_lines(order_id);
 
@@ -235,7 +268,7 @@ const MIGRATIONS: &[Migration] = &[
                 paid_amount     INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
                 cafe_total      INTEGER NOT NULL DEFAULT 0,
                 wash_total      INTEGER NOT NULL DEFAULT 0,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at      TEXT NOT NULL DEFAULT (station_now()),
                 paid_at         TEXT,
                 cancelled_at    TEXT
             );
@@ -270,7 +303,7 @@ const MIGRATIONS: &[Migration] = &[
                 invoice_id INTEGER NOT NULL UNIQUE REFERENCES invoices(id),
                 waiting_no INTEGER NOT NULL,
                 day_date   TEXT NOT NULL,
-                issued_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                issued_at  TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_wash_tickets_day_no
                 ON wash_tickets(day_date, waiting_no);
@@ -286,7 +319,7 @@ const MIGRATIONS: &[Migration] = &[
                 received     INTEGER,
                 change_given INTEGER,
                 user_id      INTEGER NOT NULL REFERENCES users(id),
-                created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at   TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
 
@@ -297,8 +330,8 @@ const MIGRATIONS: &[Migration] = &[
                 paid_total     INTEGER NOT NULL DEFAULT 0 CHECK (paid_total >= 0),
                 status         TEXT NOT NULL DEFAULT 'UNPAID'
                                CHECK (status IN ('UNPAID','PARTIALLY_PAID','PAID')),
-                created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at     TEXT NOT NULL DEFAULT (station_now()),
+                updated_at     TEXT NOT NULL DEFAULT (station_now())
             );
 
             CREATE TABLE IF NOT EXISTS credit_payments (
@@ -306,7 +339,7 @@ const MIGRATIONS: &[Migration] = &[
                 credit_account_id INTEGER NOT NULL REFERENCES credit_accounts(id),
                 amount            INTEGER NOT NULL CHECK (amount > 0),
                 user_id           INTEGER NOT NULL REFERENCES users(id),
-                created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at        TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_credit_payments_acct ON credit_payments(credit_account_id);
 
@@ -319,7 +352,7 @@ const MIGRATIONS: &[Migration] = &[
                 user_id         INTEGER NOT NULL REFERENCES users(id),
                 status          TEXT NOT NULL DEFAULT 'ACTIVE'
                                 CHECK (status IN ('ACTIVE','CLOSING','CLOSED')),
-                opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                opened_at       TEXT NOT NULL DEFAULT (station_now()),
                 opening_cash    INTEGER NOT NULL DEFAULT 0 CHECK (opening_cash >= 0),
                 closed_at       TEXT,
                 cash_sales      INTEGER NOT NULL DEFAULT 0,
@@ -350,7 +383,7 @@ const MIGRATIONS: &[Migration] = &[
                 business_day_id INTEGER REFERENCES business_days(id),
                 user_id         INTEGER NOT NULL REFERENCES users(id),
                 is_seed         INTEGER NOT NULL DEFAULT 0,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at      TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
 
@@ -358,7 +391,7 @@ const MIGRATIONS: &[Migration] = &[
                 product_id   INTEGER PRIMARY KEY REFERENCES products(id),
                 quantity     INTEGER NOT NULL DEFAULT 0,
                 min_quantity INTEGER NOT NULL DEFAULT 0 CHECK (min_quantity >= 0),
-                updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at   TEXT NOT NULL DEFAULT (station_now())
             );
 
             CREATE TABLE IF NOT EXISTS stock_movements (
@@ -369,7 +402,7 @@ const MIGRATIONS: &[Migration] = &[
                 note           TEXT,
                 ref_invoice_id INTEGER REFERENCES invoices(id),
                 user_id        INTEGER NOT NULL REFERENCES users(id),
-                created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at     TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
 
@@ -387,7 +420,7 @@ const MIGRATIONS: &[Migration] = &[
                              CHECK (status IN ('PENDING','PRINTED','FAILED')),
                 attempts     INTEGER NOT NULL DEFAULT 0,
                 error        TEXT,
-                created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at   TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE INDEX IF NOT EXISTS idx_print_jobs_hash ON print_jobs(content_hash);
         "#,
@@ -405,7 +438,7 @@ const MIGRATIONS: &[Migration] = &[
                 order_id   INTEGER NOT NULL UNIQUE REFERENCES orders(id),
                 waiting_no INTEGER NOT NULL,
                 day_date   TEXT NOT NULL,
-                issued_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                issued_at  TEXT NOT NULL DEFAULT (station_now())
             );
             CREATE UNIQUE INDEX idx_wash_tickets_day_no ON wash_tickets(day_date, waiting_no);
         "#,
@@ -440,7 +473,7 @@ const MIGRATIONS: &[Migration] = &[
                 business_day_id INTEGER REFERENCES business_days(id),
                 shift_id        INTEGER REFERENCES shifts(id),
                 opened_by       INTEGER NOT NULL REFERENCES users(id),
-                opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                opened_at       TEXT NOT NULL DEFAULT (station_now()),
                 order_id        INTEGER REFERENCES orders(id),
                 closed_by       INTEGER REFERENCES users(id),
                 closed_at       TEXT,
@@ -481,7 +514,7 @@ const MIGRATIONS: &[Migration] = &[
                 status          TEXT NOT NULL DEFAULT 'OPEN'
                                 CHECK (status IN ('OPEN','READY_TO_PAY','CLOSED','CANCELLED')),
                 takeaway_no     INTEGER,
-                opened_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                opened_at       TEXT NOT NULL DEFAULT (station_now()),
                 ready_at        TEXT,
                 closed_at       TEXT,
                 customer_id     INTEGER REFERENCES customers(id),
@@ -548,7 +581,7 @@ const MIGRATIONS: &[Migration] = &[
                              CHECK (status IN ('PENDING','PRINTED','FAILED')),
                 attempts     INTEGER NOT NULL DEFAULT 0,
                 error        TEXT,
-                created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at   TEXT NOT NULL DEFAULT (station_now())
             );
             INSERT INTO print_jobs_new (id, doc_type, ref_id, content_hash, status,
                                         attempts, error, created_at)
@@ -583,7 +616,7 @@ const MIGRATIONS: &[Migration] = &[
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 business_day_id   INTEGER NOT NULL REFERENCES business_days(id),
                 closed_by         INTEGER NOT NULL REFERENCES users(id),
-                closed_at         TEXT NOT NULL DEFAULT (datetime('now')),
+                closed_at         TEXT NOT NULL DEFAULT (station_now()),
                 invoices_count    INTEGER NOT NULL DEFAULT 0,
                 cafe_sales        INTEGER NOT NULL DEFAULT 0,
                 wash_sales        INTEGER NOT NULL DEFAULT 0,
@@ -675,8 +708,8 @@ const MIGRATIONS: &[Migration] = &[
                 name       TEXT NOT NULL COLLATE NOCASE UNIQUE
                            CHECK (name = trim(name) AND length(name) > 0),
                 is_system  INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (station_now()),
+                updated_at TEXT NOT NULL DEFAULT (station_now())
             );
             INSERT INTO categories (name, is_system) VALUES ('عام', 1);
 
@@ -690,8 +723,8 @@ const MIGRATIONS: &[Migration] = &[
                 is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
                 track_inventory INTEGER NOT NULL DEFAULT 0 CHECK (track_inventory IN (0,1)),
                 is_seed         INTEGER NOT NULL DEFAULT 0,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at      TEXT NOT NULL DEFAULT (station_now()),
+                updated_at      TEXT NOT NULL DEFAULT (station_now())
             );
             INSERT INTO products_new
                 (id, name, item_type, department, category_id, price_minor,
@@ -813,12 +846,128 @@ const MIGRATIONS: &[Migration] = &[
         sql: r#"
             -- Percentage mode is replaced, never converted into a percentage.
             INSERT INTO app_settings (key, value, updated_at) VALUES
-              ('service_charge', '[]', datetime('now'))
+              ('service_charge', '[]', station_now())
             ON CONFLICT(key) DO UPDATE SET
               value = excluded.value,
               updated_at = excluded.updated_at;
 
             DELETE FROM app_settings WHERE key = 'discount_limit';
+        "#,
+    },
+    Migration {
+        version: 19,
+        name: "explicit utc instant timestamps",
+        needs_fk_off: false,
+        sql: r#"
+            -- Every timestamp column historically held SQLite's
+            -- `datetime('now')` output: `YYYY-MM-DD HH:MM:SS` in UTC with NO
+            -- timezone marker. That is a correct instant but an ambiguous
+            -- string, and the UI was displaying those UTC digits as if they
+            -- were Station local time.
+            --
+            -- This migration changes the REPRESENTATION only, never the
+            -- instant: it appends the `Z` that makes each value explicitly
+            -- UTC. No time is shifted, re-interpreted, or re-zoned, so every
+            -- historical invoice, shift, expense and audit record keeps exactly
+            -- the real-world moment it always referred to.
+            --
+            -- The `substr(col, -1) <> 'Z'` guard makes this idempotent: a row
+            -- already carrying the marker is left untouched, so re-running
+            -- the migration (or opening a migrated database) is a no-op.
+            -- `length(col) = 19` matches the exact legacy shape, so a value
+            -- that is not a plain `YYYY-MM-DD HH:MM:SS` is left alone rather
+            -- than mangled.
+
+            -- Business days.
+            UPDATE business_days SET opened_at = opened_at || 'Z'
+                WHERE opened_at IS NOT NULL AND length(opened_at) = 19 AND substr(opened_at, -1) <> 'Z';
+            UPDATE business_days SET closed_at = closed_at || 'Z'
+                WHERE closed_at IS NOT NULL AND length(closed_at) = 19 AND substr(closed_at, -1) <> 'Z';
+
+            -- Shifts.
+            UPDATE shifts SET opened_at = opened_at || 'Z'
+                WHERE length(opened_at) = 19 AND substr(opened_at, -1) <> 'Z';
+            UPDATE shifts SET closed_at = closed_at || 'Z'
+                WHERE closed_at IS NOT NULL AND length(closed_at) = 19 AND substr(closed_at, -1) <> 'Z';
+
+            -- Orders and table sessions.
+            UPDATE orders SET opened_at = opened_at || 'Z'
+                WHERE opened_at IS NOT NULL AND length(opened_at) = 19 AND substr(opened_at, -1) <> 'Z';
+            UPDATE orders SET ready_at = ready_at || 'Z'
+                WHERE ready_at IS NOT NULL AND length(ready_at) = 19 AND substr(ready_at, -1) <> 'Z';
+            UPDATE orders SET closed_at = closed_at || 'Z'
+                WHERE closed_at IS NOT NULL AND length(closed_at) = 19 AND substr(closed_at, -1) <> 'Z';
+            UPDATE table_sessions SET opened_at = opened_at || 'Z'
+                WHERE opened_at IS NOT NULL AND length(opened_at) = 19 AND substr(opened_at, -1) <> 'Z';
+            UPDATE table_sessions SET closed_at = closed_at || 'Z'
+                WHERE closed_at IS NOT NULL AND length(closed_at) = 19 AND substr(closed_at, -1) <> 'Z';
+
+            -- Sales documents.
+            UPDATE invoices SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE invoices SET paid_at = paid_at || 'Z'
+                WHERE paid_at IS NOT NULL AND length(paid_at) = 19 AND substr(paid_at, -1) <> 'Z';
+            UPDATE invoices SET cancelled_at = cancelled_at || 'Z'
+                WHERE cancelled_at IS NOT NULL AND length(cancelled_at) = 19 AND substr(cancelled_at, -1) <> 'Z';
+            UPDATE payments SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+
+            -- Wash tickets and day closing snapshots.
+            UPDATE wash_tickets SET issued_at = issued_at || 'Z'
+                WHERE length(issued_at) = 19 AND substr(issued_at, -1) <> 'Z';
+            UPDATE day_closings SET closed_at = closed_at || 'Z'
+                WHERE length(closed_at) = 19 AND substr(closed_at, -1) <> 'Z';
+
+            -- Master data and ledgers.
+            UPDATE users SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE users SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE products SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE products SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE customers SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE customers SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE cars SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE cars SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE categories SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE categories SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE order_lines SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE stock_movements SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE inventory_items SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE credit_accounts SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE credit_accounts SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+            UPDATE credit_payments SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE expenses SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE print_jobs SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE audit_log SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE app_settings SET updated_at = updated_at || 'Z'
+                WHERE length(updated_at) = 19 AND substr(updated_at, -1) <> 'Z';
+
+            -- Sessions. Expiry was written by `datetime('now', '+N hours')`,
+            -- which is still a UTC instant, so the same marker applies.
+            UPDATE sessions SET created_at = created_at || 'Z'
+                WHERE length(created_at) = 19 AND substr(created_at, -1) <> 'Z';
+            UPDATE sessions SET expires_at = expires_at || 'Z'
+                WHERE length(expires_at) = 19 AND substr(expires_at, -1) <> 'Z';
+            UPDATE sessions SET revoked_at = revoked_at || 'Z'
+                WHERE revoked_at IS NOT NULL AND length(revoked_at) = 19 AND substr(revoked_at, -1) <> 'Z';
         "#,
     },
 ];
@@ -828,17 +977,24 @@ pub fn migration_count() -> i64 {
 }
 
 pub fn migrate(conn: &Db) -> AppResult<()> {
+    // Tests open bare in-memory connections, so the clock is registered here
+    // too: every connection that migrates gets the same canonical time source.
+    register_clock(conn)?;
     apply_migrations(conn, None)
 }
 
 /// Apply embedded migrations in version order. `up_to` is used by tests to
 /// build a pre-upgrade database and verify the data-preserving path.
 fn apply_migrations(conn: &Db, up_to: Option<i64>) -> AppResult<()> {
+    // Registered here (not only in `migrate`) so every entry point — including
+    // the tests that migrate to a specific version — has the canonical clock
+    // available for the column defaults that depend on it.
+    register_clock(conn)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (
             version     INTEGER PRIMARY KEY,
             name        TEXT NOT NULL,
-            applied_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            applied_at  TEXT NOT NULL DEFAULT (station_now())
         );",
     )?;
 
@@ -973,6 +1129,104 @@ mod tests {
             )
             .unwrap();
         assert_eq!(same, credit.0);
+    }
+
+    /// Every timestamp column carries an explicit UTC marker after migration 19.
+    #[test]
+    fn explicit_utc_migration_marks_every_timestamp() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO users (name, role, password_hash) VALUES ('a', 'ADMIN', 'x')",
+            [],
+        )
+        .unwrap();
+        // Force a legacy-shaped value and re-run only migration 19's SQL.
+        conn.execute(
+            "UPDATE users SET created_at = '2026-09-25 14:30:00' WHERE name = 'a'",
+            [],
+        )
+        .unwrap();
+
+        let sql = MIGRATIONS
+            .iter()
+            .find(|m| m.version == 19)
+            .expect("migration 19 exists")
+            .sql;
+        conn.execute_batch(sql).unwrap();
+
+        let stored: String = conn
+            .query_row(
+                "SELECT created_at FROM users WHERE name = 'a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // The same instant, now explicitly UTC.
+        assert_eq!(stored, "2026-09-25 14:30:00Z");
+        // And it still parses back to the identical instant.
+        assert_eq!(
+            crate::time::parse_timestamp(&stored).unwrap(),
+            crate::time::parse_timestamp("2026-09-25 14:30:00").unwrap()
+        );
+    }
+
+    /// Re-running the timestamp migration must not append a second `Z`.
+    #[test]
+    fn explicit_utc_migration_is_idempotent() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        let sql = MIGRATIONS
+            .iter()
+            .find(|m| m.version == 19)
+            .expect("migration 19 exists")
+            .sql;
+        conn.execute_batch(sql).unwrap();
+        let once: String = conn
+            .query_row(
+                "SELECT updated_at FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute_batch(sql).unwrap();
+        let twice: String = conn
+            .query_row(
+                "SELECT updated_at FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(once, twice, "a second run must be a no-op");
+        assert!(!twice.ends_with("ZZ"));
+    }
+
+    /// Business dates are pure calendar days and must never gain a `Z`.
+    #[test]
+    fn business_dates_are_never_rewritten_as_instants() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO business_days (day_date, opened_at) VALUES ('2026-09-25', '2026-09-25 09:00:00')",
+            [],
+        )
+        .unwrap();
+        let sql = MIGRATIONS
+            .iter()
+            .find(|m| m.version == 19)
+            .expect("migration 19 exists")
+            .sql;
+        conn.execute_batch(sql).unwrap();
+        let (day_date, opened_at): (String, String) = conn
+            .query_row(
+                "SELECT day_date, opened_at FROM business_days WHERE day_date = '2026-09-25'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        // The calendar day is untouched; only the instant is marked.
+        assert_eq!(day_date, "2026-09-25");
+        assert_eq!(opened_at, "2026-09-25 09:00:00Z");
     }
 
     #[test]

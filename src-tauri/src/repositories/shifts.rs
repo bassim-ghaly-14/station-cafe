@@ -70,11 +70,15 @@ pub struct BusinessDay {
 pub fn open_day(conn: &Db, user_id: i64) -> AppResult<Option<i64>> {
     // Explicit business-day entity; the calendar date is only its label.
     // A closed day must not prevent opening a new operational day with the
-    // same calendar label. The repository uses SQLite's existing clock and
-    // date semantics for these columns.
+    // same calendar label.
+    //
+    // `day_date` is a Station BUSINESS date, so it comes from the canonical
+    // business timezone — not from SQLite's UTC `date('now')`. Using the UTC
+    // date would file a 00:30 Cairo transaction under the previous day.
+    // `opened_at` is an INSTANT, so it stays an explicit UTC instant.
     let n = conn.execute(
         "INSERT INTO business_days (day_date, opened_at, opened_by)
-         VALUES (date('now'), datetime('now'), ?1)",
+         VALUES (station_today(), station_now(), ?1)",
         params![user_id],
     )?;
     if n == 0 {
@@ -104,7 +108,7 @@ pub fn current_day(conn: &Db) -> AppResult<Option<BusinessDay>> {
 
 pub fn close_day(conn: &Db, day_id: i64, user_id: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE business_days SET status = 'CLOSED', closed_at = datetime('now'), closed_by = ?2
+        "UPDATE business_days SET status = 'CLOSED', closed_at = station_now(), closed_by = ?2
          WHERE id = ?1 AND status = 'OPEN'",
         params![day_id, user_id],
     )?;
@@ -166,7 +170,7 @@ pub fn day_totals(conn: &Db, day_id: i64) -> AppResult<DayTotals> {
 // ---- SHIFTS ----------------------------------------------------------------
 
 pub fn sqlite_now(conn: &Db) -> AppResult<String> {
-    Ok(conn.query_row("SELECT datetime('now')", [], |r| r.get(0))?)
+    Ok(conn.query_row("SELECT station_now()", [], |r| r.get(0))?)
 }
 
 pub fn open_shift(
@@ -597,19 +601,28 @@ pub fn closed_business_days(
 }
 
 pub fn closed_shifts(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<Vec<ShiftRow>> {
+    // `from`/`to` are Station BUSINESS dates, but `closed_at` is an instant. The
+    // filter is therefore resolved to a half-open range of instants in the
+    // business timezone. Previously this compared `date(s.closed_at)` — the UTC
+    // date — against a Cairo business date, which misfiled any shift that
+    // closed either side of midnight.
+    let span = crate::time::business_date_span(from, to);
     let mut sql = format!("SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id WHERE s.status = 'CLOSED'");
-    if from.is_some() {
-        sql.push_str(" AND date(s.closed_at) >= ?1");
-    }
-    if to.is_some() {
-        sql.push_str(" AND date(s.closed_at) <= ?2");
+    let mut args: Vec<String> = Vec::new();
+    if let Some(span) = span.as_ref() {
+        if !span.start_inclusive.is_empty() {
+            args.push(span.start_inclusive.clone());
+            sql.push_str(&format!(" AND s.closed_at >= ?{}", args.len()));
+        }
+        if let Some(end) = span.end_exclusive.as_ref() {
+            args.push(end.clone());
+            sql.push_str(&format!(" AND s.closed_at < ?{}", args.len()));
+        }
     }
     sql.push_str(" ORDER BY s.closed_at DESC, s.id DESC");
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        rusqlite::params_from_iter([from, to].into_iter().flatten()),
-        shift_row,
-    )?;
+    let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|a| a as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(refs.as_slice(), shift_row)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 

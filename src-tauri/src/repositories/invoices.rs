@@ -133,7 +133,7 @@ pub fn next_invoice_no(conn: &Db) -> AppResult<i64> {
         }
     };
     conn.execute(
-        "UPDATE app_settings SET value = ?1, updated_at = datetime('now')
+        "UPDATE app_settings SET value = ?1, updated_at = station_now()
          WHERE key = 'invoice.next_number'",
         [(n + 1).to_string()],
     )?;
@@ -172,7 +172,7 @@ pub fn apply_payment_to_invoice(conn: &Db, invoice_id: i64, amount: i64) -> AppR
     };
     conn.execute(
         "UPDATE invoices SET paid_amount = ?2, status = ?3,
-            paid_at = COALESCE(paid_at, CASE WHEN ?3 = 'PAID' THEN datetime('now') END)
+            paid_at = COALESCE(paid_at, CASE WHEN ?3 = 'PAID' THEN station_now() END)
          WHERE id = ?1",
         params![invoice_id, new_paid, status],
     )?;
@@ -189,7 +189,7 @@ pub fn mark_invoice_credit(conn: &Db, invoice_id: i64) -> AppResult<()> {
 
 pub fn cancel_invoice(conn: &Db, invoice_id: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE invoices SET status = 'CANCELLED', cancelled_at = datetime('now') WHERE id = ?1",
+        "UPDATE invoices SET status = 'CANCELLED', cancelled_at = station_now() WHERE id = ?1",
         [invoice_id],
     )?;
     Ok(())
@@ -365,7 +365,7 @@ pub fn open_or_extend_credit(conn: &Db, customer_id: i64, amount: i64) -> AppRes
             conn.execute(
                 "UPDATE credit_accounts SET original_total = original_total + ?2,
                     status = CASE WHEN paid_total = 0 THEN 'UNPAID' ELSE 'PARTIALLY_PAID' END,
-                    updated_at = datetime('now') WHERE id = ?1",
+                    updated_at = station_now() WHERE id = ?1",
                 params![id, amount],
             )?;
             Ok(id)
@@ -401,7 +401,7 @@ pub fn pay_credit(conn: &Db, account_id: i64, amount: i64, user_id: i64) -> AppR
         "PARTIALLY_PAID"
     };
     conn.execute(
-        "UPDATE credit_accounts SET paid_total = ?2, status = ?3, updated_at = datetime('now')
+        "UPDATE credit_accounts SET paid_total = ?2, status = ?3, updated_at = station_now()
          WHERE id = ?1",
         params![account_id, new_paid, status],
     )?;

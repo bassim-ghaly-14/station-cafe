@@ -35,12 +35,13 @@ export interface DateRange {
 const NAV_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground active:bg-surface-active'
 
-/** Visible month for an ISO date (falls back to the local current month). */
+/** Visible month for an ISO date (falls back to the Station business month). */
 function viewMonthOf(iso: string): { year: number; month: number } {
   const parts = parseIsoDate(iso)
   if (parts) return { year: parts.year, month: parts.month }
-  const now = new Date()
-  return { year: now.getFullYear(), month: now.getMonth() + 1 }
+  // The fallback is the Station business month, not the browser's local month.
+  const today = parseIsoDate(todayIso())
+  return today ? { year: today.year, month: today.month } : { year: 1970, month: 1 }
 }
 
 export function DateRangePicker({

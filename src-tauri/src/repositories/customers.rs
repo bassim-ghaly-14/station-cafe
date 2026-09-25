@@ -45,7 +45,7 @@ pub fn update(
     notes: Option<&str>,
 ) -> AppResult<()> {
     conn.execute(
-        "UPDATE customers SET name = ?2, phone = ?3, notes = ?4, updated_at = datetime('now')
+        "UPDATE customers SET name = ?2, phone = ?3, notes = ?4, updated_at = station_now()
          WHERE id = ?1",
         params![id, name, phone, notes],
     )?;

@@ -124,7 +124,7 @@ function order(over: Partial<PosOrder> = {}): PosOrder {
     customer_id: null,
     discount_mode: null,
     discount_value: null,
-    opened_at: '2026-01-05 10:00:00',
+    opened_at: '2026-01-05 10:00:00Z',
     waiting_no: null,
     takeaway_no: null,
     shift_id: 1,
@@ -162,7 +162,7 @@ function takeawayView(over: Partial<TakeawayView> = {}): TakeawayView {
   return {
     id: 7,
     status: 'OPEN',
-    opened_at: '2026-01-05 10:00:00',
+    opened_at: '2026-01-05 10:00:00Z',
     items_count: 1,
     total_minor: 6000,
     ...over,
@@ -288,7 +288,7 @@ describe('PosPage takeaway entry', () => {
         order_type: 'TAKEAWAY',
         table_id: null,
         table_label: null,
-        opened_at: '2026-01-05 10:00:00',
+        opened_at: '2026-01-05 10:00:00Z',
         takeaway_no: null,
         lines: [],
       }),
@@ -446,7 +446,7 @@ describe('order panel identity (issue 3)', () => {
         order_type: 'TAKEAWAY',
         table_id: null,
         table_label: null,
-        opened_at: '2026-01-05 10:05:00',
+        opened_at: '2026-01-05 10:05:00Z',
         takeaway_no: null,
       }),
     )
@@ -490,7 +490,7 @@ describe('open takeaway lifecycle (issue 4)', () => {
         order_type: 'TAKEAWAY',
         table_id: null,
         table_label: null,
-        opened_at: '2026-01-05 10:00:00',
+        opened_at: '2026-01-05 10:00:00Z',
       }),
     )
   })
@@ -503,7 +503,7 @@ describe('open takeaway lifecycle (issue 4)', () => {
     const chip = await screen.findByTestId('open-takeaway-7')
 
     expect(chip).toHaveTextContent('طلبات خارجية · طلب 7')
-    expect(chip).toHaveTextContent('10:00')
+    expect(chip).toHaveTextContent('12:00')
     expect(chip).toHaveTextContent('1 أصناف')
 
     fireEvent.click(chip)
@@ -672,7 +672,7 @@ describe('shift lifecycle UI', () => {
     user_id: 2,
     user_name: 'Cashier One',
     status: 'ACTIVE',
-    opened_at: '2026-09-24 16:00:00',
+    opened_at: '2026-09-24 16:00:00Z',
     opening_cash: 1000,
     closed_at: null,
     cash_sales: 2000,
@@ -690,7 +690,7 @@ describe('shift lifecycle UI', () => {
     vi.clearAllMocks()
     mocks.previewShiftClose.mockResolvedValue({
       shift,
-      closing_at: '2026-09-25 01:30:00',
+      closing_at: '2026-09-25 01:30:00Z',
       cash_sales: 2000,
       card_sales: 3000,
       credit_sales: 500,
@@ -740,10 +740,12 @@ describe('shift lifecycle UI', () => {
     // asserted as separate elements (a long localized date must never merge
     // with the time or the separator).
     expect(screen.getByText('24/09/2026')).toBeInTheDocument()
-    expect(screen.getByText('16:00')).toBeInTheDocument()
+    expect(screen.getByText('19:00')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+    // The shift closed at 01:30 UTC, which is 04:30 on the 25th in Cairo — the
+    // UI must show the business-local date and time, not the stored UTC digits.
     expect(await screen.findByText('25/09/2026')).toBeInTheDocument()
-    expect(await screen.findByText('01:30')).toBeInTheDocument()
+    expect(await screen.findByText('04:30')).toBeInTheDocument()
 
     const input = screen.getByPlaceholderText('0.00')
     fireEvent.change(input, { target: { value: '30' } })
@@ -782,12 +784,12 @@ describe('shift lifecycle UI', () => {
   // The fix is structural — the card composes separate, isolated slots — so the
   // assertion is that the parts are distinct elements, never one merged blob.
   it.each([
-    ['DD/MM/YYYY', '24/09/2026', '16:00'],
-    ['DD MMM YYYY', '24 سبتمبر 2026', '16:00'],
-    ['YYYY-MM-DD', '2026-09-24', '16:00'],
-    ['DD-MM-YYYY', '24-09-2026', '16:00'],
-    ['MM/DD/YYYY', '09/24/2026', '16:00'],
-    ['MMM DD, YYYY', 'سبتمبر 24, 2026', '16:00'],
+    ['DD/MM/YYYY', '24/09/2026', '19:00'],
+    ['DD MMM YYYY', '24 سبتمبر 2026', '19:00'],
+    ['YYYY-MM-DD', '2026-09-24', '19:00'],
+    ['DD-MM-YYYY', '24-09-2026', '19:00'],
+    ['MM/DD/YYYY', '09/24/2026', '19:00'],
+    ['MMM DD, YYYY', 'سبتمبر 24, 2026', '19:00'],
   ])('keeps the closing card composed under %s', (dateFormat, expectedDate, expectedTime) => {
     updateDateSettings({ dateFormat: dateFormat as 'DD/MM/YYYY', timeFormat: '24h' })
     render(
@@ -813,8 +815,9 @@ describe('shift lifecycle UI', () => {
     )
     // The date is its own slot and the 12-hour time is its own slot, so the
     // localized meridiem can never be reordered into the middle of the date.
+    // The shift opened at 16:00 UTC = 19:00 Cairo.
     expect(screen.getByText('24 سبتمبر 2026')).toBeInTheDocument()
-    expect(screen.getByText(/4:00/).textContent).toContain('4:00')
+    expect(screen.getByText(/7:00/).textContent).toContain('7:00')
   })
 })
 
@@ -825,9 +828,9 @@ describe('day closing UI', () => {
     user_id: 2,
     user_name: 'Cashier One',
     status: 'CLOSED',
-    opened_at: '2026-09-24 16:00:00',
+    opened_at: '2026-09-24 16:00:00Z',
     opening_cash: 1000,
-    closed_at: '2026-09-24 22:00:00',
+    closed_at: '2026-09-24 22:00:00Z',
     cash_sales: 1000,
     card_sales: 2000,
     credit_sales: 0,
@@ -843,7 +846,7 @@ describe('day closing UI', () => {
       id: 1,
       day_date: '2026-09-24',
       status: 'OPEN',
-      opened_at: '2026-09-24 16:00:00',
+      opened_at: '2026-09-24 16:00:00Z',
       closed_at: null,
     },
     totals: {
@@ -874,7 +877,7 @@ describe('day closing UI', () => {
       id: 4,
       business_day_id: 1,
       closed_by: 1,
-      closed_at: '2026-09-24 23:00:00',
+      closed_at: '2026-09-24 23:00:00Z',
       shift_ids: [7],
       totals: day.totals,
       final_snapshot: false,
@@ -936,7 +939,7 @@ describe('day closing UI', () => {
         id: 4,
         business_day_id: 1,
         closed_by: 1,
-        closed_at: '2026-09-24 23:00:00',
+        closed_at: '2026-09-24 23:00:00Z',
         shift_ids: [7],
         totals: day.totals,
         final_snapshot: false,

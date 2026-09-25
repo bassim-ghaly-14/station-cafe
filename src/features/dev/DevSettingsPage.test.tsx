@@ -249,6 +249,8 @@ describe('DevSettingsPage display formatting', () => {
     fireEvent.change(screen.getByLabelText('صيغة الوقت'), { target: { value: '12h' } })
     // A long localized date and a 12-hour time are both visible in the preview.
     expect(screen.getByTestId('preview-date')).toHaveTextContent('25 سبتمبر 2026')
-    expect(screen.getByTestId('preview-time')).toHaveTextContent('2:35')
+    // The previewed instant is rendered in Station business time (Cairo), so
+    // the same stamp reads 5:35 م here and on a printed receipt.
+    expect(screen.getByTestId('preview-time')).toHaveTextContent('5:35')
   })
 })

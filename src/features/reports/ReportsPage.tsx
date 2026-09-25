@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import {
-  Badge,
   Button,
   Card,
   CardHeader,
@@ -16,7 +15,7 @@ import {
   TableSkeleton,
 } from '@/components/ui'
 import { Field, Input } from '@/components/ui/input'
-import { BarChart3, Printer } from '@/components/ui/icon'
+import { BarChart3 } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import {
   DisplayDate,
@@ -24,18 +23,12 @@ import {
   DisplayDateTimeRange,
 } from '@/components/ui/display-datetime'
 import { addDays, todayIso } from '@/lib/date'
-import {
-  opsApi,
-  type AuditEntry,
-  type PrintJobRow,
-  type ProductSales,
-  type SalesByDay,
-} from '@/services/opsApi'
-import { printJobBadgeVariant } from '@/lib/status-badge'
+import { opsApi, type AuditEntry, type ProductSales, type SalesByDay } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
-import { useAnalyticsCharts } from './charts/mockCharts'
+import { useAnalyticsCharts } from './charts/analyticsCharts'
 import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
 import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
+import { PrintStatusPanel } from '@/features/printing/PrintStatusPanel'
 import type { ShiftRow } from '@/services/shiftApi'
 
 type Tab = 'sales' | 'products' | 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts'
@@ -111,7 +104,7 @@ export default function ReportsPage() {
         <ProductSalesReport from={from} to={to} setFrom={setFrom} setTo={setTo} />
       ) : null}
       {tab === 'audit' ? <AuditList /> : null}
-      {tab === 'print' ? <PrintJobsList /> : null}
+      {tab === 'print' ? <PrintStatusPanel /> : null}
       {tab === 'shiftClosings' ? (
         <ClosingReports kind="shift" from={from} to={to} setFrom={setFrom} setTo={setTo} />
       ) : null}
@@ -136,15 +129,39 @@ function ChartsReport({
   setFrom: (v: string) => void
   setTo: (v: string) => void
 }) {
-  const report = useAnalyticsCharts()
+  const report = useAnalyticsCharts(from, to)
+  const { t } = useTranslation()
+  const errorText = useErrText(t)
   return (
     <div className="flex flex-col gap-4">
       <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {report.data.map((chart) => (
-          <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
-        ))}
-      </div>
+      {report.loading ? (
+        <TableSkeleton rows={3} columns={2} />
+      ) : report.error ? (
+        <ErrorState
+          message={errorText(report.error)}
+          onRetry={report.reload}
+          retryLabel={t('app.retry')}
+        />
+      ) : report.data.length === 0 ? (
+        <EmptyState title={t('reports.charts.empty')} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {report.data.map((chart) =>
+            chart.hasData ? (
+              <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
+            ) : (
+              <Card
+                key={chart.id}
+                className="flex min-h-88 flex-col items-center justify-center p-5 text-center"
+              >
+                <h2 className="text-section">{chart.title}</h2>
+                <p className="mt-2 text-sm text-foreground-muted">{t('reports.charts.empty')}</p>
+              </Card>
+            ),
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -531,92 +548,6 @@ function AuditList() {
                     {a.after_json}
                   </span>
                 ) : null}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function PrintJobsList() {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const errText = useErrText(t)
-  const [rows, setRows] = useState<PrintJobRow[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [testing, setTesting] = useState(false)
-
-  const load = useCallback(() => {
-    setLoadError(null)
-    opsApi
-      .printJobs(30)
-      .then(setRows)
-      .catch((e) => {
-        setLoadError(errText(e))
-        toast(errText(e), 'error')
-      })
-  }, [toast, errText])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  async function testPrint() {
-    setTesting(true)
-    try {
-      const o = await opsApi.printTest()
-      toast(o.duplicate_suppressed ? t('print.duplicateSuppressed') : t('print.done'), 'success')
-      load()
-    } catch (e) {
-      toast(errText(e), 'error')
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div>
-        <Button
-          variant="outline"
-          onClick={() => void testPrint()}
-          disabled={testing}
-          loading={testing}
-        >
-          {!testing ? <Printer size={16} aria-hidden /> : null}
-          {t('reports.printTest')}
-        </Button>
-      </div>
-      {rows === null ? (
-        loadError ? (
-          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <TableSkeleton rows={5} columns={3} />
-        )
-      ) : rows.length === 0 ? (
-        <EmptyState title={t('reports.noPrintJobs')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('reports.printJobs')} subtitle={t('reports.printJobsHint')} />
-          <div className="flex flex-col divide-y divide-border-subtle">
-            {rows.map((j) => (
-              <div key={j.id} className="flex flex-wrap items-center gap-3 py-2">
-                <div className="min-w-40 flex-1">
-                  <p className="text-body font-bold">
-                    <span className="tabular-nums">{j.doc_type}</span>{' '}
-                    <span className="tabular-nums">#{j.id}</span>
-                  </p>
-                  <p className="min-w-0 text-caption">
-                    <DisplayDateTime value={j.created_at} separator="" /> · {t('reports.attempts')}:{' '}
-                    <span className="tabular-nums">{j.attempts}</span>
-                  </p>
-                </div>
-                {j.error ? <span className="text-caption text-destructive">{j.error}</span> : null}
-                <Badge variant={printJobBadgeVariant(j.status)} size="sm" dot>
-                  {t([`reports.job.${j.status}`, j.status])}
-                </Badge>
               </div>
             ))}
           </div>

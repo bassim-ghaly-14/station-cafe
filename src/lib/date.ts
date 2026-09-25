@@ -1,12 +1,24 @@
 /**
- * Business-date helpers — the single place calendar dates are parsed, built,
- * stepped and rendered.
+ * Business-date and business-time helpers — the single place calendar dates
+ * are parsed, built, stepped and rendered.
  *
- * A business date (a shift day, an expense date, a report boundary) must mean
- * the exact same calendar day on every machine, so business dates are plain
- * `YYYY-MM-DD` strings and are never turned into a *local* `Date`. All internal
- * math runs on UTC timestamps (which have no DST jumps) and all formatting is
- * pinned to `timeZone: 'UTC'`, so `2026-09-22` stays `2026-09-22` everywhere.
+ * Two distinct things live here, and they are deliberately kept apart:
+ *
+ * 1. **Business dates** (`YYYY-MM-DD` strings) — a shift day, an expense date, a
+ *    report boundary. These are pure CALENDAR days, never instants. They are
+ *    never turned into a `Date`, all arithmetic runs on UTC timestamps (no DST
+ *    jumps), and all formatting is pinned to `timeZone: 'UTC'`, so `2026-09-22`
+ *    stays `2026-09-22` on every machine.
+ *
+ * 2. **Instants** (a stored `created_at`/`opened_at`/…) — a point in time, stored
+ *    by the backend as explicit UTC (`2026-09-25 14:30:00Z`). These are rendered
+ *    in {@link STATION_TZ}, the Station business timezone, so the screen shows
+ *    the real wall clock at the café. This mirrors exactly what the backend does
+ *    when it prints a receipt, which is what keeps paper and screen in
+ *    agreement.
+ *
+ * The browser's own timezone is never the business timezone: Station's business
+ * timezone is fixed and centralized here, and in `time.rs` on the Rust side.
  *
  * Numerals are formatted with the Latin numbering system to match the rest of
  * the app (MoneyDisplay, invoice/date columns), while month and weekday names
@@ -18,6 +30,105 @@ import i18n, { DEFAULT_LOCALE } from './i18n'
 
 /** Days in the app are whole milliseconds — used only for UTC stepping. */
 const DAY_MS = 86_400_000
+
+/**
+ * Station's business timezone.
+ *
+ * The single source of truth on the frontend, mirroring `time::BUSINESS_TZ` in
+ * the Rust backend. An IANA zone (not `+03:00`) so Egypt's DST rule is honored
+ * by the platform's timezone database.
+ */
+export const STATION_TZ = 'Africa/Cairo'
+
+/**
+ * Normalize a stored timestamp to an ISO-8601 UTC string suitable for
+ * `Date.parse`, so an instant is never mistaken for local wall-clock time.
+ *
+ * Accepts the canonical explicit form (`...Z`), the legacy unmarked form, and
+ * an explicit offset. Returns the input unchanged when it is not a recognized
+ * timestamp, so callers can detect the failure rather than parse `NaN`.
+ */
+export function normalizeToUtcIso(value: string | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  const text = value.trim()
+  if (!text) return ''
+  const sql = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(text)
+  if (!sql) return text
+  // Look for a zone ONLY in the part after the time, so the date's own `-`
+  // separators can never be mistaken for a UTC offset.
+  const after = text.slice(sql[0].length)
+  const hasZone = /^\s*(?:[Zz]|[+-]\d{2}:?\d{2})/.test(after)
+  return `${sql[1]}-${sql[2]}-${sql[3]}T${sql[4]}:${sql[5]}:${sql[6] ?? '00'}${
+    hasZone ? after.trim() : 'Z'
+  }`
+}
+
+/**
+ * Build a `Date` whose UTC components ARE the Station business wall clock.
+ *
+ * Excel date cells hold a timezone-neutral serial number, so a `Date` object
+ * would be re-interpreted in whatever timezone the reader's machine uses. By
+ * encoding the business wall clock as UTC components, the exported cell always
+ * *reads* as the Station time it was generated at, on any machine.
+ */
+export function businessWallClockToDate(value: string): Date | null {
+  const parts = parseStamp(value)
+  if (!parts) return null
+  return new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second),
+  )
+}
+
+/**
+ * The current Station business wall clock, as a `Date` for spreadsheet cells.
+ * See {@link businessWallClockToDate} for why the wall clock is encoded as UTC.
+ */
+export function nowBusinessWallClock(): Date {
+  return businessWallClockToDate(nowDbInstant()) ?? new Date()
+}
+
+/** The current instant in the canonical explicit-UTC storage format. */
+export function nowDbInstant(): string {
+  return `${new Date().toISOString().slice(0, 19).replace('T', ' ')}Z`
+}
+
+/** Wall-clock components of an instant, in Station business time. */
+interface WallClock {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+}
+
+/** Split an instant into business-time wall-clock components. */
+function businessWallClock(instant: Date): WallClock | null {
+  if (Number.isNaN(instant.getTime())) return null
+  // `en-CA` yields ISO-ordered parts, so the fields can be read positionally
+  // without depending on the runtime's locale data.
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: STATION_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(instant)
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  const hour = get('hour')
+  return {
+    year: get('year'),
+    month: get('month'),
+    // Intl renders midnight as 24 in some engines under hour12: false.
+    day: get('day'),
+    hour: hour === 24 ? 0 : hour,
+    minute: get('minute'),
+    second: get('second'),
+  }
+}
 
 export interface CalendarDate {
   year: number
@@ -60,10 +171,17 @@ export function addMonths(
   return { year: Math.floor(total / 12), month: (total % 12) + 1 }
 }
 
-/** Today as the user's *local* calendar date (never the UTC-shifted day). */
+/**
+ * Today's Station BUSINESS date.
+ *
+ * Derived from the instant in {@link STATION_TZ}, never from the browser's
+ * local calendar. Using the browser date made the UI disagree with the backend
+ * whenever the machine's timezone was not Cairo — and it disagrees with the OS
+ * clock's own notion of the day if the machine is misconfigured.
+ */
 export function todayIso(): string {
-  const now = new Date()
-  return isoDate(now.getFullYear(), now.getMonth() + 1, now.getDate())
+  const wall = businessWallClock(new Date())
+  return wall ? isoDate(wall.year, wall.month, wall.day) : isoDate(1970, 1, 1)
 }
 
 /** Step a business date by whole days (UTC based, so no DST drift). */
@@ -197,56 +315,45 @@ interface ParsedStamp {
   hasTime: boolean
 }
 
+/**
+ * Parse a display input into business-time wall-clock components.
+ *
+ * A value that carries a TIME is an INSTANT and is converted from UTC into
+ * {@link STATION_TZ}. A value that is only `YYYY-MM-DD` is a BUSINESS DATE and
+ * is taken at face value — never shifted, so `2026-09-25` always renders as the
+ * 25th.
+ */
 function parseStamp(value: DisplayDateInput): ParsedStamp | null {
   if (value === null || value === undefined) return null
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return null
-    const d = new Date(value)
-    if (Number.isNaN(d.getTime())) return null
-    return {
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-      day: d.getDate(),
-      hour: d.getHours(),
-      minute: d.getMinutes(),
-      second: d.getSeconds(),
-      hasTime: true,
-    }
-  }
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return null
-    return {
-      year: value.getFullYear(),
-      month: value.getMonth() + 1,
-      day: value.getDate(),
-      hour: value.getHours(),
-      minute: value.getMinutes(),
-      second: value.getSeconds(),
-      hasTime: true,
-    }
+  // A `Date` or epoch number is already an instant.
+  if (typeof value === 'number' || value instanceof Date) {
+    const instant = value instanceof Date ? value : new Date(value)
+    const wall = businessWallClock(instant)
+    return wall ? { ...wall, hasTime: true } : null
   }
   const text = value.trim()
   if (!text) return null
+
+  // An instant, as written by the backend: `YYYY-MM-DD[ T]HH:MM[:SS]` with an
+  // optional `Z`/offset. Zone-less values are UTC, which is exactly what the
+  // historical `datetime('now')` writer meant.
   const sql = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(text)
   if (sql) {
     const year = Number(sql[1])
     const month = Number(sql[2])
     const day = Number(sql[3])
     if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null
-    return {
-      year,
-      month,
-      day,
-      hour: Number(sql[4]),
-      minute: Number(sql[5]),
-      second: Number(sql[6] ?? '0'),
-      hasTime: true,
-    }
+    // Normalize the separator and make the UTC zone explicit, so the platform
+    // parser can never fall back to treating it as LOCAL time.
+    const instant = new Date(normalizeToUtcIso(text))
+    if (Number.isNaN(instant.getTime())) return null
+    const wall = businessWallClock(instant)
+    return wall ? { ...wall, hasTime: true } : null
   }
-  const parts = parseIsoDate(text.slice(0, 10))
-  if (parts && text.length <= 10) {
-    return { ...parts, hour: 0, minute: 0, second: 0, hasTime: false }
-  }
+
+  // A pure business date: no time, no timezone, no conversion.
+  const parts = parseIsoDate(text)
+  if (parts) return { ...parts, hour: 0, minute: 0, second: 0, hasTime: false }
   return null
 }
 function activeLocale(explicit?: string): string {

@@ -1,6 +1,6 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, WIDTH};
+use super::shared::{footer, header, stamp, WIDTH};
 use crate::money::format_minor_for_print;
 use crate::repositories::pos::Order;
 
@@ -28,7 +28,7 @@ pub fn current_order(
     );
     p.align(Align::Right);
     p.kv_line("الطلب", &order.id.to_string(), WIDTH);
-    p.kv_line("التاريخ", &order.opened_at, WIDTH);
+    p.kv_line("التاريخ", &stamp(&order.opened_at), WIDTH);
     if let Some(label) = &order.table_label {
         p.kv_line("الطاولة", label, WIDTH);
     }
