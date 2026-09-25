@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   clearLocalSession: vi.fn(),
   serviceCharge: vi.fn(),
   discountAuthorization: vi.fn(),
+  discountOptions: vi.fn(),
+  setDiscountOptions: vi.fn(),
   setDiscountAuthorizationPassword: vi.fn(),
   setServiceCharge: vi.fn(),
   setCredit: vi.fn(),
@@ -44,6 +46,8 @@ vi.mock('@/services/posApi', () => ({
   settingsApi: {
     serviceCharge: mocks.serviceCharge,
     discountAuthorization: mocks.discountAuthorization,
+    discountOptions: mocks.discountOptions,
+    setDiscountOptions: mocks.setDiscountOptions,
     setDiscountAuthorizationPassword: mocks.setDiscountAuthorizationPassword,
     setServiceCharge: mocks.setServiceCharge,
     setCredit: mocks.setCredit,
@@ -69,6 +73,8 @@ describe('DevSettingsPage', () => {
     mocks.clearLocalSession.mockReset()
     mocks.serviceCharge.mockReset().mockResolvedValue({ amounts: [1000, 3000, 5000] })
     mocks.discountAuthorization.mockReset().mockResolvedValue({ configured: false })
+    mocks.discountOptions.mockReset().mockResolvedValue({ amounts: [2000, 5000] })
+    mocks.setDiscountOptions.mockReset().mockResolvedValue(undefined)
     mocks.setDiscountAuthorizationPassword.mockReset().mockResolvedValue(undefined)
     mocks.setServiceCharge.mockReset().mockResolvedValue(undefined)
     mocks.setCredit.mockReset().mockResolvedValue(undefined)

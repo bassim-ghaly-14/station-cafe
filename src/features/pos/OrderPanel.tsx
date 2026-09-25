@@ -7,16 +7,18 @@ import { ErrorState } from '@/components/states'
 import { useToast } from '@/components/ui'
 import {
   api,
+  settingsApi,
   type DiscountSel,
   type OrderCustomer,
   type OrderPreview,
   type PosOrder,
   type Product,
 } from '@/services/posApi'
+import { formatMinorMoney } from '@/lib/money'
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
-import { ProductPad } from './ProductPad'
+import { ProductBrowser } from './ProductBrowser'
 import { QtyStepper } from './QtyStepper'
 import { DeptBadge } from './DeptBadge'
 import { CheckoutSummary } from './CheckoutSummary'
@@ -52,9 +54,8 @@ export function OrderPanel({
   const toast = useToast()
   const [products, setProducts] = useState<Product[] | null>(null)
   const [prodErr, setProdErr] = useState<string | null>(null)
-  const [dept, setDept] = useState<'CAFE' | 'WASH'>('CAFE')
-  const [query, setQuery] = useState('')
   const [qty, setQty] = useState(1)
+  const [discountOptions, setDiscountOptions] = useState<number[]>([])
   const [discountOpen, setDiscountOpen] = useState(false)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [customer, setCustomer] = useState<OrderCustomer | null>(null)
@@ -76,6 +77,16 @@ export function OrderPanel({
     loadProducts()
   }, [loadProducts])
 
+  // Discount options come from admin configuration (Dev Settings). When the
+  // list is empty the POS simply offers no discount — it never falls back to a
+  // free amount or a percentage.
+  useEffect(() => {
+    settingsApi
+      .discountOptions()
+      .then((config) => setDiscountOptions(config.amounts))
+      .catch(() => setDiscountOptions([]))
+  }, [])
+
   // Attached-customer display: refresh when the order's customer link changes.
   useEffect(() => {
     api
@@ -89,9 +100,6 @@ export function OrderPanel({
 
   // Parent owns the preview/discount (single backend fetch); panel is display.
   const shown = preview
-  const filtered = (products ?? []).filter(
-    (p) => p.department === dept && p.name.includes(query.trim()),
-  )
   const hasWash = shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')
   // Current orders always have a read-only preview document. An issued wash
   // ticket keeps its operational document identity; otherwise the backend
@@ -106,10 +114,15 @@ export function OrderPanel({
           discount_value: discount.value,
           service_charge_minor: serviceCharge,
         }
+  // A fixed discount is labelled with the money it actually removes; a legacy
+  // percentage selection is rendered as a number only (read-only), never as an
+  // editable control.
   const discountLabel = discount.mode
-    ? discount.mode === 'PERCENT'
-      ? `${(discount.value ?? 0) / 1000}%`
-      : null
+    ? discount.mode === 'FIXED' && typeof discount.value === 'number'
+      ? formatMinorMoney(discount.value, { variant: 'auto' })
+      : discount.mode === 'PERCENT' && typeof discount.value === 'number'
+        ? `${discount.value / 1000}%`
+        : null
     : null
 
   const addItem = (p: Product) =>
@@ -206,21 +219,13 @@ export function OrderPanel({
       {prodErr ? (
         <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
       ) : (
-        <ProductPad
-          dept={dept}
-          setDept={setDept}
-          query={query}
-          setQuery={setQuery}
-          qty={qty}
-          setQty={setQty}
-          items={filtered}
-          onAdd={addItem}
-        />
+        <ProductBrowser products={products ?? []} qty={qty} onQtyChange={setQty} onAdd={addItem} />
       )}
       {discountOpen ? (
         <DiscountDialog
           initial={discount}
           orderId={order.id}
+          amounts={discountOptions}
           onClose={() => setDiscountOpen(false)}
           onApply={(d, refreshed) => {
             setDiscountOpen(false)

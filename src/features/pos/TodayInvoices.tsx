@@ -132,7 +132,10 @@ export function TodayInvoices({ onClose }: { onClose: () => void }) {
                   ) : (
                     <>{r.table_label ?? ''}</>
                   )}{' '}
-                  · {r.customer_name ?? ''} · <span dir="ltr">{r.car_plate ?? ''}</span>
+                  {/* An invoice raised without a customer says so explicitly —
+                      never a blank where the identity belongs. */}
+                  · {r.customer_name ?? t('pos.noCustomer')} ·{' '}
+                  <span dir="ltr">{r.car_plate ?? ''}</span>
                 </span>
               </span>
               <Badge variant={invoiceBadgeVariant(r.status)} size="sm" dot>

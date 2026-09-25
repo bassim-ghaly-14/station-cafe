@@ -27,6 +27,11 @@ pub struct CheckoutInput {
     pub received: Option<i64>,
 }
 
+/// Canonical Arabic identity for an invoice raised without a customer. It is a
+/// stored value (not a display fallback) so history, reports and printed
+/// documents all say exactly the same thing.
+pub const NO_CUSTOMER_LABEL: &str = "بدون عميل";
+
 #[derive(Debug, Serialize)]
 pub struct CheckoutResult {
     pub invoice_id: i64,
@@ -239,28 +244,36 @@ fn checkout_invoice(
         lines,
     )?;
 
-    if let Some(cid) = order.customer_id {
-        let (name, phone): (String, Option<String>) = tx.query_row(
-            "SELECT name, phone FROM customers WHERE id = ?1",
-            [cid],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let (plate, model): (Option<String>, Option<String>) = match tx.query_row(
-            "SELECT plate_no, car_model FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
-            [cid],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ) {
-            Ok(v) => (Some(v.0), v.1),
-            Err(_) => (None, None),
-        };
-        invoices::insert_invoice_customer(
-            tx,
-            invoice_id,
-            &name,
-            phone.as_deref(),
-            plate.as_deref(),
-            model.as_deref(),
-        )?;
+    // The customer identity snapshot is ALWAYS written, so an invoice raised
+    // without a customer is an explicit, first-class record rather than a
+    // blank: it carries the Arabic label "بدون عميل" instead of missing data.
+    match order.customer_id {
+        Some(cid) => {
+            let (name, phone): (String, Option<String>) = tx.query_row(
+                "SELECT name, phone FROM customers WHERE id = ?1",
+                [cid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            let (plate, model): (Option<String>, Option<String>) = match tx.query_row(
+                "SELECT plate_no, car_model FROM cars WHERE customer_id = ?1 ORDER BY id DESC LIMIT 1",
+                [cid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            ) {
+                Ok(v) => (Some(v.0), v.1),
+                Err(_) => (None, None),
+            };
+            invoices::insert_invoice_customer(
+                tx,
+                invoice_id,
+                &name,
+                phone.as_deref(),
+                plate.as_deref(),
+                model.as_deref(),
+            )?;
+        }
+        None => {
+            invoices::insert_invoice_customer(tx, invoice_id, NO_CUSTOMER_LABEL, None, None, None)?;
+        }
     }
 
     let status = match input.method.as_str() {

@@ -1,7 +1,7 @@
 /** Compact checkout summary: totals + optional customer + single pay action. */
 import { useTranslation } from 'react-i18next'
 import { Button, MoneyDisplay } from '@/components/ui'
-import { Eye, Percent, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
+import { Eye, Tag, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
 import type { OrderCustomer, OrderPreview, PosOrder } from '@/services/posApi'
 
 export function CheckoutSummary({
@@ -72,7 +72,8 @@ export function CheckoutSummary({
           {customer ? (
             <span className="truncate font-medium text-foreground">{customer.name}</span>
           ) : (
-            <span className="text-xs">{t('pos.noCustomer')}</span>
+            // "بدون عميل" is a real, recorded identity — not a blank field.
+            <span className="text-xs font-medium">{t('pos.noCustomer')}</span>
           )}
         </span>
         <span className="flex shrink-0 items-center gap-1">
@@ -88,33 +89,33 @@ export function CheckoutSummary({
           </Button>
         </span>
       </div>
+      {serviceChargeOptions.length ? (
+        <div className="flex flex-wrap items-center gap-1 border-t border-border-subtle px-3 py-2">
+          <span className="text-xs text-foreground-muted">{t('pos.serviceCharge')}</span>
+          <Button
+            size="sm"
+            variant={serviceCharge === 0 ? 'default' : 'outline'}
+            onClick={() => onServiceCharge(0)}
+          >
+            {t('pos.noServiceCharge')}
+          </Button>
+          {serviceChargeOptions.map((amount) => (
+            <Button
+              key={amount}
+              size="sm"
+              variant={serviceCharge === amount ? 'default' : 'outline'}
+              onClick={() => onServiceCharge(amount)}
+            >
+              <MoneyDisplay amount={amount} />
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
         <Button variant="destructiveGhost" size="sm" onClick={onDiscount}>
-          <Percent size={15} aria-hidden />
-          {discountLabel ?? t('pos.discount')}
+          <Tag size={15} aria-hidden />
+          {discountLabel ?? t('pos.addDiscount')}
         </Button>
-        {serviceChargeOptions.length ? (
-          <div className="flex flex-wrap items-center gap-1 border-t border-border-subtle px-3 py-2">
-            <span className="text-xs text-foreground-muted">{t('pos.serviceCharge')}</span>
-            <Button
-              size="sm"
-              variant={serviceCharge === 0 ? 'default' : 'outline'}
-              onClick={() => onServiceCharge(0)}
-            >
-              {t('pos.noServiceCharge')}
-            </Button>
-            {serviceChargeOptions.map((amount) => (
-              <Button
-                key={amount}
-                size="sm"
-                variant={serviceCharge === amount ? 'default' : 'outline'}
-                onClick={() => onServiceCharge(amount)}
-              >
-                <MoneyDisplay amount={amount} />
-              </Button>
-            ))}
-          </div>
-        ) : null}
         {onTicket ? (
           <Button variant="ghost" size="sm" onClick={onTicket}>
             <Ticket size={15} aria-hidden />

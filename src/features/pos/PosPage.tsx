@@ -4,10 +4,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Card, CardHeader, Dialog, DisplayTime, MoneyDisplay } from '@/components/ui'
-import { ClipboardList, DoorClosed, DoorOpen, Receipt, ShoppingBag } from '@/components/ui/icon'
+import {
+  ClipboardList,
+  CalendarDays,
+  Clock,
+  DoorClosed,
+  DoorOpen,
+  Receipt,
+  ShoppingBag,
+} from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { Loader } from '@/components/ui'
 import { useToast } from '@/components/ui'
+import { formatDate, formatDateTime } from '@/lib/date'
 import {
   api,
   settingsApi,
@@ -280,38 +289,56 @@ export default function PosPage() {
    */
   const hasWorkspace = activeOrder !== null || selected !== null
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Shift + Day closing */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <CurrentShiftPanel
-          shift={shiftState.my_shift}
-          onClosed={async () => {
-            toast(t('shift.closedSuccess'), 'success')
-            await refresh()
-          }}
-        />
+  const counts = {
+    empty: tables.filter((tv) => tv.status === 'EMPTY').length,
+    open: tables.filter((tv) => tv.status === 'OPEN').length,
+    occupied: tables.filter((tv) => tv.status === 'OCCUPIED' || tv.status === 'READY_TO_PAY')
+      .length,
+  }
 
-        {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
-          <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
-        ) : null}
-      </div>
+  return (
+    <div className="flex flex-col gap-5">
+      {/*
+        Page header: shift/session state is the first thing a cashier must read,
+        and history ("فواتير اليوم") belongs with operations — never next to the
+        new-order actions it would compete with.
+      */}
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-heading">{t('nav.pos')}</h1>
+
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-foreground-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock size={14} aria-hidden />
+              {shiftState.my_shift
+                ? `${t('pos.shiftRunning')} · ${t('pos.openedAt')} ${formatDateTime(shiftState.my_shift.opened_at)}`
+                : t('pos.noShiftOpen')}
+            </span>
+
+            {shiftState.day ? (
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays size={14} aria-hidden />
+                {t('pos.businessDay')} {formatDate(shiftState.day.day_date)}
+              </span>
+            ) : null}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+            <Receipt size={16} aria-hidden />
+            {t('pos.todayInvoices')}
+          </Button>
+        </div>
+      </header>
 
       <div
         className={
           hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
         }
       >
-        <Card className={hasWorkspace ? 'min-w-0' : 'w-full'}>
-          <CardHeader
-            title={t('pos.tables')}
-            actions={
-              <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
-                <Receipt size={16} aria-hidden />
-                {t('pos.todayInvoices')}
-              </Button>
-            }
-          />
+        <Card aria-label={t('pos.tables')} className={hasWorkspace ? 'min-w-0' : 'w-full'}>
+          <CardHeader title={t('pos.tables')} subtitle={t('pos.tablesLegend', counts)} />
 
           {takeaways && takeaways.length > 0 ? (
             <OpenTakeaways
@@ -406,6 +433,36 @@ export default function PosPage() {
           )}
         </div>
       </div>
+
+      {/*
+        Operational controls last. Shift/day closing are end-of-period actions:
+        they keep the polished closing cards untouched, but sit BELOW the
+        selling workspace so they inform the shift state without competing with
+        taking an order.
+      */}
+      <section aria-label={t('pos.operationalControls')} className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-section">{t('pos.operationalControls')}</h2>
+
+          <p className="mt-0.5 text-caption text-foreground-subtle">
+            {t('pos.operationalControlsHint')}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <CurrentShiftPanel
+            shift={shiftState.my_shift}
+            onClosed={async () => {
+              toast(t('shift.closedSuccess'), 'success')
+              await refresh()
+            }}
+          />
+
+          {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
+            <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
+          ) : null}
+        </div>
+      </section>
 
       {activeOrder && payOpen ? (
         <PaymentDialog

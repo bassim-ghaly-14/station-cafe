@@ -28,7 +28,7 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
       <ChevronDown
         size={16}
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 end-3 my-auto text-foreground-subtle"
+        className="pointer-events-none absolute inset-y-0 inset-e-3 my-auto text-foreground-subtle"
       />
     </span>
   )

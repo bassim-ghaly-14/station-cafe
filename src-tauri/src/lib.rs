@@ -16,6 +16,9 @@ mod commands;
 mod db;
 mod error;
 mod money;
+mod normalize;
+#[cfg(test)]
+mod pos_rules_test;
 mod printing;
 mod repositories;
 mod seed;
@@ -87,6 +90,8 @@ pub fn run() {
             commands::catalog::set_service_charge,
             commands::catalog::get_credit_config,
             commands::catalog::set_credit_config,
+            commands::catalog::get_discount_options,
+            commands::catalog::set_discount_options,
             commands::catalog::get_discount_authorization,
             commands::catalog::set_discount_authorization_password,
             commands::customers::search_customers,

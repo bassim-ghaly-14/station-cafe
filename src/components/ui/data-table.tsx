@@ -53,7 +53,7 @@ export function DataTable({
 }) {
   return (
     <div className={cn('overflow-x-auto', className)}>
-      <table className="w-full min-w-[42rem] border-collapse">
+      <table className="w-full min-w-2xl border-collapse">
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="border-b border-border">

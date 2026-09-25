@@ -1045,16 +1045,23 @@ fn discount_survives_reload_and_reaches_invoice() {
         },
     )
     .unwrap();
-    // Persist a 10% discount on the order row itself.
-    let saved =
-        pos_svc::set_discount(&conn, &staff, order_id, Some("PERCENT"), Some(10_000)).unwrap();
-    assert_eq!(saved.discount_mode.as_deref(), Some("PERCENT"));
-    assert_eq!(saved.discount_value, Some(10_000));
+    settings::set_discount_options(
+        &conn,
+        &developer,
+        &settings::DiscountOptionsConfig {
+            amounts: vec![2_000],
+        },
+    )
+    .unwrap();
+    // Persist an admin-configured fixed discount on the order row itself.
+    let saved = pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(2_000)).unwrap();
+    assert_eq!(saved.discount_mode.as_deref(), Some("FIXED"));
+    assert_eq!(saved.discount_value, Some(2_000));
 
     // Refresh / reopen reads the SAME row — discount must still exist.
     let reloaded = pos_svc::get_order(&conn, order_id).unwrap();
-    assert_eq!(reloaded.discount_mode.as_deref(), Some("PERCENT"));
-    assert_eq!(reloaded.discount_value, Some(10_000));
+    assert_eq!(reloaded.discount_mode.as_deref(), Some("FIXED"));
+    assert_eq!(reloaded.discount_value, Some(2_000));
 
     let preview = pos_svc::preview(
         &conn,
@@ -1064,7 +1071,7 @@ fn discount_survives_reload_and_reaches_invoice() {
         Some(2_000),
     )
     .unwrap();
-    assert_eq!(preview.discount_minor, 1_480);
+    assert_eq!(preview.discount_minor, 2_000);
 
     let paid = checkout::checkout(
         &conn,
@@ -1080,13 +1087,14 @@ fn discount_survives_reload_and_reaches_invoice() {
         },
     )
     .unwrap();
-    assert_eq!(paid.total, 15_320);
+    // 2 × 74.00 = 148.00, − 20.00 discount, + 20.00 service charge.
+    assert_eq!(paid.total, 14_800);
 
     let (inv, _) = invoices::get_invoice_full(&conn, paid.invoice_id)
         .unwrap()
         .unwrap();
-    assert_eq!(inv.discount_minor, 1_480);
-    assert_eq!(inv.total, 15_320);
+    assert_eq!(inv.discount_minor, 2_000);
+    assert_eq!(inv.total, 14_800);
 }
 
 #[test]

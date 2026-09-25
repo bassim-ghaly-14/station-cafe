@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/services/posApi', () => ({
   settingsApi: {
     serviceCharge: vi.fn().mockResolvedValue({ amounts: [] }),
+    discountOptions: vi.fn().mockResolvedValue({ amounts: [2000, 5000, 10000] }),
   },
   api: {
     tables: mocks.tables,
@@ -553,6 +554,53 @@ describe('open takeaway lifecycle (issue 4)', () => {
     await waitFor(() => expect(screen.queryByTestId('open-takeaway-7')).not.toBeInTheDocument())
 
     expect(screen.queryByText('قهوة')).not.toBeInTheDocument()
+  })
+})
+
+describe('POS page hierarchy (operation vs. selling workflow)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mocks.tables.mockResolvedValue([
+      table({ status: 'EMPTY' }),
+      table({ id: 2, status: 'OCCUPIED', order_id: 9 }),
+    ])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1, opened_at: '2026-01-05 08:00:00Z' },
+    })
+    mocks.preview.mockResolvedValue(previewOf())
+  })
+
+  it('puts "فواتير اليوم" in the page header, away from the new-order cards', async () => {
+    renderPage()
+
+    // Discoverable exactly once, in the operational header of the page.
+    const invoices = await screen.findAllByRole('button', { name: 'فواتير اليوم' })
+    expect(invoices).toHaveLength(1)
+    expect(invoices[0].closest('header')).not.toBeNull()
+    // ... and never inside the table/takeaway workspace card.
+    expect(invoices[0].closest('[data-testid="takeaway-card"]')).toBeNull()
+  })
+
+  it('places the closing cards in their own operational section, below the workspace', async () => {
+    const { container } = renderPage()
+
+    const operations = await screen.findByLabelText('إجراءات التشغيل والتقفيل')
+    const workspace = screen.getByLabelText('الطاولات')
+
+    // The selling workspace is the dominant block; closing is a later section.
+    expect(
+      workspace.compareDocumentPosition(operations) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(container.textContent).toContain('إجراءات التشغيل والتقفيل')
+  })
+
+  it('shows the current shift state before anything else', async () => {
+    renderPage()
+
+    expect(await screen.findByText(/وردية مفتوحة/)).toBeInTheDocument()
   })
 })
 

@@ -221,9 +221,14 @@ pub struct InvoiceRow {
     pub business_day_id: Option<i64>,
 }
 
+/// Customer identity is read from the invoice SNAPSHOT first: it is what was
+/// true at the moment of the sale, and it is also how a customer-less invoice
+/// carries its explicit "بدون عميل" identity. The live `customers` row is only
+/// a fallback for legacy invoices that predate the snapshot.
 const INV_COLS: &str = "i.id, i.invoice_no, i.table_label, i.order_type, i.takeaway_no, i.status,
     i.total, i.paid_amount, i.service_charge, i.discount_minor, i.subtotal, i.cafe_total,
-    i.wash_total, k.name, k.phone, ic.car_plate, ic.car_model, i.created_at, i.shift_id, i.business_day_id";
+    i.wash_total, COALESCE(ic.customer_name, k.name), ic.customer_phone, ic.car_plate, ic.car_model,
+    i.created_at, i.shift_id, i.business_day_id";
 
 fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
     Ok(InvoiceRow {

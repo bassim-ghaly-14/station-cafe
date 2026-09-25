@@ -48,6 +48,7 @@ export default function DevSettingsPage() {
   const { user, clearSessionToken, clearLocalSession } = useSession()
 
   const [serviceAmounts, setServiceAmounts] = useState<string[]>([])
+  const [discountAmounts, setDiscountAmounts] = useState<string[]>([])
   const [discountPassword, setDiscountPassword] = useState('')
   const [discountConfigured, setDiscountConfigured] = useState(false)
 
@@ -109,12 +110,14 @@ export default function DevSettingsPage() {
 
     void Promise.all([
       settingsApi.serviceCharge(),
+      settingsApi.discountOptions(),
       settingsApi.discountAuthorization(),
       settingsApi.credit(),
       api.tables(),
     ])
-      .then(([serviceCharge, authorization, creditConfig, tables]) => {
+      .then(([serviceCharge, discountOptions, authorization, creditConfig, tables]) => {
         setServiceAmounts(serviceCharge.amounts.map((amount) => String(amount / 100)))
+        setDiscountAmounts(discountOptions.amounts.map((amount) => String(amount / 100)))
         setDiscountConfigured(authorization.configured)
         setCredit(creditConfig)
         setTableCount(tables.length)
@@ -130,6 +133,7 @@ export default function DevSettingsPage() {
 
     try {
       const amounts = serviceAmounts.map((value) => Math.round(Number(value) * 100))
+      const discounts = discountAmounts.map((value) => Math.round(Number(value) * 100))
 
       if (
         serviceAmounts.some((value) => value.trim() === '' || !Number.isFinite(Number(value))) ||
@@ -139,8 +143,19 @@ export default function DevSettingsPage() {
         throw new Error('settings.invalid_service_charge')
       }
 
+      // Discount options are configuration, not a sale: an empty list is valid
+      // (the POS then offers no discount at all), but a broken one is not.
+      if (
+        discountAmounts.some((value) => value.trim() === '' || !Number.isFinite(Number(value))) ||
+        discounts.some((value) => value <= 0) ||
+        new Set(discounts).size !== discounts.length
+      ) {
+        throw new Error('settings.invalid_discount')
+      }
+
       await Promise.all([
         settingsApi.setServiceCharge({ amounts }),
+        settingsApi.setDiscountOptions({ amounts: discounts }),
         discountPassword
           ? settingsApi.setDiscountAuthorizationPassword(discountPassword)
           : Promise.resolve(),
@@ -306,6 +321,55 @@ export default function DevSettingsPage() {
             >
               <Plus size={16} aria-hidden />
               {t('dev.addAmount')}
+            </Button>
+          </div>
+
+          {/* Discount options — the ONLY amounts the POS can apply */}
+          <div className="flex flex-col gap-3 md:col-span-2">
+            <h3 className="font-bold text-foreground">{t('dev.discountOptions')}</h3>
+
+            <p className="text-sm text-foreground-muted">{t('dev.discountOptionsHelp')}</p>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {discountAmounts.map((amount, index) => (
+                <div key={index} className="flex min-w-0 items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    aria-label={`${t('dev.discountOptions')} ${index + 1}`}
+                    value={amount}
+                    className="w-24 min-w-0 flex-none"
+                    onChange={(e) =>
+                      setDiscountAmounts((values) =>
+                        values.map((value, current) =>
+                          current === index ? e.target.value : value,
+                        ),
+                      )
+                    }
+                  />
+
+                  <Button
+                    size="icon"
+                    variant="destructiveGhost"
+                    aria-label={t('dev.removeDiscountAmount')}
+                    onClick={() =>
+                      setDiscountAmounts((values) => values.filter((_, i) => i !== index))
+                    }
+                  >
+                    <Trash2 size={16} aria-hidden />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              className="self-start"
+              onClick={() => setDiscountAmounts((values) => [...values, ''])}
+            >
+              <Plus size={16} aria-hidden />
+              {t('dev.addDiscountAmount')}
             </Button>
           </div>
 

@@ -14,7 +14,9 @@ pub struct CustomerInput {
     pub notes: Option<String>,
 }
 
-/// Unified lookup used by the POS search box (name / phone / plate).
+/// Unified lookup used by the POS customer picker (name / phone / plate).
+/// An empty query is NOT an error: it returns the registered customers so the
+/// picker can show them immediately, without forcing a search first.
 #[tauri::command(rename_all = "snake_case")]
 pub fn search_customers(
     state: State<'_, AppState>,
@@ -22,9 +24,6 @@ pub fn search_customers(
     query: String,
 ) -> AppResult<Vec<CustomerWithCars>> {
     authorized(&state, &token, "STAFF", move |conn, _| {
-        if query.trim().is_empty() {
-            return Ok(Vec::new());
-        }
         customers::search(conn, query.trim())
     })
 }

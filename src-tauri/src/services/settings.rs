@@ -104,6 +104,56 @@ pub struct DiscountAuthorizationConfig {
     pub configured: bool,
 }
 
+/// Admin-configured FIXED discount options, in minor units.
+///
+/// This list is the ONLY source of discount amounts in the whole application:
+/// the POS may select an option, never invent a value. A historical invoice
+/// keeps the amount that was actually applied, so changing this list never
+/// rewrites past records.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiscountOptionsConfig {
+    /// Ordered fixed amounts in minor units (piastres).
+    pub amounts: Vec<i64>,
+}
+
+impl Default for DiscountOptionsConfig {
+    fn default() -> Self {
+        Self {
+            amounts: Vec::new(),
+        }
+    }
+}
+
+pub fn get_discount_options(conn: &Db) -> AppResult<DiscountOptionsConfig> {
+    read_json(conn, "discount_options", DiscountOptionsConfig::default())
+}
+
+/// ADMIN owns the discount catalogue. Amounts must be positive and unique —
+/// a duplicated or zero option is a configuration mistake, never a sale.
+pub fn set_discount_options(conn: &Db, actor: &User, cfg: &DiscountOptionsConfig) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "ADMIN")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
+    let mut unique = std::collections::HashSet::new();
+    if cfg
+        .amounts
+        .iter()
+        .any(|amount| *amount <= 0 || !unique.insert(*amount))
+    {
+        return Err(AppError::validation("settings.invalid_discount"));
+    }
+    write_json(conn, "discount_options", cfg)?;
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "settings.discount_options_changed",
+        "settings",
+        Some("discount_options"),
+        None,
+        Some(&serde_json::to_value(cfg).unwrap_or_default()),
+    )
+}
+
 pub fn get_discount_authorization(conn: &Db) -> AppResult<DiscountAuthorizationConfig> {
     let configured = read_json::<Option<String>>(conn, "discount_authorization_hash", None)?
         .is_some_and(|hash| !hash.is_empty());

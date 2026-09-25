@@ -478,6 +478,32 @@ pub fn remove_line(conn: &Db, line_id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// The order's existing line for a product, if any. This is the duplicate
+/// lookup used when adding an item: the order keeps ONE line per product.
+pub fn line_of_product(conn: &Db, order_id: i64, product_id: i64) -> AppResult<Option<OrderLine>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, order_id, product_id, department, product_name, unit_price, quantity,
+                discount_minor, line_total
+         FROM order_lines WHERE order_id = ?1 AND product_id = ?2
+         ORDER BY id LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![order_id, product_id])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(OrderLine {
+            id: r.get(0)?,
+            order_id: r.get(1)?,
+            product_id: r.get(2)?,
+            department: r.get(3)?,
+            product_name: r.get(4)?,
+            unit_price: r.get(5)?,
+            quantity: r.get(6)?,
+            discount_minor: r.get(7)?,
+            line_total: r.get(8)?,
+        })),
+        None => Ok(None),
+    }
+}
+
 pub fn line_of(conn: &Db, line_id: i64) -> AppResult<Option<OrderLine>> {
     let mut stmt = conn.prepare(
         "SELECT id, order_id, product_id, department, product_name, unit_price, quantity,

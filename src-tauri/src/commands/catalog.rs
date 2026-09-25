@@ -3,7 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::catalog::{self, Category, Product};
-use crate::services::settings::ServiceChargeConfig;
+use crate::services::settings::{DiscountOptionsConfig, ServiceChargeConfig};
 use crate::AppState;
 use serde::Deserialize;
 use tauri::State;
@@ -251,6 +251,27 @@ pub fn rename_product(
             None,
             Some(&serde_json::json!({ "name": name })),
         )
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_discount_options(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<DiscountOptionsConfig> {
+    authorized(&state, &token, "STAFF", |conn, _| {
+        crate::services::settings::get_discount_options(conn)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_discount_options(
+    state: State<'_, AppState>,
+    token: String,
+    config: DiscountOptionsConfig,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        crate::services::settings::set_discount_options(conn, actor, &config)
     })
 }
 

@@ -970,7 +970,94 @@ const MIGRATIONS: &[Migration] = &[
                 WHERE revoked_at IS NOT NULL AND length(revoked_at) = 19 AND substr(revoked_at, -1) <> 'Z';
         "#,
     },
+    Migration {
+        version: 20,
+        name: "admin discount options and normalized identity keys",
+        needs_fk_off: false,
+        sql: r#"
+            -- Discount options are ADMIN configuration, exactly like service
+            -- charge amounts: the POS may only ever select from this list and
+            -- can never invent a value of its own.
+            INSERT INTO app_settings (key, value) VALUES
+              ('discount_options', '{"amounts":[2000,5000,10000]}')
+            ON CONFLICT(key) DO NOTHING;
+
+            -- Normalized comparison keys for duplicate prevention. The keys are
+            -- backfilled by `normalize_identity_keys` right after the
+            -- migrations run, and the unique indexes are created there too:
+            -- a legacy database may already hold two spellings of one phone
+            -- number, and the backfill resolves that WITHOUT deleting a row.
+            ALTER TABLE customers ADD COLUMN phone_key TEXT;
+            ALTER TABLE cars ADD COLUMN plate_key TEXT;
+        "#,
+    },
 ];
+
+/// Populate `customers.phone_key` / `cars.plate_key` from the stored values and
+/// create the unique indexes that make duplicate prevention a DATABASE rule,
+/// not a UI convention.
+///
+/// Fully non-destructive: no customer or vehicle row is ever deleted or
+/// merged. When a legacy database already contains two rows that normalize to
+/// the same identity (e.g. "01001234567" and "0100 123 4567"), the lowest id
+/// keeps the key — it is the one new inserts will be compared against — and
+/// the other rows keep their data with a NULL key. Idempotent by construction.
+fn normalize_identity_keys(conn: &Db) -> AppResult<()> {
+    let customers_rows: Vec<(i64, Option<String>, Option<String>)> = {
+        let mut stmt = conn.prepare("SELECT id, phone, phone_key FROM customers")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, phone, current) in customers_rows {
+        if current.is_some() {
+            continue;
+        }
+        if let Some(key) = crate::normalize::normalize_phone(phone.as_deref().unwrap_or("")) {
+            let taken: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM customers WHERE phone_key = ?1 AND id <> ?2",
+                rusqlite::params![key, id],
+                |r| r.get(0),
+            )?;
+            if taken == 0 {
+                conn.execute(
+                    "UPDATE customers SET phone_key = ?2 WHERE id = ?1",
+                    rusqlite::params![id, key],
+                )?;
+            }
+        }
+    }
+
+    let cars_rows: Vec<(i64, String, Option<String>)> = {
+        let mut stmt = conn.prepare("SELECT id, plate_no, plate_key FROM cars")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, plate, current) in cars_rows {
+        if current.is_some() {
+            continue;
+        }
+        if let Some(key) = crate::normalize::normalize_plate(&plate) {
+            let taken: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM cars WHERE plate_key = ?1 AND id <> ?2",
+                rusqlite::params![key, id],
+                |r| r.get(0),
+            )?;
+            if taken == 0 {
+                conn.execute(
+                    "UPDATE cars SET plate_key = ?2 WHERE id = ?1",
+                    rusqlite::params![id, key],
+                )?;
+            }
+        }
+    }
+
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_phone_key
+            ON customers(phone_key) WHERE phone_key IS NOT NULL;
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_cars_plate_key ON cars(plate_key);",
+    )?;
+    Ok(())
+}
 
 pub fn migration_count() -> i64 {
     MIGRATIONS.len() as i64
@@ -980,7 +1067,8 @@ pub fn migrate(conn: &Db) -> AppResult<()> {
     // Tests open bare in-memory connections, so the clock is registered here
     // too: every connection that migrates gets the same canonical time source.
     register_clock(conn)?;
-    apply_migrations(conn, None)
+    apply_migrations(conn, None)?;
+    normalize_identity_keys(conn)
 }
 
 /// Apply embedded migrations in version order. `up_to` is used by tests to

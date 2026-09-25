@@ -246,6 +246,13 @@ fn require_editable(order: &Order, actor: &User) -> AppResult<()> {
 }
 
 /// Add a catalog item to an open order as an immutable snapshot line.
+///
+/// Duplicate prevention is a SERVICE rule, not a UI trick: the order holds ONE
+/// line per purchasable item, so tapping "شاي" three times yields "شاي × 3" and
+/// never three identical rows. The line is keyed by `product_id`, which is the
+/// real purchasable unit in this domain — distinct catalog items (including
+/// different sizes or formulations sold as separate products) are distinct keys
+/// and therefore stay on their own lines.
 pub fn add_line(
     conn: &Db,
     actor: &User,
@@ -264,16 +271,26 @@ pub fn add_line(
     if !p.is_active {
         return Err(AppError::business("catalog.item_inactive"));
     }
-    // Snapshot: name + unit price + department are frozen at this moment.
-    pos::add_line(
-        &tx,
-        order_id,
-        p.id,
-        &p.department,
-        &p.name,
-        p.price_minor,
-        quantity,
-    )?;
+    // Same item already on the order → increase its quantity in place. The
+    // transaction keeps the read and the write atomic, so two rapid taps can
+    // never produce two lines.
+    match pos::line_of_product(&tx, order_id, product_id)? {
+        Some(line) => {
+            pos::update_line_quantity(&tx, line.id, line.quantity + quantity)?;
+        }
+        None => {
+            // Snapshot: name + unit price + department are frozen at this moment.
+            pos::add_line(
+                &tx,
+                order_id,
+                p.id,
+                &p.department,
+                &p.name,
+                p.price_minor,
+                quantity,
+            )?;
+        }
+    }
     let lines = pos::lines_of(&tx, order_id)?;
     tx.commit()?;
     Ok(Order { lines, ..order })
@@ -318,7 +335,7 @@ pub fn set_discount(
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    validate_discount(&tx, subtotal, discount_mode, discount_value)?;
+    validate_discount_selection(&tx, subtotal, discount_mode, discount_value)?;
     pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;
     let refreshed = get_order(&tx, order_id)?;
     tx.commit()?;
@@ -403,6 +420,12 @@ pub fn order_customer(conn: &Db, order_id: i64) -> AppResult<Option<OrderCustome
     }
 }
 
+/// Resolve a STORED discount selection into an amount.
+///
+/// This is the read/settlement path (preview, checkout, printing). It keeps
+/// supporting the legacy percentage mode on purpose: an invoice or a draft
+/// order that was created under the old model must stay readable and payable
+/// exactly as it was recorded. Nothing historical is ever rewritten.
 pub fn validate_discount(
     _conn: &Db,
     subtotal: i64,
@@ -414,6 +437,38 @@ pub fn validate_discount(
         (Some("FIXED"), Some(v)) if (0..=subtotal).contains(&v) => Ok(v),
         (Some("PERCENT"), Some(v)) if (0..=money::RATE_SCALE).contains(&v) => {
             Ok(subtotal - money::apply_percent_discount(subtotal, v))
+        }
+        _ => Err(AppError::validation("discount.invalid")),
+    }
+}
+
+/// Validate a NEW discount SELECTION made by the POS.
+///
+/// Only admin-configured fixed options may be selected: there is no percentage
+/// mode, no free amount, and no value that is not in the Dev Settings list.
+/// This is the rule that makes "discount" configuration instead of invention.
+pub fn validate_discount_selection(
+    conn: &Db,
+    subtotal: i64,
+    mode: Option<&str>,
+    value: Option<i64>,
+) -> AppResult<i64> {
+    match (mode, value) {
+        // Clearing the discount is always allowed (no authorization needed).
+        (None, _) => Ok(0),
+        (_, None) => Err(AppError::validation("discount.not_configured")),
+        (Some("PERCENT"), _) => Err(AppError::validation("discount.percent_not_allowed")),
+        (Some("FIXED"), Some(amount)) => {
+            if !settings::get_discount_options(conn)?
+                .amounts
+                .contains(&amount)
+            {
+                return Err(AppError::validation("discount.not_configured"));
+            }
+            if amount > subtotal {
+                return Err(AppError::validation("discount.invalid"));
+            }
+            Ok(amount)
         }
         _ => Err(AppError::validation("discount.invalid")),
     }

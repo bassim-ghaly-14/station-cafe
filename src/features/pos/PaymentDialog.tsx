@@ -9,6 +9,15 @@ import { api, type DiscountSel, type OrderPreview, type PrintOutcome } from '@/s
 import { TotalsBlock } from './CheckoutSummary'
 import { parseMajor } from '@/lib/utils'
 
+/**
+ * Smallest 5 EGP note/bill at or above `total`, so the cashier can take the
+ * common "customer hands the rounded-up amount" case in one tap.
+ */
+function roundUpToFive(total: number): number {
+  const step = 5 * 100
+  return total % step === 0 ? total : Math.ceil(total / step) * step
+}
+
 export function PaymentDialog({
   orderId,
   discount,
@@ -135,15 +144,33 @@ export function PaymentDialog({
       </div>
 
       {method === 'CASH' ? (
-        <Field label={t('pay.received')}>
-          <Input
-            dir="ltr"
-            inputMode="decimal"
-            value={received}
-            onChange={(e) => setReceived(e.target.value)}
-            placeholder="0.00"
-          />
-        </Field>
+        <>
+          {/* Exact-amount shortcuts: the most common cash sale needs no typing. */}
+          {preview && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {[preview.total, roundUpToFive(preview.total)].map((amount) => (
+                <Button
+                  key={amount}
+                  size="sm"
+                  variant={received === (amount / 100).toFixed(2) ? 'default' : 'outline'}
+                  onClick={() => setReceived((amount / 100).toFixed(2))}
+                >
+                  <MoneyDisplay amount={amount} />
+                </Button>
+              ))}
+            </div>
+          )}
+
+          <Field label={t('pay.received')}>
+            <Input
+              dir="ltr"
+              inputMode="decimal"
+              value={received}
+              onChange={(e) => setReceived(e.target.value)}
+              placeholder="0.00"
+            />
+          </Field>
+        </>
       ) : null}
       {change !== null && change >= 0 ? (
         <div className="mt-2 flex justify-between text-sm font-bold">

@@ -493,8 +493,13 @@ mod tests {
             1,
         )
         .unwrap();
-        let customer_id = customers::insert(conn, "أحمد محمود", Some("01234567890"), None).unwrap();
-        let plate = format!("PREVIEW{}", conn.last_insert_rowid());
+        // Each fixture owns its own identity: a repeated phone or plate is a
+        // duplicate the domain refuses, so the helper derives both from the
+        // row counter instead of hardcoding them.
+        let suffix = conn.last_insert_rowid();
+        let plate = format!("PREVIEW{suffix}");
+        let customer_id =
+            customers::insert(conn, "أحمد محمود", Some(&format!("0100{suffix}")), None).unwrap();
         customers::insert_car(conn, customer_id, &plate, Some("تويوتا"), None).unwrap();
         pos_svc::attach_customer(conn, order_id, customer_id, Some(&plate)).unwrap();
         order_id

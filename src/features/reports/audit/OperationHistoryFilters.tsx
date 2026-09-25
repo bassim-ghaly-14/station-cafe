@@ -44,7 +44,7 @@ export function OperationHistoryFilters({
         <Search
           size={16}
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 start-3 my-auto text-foreground-subtle"
+          className="pointer-events-none absolute inset-y-0 inset-s-3 my-auto text-foreground-subtle"
         />
         <input
           id="operation-history-search"
@@ -63,7 +63,7 @@ export function OperationHistoryFilters({
             onClick={() => onChange({ ...filters, search: '' })}
             aria-label={t('audit.search.clear')}
             title={t('audit.search.clear')}
-            className="absolute inset-y-0 end-1 my-auto flex size-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+            className="absolute inset-y-0 inset-e-1 my-auto flex size-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground"
           >
             <X size={15} aria-hidden />
           </button>

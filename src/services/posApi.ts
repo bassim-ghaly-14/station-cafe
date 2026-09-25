@@ -255,16 +255,20 @@ export const api = {
       discount_password: null,
       service_charge_minor,
     }),
+  /**
+   * Apply an admin-configured FIXED discount, or clear it with `null`.
+   * There is deliberately no percentage and no free-text amount: the caller can
+   * only pass one of the amounts the backend published as an option.
+   */
   setDiscount: (
     order_id: number,
-    discount_mode: string | null,
-    discount_value: number | null,
+    amount_minor: number | null,
     discount_password: string | null = null,
   ) =>
     call<PosOrder>('set_order_discount', {
       order_id,
-      discount_mode,
-      discount_value,
+      discount_mode: amount_minor === null ? null : 'FIXED',
+      discount_value: amount_minor,
       discount_password,
     }),
   checkout: (input: CheckoutInput) => call<CheckoutResult>('checkout_order', { input }),
@@ -346,6 +350,14 @@ export interface DiscountAuthorizationConfig {
   configured: boolean
 }
 
+/**
+ * Admin-configured fixed discount options (minor units). The POS may only ever
+ * select one of these amounts — it never accepts a free or percentage value.
+ */
+export interface DiscountOptionsConfig {
+  amounts: number[]
+}
+
 export interface CreditConfig {
   enabled: boolean
   mode: 'LIST' | 'ALL'
@@ -355,6 +367,9 @@ export interface CreditConfig {
 export const settingsApi = {
   serviceCharge: () => call<ServiceChargeConfig>('get_service_charge'),
   setServiceCharge: (config: ServiceChargeConfig) => call<void>('set_service_charge', { config }),
+  discountOptions: () => call<DiscountOptionsConfig>('get_discount_options'),
+  setDiscountOptions: (config: DiscountOptionsConfig) =>
+    call<void>('set_discount_options', { config }),
   credit: () => call<CreditConfig>('get_credit_config'),
   setCredit: (config: CreditConfig) => call<void>('set_credit_config', { config }),
   discountAuthorization: () => call<DiscountAuthorizationConfig>('get_discount_authorization'),

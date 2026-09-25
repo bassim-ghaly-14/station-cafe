@@ -22,6 +22,17 @@ export function NewCustomerForm({
   const [plate, setPlate] = useState('')
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Duplicate phone / plate is a BUSINESS rule enforced by the backend; the
+  // message is surfaced here in Arabic so the cashier understands the refusal
+  // instead of losing the typed data to a generic error.
+  const fail = (e: unknown) => {
+    const message = t([`errors.${(e as { message: string }).message}`, 'errors.internal_error'])
+
+    setError(message)
+    toast(message, 'error')
+  }
 
   return (
     <div className="mt-3 rounded border border-border p-3">
@@ -39,6 +50,12 @@ export function NewCustomerForm({
         <Field label={t('pos.modelOptional')}>
           <Input value={model} onChange={(e) => setModel(e.target.value)} />
         </Field>
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose}>
             {t('app.cancel')}
@@ -49,6 +66,7 @@ export function NewCustomerForm({
             loading={busy}
             onClick={() => {
               setBusy(true)
+              setError(null)
               api
                 .createCustomer({ name: name.trim(), phone: phone.trim() || null })
                 .then((id) => {
@@ -64,12 +82,7 @@ export function NewCustomerForm({
                   return id
                 })
                 .then(onCreated)
-                .catch((e) =>
-                  toast(
-                    t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
-                    'error',
-                  ),
-                )
+                .catch(fail)
                 .finally(() => setBusy(false))
             }}
           >
