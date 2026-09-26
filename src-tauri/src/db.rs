@@ -1088,6 +1088,25 @@ const MIGRATIONS: &[Migration] = &[
             ALTER TABLE users DROP COLUMN discount_password_hash;
         "#,
     },
+    Migration {
+        version: 24,
+        name: "catalog is_new flag",
+        needs_fk_off: false,
+        sql: r#"
+            -- "New item" is a PRESENTATION promise about the catalog entry
+            -- (a recent addition a cashier should notice), and it is entirely
+            -- separate from `is_active` (operational availability). Overloading
+            -- availability for it would make a disabled-but-new item
+            -- indistinguishable from a plain disabled one.
+            --
+            -- Fully additive and backward compatible: SQLite gives every
+            -- EXISTING product the safe default 0 (not new), so no historical
+            -- product is suddenly badged, and the CHECK keeps the value a
+            -- domain boolean exactly like `is_active`.
+            ALTER TABLE products ADD COLUMN is_new INTEGER NOT NULL DEFAULT 0
+                CHECK (is_new IN (0, 1));
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

@@ -38,19 +38,9 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState, ErrorState } from '@/components/states'
-import { Badge, Button, Card, CardGridSkeleton, Dialog, MoneyDisplay } from '@/components/ui'
-import { Field, Input } from '@/components/ui/input'
-import {
-  Check,
-  Coffee,
-  Droplets,
-  Package,
-  Pencil,
-  Plus,
-  Power,
-  Save,
-  Search,
-} from '@/components/ui/icon'
+import { Button, CardGridSkeleton, Dialog } from '@/components/ui'
+import { Field, Input, Label, Switch } from '@/components/ui/input'
+import { Check, Coffee, Droplets, Package, Plus, Save, Search } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 
 import { useErrText } from '@/lib/err'
@@ -61,6 +51,9 @@ import { catalogApi, type Category, type NewProductInput } from '@/services/cata
 import type { Product } from '@/services/posApi'
 
 import { useSession } from '@/features/auth/useSession'
+
+import { CatalogCard } from './CatalogCard'
+import { CatalogCategoryFilter, type CatalogCategoryOption } from './CatalogCategoryFilter'
 
 const DEPARTMENTS = ['CAFE', 'WASH'] as const
 const TYPES = ['PRODUCT', 'SERVICE'] as const
@@ -136,6 +129,8 @@ export default function CatalogPage() {
   const [dept, setDept] = useState<'' | Department>('')
   const [type, setType] = useState<'' | ItemType>('')
   const [status, setStatus] = useState<Status>('')
+  /** `null` = every category; otherwise the category's database id. */
+  const [categoryId, setCategoryId] = useState<number | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [categoryCreateOpen, setCategoryCreateOpen] = useState(false)
@@ -171,11 +166,65 @@ export default function CatalogPage() {
     loadCategories()
   }, [load, loadCategories])
 
+  /**
+   * Category navigation is built from the REAL categories the backend knows
+   * about, merged with the categories actually present in the loaded items, so
+   * a manager always reaches every grouping — including one whose items are all
+   * filtered out right now. Counts reflect the loaded catalog, and the order is
+   * the backend's (alphabetical) order, so the strip is stable between visits.
+   */
+  const categoryOptions = useMemo<CatalogCategoryOption[]>(() => {
+    const counts = new Map<number, number>()
+    for (const item of items ?? []) {
+      counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1)
+    }
+
+    const names = new Map<number, string>()
+    for (const category of categories) {
+      names.set(category.id, category.name)
+    }
+    for (const item of items ?? []) {
+      if (!names.has(item.category_id)) {
+        names.set(item.category_id, item.category_name)
+      }
+    }
+
+    return [...names.entries()]
+      .map(([id, name]) => ({ id, name, count: counts.get(id) ?? 0 }))
+      .sort((left, right) => left.name.localeCompare(right.name, 'ar'))
+  }, [categories, items])
+
+  /**
+   * A category selection that no longer has any items is a contradictory state:
+   * the grid would be empty while the strip implies there is something there.
+   * It is resolved DURING RENDER (not in an effect) by treating such a
+   * selection as "all", so what is on screen is always self-consistent and no
+   * extra render pass is needed.
+   */
+  const selectedCategoryIsEmpty =
+    categoryId !== null && categoryOptions.some((c) => c.id === categoryId && c.count === 0)
+  const effectiveCategoryId = selectedCategoryIsEmpty ? null : categoryId
+
+  const counts = useMemo(() => {
+    const source = items ?? []
+
+    return {
+      total: source.length,
+      active: source.filter((item) => item.is_active).length,
+      cafe: source.filter((item) => item.department === 'CAFE').length,
+      wash: source.filter((item) => item.department === 'WASH').length,
+    }
+  }, [items])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
 
     return (items ?? []).filter((item) => {
       if (q && !item.name.toLowerCase().includes(q)) {
+        return false
+      }
+
+      if (effectiveCategoryId !== null && item.category_id !== effectiveCategoryId) {
         return false
       }
 
@@ -197,26 +246,16 @@ export default function CatalogPage() {
 
       return true
     })
-  }, [items, query, dept, type, status])
+  }, [items, query, effectiveCategoryId, dept, type, status])
 
-  const counts = useMemo(() => {
-    const source = items ?? []
-
-    return {
-      total: source.length,
-      active: source.filter((item) => item.is_active).length,
-      cafe: source.filter((item) => item.department === 'CAFE').length,
-      wash: source.filter((item) => item.department === 'WASH').length,
-    }
-  }, [items])
-
-  const hasFilters = Boolean(query.trim() || dept || type || status)
+  const hasFilters = Boolean(query.trim() || dept || type || status || categoryId !== null)
 
   function clearFilters() {
     setQuery('')
     setDept('')
     setType('')
     setStatus('')
+    setCategoryId(null)
   }
 
   async function toggleActive(product: Product) {
@@ -370,6 +409,21 @@ export default function CatalogPage() {
           </div>
         </div>
 
+        {/* Category navigation sits directly above the results it filters, so
+            the relationship between "this category" and "these cards" is
+            obvious, and it is one tap away from the search box. */}
+        <div className="border-t border-border-subtle px-3 py-3">
+          <p className="text-caption mb-2 font-bold">{t('catalog.category')}</p>
+
+          <CatalogCategoryFilter
+            categories={categoryOptions}
+            selectedId={effectiveCategoryId}
+            onSelect={setCategoryId}
+            allLabel={t('catalog.allCategories')}
+            totalCount={counts.total}
+          />
+        </div>
+
         {hasFilters ? (
           <div className="flex items-center justify-between gap-3 border-t border-border-subtle px-3 py-2.5">
             <p className="text-caption">
@@ -377,7 +431,7 @@ export default function CatalogPage() {
             </p>
 
             <Button variant="ghost" size="sm" onClick={clearFilters}>
-              {t('app.cancel')}
+              {t('catalog.clearFilters')}
             </Button>
           </div>
         ) : null}
@@ -394,7 +448,16 @@ export default function CatalogPage() {
           <CardGridSkeleton cards={6} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" />
         )
       ) : filtered.length === 0 ? (
-        <EmptyState title={t('catalog.empty')} />
+        <EmptyState
+          title={hasFilters ? t('catalog.empty') : t('app.emptyTitle')}
+          action={
+            hasFilters ? (
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                {t('catalog.clearFilters')}
+              </Button>
+            ) : null
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {filtered.map((product) => (
@@ -591,165 +654,6 @@ function CatalogOverview({
 }
 
 /* ========================================================================== */
-/* Catalog card                                                               */
-/* ========================================================================== */
-
-function CatalogCard({
-  product,
-  canManage,
-  onEdit,
-  onToggle,
-}: {
-  product: Product
-  canManage: boolean
-  onEdit: () => void
-  onToggle: () => void
-}) {
-  const { t } = useTranslation()
-
-  const department = product.department as Department
-  const style = departmentStyles[department]
-  const isCafe = department === 'CAFE'
-
-  return (
-    <Card
-      className={[
-        'group relative flex min-h-75 flex-col overflow-hidden p-0',
-        'border border-border bg-surface shadow-sm',
-        'transition-[transform,box-shadow,border-color] duration-200',
-        'hover:-translate-y-1 hover:shadow-lg',
-      ].join(' ')}
-    >
-      {/* Identity header */}
-      <div className={['relative overflow-hidden px-5 pb-5 pt-5', style.soft].join(' ')}>
-        <div className={['absolute inset-x-0 top-0 h-1', style.accent].join(' ')} aria-hidden />
-
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={[
-                'flex h-12 w-12 shrink-0 items-center justify-center',
-                'border bg-surface',
-                style.border,
-                style.accentText,
-              ].join(' ')}
-            >
-              {isCafe ? (
-                <Coffee size={23} strokeWidth={1.8} aria-hidden />
-              ) : (
-                <Droplets size={23} strokeWidth={1.8} aria-hidden />
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className={[
-                    'text-[10px] font-black uppercase tracking-[0.18em]',
-                    style.accentText,
-                  ].join(' ')}
-                >
-                  {t(`catalog.${department}`)}
-                </span>
-
-                <span className="h-1 w-1 bg-foreground-faint" aria-hidden />
-
-                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground-subtle">
-                  {t(`catalog.${product.item_type}`)}
-                </span>
-              </div>
-
-              <h2 className="mt-1 truncate text-base font-bold text-foreground">{product.name}</h2>
-            </div>
-          </div>
-
-          <div className="shrink-0">
-            <Badge
-              variant={product.is_active ? 'success' : 'neutral'}
-              size="sm"
-              dot={product.is_active}
-            >
-              {product.is_active ? t('catalog.active') : t('catalog.inactive')}
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="flex flex-1 flex-col px-5 py-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Badge variant="neutral" size="sm" className="max-w-40">
-              {product.category_name}
-            </Badge>
-            {product.track_inventory ? (
-              <span className="text-caption font-medium">
-                {t('inventory.stock')}:{' '}
-                <span className="font-bold text-foreground">{product.stock_quantity}</span>
-              </span>
-            ) : (
-              <span className="text-caption text-foreground-subtle">
-                {t('inventory.notTracked')}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Price */}
-        <div className="mt-auto pt-7">
-          <p className="text-caption">{t('catalog.price')}</p>
-
-          <div className="mt-1 flex items-end justify-between gap-3">
-            <MoneyDisplay
-              amount={product.price_minor}
-              className={['text-money font-bold tracking-tight', style.price].join(' ')}
-            />
-
-            <div
-              className={[
-                'flex h-9 w-9 shrink-0 items-center justify-center',
-                'border',
-                style.mutedBorder,
-                style.soft,
-                style.accentText,
-              ].join(' ')}
-              aria-hidden
-            >
-              {isCafe ? (
-                <Coffee size={17} strokeWidth={1.8} />
-              ) : (
-                <Droplets size={17} strokeWidth={1.8} />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        {canManage ? (
-          <div className="mt-5 grid grid-cols-2 gap-2 border-t border-border-subtle pt-4">
-            <Button variant="outline" size="sm" className="min-w-0" onClick={onEdit}>
-              <Pencil size={15} aria-hidden />
-              {t('catalog.edit')}
-            </Button>
-
-            <Button
-              variant={product.is_active ? 'destructiveGhost' : 'secondary'}
-              size="sm"
-              className="min-w-0"
-              onClick={onToggle}
-            >
-              <Power size={15} aria-hidden />
-
-              {product.is_active ? t('catalog.deactivate') : t('catalog.activate')}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </Card>
-  )
-}
-
-/* ========================================================================== */
 /* Select                                                                     */
 /* ========================================================================== */
 
@@ -853,6 +757,52 @@ function CreateCategoryDialog({
 }
 
 /* ========================================================================== */
+/* New-item switch                                                            */
+/* ========================================================================== */
+
+/**
+ * The "is this a new item?" control, shared by the Add and Edit dialogs so the
+ * two can never drift apart.
+ *
+ * Accessibility: the visible label is associated with the switch via `htmlFor`,
+ * so the control has a real accessible name in Arabic, and the switch itself is
+ * a `role="switch"` button — reachable with Tab, toggled with Space or Enter,
+ * and announcing its ON/OFF state. The hint spells out that this is a display
+ * badge and does NOT affect availability, which is the question a manager
+ * actually has when looking at this control.
+ */
+function NewItemSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-surface-muted p-3">
+      <div className="min-w-0">
+        <Label
+          htmlFor="catalog-is-new"
+          className="block text-base font-bold text-foreground-strong"
+        >
+          {t('catalog.newItem')}
+        </Label>
+        <p className="text-caption mt-0.5">{t('catalog.newItemHint')}</p>
+      </div>
+
+      <Switch
+        id="catalog-is-new"
+        checked={checked}
+        onCheckedChange={onChange}
+        label={t('catalog.newItem')}
+      />
+    </div>
+  )
+}
+
+/* ========================================================================== */
 /* Create dialog                                                              */
 /* ========================================================================== */
 
@@ -878,6 +828,9 @@ function CreateProductDialog({
   const [tracked, setTracked] = useState(false)
   const [stockQuantity, setStockQuantity] = useState('0')
   const [stockError, setStockError] = useState<string | null>(null)
+  // A brand-new catalog entry is the "new" case by default: the manager is
+  // creating it right now, so badging it is what they almost always want.
+  const [isNew, setIsNew] = useState(true)
 
   const [busy, setBusy] = useState(false)
   const [priceError, setPriceError] = useState<string | null>(null)
@@ -918,6 +871,7 @@ function CreateProductDialog({
         price_minor: minor,
         track_inventory: type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
+        is_new: isNew,
       }
 
       await catalogApi.create(input)
@@ -1059,6 +1013,8 @@ function CreateProductDialog({
           </label>
         ) : null}
 
+        <NewItemSwitch checked={isNew} onChange={setIsNew} />
+
         {type === 'PRODUCT' && tracked ? (
           <Field label={t('inventory.quantity')} error={stockError}>
             <Input
@@ -1116,6 +1072,8 @@ function EditProductDialog({
   const [categoryId, setCategoryId] = useState(String(product.category_id))
   const [tracked, setTracked] = useState(product.track_inventory)
   const [stockQuantity, setStockQuantity] = useState(String(product.stock_quantity))
+  // Seeded from the PERSISTED value, so editing never silently flips the flag.
+  const [isNew, setIsNew] = useState(product.is_new)
 
   const [busy, setBusy] = useState(false)
   const [priceError, setPriceError] = useState<string | null>(null)
@@ -1159,6 +1117,7 @@ function EditProductDialog({
         price_minor: minor,
         track_inventory: product.item_type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
+        is_new: isNew,
       })
 
       onSaved()
@@ -1243,6 +1202,8 @@ function EditProductDialog({
             {t('inventory.trackItem')}
           </label>
         ) : null}
+
+        <NewItemSwitch checked={isNew} onChange={setIsNew} />
 
         {product.item_type === 'PRODUCT' && tracked ? (
           <Field label={t('inventory.quantity')} error={stockError}>

@@ -82,6 +82,63 @@ export function PasswordInput({
   )
 }
 
+/**
+ * Accessible on/off switch.
+ *
+ * A real `<button role="switch" aria-checked>` rather than a styled checkbox,
+ * because the catalog's "new item" control must be operable with the keyboard,
+ * announce its state, and expose a visible focus ring in both themes. The label
+ * is a visible sibling text, so no `aria-label` is needed here; callers that
+ * render an icon-only switch pass `label`.
+ *
+ * RTL-safe: the knob travels with logical inset properties, so the switch
+ * reads "on to the right" in Arabic exactly as it does "on to the left" in LTR.
+ */
+export function Switch({
+  checked,
+  onCheckedChange,
+  label,
+  id,
+  disabled,
+  className,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  /** Accessible name; required when no visible label element is associated. */
+  label?: string
+  id?: string
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        'relative h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+        'disabled:cursor-not-allowed disabled:opacity-70',
+        checked ? 'border-new-border bg-new-soft' : 'border-border-strong bg-surface-muted',
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition-[inset-inline-start]',
+          'motion-reduce:transition-none',
+          checked ? 'start-[calc(100%-1.375rem)] bg-new' : 'start-1.5 bg-foreground-muted',
+        )}
+      />
+    </button>
+  )
+}
+
 /** The shared discount authorization PIN is exactly 4 ASCII digits. */
 export const DISCOUNT_PIN_LENGTH = 4
 

@@ -238,6 +238,49 @@
   --chart-motif: #f3ead9; /* decorative, non-data-bearing fills */
   --chart-motif-strong: #e6d5b8; /* decorative accents with more presence */
 
+  /* Category identity palette. Deliberately a FOURTH identity system, kept
+     separate from the employee role colors (violet/teal/blue), the customer
+     avatar tones, and the semantic status families (success/danger/warning/
+     info): a catalog category is a business grouping, never a permission, a
+     person, or a state. The six slots are spaced far apart in hue and kept
+     LOW-chroma so a row of them reads as a calm premium set instead of a
+     rainbow, and so none of them can be mistaken for an availability status.
+     The actual color VALUES live here (and only here); `lib/category-visual.ts`
+     deterministically picks the slot from the category's database id, so the
+     same category always gets the same identity and a rebrand is a CSS edit. */
+  --category-1-bg: #e0f0f7; /* sky */
+  --category-1-border: #a8cfe3;
+  --category-1-fg: #14566f;
+  --category-2-bg: #e7f0dc; /* moss */
+  --category-2-border: #b6cfa1;
+  --category-2-fg: #3f5b23;
+  --category-3-bg: #fbe6e9; /* rose */
+  --category-3-border: #eeb3bf;
+  --category-3-fg: #8f2f3f;
+  --category-4-bg: #f6ecdb; /* sand */
+  --category-4-border: #dcc79b;
+  --category-4-fg: #6b5320;
+  --category-5-bg: #ece7f7; /* lilac */
+  --category-5-border: #c2b6e4;
+  --category-5-fg: #4b3b7a;
+  --category-6-bg: #e8eaee; /* slate */
+  --category-6-border: #bcc2cc;
+  --category-6-fg: #414a56;
+
+  /* "New item" — its own accent, on purpose. It is NOT a status: a product can
+     be new + available, new + disabled, or neither, so it must never borrow
+     the success or danger identities, and it must not read as a category.
+     The badge always carries the word "جديد" and a spark icon, so the meaning
+     never depends on the color. */
+  --new: #b4308a;
+  --new-foreground: #8f1f6c;
+  --new-soft: #fbe6f4;
+  --new-soft-hover: #f6d3e8;
+  --new-border: #eaa8d0;
+  --badge-new-bg: #fbe6f4;
+  --badge-new-border: #eaa8d0;
+  --badge-new-fg: #8f1f6c;
+
   /* Badge and skeleton surfaces: one definition for every compact status UI. */
   --badge-neutral-bg: #faf6f0;
   --badge-neutral-border: #e6d5b8;
@@ -479,6 +522,38 @@
   --badge-brand-border: #705033;
   --badge-brand-fg: #e8c49d;
   --skeleton: #302c27;
+
+  /* Category identity palette (dark): the same six meanings, re-tuned for dark
+     surfaces — deeper fills with a light, low-chroma foreground so the text
+     keeps its contrast against a card. */
+  --category-1-bg: #16303c;
+  --category-1-border: #2b5a70;
+  --category-1-fg: #a9d7ea;
+  --category-2-bg: #24301a;
+  --category-2-border: #47592f;
+  --category-2-fg: #c6ddab;
+  --category-3-bg: #3a1f26;
+  --category-3-border: #6d3a46;
+  --category-3-fg: #f0b3bf;
+  --category-4-bg: #382c1a;
+  --category-4-border: #6a5730;
+  --category-4-fg: #e3cfa2;
+  --category-5-bg: #2a2540;
+  --category-5-border: #524a7a;
+  --category-5-fg: #cfc7ee;
+  --category-6-bg: #2a2d33;
+  --category-6-border: #4d545e;
+  --category-6-fg: #ccd3dc;
+
+  /* "New item" (dark). */
+  --new: #e88ccb;
+  --new-foreground: #f2aede;
+  --new-soft: #3a1b2e;
+  --new-soft-hover: #4a2339;
+  --new-border: #7a3b60;
+  --badge-new-bg: #3a1b2e;
+  --badge-new-border: #7a3b60;
+  --badge-new-fg: #f2aede;
 }
 
 /* ---------------------------------------------------------------------------
@@ -594,7 +669,35 @@
   --color-badge-brand-bg: var(--badge-brand-bg);
   --color-badge-brand-border: var(--badge-brand-border);
   --color-badge-brand-fg: var(--badge-brand-fg);
+  --color-badge-new-bg: var(--badge-new-bg);
+  --color-badge-new-border: var(--badge-new-border);
+  --color-badge-new-fg: var(--badge-new-fg);
   --color-skeleton: var(--skeleton);
+
+  --color-new: var(--new);
+  --color-new-foreground: var(--new-foreground);
+  --color-new-soft: var(--new-soft);
+  --color-new-soft-hover: var(--new-soft-hover);
+  --color-new-border: var(--new-border);
+
+  --color-category-1-bg: var(--category-1-bg);
+  --color-category-1-border: var(--category-1-border);
+  --color-category-1-fg: var(--category-1-fg);
+  --color-category-2-bg: var(--category-2-bg);
+  --color-category-2-border: var(--category-2-border);
+  --color-category-2-fg: var(--category-2-fg);
+  --color-category-3-bg: var(--category-3-bg);
+  --color-category-3-border: var(--category-3-border);
+  --color-category-3-fg: var(--category-3-fg);
+  --color-category-4-bg: var(--category-4-bg);
+  --color-category-4-border: var(--category-4-border);
+  --color-category-4-fg: var(--category-4-fg);
+  --color-category-5-bg: var(--category-5-bg);
+  --color-category-5-border: var(--category-5-border);
+  --color-category-5-fg: var(--category-5-fg);
+  --color-category-6-bg: var(--category-6-bg);
+  --color-category-6-border: var(--category-6-border);
+  --color-category-6-fg: var(--category-6-fg);
 
   --color-print-paper: var(--print-paper);
   --color-print-ink: var(--print-ink);

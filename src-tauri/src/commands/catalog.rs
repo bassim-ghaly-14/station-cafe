@@ -18,6 +18,9 @@ pub struct ProductInput {
     pub track_inventory: bool,
     /// Opening/current stock quantity. Ignored when `track_inventory` is false.
     pub stock_quantity: Option<i64>,
+    /// Marks the item as a recent addition. Independent of availability.
+    #[serde(default)]
+    pub is_new: bool,
 }
 
 /// POS reads the sellable catalog (active items only).
@@ -72,6 +75,7 @@ pub fn create_product(
                 price_minor: input.price_minor,
                 track_inventory: input.track_inventory,
                 stock_quantity: input.stock_quantity.unwrap_or(0),
+                is_new: input.is_new,
                 user_id: actor.id,
             },
         )?;
@@ -87,7 +91,7 @@ pub fn create_product(
                 "name": name, "price_minor": input.price_minor,
                 "department": input.department, "type": input.item_type,
                 "category_id": input.category_id, "track_inventory": input.track_inventory,
-                "stock_quantity": input.stock_quantity
+                "stock_quantity": input.stock_quantity, "is_new": input.is_new
             })),
         )?;
         Ok(id)
@@ -160,6 +164,7 @@ pub fn update_product(
             input.price_minor,
             input.track_inventory,
             input.stock_quantity,
+            input.is_new,
             actor.id,
         )? {
             return Err(AppError::not_found("catalog.item_not_found"));
@@ -173,7 +178,7 @@ pub fn update_product(
             Some(&product_id.to_string()),
             None,
             Some(
-                &serde_json::json!({ "name": name, "category_id": input.category_id, "price_minor": input.price_minor, "track_inventory": input.track_inventory, "stock_quantity": input.stock_quantity }),
+                &serde_json::json!({ "name": name, "category_id": input.category_id, "price_minor": input.price_minor, "track_inventory": input.track_inventory, "stock_quantity": input.stock_quantity, "is_new": input.is_new }),
             ),
         )
     })

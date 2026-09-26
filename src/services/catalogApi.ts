@@ -16,6 +16,8 @@ export interface NewProductInput {
   track_inventory: boolean
   /** Opening/current stock quantity; ignored when `track_inventory` is false. */
   stock_quantity: number | null
+  /** Marks the item as a recent addition; independent of its availability. */
+  is_new: boolean
 }
 
 export const catalogApi = {

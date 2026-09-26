@@ -13,6 +13,8 @@ export interface Product {
   track_inventory: boolean
   stock_quantity: number
   is_seed: boolean
+  /** Recent addition — a catalog presentation flag, independent of `is_active`. */
+  is_new: boolean
 }
 
 export interface OrderLine {

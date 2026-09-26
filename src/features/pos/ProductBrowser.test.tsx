@@ -23,6 +23,7 @@ function product(over: Partial<Product>): Product {
     track_inventory: false,
     stock_quantity: 0,
     is_seed: true,
+    is_new: false,
     ...over,
   }
 }

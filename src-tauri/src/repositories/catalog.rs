@@ -18,10 +18,12 @@ pub struct Product {
     pub track_inventory: bool,
     pub stock_quantity: i64,
     pub is_seed: bool,
+    /// Presentation flag: this is a recent addition, independent of `is_active`.
+    pub is_new: bool,
 }
 
 const COLS: &str =
-    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), p.is_seed";
+    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), p.is_seed, p.is_new";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -36,6 +38,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
         track_inventory: row.get::<_, i64>(8)? != 0,
         stock_quantity: row.get(9)?,
         is_seed: row.get::<_, i64>(10)? != 0,
+        is_new: row.get::<_, i64>(11)? != 0,
     })
 }
 
@@ -114,6 +117,8 @@ pub struct NewProduct<'a> {
     pub track_inventory: bool,
     /// Opening stock quantity; only applied when `track_inventory` is true.
     pub stock_quantity: i64,
+    /// Whether the item is flagged as a recent addition.
+    pub is_new: bool,
     /// Actor recorded on the opening stock movement.
     pub user_id: i64,
 }
@@ -121,15 +126,16 @@ pub struct NewProduct<'a> {
 pub fn insert(conn: &Db, p: &NewProduct<'_>) -> AppResult<i64> {
     let tx = conn.unchecked_transaction()?;
     tx.execute(
-        "INSERT INTO products (name, item_type, department, category_id, price_minor, track_inventory)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO products (name, item_type, department, category_id, price_minor, track_inventory, is_new)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             p.name,
             p.item_type,
             p.department,
             p.category_id,
             p.price_minor,
-            p.track_inventory as i64
+            p.track_inventory as i64,
+            p.is_new as i64
         ],
     )?;
     let id = tx.last_insert_rowid();
@@ -173,13 +179,21 @@ pub fn update(
     price_minor: i64,
     track_inventory: bool,
     stock_quantity: Option<i64>,
+    is_new: bool,
     user_id: i64,
 ) -> AppResult<bool> {
     let tx = conn.unchecked_transaction()?;
     let changed = tx.execute(
         "UPDATE products SET name = ?2, category_id = ?3, price_minor = ?4,
-             track_inventory = ?5, updated_at = station_now() WHERE id = ?1",
-        params![id, name, category_id, price_minor, track_inventory as i64],
+             track_inventory = ?5, is_new = ?6, updated_at = station_now() WHERE id = ?1",
+        params![
+            id,
+            name,
+            category_id,
+            price_minor,
+            track_inventory as i64,
+            is_new as i64
+        ],
     )?;
     if changed == 0 {
         tx.commit()?;
@@ -318,6 +332,7 @@ mod tests {
             price_minor: 1000,
             track_inventory,
             stock_quantity,
+            is_new: false,
             user_id,
         }
     }
@@ -378,7 +393,18 @@ mod tests {
         let admin = admin_user(&conn);
         let id = insert(&conn, &new_product(category, true, 5, admin)).unwrap();
 
-        assert!(update(&conn, id, "Test Item", category, 1000, true, Some(9), admin,).unwrap());
+        assert!(update(
+            &conn,
+            id,
+            "Test Item",
+            category,
+            1000,
+            true,
+            Some(9),
+            false,
+            admin
+        )
+        .unwrap());
         let adjustment: (i64, i64) = conn
             .query_row(
                 "SELECT COUNT(*), COALESCE(SUM(change), 0)
@@ -389,7 +415,18 @@ mod tests {
             .unwrap();
         assert_eq!(adjustment, (2, 9));
 
-        update(&conn, id, "Test Item", category, 1000, false, None, admin).unwrap();
+        update(
+            &conn,
+            id,
+            "Test Item",
+            category,
+            1000,
+            false,
+            None,
+            false,
+            admin,
+        )
+        .unwrap();
         let disabled: (i64, i64) = conn
             .query_row(
                 "SELECT p.track_inventory, i.quantity
@@ -400,5 +437,48 @@ mod tests {
             )
             .unwrap();
         assert_eq!(disabled, (0, 9));
+    }
+
+    /// The "new item" flag is independent of availability: a product can be
+    /// new and active, new and inactive, or neither, and each combination
+    /// survives insert → update → read unchanged.
+    #[test]
+    fn is_new_is_persisted_independently_of_availability() {
+        let conn = fresh();
+        let category = system_category(&conn);
+        let admin = admin_user(&conn);
+
+        // Seeded products keep the safe legacy default: not new.
+        assert!(list(&conn, None, false).unwrap().iter().all(|p| !p.is_new));
+
+        let id = insert(
+            &conn,
+            &NewProduct {
+                is_new: true,
+                ..new_product(category, false, 0, admin)
+            },
+        )
+        .unwrap();
+        assert!(get(&conn, id).unwrap().unwrap().is_new);
+
+        // Turning it off persists, and availability stays independent.
+        update(
+            &conn,
+            id,
+            "Test Item",
+            category,
+            1000,
+            false,
+            None,
+            false,
+            admin,
+        )
+        .unwrap();
+        let after = get(&conn, id).unwrap().unwrap();
+        assert!(!after.is_new && after.is_active);
+
+        set_active(&conn, id, false).unwrap();
+        let disabled = get(&conn, id).unwrap().unwrap();
+        assert!(!disabled.is_new && !disabled.is_active);
     }
 }

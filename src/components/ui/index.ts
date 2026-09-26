@@ -10,6 +10,7 @@ export {
   Textarea,
   Label,
   Field,
+  Switch,
   PasswordInput,
   PinInput,
   isValidDiscountPin,

@@ -20,6 +20,13 @@ const buttonVariants = cva(
           'bg-destructive-solid text-destructive-solid-foreground shadow-sm hover:bg-destructive-solid-hover active:bg-destructive-solid-active',
         destructiveGhost:
           'text-destructive-soft-foreground hover:bg-destructive-soft hover:text-destructive active:bg-destructive-soft-hover active:text-destructive',
+        /**
+         * The affirmative counterpart to `destructive`: an action that ENABLES
+         * something. Used by the catalog's "activate" control so the button
+         * color always matches the outcome of pressing it.
+         */
+        success:
+          'bg-success-solid text-success-solid-foreground shadow-sm hover:bg-success-solid-hover active:bg-success-solid-active',
         link: 'text-foreground-muted underline-offset-4 hover:text-foreground hover:underline',
       },
       size: {

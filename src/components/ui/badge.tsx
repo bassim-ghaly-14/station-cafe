@@ -15,6 +15,7 @@ const badgeVariants = cva(
         danger: 'border-badge-danger-border bg-badge-danger-bg text-badge-danger-fg',
         info: 'border-badge-info-border bg-badge-info-bg text-badge-info-fg',
         brand: 'border-badge-brand-border bg-badge-brand-bg text-badge-brand-fg',
+        new: 'border-badge-new-border bg-badge-new-bg text-badge-new-fg',
       },
       size: {
         sm: 'gap-1 rounded-md px-2 py-1 text-xs [&_svg]:size-3',

@@ -37,6 +37,7 @@ import {
   FilterX,
   FileUp,
   HandCoins,
+  Layers,
   Loader2,
   Lock,
   LogOut,
@@ -75,6 +76,7 @@ import {
   Users,
   Wallet,
   X,
+  CircleSlash,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -111,6 +113,7 @@ export {
   FilterX,
   FileUp,
   HandCoins,
+  Layers,
   Loader2,
   Lock,
   LogOut,
@@ -149,6 +152,7 @@ export {
   Users,
   Wallet,
   X,
+  CircleSlash,
 }
 
 export type { LucideIcon }
