@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { PrintPreview } from '@/services/posApi'
+import type { PreviewOp, PrintPreview } from '@/services/posApi'
 import { ThermalReceipt } from './ThermalReceipt'
 
 function preview(over: Partial<PrintPreview> = {}): PrintPreview {
@@ -107,6 +107,40 @@ function preview(over: Partial<PrintPreview> = {}): PrintPreview {
     ],
     ...over,
   }
+}
+
+/** The identity block the backend's invoice print layer now emits. */
+function metaOps(): PreviewOp[] {
+  return [
+    {
+      kind: 'meta',
+      label: 'التاريخ',
+      value: '25/09/2026',
+      emphasis: true,
+      align: 'right',
+    },
+    {
+      kind: 'meta',
+      label: 'الوقت',
+      value: '05:30 PM',
+      emphasis: true,
+      align: 'right',
+    },
+    {
+      kind: 'meta',
+      label: 'رقم الفاتورة',
+      value: '1001',
+      emphasis: false,
+      align: 'right',
+    },
+    {
+      kind: 'meta',
+      label: 'العميل',
+      value: 'أحمد',
+      emphasis: false,
+      align: 'right',
+    },
+  ]
 }
 
 describe('ThermalReceipt — professional 80mm screen presentation', () => {
@@ -277,5 +311,118 @@ describe('ThermalReceipt — professional 80mm screen presentation', () => {
 
     expect(screen.getAllByText('01154520775')).toHaveLength(1)
     expect(screen.getByText('01154520775')).toHaveAttribute('dir', 'ltr')
+  })
+
+  // ---------------------------------------------------------------------
+  // The identity block: one printable-width canvas, and a type hierarchy.
+  // ---------------------------------------------------------------------
+
+  it('lays every section on one printable-width canvas derived from the preview', () => {
+    render(
+      <ThermalReceipt
+        preview={preview({
+          width_chars: 42,
+          ops: [
+            ...metaOps(),
+            {
+              kind: 'item',
+              name: 'قهوة',
+              quantity: '2',
+              unit_price: '50.00',
+              line_total: '100.00',
+              align: 'right',
+            },
+            { kind: 'financial', label: 'الإجمالي', value: '100.00', total: true, align: 'right' },
+          ],
+        })}
+      />,
+    )
+
+    // The canvas is the authoritative cell count — not a per-section width, not
+    // a margin, and not the physical paper width. This is what stops the
+    // metadata from collapsing onto one side of the receipt.
+    const canvas = screen.getByTestId('receipt-canvas')
+    expect(canvas.style.width).toBe('42ch')
+    expect(canvas.style.maxWidth).toBe('100%')
+    expect(canvas.style.marginInline).toBe('auto')
+    // `ch` must resolve against the base cell size, not an inherited font.
+    expect(canvas.style.fontSize).toBe('8px')
+
+    // The identity block and the item table therefore share the same width.
+    const itemRow = screen.getByTestId('receipt-item-row')
+    expect(itemRow.style.gridTemplateColumns).toBe('22ch 3ch 7ch 7ch')
+    const columns = ['22ch', '3ch', '7ch', '7ch']
+      .map((track) => Number.parseFloat(track))
+      .reduce((sum, track) => sum + track, 0)
+    // 39 tracks + 3 one-cell gaps = the full 42-cell canvas.
+    expect(columns + 3).toBe(Number.parseFloat(canvas.style.width))
+  })
+
+  it('renders each metadata row as a full-width two-column row, not a padded string', () => {
+    render(<ThermalReceipt preview={preview({ ops: metaOps() })} />)
+
+    const rows = screen.getAllByTestId('receipt-meta-row')
+    expect(rows).toHaveLength(4)
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'التاريخ25/09/2026',
+      'الوقت05:30 PM',
+      'رقم الفاتورة1001',
+      'العميلأحمد',
+    ])
+
+    for (const row of rows) {
+      // A real grid across the whole canvas, with the value in its own column.
+      expect(row).toHaveClass('grid')
+      expect(row.style.gridTemplateColumns).toBe('1fr auto')
+      // No per-row width: the row is laid out by the shared canvas, which is
+      // exactly why it can no longer hug one side of the receipt.
+      expect(row.style.width).toBe('')
+    }
+  })
+
+  it('emphasises the document moment by weight only, never by bulk', () => {
+    render(<ThermalReceipt preview={preview({ ops: metaOps() })} />)
+
+    const [date, time, invoiceNo, customer] = screen.getAllByTestId('receipt-meta-row')
+
+    // Date and time are the emphasised rows.
+    expect(date.dataset.emphasis).toBe('true')
+    expect(time.dataset.emphasis).toBe('true')
+    // Low-priority metadata is not.
+    expect(invoiceNo.dataset.emphasis).toBe('false')
+    expect(customer.dataset.emphasis).toBe('false')
+
+    // Hierarchy, not size: nothing in the block is enlarged, the emphasised
+    // rows are only heavier, and all of them stay below the document total.
+    for (const row of [date, time, invoiceNo, customer]) {
+      expect(row.style.fontSize).toBe('8px')
+    }
+    expect(Number.parseInt(date.style.fontWeight, 10)).toBeGreaterThan(
+      Number.parseInt(customer.style.fontWeight, 10),
+    )
+
+    // And a generous line box, so a stack of metadata is not cramped.
+    expect(date.style.lineHeight).toBe('11.6px')
+  })
+
+  it('keeps the metadata hierarchy below the document total', () => {
+    render(
+      <ThermalReceipt
+        preview={preview({
+          ops: [
+            ...metaOps(),
+            { kind: 'financial', label: 'الإجمالي', value: '100.00', total: true, align: 'right' },
+          ],
+        })}
+      />,
+    )
+
+    const metadata = screen.getAllByTestId('receipt-meta-row')
+    const total = screen.getByTestId('receipt-total')
+    for (const row of metadata) {
+      expect(Number.parseFloat(row.style.fontSize)).toBeLessThan(
+        Number.parseFloat(total.style.fontSize),
+      )
+    }
   })
 })

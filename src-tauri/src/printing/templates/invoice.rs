@@ -1,13 +1,16 @@
 use super::super::escpos::{ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{
-    footer, header, items_and_totals, stamp, DocLine, DocSettlement, DocTotals, WIDTH,
-};
+use super::invoice_format::{close_meta_block, meta_row, meta_timestamp, open_meta_block};
+use super::shared::{footer, invoice_header, items_and_totals, DocLine, DocSettlement, DocTotals};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 
 /// Cafe / Wash / Hybrid invoice. The hybrid layout is the shared composer with
 /// department sections — a presentation mode, not a separate entity, and not a
 /// second rendering path.
+///
+/// Cafe, wash and hybrid are ONE template: the same invoice header, the same
+/// print-layer currency statement, the same full-width metadata block and the
+/// same date/time presentation, whatever departments the document carries.
 pub fn invoice(
     mode: ArabicMode,
     codepage: u8,
@@ -16,30 +19,32 @@ pub fn invoice(
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
-    header(
+    invoice_header(
         &mut p,
         logo,
         "ستيشن كافيه",
         "Station Cafe - Cafe & Car Wash",
     );
-    p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
-    p.kv_line("التاريخ", &stamp(&inv.created_at), WIDTH);
+    // The identity block: full printable width, print-specific date & time.
+    open_meta_block(&mut p);
+    meta_timestamp(&mut p, &inv.created_at);
+    meta_row(&mut p, "رقم الفاتورة", &inv.invoice_no.to_string());
     if let Some(t) = &inv.table_label {
-        p.kv_line("الطاولة", t, WIDTH);
+        meta_row(&mut p, "الطاولة", t);
     }
     if let Some(c) = &inv.customer_name {
-        p.kv_line("العميل", c, WIDTH);
+        meta_row(&mut p, "العميل", c);
     }
     if let Some(ph) = &inv.customer_phone {
-        p.kv_line("تليفون", ph, WIDTH);
+        meta_row(&mut p, "تليفون", ph);
     }
     if let Some(pl) = &inv.car_plate {
-        p.kv_line("رقم السيارة", pl, WIDTH);
+        meta_row(&mut p, "رقم السيارة", pl);
     }
     if let Some(model) = &inv.car_model {
-        p.kv_line("نوع السيارة", model, WIDTH);
+        meta_row(&mut p, "نوع السيارة", model);
     }
-    p.hr(WIDTH);
+    close_meta_block(&mut p);
     items_and_totals(
         &mut p,
         &doc_lines(lines),
@@ -147,7 +152,8 @@ mod tests {
     }
 
     /// The printed timestamp must be Station business time, not the raw UTC
-    /// digits that are stored. This is the receipt-agrees-with-screen rule.
+    /// digits that are stored. This is the receipt-agrees-with-screen rule —
+    /// expressed in the print layer's own date and time formats.
     #[test]
     fn printed_timestamp_is_business_local_time_not_utc() {
         let mut inv = crate::repositories::invoices::InvoiceRow {
@@ -176,15 +182,120 @@ mod tests {
         let lines = vec![];
         let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false);
         assert!(
-            bytes_has(&doc.escpos, "2026-09-25 17:30"),
-            "the receipt must print 17:30 (Cairo), not 14:30 (UTC)"
+            bytes_has(&doc.escpos, "25/09/2026"),
+            "the receipt prints the Cairo calendar day, in the invoice date format"
+        );
+        assert!(
+            bytes_has(&doc.escpos, "05:30 PM"),
+            "the receipt must print 05:30 PM (Cairo), not 14:30 (UTC)"
         );
         assert!(!bytes_has(&doc.escpos, "14:30"));
+        // The invoice never inherits the screen's `YYYY-MM-DD HH:MM` shape.
+        assert!(!bytes_has(&doc.escpos, "2026-09-25 17:30"));
 
         // A legacy unmarked value converts identically — same instant, same
         // printed result, so historical invoices reprint consistently.
         inv.created_at = "2026-09-25 14:30:00".into();
         let legacy = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false);
-        assert!(bytes_has(&legacy.escpos, "2026-09-25 17:30"));
+        assert!(bytes_has(&legacy.escpos, "25/09/2026"));
+        assert!(bytes_has(&legacy.escpos, "05:30 PM"));
+    }
+
+    /// The invoice states its currency in full, in the print layer, and never
+    /// carries the application's global currency abbreviation.
+    #[test]
+    fn printed_currency_is_egp_and_never_the_app_currency_abbreviation() {
+        let inv = crate::repositories::invoices::InvoiceRow {
+            id: 1,
+            invoice_no: 7,
+            table_label: None,
+            order_type: "TABLE".into(),
+            takeaway_no: None,
+            status: "PAID".into(),
+            total: 100_00,
+            paid_amount: 100_00,
+            service_charge: 0,
+            discount_minor: 0,
+            subtotal: 100_00,
+            cafe_total: 100_00,
+            wash_total: 0,
+            customer_name: None,
+            customer_phone: None,
+            car_plate: None,
+            car_model: None,
+            created_at: "2026-09-25 14:30:00Z".into(),
+            shift_id: Some(1),
+            business_day_id: Some(1),
+        };
+        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &[], false);
+        assert!(bytes_has(&doc.escpos, "المبالغ بالجنيه المصري"));
+        assert!(!bytes_has(&doc.escpos, "ج.م"));
+    }
+
+    /// The identity block is a full-width two-column section, not a stack of
+    /// lines hugging one side: every metadata row occupies the same printable
+    /// width as the item table below it.
+    #[test]
+    fn the_metadata_block_uses_the_full_printable_width() {
+        let inv = crate::repositories::invoices::InvoiceRow {
+            id: 1,
+            invoice_no: 7,
+            table_label: Some("طاولة 04".into()),
+            order_type: "TABLE".into(),
+            takeaway_no: None,
+            status: "PAID".into(),
+            total: 100_00,
+            paid_amount: 100_00,
+            service_charge: 0,
+            discount_minor: 0,
+            subtotal: 100_00,
+            cafe_total: 100_00,
+            wash_total: 0,
+            customer_name: Some("أحمد".into()),
+            customer_phone: Some("0100000000".into()),
+            car_plate: Some("ABC123".into()),
+            car_model: None,
+            created_at: "2026-09-25 14:30:00Z".into(),
+            shift_id: Some(1),
+            business_day_id: Some(1),
+        };
+        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &[], false);
+
+        let metadata: Vec<&PreviewOp> = doc
+            .ops
+            .iter()
+            .filter(|op| matches!(op, PreviewOp::Meta { .. }))
+            .collect();
+        // date, time, invoice number, table, customer, phone, plate.
+        assert_eq!(metadata.len(), 7);
+        for op in metadata {
+            let PreviewOp::Meta { align, .. } = op else {
+                unreachable!()
+            };
+            assert_eq!(
+                *align,
+                crate::printing::escpos::Align::Right,
+                "the identity block shares the body's alignment"
+            );
+        }
+
+        // Every physical metadata line spans the whole 42-cell printable width,
+        // which is what makes the block read as a section rather than a column.
+        let rows = super::super::invoice_format::printed_text_lines(&doc);
+        for row in &rows {
+            assert!(
+                row.chars().count() <= crate::printing::templates::WIDTH,
+                "no printed line may exceed the printable width: {row:?}"
+            );
+        }
+        // One full-width physical line per metadata row, plus the dividers.
+        let full_width = rows
+            .iter()
+            .filter(|row| row.chars().count() == crate::printing::templates::WIDTH)
+            .count();
+        assert!(
+            full_width >= 7,
+            "each of the 7 metadata rows must reach both edges of the paper: {full_width}"
+        );
     }
 }

@@ -143,11 +143,23 @@ impl EscPos {
 
     /// Two-column line: label right, value left (RTL layout, 80mm = 42 chars).
     pub fn kv_line(&mut self, label: &str, value: &str, width: usize) {
-        let pad = width
-            .saturating_sub(value.chars().count() + label.chars().count())
-            .max(1);
-        let line = format!("{label}{}{value}", " ".repeat(pad));
+        let line = kv_text(label, value, width);
         self.line(&line);
+    }
+
+    /// An invoice/receipt metadata row: the same physical line as
+    /// [`Self::kv_line`], recorded as one semantic operation so the screen can
+    /// lay the identity block out across the full printable width instead of
+    /// right-aligning a padded string.
+    pub fn meta(&mut self, label: &str, value: &str, width: usize, emphasis: bool) {
+        let line = kv_text(label, value, width);
+        self.ops.push(PreviewOp::Meta {
+            label: self.printed_text(label),
+            value: self.printed_text(value),
+            emphasis,
+            align: self.attrs.align,
+        });
+        self.append_printed_lines(&[line]);
     }
 
     /// Emit the existing two thermal lines for an item and record their source
@@ -259,6 +271,16 @@ impl EscPos {
             ArabicMode::Latin => strip_arabic(&reordered),
         }
     }
+}
+
+/// The physical 42-cell line behind both a two-column metadata row and a
+/// two-column financial row: label, then enough spaces to push the value to
+/// the opposite edge. One function, so the two can never drift apart.
+fn kv_text(label: &str, value: &str, width: usize) -> String {
+    let pad = width
+        .saturating_sub(value.chars().count() + label.chars().count())
+        .max(1);
+    format!("{label}{}{value}", " ".repeat(pad))
 }
 
 /// Preserve Unicode logical order for the Arabic-capable printer firmware.

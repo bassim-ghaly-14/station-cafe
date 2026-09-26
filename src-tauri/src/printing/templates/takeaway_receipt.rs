@@ -1,6 +1,7 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, stamp, DocSettlement, DocTotals, WIDTH};
+use super::invoice_format::{close_meta_block, meta_row, meta_timestamp, open_meta_block};
+use super::shared::{footer, invoice_header, items_and_totals, DocSettlement, DocTotals};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 use crate::repositories::pos::Order;
 use crate::services::pos::{OrderCustomer, OrderPreview};
@@ -35,24 +36,24 @@ pub(crate) fn takeaway_order(
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
-    header(
+    invoice_header(
         &mut p,
         logo,
         "طلبات خارجية — ستيشن كافيه",
         "TAKEAWAY RECEIPT",
     );
     takeaway_identity(&mut p, order.takeaway_no);
-    p.align(Align::Right);
-    p.kv_line("الطلب", &order.id.to_string(), WIDTH);
-    p.kv_line("التاريخ", &stamp(&order.opened_at), WIDTH);
+    open_meta_block(&mut p);
+    meta_timestamp(&mut p, &order.opened_at);
+    meta_row(&mut p, "رقم الطلب", &order.id.to_string());
     if let Some(c) = customer {
-        p.kv_line("العميل", &c.name, WIDTH);
+        meta_row(&mut p, "العميل", &c.name);
         if let Some(phone) = &c.phone {
-            p.kv_line("تليفون", phone, WIDTH);
+            meta_row(&mut p, "تليفون", phone);
         }
     }
     if let Some(plate) = car_plate {
-        p.kv_line("رقم السيارة", plate, WIDTH);
+        meta_row(&mut p, "رقم السيارة", plate);
     }
     // The car model belongs to the wash section, and the shared composer prints
     // it there for a hybrid document — so it is only stated in the identity
@@ -60,10 +61,10 @@ pub(crate) fn takeaway_order(
     let has_wash = order.lines.iter().any(|l| l.department == "WASH");
     if !has_wash {
         if let Some(model) = car_model {
-            p.kv_line("نوع السيارة", model, WIDTH);
+            meta_row(&mut p, "نوع السيارة", model);
         }
     }
-    p.hr(WIDTH);
+    close_meta_block(&mut p);
     items_and_totals(
         &mut p,
         &super::current_order::order_doc_lines(&order.lines),
@@ -93,36 +94,36 @@ pub fn takeaway_receipt(
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
-    header(
+    invoice_header(
         &mut p,
         logo,
         "طلبات خارجية — ستيشن كافيه",
         "TAKEAWAY RECEIPT",
     );
     takeaway_identity(&mut p, inv.takeaway_no);
-    p.align(Align::Right);
-    p.kv_line("فاتورة رقم", &inv.invoice_no.to_string(), WIDTH);
-    p.kv_line("التاريخ", &stamp(&inv.created_at), WIDTH);
+    open_meta_block(&mut p);
+    meta_timestamp(&mut p, &inv.created_at);
+    meta_row(&mut p, "رقم الفاتورة", &inv.invoice_no.to_string());
     if let Some(c) = &inv.customer_name {
-        p.kv_line("العميل", c, WIDTH);
+        meta_row(&mut p, "العميل", c);
     }
     if let Some(phone) = &inv.customer_phone {
-        p.kv_line("تليفون", phone, WIDTH);
+        meta_row(&mut p, "تليفون", phone);
     }
     if let Some(plate) = &inv.car_plate {
-        p.kv_line("رقم السيارة", plate, WIDTH);
+        meta_row(&mut p, "رقم السيارة", plate);
     }
     // The shared department renderer places the car model beside the WASH
     // section for hybrid documents. Keep the model out of the metadata here
     // to avoid printing the immutable snapshot twice.
     if inv.car_model.is_some() && !lines.iter().any(|l| l.department == "WASH") {
-        p.kv_line(
+        meta_row(
+            &mut p,
             "نوع السيارة",
             inv.car_model.as_deref().unwrap_or_default(),
-            WIDTH,
         );
     }
-    p.hr(WIDTH);
+    close_meta_block(&mut p);
     items_and_totals(
         &mut p,
         &super::invoice::doc_lines(lines),

@@ -212,16 +212,44 @@ export interface PreviewFinancialOp {
   align: 'left' | 'center' | 'right'
 }
 
+/**
+ * Authoritative invoice/receipt metadata row (date, time, invoice number,
+ * customer, table, car …), emitted by the backend's invoice print layer.
+ *
+ * The backend prints the identical 42-cell physical line it always printed;
+ * this op exists so the screen can lay the identity block out across the full
+ * printable width as a real two-column row instead of a right-aligned string.
+ */
+export interface PreviewMetaOp {
+  kind: 'meta'
+  label: string
+  value: string
+  /** Print emphasis — the document's own moment is set apart by weight. */
+  emphasis: boolean
+  align: 'left' | 'center' | 'right'
+}
+
 export interface PreviewCutOp {
   kind: 'cut'
 }
 
 export type PreviewOp =
-  PreviewTextOp | PreviewLogoOp | PreviewItemOp | PreviewFinancialOp | PreviewFeedOp | PreviewCutOp
+  | PreviewTextOp
+  | PreviewLogoOp
+  | PreviewItemOp
+  | PreviewFinancialOp
+  | PreviewMetaOp
+  | PreviewFeedOp
+  | PreviewCutOp
 
 export interface PrintPreview {
   doc_type: string
   paper_mm: number
+  /**
+   * The authoritative printable width in printer character cells (42 on 80mm).
+   * Every section of the document — header, metadata, items, totals — is laid
+   * out on this one canvas, so no section can occupy less paper than another.
+   */
   width_chars: number
   ops: PreviewOp[]
 }

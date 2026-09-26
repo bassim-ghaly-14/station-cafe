@@ -7,6 +7,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type {
   PreviewFinancialOp,
   PreviewItemOp,
+  PreviewMetaOp,
   PreviewTextOp,
   PrintPreview,
 } from '@/services/posApi'
@@ -14,6 +15,11 @@ import type {
 const CELL_PX = 8
 const BODY_SIZE = CELL_PX
 const META_SIZE = 8
+/**
+ * Metadata line box. A little more open than the tight item rows so a block of
+ * identity lines reads as a scannable section rather than a cramped stack.
+ */
+const META_LINE_RHYTHM = 1.45
 const TOTAL_SIZE = 18
 
 /** Conservative typographic equivalents for the ESC/POS text multipliers. */
@@ -46,6 +52,19 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
   let separatorIndex = 0
   let itemHeaderShown = false
 
+  // The one printable-width model of the whole document. The paper is
+  // physically 80mm, but what a document can actually print is `width_chars`
+  // fixed character cells, so every section — header, identity block, item
+  // table, totals — is laid out on exactly this canvas. It is derived from the
+  // authoritative preview (never hardcoded per template) and centred on the
+  // paper, which is what stops any one section from sitting on a single side.
+  const canvas: CSSProperties = {
+    width: `${preview.width_chars}ch`,
+    maxWidth: '100%',
+    marginInline: 'auto',
+    fontSize: META_SIZE,
+  }
+
   return (
     <article
       dir="ltr"
@@ -53,10 +72,10 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
       data-testid="print-receipt-paper"
       data-paper-mm={preview.paper_mm}
       data-width-chars={preview.width_chars}
-      className="receipt-paper relative box-border w-full overflow-hidden border border-print-border bg-print-paper font-mono text-print-ink shadow-paper"
+      className="receipt-paper relative box-border w-full overflow-hidden border border-print-border bg-print-paper px-[2mm] py-[2.5mm] font-mono text-print-ink shadow-paper"
       style={{ width: `${preview.paper_mm}mm` }}
     >
-      <div className="receipt-content px-[2mm] py-[2.5mm]">
+      <div data-testid="receipt-canvas" className="receipt-content" style={canvas}>
         {preview.ops.map((op, index) => {
           switch (op.kind) {
             case 'logo':
@@ -71,6 +90,8 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
               )
             case 'financial':
               return <FinancialRow key={index} op={op} />
+            case 'meta':
+              return <MetaRow key={index} op={op} />
             case 'text': {
               if (/^-{20,}$/.test(op.text)) {
                 const current = separatorIndex
@@ -119,8 +140,14 @@ function ItemColumnHeader() {
   return (
     <div
       data-testid="receipt-item-columns"
+      // The same cell size as the rows below, so the column header's tracks land
+      // on exactly the same character columns.
       className="mb-[1.5mm] grid border-b border-print-rule pb-[1mm] font-bold text-print-ink-muted"
-      style={{ gridTemplateColumns: '22ch 3ch 7ch 7ch', columnGap: '1ch', fontSize: 7.5 }}
+      style={{
+        gridTemplateColumns: '22ch 3ch 7ch 7ch',
+        columnGap: '1ch',
+        fontSize: BODY_SIZE,
+      }}
     >
       <span>ITEM</span>
       <span className="text-center">QTY</span>
@@ -146,6 +173,40 @@ function ItemRow({ op }: { op: PreviewItemOp }) {
       </span>
       <Money>{op.unit_price}</Money>
       <Money strong>{op.line_total}</Money>
+    </div>
+  )
+}
+
+/**
+ * One row of the invoice/receipt identity block.
+ *
+ * It spans the same 42-cell canvas as the item table below it, so the block
+ * occupies the whole receipt width instead of hugging one side — the fix for a
+ * header that used to leave the left half of the paper empty.
+ *
+ * The hierarchy is weight, not bulk: emphasised rows (the document's date and
+ * time) are heavier, never larger, and always stay below the title and the
+ * document total.
+ */
+function MetaRow({ op }: { op: PreviewMetaOp }) {
+  return (
+    <div
+      data-testid="receipt-meta-row"
+      data-emphasis={op.emphasis}
+      dir="rtl"
+      className="grid min-h-[4mm] items-baseline border-b border-print-rule-subtle py-[0.9mm] last:border-b-0"
+      style={{
+        gridTemplateColumns: '1fr auto',
+        columnGap: '2ch',
+        fontSize: `${META_SIZE}px`,
+        fontWeight: op.emphasis ? 700 : 450,
+        lineHeight: `${META_SIZE * META_LINE_RHYTHM}px`,
+      }}
+    >
+      <span dir="rtl" className="min-w-0 wrap-anywhere text-print-ink-muted">
+        {op.label}
+      </span>
+      <Money strong={op.emphasis}>{op.value}</Money>
     </div>
   )
 }

@@ -55,6 +55,23 @@ pub enum PreviewOp {
         total: bool,
         align: Align,
     },
+    /// A semantic metadata row of the invoice/receipt identity block (date,
+    /// time, invoice number, customer, table, car, …).
+    ///
+    /// It exists so the screen can lay the identity block out across the FULL
+    /// printable width as a real two-column row. Printing it as padded text
+    /// alone forced the screen to right-align a padded string, which is what
+    /// made the metadata look narrower than the item table below it. The
+    /// physical line this op emits is byte-identical to [`EscPos::kv_line`].
+    Meta {
+        label: String,
+        value: String,
+        /// Print emphasis: the document's own moment (date/time) is the one
+        /// metadata a reader always looks for, so it is set apart from the
+        /// low-priority rows around it — by weight, never by bulk.
+        emphasis: bool,
+        align: Align,
+    },
     /// `ESC d n` — n blank lines.
     Feed { lines: u8 },
     /// `GS V 0` — full paper cut.

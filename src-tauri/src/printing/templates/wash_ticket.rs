@@ -1,6 +1,7 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{header, WIDTH};
+use super::invoice_format::{close_meta_block, meta_moment, meta_row, open_meta_block};
+use super::shared::WIDTH;
 use crate::services::pos::WashTicketData;
 
 /// Wash job ticket — deliberately DIFFERENT from the payment receipt:
@@ -12,7 +13,9 @@ pub fn wash_ticket(
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
-    header(&mut p, logo, "تذكرة مغسلة سيارة", "WASH JOB TICKET");
+    // Same currency sentence and the same full-width metadata model as the
+    // invoices: the whole print layer speaks one language.
+    super::shared::invoice_header(&mut p, logo, "تذكرة مغسلة سيارة", "WASH JOB TICKET");
     p.align(Align::Center);
     p.size(2, 3);
     p.bold(true);
@@ -21,17 +24,19 @@ pub fn wash_ticket(
     p.size(1, 1);
     p.bold(false);
     p.hr(WIDTH);
-    p.align(Align::Right);
-    p.kv_line("العميل", &ticket.customer_name, WIDTH);
+    open_meta_block(&mut p);
+    meta_row(&mut p, "العميل", &ticket.customer_name);
     if let Some(ph) = &ticket.customer_phone {
-        p.kv_line("تليفون", ph, WIDTH);
+        meta_row(&mut p, "تليفون", ph);
     }
-    p.kv_line("رقم السيارة", &ticket.car_plate, WIDTH);
+    meta_row(&mut p, "رقم السيارة", &ticket.car_plate);
     if let Some(m) = &ticket.car_model {
-        p.kv_line("نوع السيارة", m, WIDTH);
+        meta_row(&mut p, "نوع السيارة", m);
     }
-    p.kv_line("وقت الدخول", &ticket.entry_time, WIDTH);
-    p.hr(WIDTH);
+    // The entry moment is stated with the print-layer date and time rules, in
+    // the café's own timezone — never the raw stored UTC digits.
+    meta_moment(&mut p, "وقت الدخول", &ticket.entry_time);
+    close_meta_block(&mut p);
     p.bold(true);
     p.line("الخدمات:");
     p.bold(false);

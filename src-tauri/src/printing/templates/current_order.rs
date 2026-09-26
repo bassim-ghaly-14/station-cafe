@@ -1,6 +1,7 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, stamp, DocLine, DocTotals, WIDTH};
+use super::invoice_format::{close_meta_block, meta_row, meta_timestamp, open_meta_block};
+use super::shared::{footer, invoice_header, items_and_totals, DocLine, DocTotals};
 use crate::repositories::pos::Order;
 
 /// Pre-payment preview of the current order.
@@ -24,31 +25,33 @@ pub fn current_order(
         );
     }
     let mut p = EscPos::new(mode, codepage);
-    header(
+    invoice_header(
         &mut p,
         logo,
         "ستيشن كافيه",
         "Station Cafe - Cafe & Car Wash",
     );
-    p.align(Align::Right);
-    p.kv_line("الطلب", &order.id.to_string(), WIDTH);
-    p.kv_line("التاريخ", &stamp(&order.opened_at), WIDTH);
+    // Same identity block, same width model and same date/time rules as the
+    // settled invoice this preview becomes.
+    open_meta_block(&mut p);
+    meta_timestamp(&mut p, &order.opened_at);
+    meta_row(&mut p, "رقم الطلب", &order.id.to_string());
     if let Some(label) = &order.table_label {
-        p.kv_line("الطاولة", label, WIDTH);
+        meta_row(&mut p, "الطاولة", label);
     }
     if let Some(c) = customer {
-        p.kv_line("العميل", &c.name, WIDTH);
+        meta_row(&mut p, "العميل", &c.name);
         if let Some(phone) = &c.phone {
-            p.kv_line("تليفون", phone, WIDTH);
+            meta_row(&mut p, "تليفون", phone);
         }
     }
     if let Some(plate) = car_plate {
-        p.kv_line("رقم السيارة", plate, WIDTH);
+        meta_row(&mut p, "رقم السيارة", plate);
     }
     if let Some(model) = car_model {
-        p.kv_line("نوع السيارة", model, WIDTH);
+        meta_row(&mut p, "نوع السيارة", model);
     }
-    p.hr(WIDTH);
+    close_meta_block(&mut p);
     // The car model already appears in the identity block above, so the
     // composer is told not to repeat it inside the wash section.
     items_and_totals(

@@ -551,6 +551,7 @@ mod tests {
                     ..
                 } => Some(format!("{name} x{quantity} {unit_price} {line_total}")),
                 ir::PreviewOp::Financial { label, value, .. } => Some(format!("{label} {value}")),
+                ir::PreviewOp::Meta { label, value, .. } => Some(format!("{label} {value}")),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -602,6 +603,15 @@ mod tests {
                         printed.windows(needle.len()).any(|w| w == needle),
                         "preview financial value missing from printer bytes: {value}"
                     );
+                }
+                ir::PreviewOp::Meta { label, value, .. } => {
+                    for (field, text) in [("metadata label", label), ("metadata value", value)] {
+                        let needle = escpos::encode_cp1256(text);
+                        assert!(
+                            printed.windows(needle.len()).any(|w| w == needle),
+                            "preview {field} missing from printer bytes: {text}"
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -895,6 +905,12 @@ mod tests {
                         total,
                         align,
                     } => println!("[{align:?} FINANCIAL total={total}] {label} {value}"),
+                    ir::PreviewOp::Meta {
+                        label,
+                        value,
+                        emphasis,
+                        align,
+                    } => println!("[{align:?} META emphasis={emphasis}] {label} {value}"),
                     ir::PreviewOp::Feed { lines } => println!("[FEED {lines}]"),
                     ir::PreviewOp::Cut => println!("[CUT]"),
                 }
@@ -931,6 +947,14 @@ mod tests {
                 } => {
                     println!("[FINANCIAL total={total}] {label} {value}")
                 }
+                ir::PreviewOp::Meta {
+                    label,
+                    value,
+                    emphasis,
+                    ..
+                } => {
+                    println!("[META emphasis={emphasis}] {label} {value}")
+                }
                 ir::PreviewOp::Feed { lines } => println!("[FEED {lines}]"),
                 ir::PreviewOp::Cut => println!("[CUT]"),
             }
@@ -944,6 +968,159 @@ mod tests {
             preview_invoice(&conn, 4242).unwrap_err().kind(),
             crate::error::ErrorKind::NotFound
         );
+    }
+
+    /// Every word a document puts on the paper, in printed order.
+    fn preview_words(preview: &PrintPreview) -> Vec<String> {
+        preview
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                ir::PreviewOp::Text { text, .. } => Some(text.clone()),
+                ir::PreviewOp::Meta { label, value, .. } => Some(format!("{label} {value}")),
+                _ => None,
+            })
+            .flat_map(|line| {
+                line.split_whitespace()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn has_word_matching(words: &[String], ok: impl Fn(&str) -> bool) -> bool {
+        words.iter().any(|word| ok(word))
+    }
+
+    /// A fixed numeric invoice date, `DD/MM/YYYY`.
+    fn is_invoice_date(word: &str) -> bool {
+        word.len() == 10
+            && word.matches('/').count() == 2
+            && word.chars().all(|c| c.is_ascii_digit() || c == '/')
+    }
+
+    /// A clock reading, `hh:mm`, that a receipt pairs with a meridiem.
+    fn is_clock(word: &str) -> bool {
+        word.len() == 5
+            && word.as_bytes()[2] == b':'
+            && word.chars().all(|c| c.is_ascii_digit() || c == ':')
+    }
+
+    /// A fixed 12-hour receipt time: a clock reading followed by AM/PM.
+    fn is_invoice_time(words: &[String], index: usize) -> bool {
+        is_clock(words[index].as_str())
+            && words
+                .get(index + 1)
+                .is_some_and(|next| next == "AM" || next == "PM")
+    }
+
+    /// `YYYY-MM-DD HH:MM` — the application's general presentation.
+    fn is_screen_datetime(word: &str) -> bool {
+        word.len() == 16
+            && word.as_bytes()[4] == b'-'
+            && word.as_bytes()[7] == b'-'
+            && word.as_bytes()[10] == b' '
+            && word.as_bytes()[13] == b':'
+    }
+
+    /// The one print system, applied to every invoice-shaped document.
+    ///
+    /// Cafe invoice, wash invoice, hybrid invoice, takeaway receipt, the
+    /// checkout preview (table + takeaway) and the wash job ticket must all
+    /// present money, date, time and the identity block the same way. This is
+    /// the guard against the invoice types drifting apart again.
+    #[test]
+    fn every_invoice_shaped_document_shares_one_print_system() {
+        let conn = fresh();
+        let staff = open_day_and_shift(&conn);
+
+        let cafe = preview_invoice(&conn, cafe_invoice(&conn, &staff)).unwrap();
+        let hybrid = preview_invoice(&conn, hybrid_invoice(&conn, &staff)).unwrap();
+        let takeaway = preview_invoice(&conn, takeaway_invoice(&conn, &staff)).unwrap();
+
+        // The open checkout preview in its takeaway shape (no table involved).
+        let takeaway_order = pos_svc::start_takeaway(&conn, &staff).unwrap();
+        pos_svc::add_line(&conn, &staff, takeaway_order, product_id(&conn, "CAFE", "مياه"), 1).unwrap();
+        let takeaway_preview = preview_order(&conn, takeaway_order, None, None, None).unwrap();
+
+        // The open checkout preview in its table shape, plus the wash ticket.
+        // Both are read off one open wash order — the state a cashier would
+        // actually be looking at when previewing and issuing.
+        let wash_order = order_with_wash(&conn, &staff);
+        let table_preview = preview_order(&conn, wash_order, None, None, None).unwrap();
+        crate::services::pos::issue_wash_ticket(&conn, wash_order).unwrap();
+        let ticket = preview_wash_ticket(&conn, wash_order).unwrap();
+
+        // `moment_rows`: how the document states its own moment. The invoices
+        // and the checkout previews give the date and the time a row each; the
+        // wash ticket carries a single entry-moment row instead.
+        for (name, preview, moment_rows) in [
+            ("CAFE_INVOICE", &cafe, 2),
+            ("HYBRID_INVOICE", &hybrid, 2),
+            ("TAKEAWAY_INVOICE", &takeaway, 2),
+            ("TABLE_ORDER_PREVIEW", &table_preview, 2),
+            ("TAKEAWAY_ORDER_PREVIEW", &takeaway_preview, 2),
+            ("WASH_JOB_TICKET", &ticket, 1),
+        ] {
+            let words = preview_words(preview);
+            let text = words.join(" ");
+
+            // 1. Currency: the print-layer Egyptian-pound sentence, never the
+            //    application's global abbreviation.
+            assert!(
+                text.contains("المبالغ بالجنيه المصري"),
+                "{name} must state the invoice currency in full:\n{text}"
+            );
+            assert!(
+                !text.contains("ج.م"),
+                "{name} must not carry the app currency abbreviation:\n{text}"
+            );
+
+            // 2. Date: a fixed, unambiguous numeric invoice date.
+            assert!(
+                has_word_matching(&words, is_invoice_date),
+                "{name} must print a DD/MM/YYYY date:\n{text}"
+            );
+            // 3. Time: a fixed 12-hour receipt time.
+            assert!(
+                (0..words.len()).any(|i| is_invoice_time(&words, i)),
+                "{name} must print an hh:mm AM/PM time:\n{text}"
+            );
+            // And never the application's `YYYY-MM-DD HH:MM` presentation.
+            assert!(
+                !has_word_matching(&words, is_screen_datetime),
+                "{name} must not inherit the screen datetime format:\n{text}"
+            );
+
+            // 4. The identity block is full-width metadata rows, aligned like
+            //    the body, with the document moment emphasised.
+            let meta: Vec<(&str, &str, bool)> = preview
+                .ops
+                .iter()
+                .filter_map(|op| match op {
+                    ir::PreviewOp::Meta { label, value, emphasis, align } => {
+                        assert_eq!(*align, escpos::Align::Right, "{name} metadata alignment");
+                        Some((label.as_str(), value.as_str(), *emphasis))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(!meta.is_empty(), "{name} must print a metadata block");
+            let moment: Vec<&(&str, &str, bool)> = meta
+                .iter()
+                .filter(|(_, v, _)| is_invoice_date(v) || v.contains("AM") || v.contains("PM"))
+                .collect();
+            assert_eq!(moment.len(), moment_rows, "{name} moment rows");
+            assert!(
+                moment.iter().all(|(_, _, emphasis)| *emphasis),
+                "{name}: the document moment is the emphasised metadata"
+            );
+
+            // 5. The same printable width and the same paper as every other
+            //    document.
+            assert_eq!(preview.width_chars, templates::WIDTH, "{name} width");
+            assert_eq!(preview.paper_mm, ir::PAPER_MM, "{name} paper");
+        }
     }
 
     /// Labels of the separated department subtotals, in printed order.

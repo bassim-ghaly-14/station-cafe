@@ -1,6 +1,7 @@
 mod current_order;
 mod day_report;
 mod invoice;
+mod invoice_format;
 mod shared;
 mod shift_closing;
 mod takeaway_receipt;
