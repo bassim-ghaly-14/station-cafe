@@ -23,6 +23,8 @@ mod normalize;
 mod pos_rules_test;
 mod printing;
 mod repositories;
+#[cfg(test)]
+mod sales_analytics_test;
 mod seed;
 mod services;
 #[cfg(test)]
@@ -105,6 +107,9 @@ pub fn run() {
             commands::customers::create_customer,
             commands::customers::update_customer,
             commands::customers::create_car,
+            commands::sales::sales_overview,
+            commands::sales::sales_invoices,
+            commands::sales::sales_cashiers,
             commands::pos::list_tables,
             commands::pos::set_table_count,
             commands::pos::open_table,
@@ -151,8 +156,6 @@ pub fn run() {
             commands::ops::list_expenses,
             commands::ops::create_expense,
             commands::ops::today_summary,
-            commands::ops::sales_by_day,
-            commands::ops::product_sales,
             commands::ops::analytics_charts,
             commands::ops::list_audit,
             commands::ops::get_print_config,

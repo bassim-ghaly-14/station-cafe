@@ -22,6 +22,7 @@ import CustomersPage from '@/features/customers/CustomersPage'
 import PosPage from '@/features/pos/PosPage'
 import CatalogPage from '@/features/catalog/CatalogPage'
 import ExpensesPage from '@/features/expenses/ExpensesPage'
+import SalesPage from '@/features/sales/SalesPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import ReportsPage from '@/features/reports/ReportsPage'
 import DevSettingsPage from '@/features/dev/DevSettingsPage'
@@ -43,6 +44,8 @@ function RoutedViews() {
       return <CatalogPage />
     case 'expenses':
       return <ExpensesPage />
+    case 'sales':
+      return <SalesPage />
     case 'inventory':
       return <InventoryPage />
     case 'reports':

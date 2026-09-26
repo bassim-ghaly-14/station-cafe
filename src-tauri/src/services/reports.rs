@@ -1,5 +1,12 @@
 //! Core reporting service — ONE source of truth for UI (and Phase 3 exports).
 //! Numbers here must reconcile exactly with shift/day closing totals.
+//!
+//! SCOPE: this module owns the operational closings (today, shift, day) and the
+//! audit log. Sales aggregation is NOT here — `sales_by_day` and `product_sales`
+//! used to live in this file and were moved to `repositories::sales_analytics`,
+//! which is now the single authoritative sales read for the whole application.
+//! They are deliberately not re-implemented here: two sales aggregations would
+//! be two sets of financial rules.
 
 use crate::error::AppResult;
 use crate::repositories::analytics::AnalyticsCharts;
@@ -60,119 +67,6 @@ pub fn today_summary(conn: &Db) -> AppResult<TodaySummary> {
         totals,
         shifts: shift_list,
     })
-}
-
-#[derive(Debug, Serialize)]
-pub struct SalesByDay {
-    pub day_id: i64,
-    pub day_date: String,
-    pub invoices_count: i64,
-    pub cafe_sales: i64,
-    pub wash_sales: i64,
-    pub total_sales: i64,
-    pub cash: i64,
-    pub card: i64,
-    pub credit: i64,
-    pub service_charges: i64,
-    pub discounts: i64,
-    pub expenses: i64,
-}
-
-pub fn sales_by_day(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<Vec<SalesByDay>> {
-    let filter = match (from.is_some(), to.is_some()) {
-        (true, true) => " AND d.day_date BETWEEN ?1 AND ?2",
-        (true, false) => " AND d.day_date >= ?1",
-        (false, true) => " AND d.day_date <= ?1",
-        (false, false) => "",
-    };
-    let mut stmt = conn.prepare(&format!(
-        "SELECT d.id, d.day_date,
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.cafe_total ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.wash_total ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.total ELSE 0 END), 0),
-            (SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN invoices i2 ON i2.id = p.invoice_id
-              WHERE i2.business_day_id = d.id AND p.method = 'CASH'),
-            (SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN invoices i2 ON i2.id = p.invoice_id
-              WHERE i2.business_day_id = d.id AND p.method = 'CARD'),
-            (SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN invoices i2 ON i2.id = p.invoice_id
-              WHERE i2.business_day_id = d.id AND p.method = 'CREDIT'),
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.service_charge ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.discount_minor ELSE 0 END), 0),
-            (SELECT COALESCE(SUM(e.amount),0) FROM expenses e WHERE e.business_day_id = d.id)
-         FROM business_days d
-         LEFT JOIN invoices i ON i.business_day_id = d.id
-         WHERE 1=1{filter}
-         GROUP BY d.id ORDER BY d.day_date",
-    ))?;
-    let values: Vec<Box<dyn rusqlite::ToSql>> = from
-        .iter()
-        .chain(to.iter())
-        .map(|value| Box::new(value.to_string()) as Box<dyn rusqlite::ToSql>)
-        .collect();
-    let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|value| value.as_ref()).collect();
-    let rows = stmt.query_map(value_refs.as_slice(), |r| {
-        Ok(SalesByDay {
-            day_id: r.get(0)?,
-            day_date: r.get(1)?,
-            invoices_count: r.get(2)?,
-            cafe_sales: r.get(3)?,
-            wash_sales: r.get(4)?,
-            total_sales: r.get(5)?,
-            cash: r.get(6)?,
-            card: r.get(7)?,
-            credit: r.get(8)?,
-            service_charges: r.get(9)?,
-            discounts: r.get(10)?,
-            expenses: r.get(11)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
-#[derive(Debug, Serialize)]
-pub struct ProductSales {
-    pub product_name: String,
-    pub department: String,
-    pub quantity: i64,
-    pub total: i64,
-}
-
-/// Product/service sales from IMMUTABLE invoice snapshots (never from the
-/// mutable catalog), so historical reports cannot drift.
-pub fn product_sales(
-    conn: &Db,
-    from: Option<&str>,
-    to: Option<&str>,
-) -> AppResult<Vec<ProductSales>> {
-    let filter = match (from.is_some(), to.is_some()) {
-        (true, true) => " AND date(i.created_at) BETWEEN ?1 AND ?2",
-        (true, false) => " AND date(i.created_at) >= ?1",
-        (false, true) => " AND date(i.created_at) <= ?1",
-        (false, false) => "",
-    };
-    let mut stmt = conn.prepare(&format!(
-        "SELECT l.product_name, l.department, SUM(l.quantity), SUM(l.line_total)
-         FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id
-         WHERE i.status != 'CANCELLED'{filter}
-         GROUP BY l.product_name, l.department
-         ORDER BY SUM(l.line_total) DESC LIMIT 100",
-    ))?;
-    let values: Vec<Box<dyn rusqlite::ToSql>> = from
-        .iter()
-        .chain(to.iter())
-        .map(|value| Box::new(value.to_string()) as Box<dyn rusqlite::ToSql>)
-        .collect();
-    let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|value| value.as_ref()).collect();
-    let rows = stmt.query_map(value_refs.as_slice(), |r| {
-        Ok(ProductSales {
-            product_name: r.get(0)?,
-            department: r.get(1)?,
-            quantity: r.get(2)?,
-            total: r.get(3)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 #[derive(Debug, Serialize)]

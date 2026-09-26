@@ -59,8 +59,6 @@ const chartsReport: AnalyticsCharts = {
 }
 
 const mocks = vi.hoisted(() => ({
-  salesByDay: vi.fn(),
-  productSales: vi.fn(),
   analyticsCharts: vi.fn(),
   audit: vi.fn(),
   printJobs: vi.fn(),
@@ -74,8 +72,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/services/opsApi', () => ({
   opsApi: {
-    salesByDay: mocks.salesByDay,
-    productSales: mocks.productSales,
     analyticsCharts: mocks.analyticsCharts,
     audit: mocks.audit,
     printJobs: mocks.printJobs,
@@ -105,7 +101,6 @@ const weekAgo = addDays(today, -6)
 const viewMonth = parseIsoDate(weekAgo) ?? { year: 2026, month: 1, day: 1 }
 const firstDay = isoDate(viewMonth.year, viewMonth.month, 1)
 const tenthDay = isoDate(viewMonth.year, viewMonth.month, 10)
-const ISO = /^\d{4}-\d{2}-\d{2}$/
 
 // Let i18n finish initializing before anything renders, so no late re-render happens mid-test.
 await act(async () => {
@@ -137,8 +132,6 @@ function applyPeriod(displayedFrom: string, from: string, to: string) {
 describe('ReportsPage period filter', () => {
   beforeEach(() => {
     localStorage.clear()
-    mocks.salesByDay.mockReset().mockResolvedValue([])
-    mocks.productSales.mockReset().mockResolvedValue([])
     mocks.analyticsCharts.mockReset().mockResolvedValue(chartsReport)
     mocks.audit.mockReset().mockResolvedValue([])
     mocks.printJobs.mockReset().mockResolvedValue([])
@@ -162,39 +155,9 @@ describe('ReportsPage period filter', () => {
     })
   })
 
-  it('loads the report with a seven-day business-date period by default', async () => {
-    renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledWith(weekAgo, today))
-
-    const [from, to] = mocks.salesByDay.mock.calls[0] as [string, string]
-    expect(from).toMatch(ISO)
-    expect(to).toMatch(ISO)
-  })
-
-  it('sends the picked period to the report API as exact ISO dates', async () => {
-    renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
-
-    applyPeriod(weekAgo, firstDay, tenthDay)
-
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenLastCalledWith(firstDay, tenthDay))
-    expect(
-      screen.getByRole('button', { name: new RegExp(formatIsoDate(firstDay, 'ar-EG')) }),
-    ).toBeInTheDocument()
-  })
-
-  it('clears the period to empty strings, exactly like an emptied date field', async () => {
-    renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
-
-    fireEvent.click(screen.getByRole('button', { name: 'مسح' }))
-
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenLastCalledWith('', ''))
-  })
-
   it('renders the three charts from the persisted analytics report and the shared period control', async () => {
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
@@ -255,7 +218,7 @@ describe('ReportsPage period filter', () => {
     })
 
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'تقفيلات أيام العمل' }))
 
     // The row is keyed and identified by its own id — never by `undefined`.
@@ -304,7 +267,7 @@ describe('ReportsPage period filter', () => {
     })
 
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'تقفيلات الورديات' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'معاينة' }))
@@ -313,7 +276,7 @@ describe('ReportsPage period filter', () => {
 
   it('refreshes all three charts when the applied period changes', async () => {
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
     await waitFor(() => expect(mocks.analyticsCharts).toHaveBeenCalledTimes(1))
 
@@ -324,7 +287,7 @@ describe('ReportsPage period filter', () => {
 
   it('clears the charts period to empty strings like an emptied date field', async () => {
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
     await waitFor(() => expect(mocks.analyticsCharts).toHaveBeenCalledTimes(1))
 
@@ -336,7 +299,7 @@ describe('ReportsPage period filter', () => {
   it('shows the report empty state when the backend reports no charts', async () => {
     mocks.analyticsCharts.mockResolvedValue({ charts: [] })
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
@@ -357,7 +320,7 @@ describe('ReportsPage period filter', () => {
       })),
     })
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
@@ -372,7 +335,7 @@ describe('ReportsPage period filter', () => {
   it('surfaces analytics report failures instead of fabricating values', async () => {
     mocks.analyticsCharts.mockRejectedValue(new Error('internal_error'))
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
@@ -388,7 +351,7 @@ describe('ReportsPage period filter', () => {
       }),
     )
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
@@ -437,7 +400,7 @@ describe('ReportsPage period filter', () => {
 
   it('opens only the selected chart in fullscreen and closes it again', async () => {
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
     const fullscreenButtons = await screen.findAllByRole('button', {
@@ -472,25 +435,13 @@ describe('ReportsPage period filter', () => {
 
   it('closes fullscreen with Escape', async () => {
     renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
     fireEvent.click((await screen.findAllByRole('button', { name: /تكبير الرسم البياني:/ }))[0])
 
     expect(screen.getByRole('dialog', { name: 'تكبير الرسم البياني' })).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'تكبير الرسم البياني' })).not.toBeInTheDocument()
-  })
-
-  it('shares the applied period with the product sales tab', async () => {
-    renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
-
-    applyPeriod(weekAgo, firstDay, tenthDay)
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenLastCalledWith(firstDay, tenthDay))
-
-    fireEvent.click(screen.getByRole('tab', { name: 'مبيعات الأصناف' }))
-
-    await waitFor(() => expect(mocks.productSales).toHaveBeenCalledWith(firstDay, tenthDay))
   })
 
   it('shows the print status tab with human-readable document names only', async () => {
@@ -505,7 +456,7 @@ describe('ReportsPage period filter', () => {
       },
     ])
     const { container } = renderPage()
-    await waitFor(() => expect(mocks.salesByDay).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('tab', { name: 'حالة الطباعة' }))
 

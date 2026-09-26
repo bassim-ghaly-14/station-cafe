@@ -1,10 +1,17 @@
 /**
- * Manager reports UI — exposes the existing report service: sales by day,
- * product sales, audit log and print job history. No new reporting engine.
+ * Manager reports UI — the reporting surface: the operations log, print job
+ * history, the shift/day closings and the analytics charts.
+ *
+ * SCOPE CHANGE: this page used to also carry "مبيعات اليوم" and "مبيعات الأصناف".
+ * Both moved to the dedicated Sales workspace (`/sales`), which is now the
+ * single source of truth for sales, so they are NOT re-implemented here: two
+ * sales reports would be two sets of financial rules. What remains below is
+ * reporting that has no sales-management equivalent — the audit trail, the
+ * printer, the closings and the exportable charts.
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState, ErrorState } from '@/components/states'
+import { ErrorState } from '@/components/states'
 import {
   Button,
   Card,
@@ -13,14 +20,13 @@ import {
   DateRangePicker,
   EmployeeAvatar,
   MoneyDisplay,
-  TableSkeleton,
 } from '@/components/ui'
 import { BarChart3 } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { DisplayDate, DisplayDateTimeRange } from '@/components/ui/display-datetime'
 import { addDays, formatDate, todayIso } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import { opsApi, type ProductSales, type SalesByDay } from '@/services/opsApi'
+import { opsApi } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
 import { useAnalyticsCharts, type AnalyticsChart } from './charts/analyticsCharts'
 import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
@@ -31,7 +37,7 @@ import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/Prin
 import { PrintStatusPanel } from '@/features/printing/PrintStatusPanel'
 import type { ShiftRow } from '@/services/shiftApi'
 
-type Tab = 'sales' | 'products' | 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts'
+type Tab = 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts'
 const RANGE_KEY = 'station.reports.dateRange'
 
 function initialRange(): { from: string; to: string } {
@@ -53,7 +59,7 @@ function initialRange(): { from: string; to: string } {
 
 export default function ReportsPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<Tab>('sales')
+  const [tab, setTab] = useState<Tab>('audit')
   const [{ from, to }, setRange] = useState(initialRange)
   useEffect(() => {
     localStorage.setItem(RANGE_KEY, JSON.stringify({ from, to }))
@@ -63,8 +69,6 @@ export default function ReportsPage() {
   const setTo = (value: string) => setRange((current) => ({ ...current, to: value }))
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'sales', label: t('reports.sales') },
-    { id: 'products', label: t('reports.products') },
     { id: 'audit', label: t('nav.audit') },
     { id: 'print', label: t('reports.printJobs') },
     { id: 'shiftClosings', label: t('reports.shiftClosings') },
@@ -74,10 +78,15 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-heading flex items-center gap-2">
-        <BarChart3 size={22} aria-hidden />
-        {t('nav.reports')}
-      </h1>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-heading flex items-center gap-2">
+            <BarChart3 size={22} aria-hidden />
+            {t('nav.reports')}
+          </h1>
+          <p className="mt-0.5 text-caption text-foreground-subtle">{t('reports.subtitle')}</p>
+        </div>
+      </header>
 
       <div
         className="flex flex-wrap items-center gap-2"
@@ -99,10 +108,6 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      {tab === 'sales' ? <SalesReport from={from} to={to} setFrom={setFrom} setTo={setTo} /> : null}
-      {tab === 'products' ? (
-        <ProductSalesReport from={from} to={to} setFrom={setFrom} setTo={setTo} />
-      ) : null}
       {tab === 'audit' ? <OperationHistoryPanel /> : null}
       {tab === 'print' ? <PrintStatusPanel /> : null}
       {tab === 'shiftClosings' ? (
@@ -250,173 +255,6 @@ function RangePicker({
           setTo(nextTo)
         }}
       />
-    </div>
-  )
-}
-
-function SalesReport({
-  from,
-  to,
-  setFrom,
-  setTo,
-}: {
-  from: string
-  to: string
-  setFrom: (v: string) => void
-  setTo: (v: string) => void
-}) {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const errText = useErrText(t)
-  const [rows, setRows] = useState<SalesByDay[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    setLoadError(null)
-    opsApi
-      .salesByDay(from, to)
-      .then(setRows)
-      .catch((e) => {
-        setLoadError(errText(e))
-        toast(errText(e), 'error')
-      })
-  }, [from, to, toast, errText])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return (
-    <div className="flex flex-col gap-3">
-      <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
-      {rows === null ? (
-        loadError ? (
-          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <TableSkeleton rows={6} columns={7} />
-        )
-      ) : rows.length === 0 ? (
-        <EmptyState title={t('reports.noData')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('reports.sales')} subtitle={t('reports.salesHint')} />
-          <table className="w-full text-right">
-            <thead>
-              <tr className="text-caption border-b border-border">
-                <th className="py-2 font-bold">{t('app.date')}</th>
-                <th className="py-2 font-bold">{t('reports.invoices')}</th>
-                <th className="py-2 font-bold">{t('pos.cafe')}</th>
-                <th className="py-2 font-bold">{t('pos.wash')}</th>
-                <th className="py-2 font-bold">{t('pos.discount')}</th>
-                <th className="py-2 font-bold">{t('pos.serviceCharge')}</th>
-                <th className="py-2 font-bold">{t('pos.total')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.day_id} className="border-b border-border-subtle">
-                  <td className="py-2 text-body">
-                    <DisplayDate value={r.day_date} />
-                  </td>
-                  <td className="py-2">{r.invoices_count}</td>
-                  <td className="py-2">
-                    <MoneyDisplay amount={r.cafe_sales} />
-                  </td>
-                  <td className="py-2">
-                    <MoneyDisplay amount={r.wash_sales} />
-                  </td>
-                  <td className="py-2">
-                    <MoneyDisplay amount={-r.discounts} />
-                  </td>
-                  <td className="py-2">
-                    <MoneyDisplay amount={r.service_charges} />
-                  </td>
-                  <td className="py-2 text-money">
-                    <MoneyDisplay amount={r.total_sales} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function ProductSalesReport({
-  from,
-  to,
-  setFrom,
-  setTo,
-}: {
-  from: string
-  to: string
-  setFrom: (v: string) => void
-  setTo: (v: string) => void
-}) {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const errText = useErrText(t)
-  const [rows, setRows] = useState<ProductSales[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    setLoadError(null)
-    opsApi
-      .productSales(from, to)
-      .then(setRows)
-      .catch((e) => {
-        setLoadError(errText(e))
-        toast(errText(e), 'error')
-      })
-  }, [from, to, toast, errText])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  return (
-    <div className="flex flex-col gap-3">
-      <RangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
-      {rows === null ? (
-        loadError ? (
-          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <TableSkeleton rows={6} columns={4} />
-        )
-      ) : rows.length === 0 ? (
-        <EmptyState title={t('reports.noData')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('reports.products')} />
-          <table className="w-full text-right">
-            <thead>
-              <tr className="text-caption border-b border-border">
-                <th className="py-2 font-bold">{t('catalog.name')}</th>
-                <th className="py-2 font-bold">{t('catalog.department')}</th>
-                <th className="py-2 font-bold">{t('pos.qty')}</th>
-                <th className="py-2 font-bold">{t('pos.total')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={`${r.product_name}-${r.department}`}
-                  className="border-b border-border-subtle"
-                >
-                  <td className="py-2 text-body font-bold">{r.product_name}</td>
-                  <td className="py-2">{t(`catalog.${r.department}`)}</td>
-                  <td className="py-2">{r.quantity}</td>
-                  <td className="py-2 text-money">
-                    <MoneyDisplay amount={r.total} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
     </div>
   )
 }

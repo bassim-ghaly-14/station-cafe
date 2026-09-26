@@ -6,7 +6,7 @@ use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome, PrintPreview
 use crate::repositories::analytics::AnalyticsCharts;
 use crate::repositories::ops::{Expense, MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
-use crate::services::reports::{self, AuditEntry, ProductSales, SalesByDay, TodaySummary};
+use crate::services::reports::{self, AuditEntry, TodaySummary};
 use crate::AppState;
 use tauri::State;
 
@@ -86,30 +86,6 @@ pub fn create_expense(
 pub fn today_summary(state: State<'_, AppState>, token: String) -> AppResult<TodaySummary> {
     authorized(&state, &token, "STAFF", |conn, _| {
         reports::today_summary(conn)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn sales_by_day(
-    state: State<'_, AppState>,
-    token: String,
-    from: Option<String>,
-    to: Option<String>,
-) -> AppResult<Vec<SalesByDay>> {
-    authorized(&state, &token, "MANAGER", move |conn, _| {
-        reports::sales_by_day(conn, from.as_deref(), to.as_deref())
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn product_sales(
-    state: State<'_, AppState>,
-    token: String,
-    from: Option<String>,
-    to: Option<String>,
-) -> AppResult<Vec<ProductSales>> {
-    authorized(&state, &token, "MANAGER", move |conn, _| {
-        reports::product_sales(conn, from.as_deref(), to.as_deref())
     })
 }
 

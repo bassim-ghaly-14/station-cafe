@@ -8,6 +8,8 @@ type ChartPayloadItem = {
   dataKey?: string | number
   value?: number | string
   color?: string
+  /** The series name recharts reports for this entry, when the mark has one. */
+  name?: string | number
   payload?: { fill?: string; label?: string; value?: number }
 }
 

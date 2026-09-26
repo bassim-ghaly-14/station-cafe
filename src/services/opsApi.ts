@@ -1,3 +1,15 @@
+/**
+ * Typed wrappers over the inventory / expenses / reports / audit command surface.
+ *
+ * The sales reads are NOT here: they live in `salesApi`, backed by
+ * `repositories::sales_analytics`, which is the single authoritative sales
+ * aggregation for the whole application. This module used to expose
+ * `salesByDay` and `productSales`; both were superseded and removed, so no
+ * second — and subtly different — sales rule can survive.
+ */
+import { call } from './ipc'
+import type { DayTotals, PrintOutcome } from './posApi'
+
 export interface AnalyticsCategoryValue {
   id: string
   value: number
@@ -11,10 +23,6 @@ export interface AnalyticsChartValue {
 export interface AnalyticsCharts {
   charts: AnalyticsChartValue[]
 }
-
-/** Typed wrappers over inventory / expenses / reports / audit commands. */
-import { call } from './ipc'
-import type { DayTotals, PrintOutcome } from './posApi'
 
 export interface StockRow {
   product_id: number
@@ -46,28 +54,6 @@ export interface Expense {
   user_name: string | null
   user_role: string | null
   created_at: string
-}
-
-export interface SalesByDay {
-  day_id: number
-  day_date: string
-  invoices_count: number
-  cafe_sales: number
-  wash_sales: number
-  total_sales: number
-  cash: number
-  card: number
-  credit: number
-  service_charges: number
-  discounts: number
-  expenses: number
-}
-
-export interface ProductSales {
-  product_name: string
-  department: string
-  quantity: number
-  total: number
 }
 
 export interface AuditEntry {
@@ -152,10 +138,6 @@ export const opsApi = {
     recurrence?: string | null
   }) => call<number>('create_expense', { input }),
 
-  salesByDay: (from?: string, to?: string) =>
-    call<SalesByDay[]>('sales_by_day', { from: from ?? null, to: to ?? null }),
-  productSales: (from?: string, to?: string) =>
-    call<ProductSales[]>('product_sales', { from: from ?? null, to: to ?? null }),
   audit: (limit = 100, actionLike?: string) =>
     call<AuditEntry[]>('list_audit', { limit, action_like: actionLike ?? null }),
   printJobs: (limit = 30) => call<PrintJobRow[]>('list_print_jobs', { limit }),

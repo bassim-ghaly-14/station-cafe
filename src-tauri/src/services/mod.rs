@@ -7,5 +7,6 @@ pub mod developer;
 pub mod ops;
 pub mod pos;
 pub mod reports;
+pub mod sales;
 pub mod settings;
 pub mod shifts;

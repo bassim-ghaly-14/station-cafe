@@ -9,5 +9,6 @@ pub mod customers;
 pub mod developer;
 pub mod ops;
 pub mod pos;
+pub mod sales;
 pub mod shifts;
 pub mod status;

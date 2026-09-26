@@ -13,8 +13,6 @@ import type { AuditEntry } from '@/services/opsApi'
 import ReportsPage from '../ReportsPage'
 
 const mocks = vi.hoisted(() => ({
-  salesByDay: vi.fn(),
-  productSales: vi.fn(),
   analyticsCharts: vi.fn(),
   audit: vi.fn(),
   printJobs: vi.fn(),
@@ -27,8 +25,6 @@ vi.mock('@/services/opsApi', async () => {
   return {
     ...actual,
     opsApi: {
-      salesByDay: mocks.salesByDay,
-      productSales: mocks.productSales,
       analyticsCharts: mocks.analyticsCharts,
       audit: mocks.audit,
       printJobs: mocks.printJobs,
@@ -92,8 +88,6 @@ function renderAuditTab() {
 describe('Operations history', () => {
   beforeEach(() => {
     localStorage.clear()
-    mocks.salesByDay.mockReset().mockResolvedValue([])
-    mocks.productSales.mockReset().mockResolvedValue([])
     mocks.analyticsCharts.mockReset().mockResolvedValue({ charts: [] })
     mocks.audit.mockReset().mockResolvedValue(entries)
     mocks.printJobs.mockReset().mockResolvedValue([])

@@ -7,6 +7,7 @@
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUpDown,
   Ban,
   Car,
   Pin,
@@ -80,6 +81,7 @@ import {
 export {
   ArrowLeft,
   ArrowRight,
+  ArrowUpDown,
   Ban,
   Car,
   CarFront,

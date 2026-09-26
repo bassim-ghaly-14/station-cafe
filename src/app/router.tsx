@@ -14,6 +14,7 @@ export type View =
   | 'catalog'
   | 'inventory'
   | 'expenses'
+  | 'sales'
   | 'reports'
   | 'dev-settings'
 
@@ -33,6 +34,7 @@ const VIEW_PATHS: Record<View, string> = {
   catalog: '/catalog',
   inventory: '/inventory',
   expenses: '/expenses',
+  sales: '/sales',
   reports: '/reports',
   'dev-settings': '/dev-settings',
 }

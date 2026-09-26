@@ -7,6 +7,7 @@ import {
   BarChart3,
   Boxes,
   ChevronRight,
+  HandCoins,
   LogOut,
   Package,
   Pin,
@@ -37,6 +38,10 @@ const NAV: NavItem[] = [
   { view: 'customers', minRole: 'STAFF', labelKey: 'nav.customers', icon: UserRound },
   { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
   { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
+  // The sales workspace is the manager's operational view of the business. It
+  // replaced the two sales tabs that used to live inside Reports, so Reports
+  // now holds only reporting (audit, printing, closings, charts).
+  { view: 'sales', minRole: 'MANAGER', labelKey: 'nav.sales', icon: HandCoins },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
   { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff', icon: Users },
   { view: 'dev-settings', minRole: 'ADMIN', labelKey: 'nav.devSettings', icon: Settings },
