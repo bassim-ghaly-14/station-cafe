@@ -104,29 +104,30 @@ fn fixed_service_charge_options_and_authorized_discounts() {
     assert_eq!(selected.service_charge_minor, 3_000);
     assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(2_500)).is_err());
 
-    // The cashier's discount credential is configured by the ADMIN — per user,
-    // never as a shared global password, and stored as a hash.
-    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
-    assert!(auth::discount_authorization_configured(&conn, staff.id).unwrap());
+    // The cafe's ONE shared discount PIN is configured by an ADMIN — global
+    // configuration, never a per-cashier credential, and stored as a hash.
+    settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
+    assert!(settings::get_discount_authorization(&conn).unwrap().configured);
     let stored: String = conn
         .query_row(
-            "SELECT discount_password_hash FROM users WHERE id = ?1",
-            [staff.id],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert!(!stored.contains("approve123"));
-    // The global discount password is gone for good.
-    let global_left: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+            "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
             [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(global_left, 0);
-    assert!(settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("wrong123")).is_err());
-    settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("approve123")).unwrap();
+    assert!(!stored.contains("4820"));
+    // No per-user discount credential column exists at all.
+    let per_user_columns: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users')
+             WHERE name = 'discount_password_hash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(per_user_columns, 0);
+    assert!(settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("1234")).is_err());
+    settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("4820")).unwrap();
     assert_eq!(
         pos_svc::validate_discount(&conn, 14_800, Some("PERCENT"), Some(20_000)).unwrap(),
         2_960
@@ -140,7 +141,7 @@ fn fixed_service_charge_options_and_authorized_discounts() {
             method: "CASH".into(),
             discount_mode: Some("PERCENT".into()),
             discount_value: Some(20_000),
-            discount_password: Some("approve123".into()),
+            discount_pin: Some("4820".into()),
             service_charge_minor: Some(3_000),
             received: Some(15_000),
         },
@@ -282,7 +283,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     pos_svc::mark_ready_to_pay(&conn, &staff, order_id).unwrap();
 
     let developer = login(&conn, "admin", "admin123");
-    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
+    settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
     // ---- pay CASH with change ---------------------------------------------
     let result = checkout::checkout(
         &conn,
@@ -292,7 +293,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
             method: "CASH".into(),
             discount_mode: Some("PERCENT".into()),
             discount_value: Some(10_000),
-            discount_password: Some("approve123".into()),
+            discount_pin: Some("4820".into()),
             service_charge_minor: Some(2_000),
             received: Some(32_000),
         },
@@ -693,7 +694,7 @@ fn credit_flow_tracks_outstanding_until_settled() {
         method: "CREDIT".into(),
         discount_mode: None,
         discount_value: None,
-        discount_password: None,
+        discount_pin: None,
         service_charge_minor: None,
         received: None,
     };
@@ -774,7 +775,7 @@ fn takeaway_order_has_takeaway_number_and_no_table_session() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(14_800),
         },
@@ -820,7 +821,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(14_800),
         },
@@ -864,7 +865,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "BITCOIN".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: None,
         },
@@ -881,7 +882,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(14_000),
         },
@@ -899,7 +900,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(14_800),
         },
@@ -926,7 +927,7 @@ fn open_order_pays_directly_with_no_payment_request_step() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(14_800),
         },
@@ -1001,7 +1002,7 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(15_800),
         },
@@ -1043,7 +1044,7 @@ fn discount_survives_reload_and_reaches_invoice() {
     .unwrap();
 
     let developer = login(&conn, "admin", "admin123");
-    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
+    settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
     settings::set_service_charge(
         &conn,
         &manager,
@@ -1067,7 +1068,7 @@ fn discount_survives_reload_and_reaches_invoice() {
         order_id,
         Some("FIXED"),
         Some(2_000),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap();
     assert_eq!(saved.discount_mode.as_deref(), Some("FIXED"));
@@ -1096,7 +1097,7 @@ fn discount_survives_reload_and_reaches_invoice() {
             method: "CARD".into(),
             discount_mode: reloaded.discount_mode.clone(),
             discount_value: reloaded.discount_value,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: Some(2_000),
             received: None,
         },
@@ -1224,7 +1225,7 @@ fn table_count_deactivation_preserves_historical_order_references() {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(7_400),
         },
@@ -1271,7 +1272,7 @@ fn sell_cafe_cash(conn: &Connection, actor: &auth::User, product: &str) -> i64 {
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             // Tender far above the line total: a shift's cash sales are the
             // invoiced amounts, not the change handed back.

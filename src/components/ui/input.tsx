@@ -81,3 +81,56 @@ export function PasswordInput({
     </div>
   )
 }
+
+/** The shared discount authorization PIN is exactly 4 ASCII digits. */
+export const DISCOUNT_PIN_LENGTH = 4
+
+/**
+ * 4-digit numeric PIN field for the cafe's ONE shared discount PIN.
+ *
+ * The value is a STRING throughout, so a PIN with leading zeros (`0097`) is
+ * never normalized into a number. Input is `dir="ltr"` (digits read left to
+ * right in the Arabic RTL UI) and masked, with the four digits spaced so the
+ * POS can count them at a glance.
+ *
+ * Only the characters the contract allows are accepted: non-digits are dropped
+ * as they are typed, and the value is capped at four digits. The backend
+ * re-validates the exact same rule — this is convenience, never security.
+ */
+export function PinInput({
+  className,
+  id,
+  value,
+  onValueChange,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> & {
+  value: string
+  onValueChange: (value: string) => void
+}) {
+  return (
+    <input
+      {...props}
+      id={id}
+      type="password"
+      inputMode="numeric"
+      autoComplete="one-time-code"
+      dir="ltr"
+      maxLength={DISCOUNT_PIN_LENGTH}
+      value={value}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D+/g, '').slice(0, DISCOUNT_PIN_LENGTH)
+        onValueChange(digits)
+      }}
+      className={cn(
+        base,
+        'h-12 text-center font-mono text-2xl tracking-[0.6em] ps-[0.6em]',
+        className,
+      )}
+    />
+  )
+}
+
+/** Whether a string is a well-formed shared discount PIN (4 ASCII digits). */
+export function isValidDiscountPin(value: string): boolean {
+  return new RegExp(`^\\d{${DISCOUNT_PIN_LENGTH}}$`).test(value)
+}

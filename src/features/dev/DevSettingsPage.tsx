@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Card, CardHeader, Dialog, Field, Input } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Dialog,
+  Field,
+  Input,
+  PinInput,
+  isValidDiscountPin,
+  DISCOUNT_PIN_LENGTH,
+} from '@/components/ui'
 import {
   ArrowRight,
+  Lock,
   Minus,
   Package,
   Plus,
@@ -50,7 +62,14 @@ export default function DevSettingsPage() {
   const [tableCount, setTableCount] = useState(12)
   const [savedTableCount, setSavedTableCount] = useState(12)
 
-  const [busy, setBusy] = useState<'settings' | 'tables' | 'seed' | 'clear' | null>(null)
+  // The ONE shared discount-authorization PIN: a global cafe setting, never a
+  // field on an individual staff member.
+  const [discountPinConfigured, setDiscountPinConfigured] = useState(false)
+  const [pinDialogOpen, setPinDialogOpen] = useState(false)
+  const [pinDraft, setPinDraft] = useState('')
+  const [pinError, setPinError] = useState<string | null>(null)
+
+  const [busy, setBusy] = useState<'settings' | 'tables' | 'seed' | 'clear' | 'pin' | null>(null)
 
   const [confirmClear, setConfirmClear] = useState(false)
 
@@ -100,12 +119,14 @@ export default function DevSettingsPage() {
     void Promise.all([
       settingsApi.serviceCharge(),
       settingsApi.discountOptions(),
+      settingsApi.discountAuthorization().catch(() => ({ configured: false })),
       settingsApi.credit(),
       api.tables(),
     ])
-      .then(([serviceCharge, discountOptions, creditConfig, tables]) => {
+      .then(([serviceCharge, discountOptions, discountAuthorization, creditConfig, tables]) => {
         setServiceAmounts(serviceCharge.amounts.map((amount) => String(amount / 100)))
         setDiscountAmounts(discountOptions.amounts.map((amount) => String(amount / 100)))
+        setDiscountPinConfigured(discountAuthorization.configured)
         setCredit(creditConfig)
         setTableCount(tables.length)
         setSavedTableCount(tables.length)
@@ -210,6 +231,36 @@ export default function DevSettingsPage() {
   }
 
   const tableCountChanged = tableCount !== savedTableCount
+
+  /**
+   * Set/change the ONE shared 4-digit discount PIN.
+   *
+   * The PIN is write-only: it is sent once, hashed by the backend with the
+   * project's existing Argon2id hashing, and never read back — so this screen
+   * can only ever show WHETHER one is configured. It is deliberately not stored
+   * on the client beyond the transient dialog input, and it is shared by the
+   * whole cafe, not owned by whoever happens to be logged in.
+   */
+  async function saveDiscountPin() {
+    if (!isValidDiscountPin(pinDraft)) {
+      setPinError(t('errors.discount.invalid_pin'))
+      return
+    }
+    setBusy('pin')
+    setPinError(null)
+    try {
+      await settingsApi.setDiscountPin(pinDraft)
+      // The PIN leaves component state the moment it is accepted.
+      setPinDraft('')
+      setPinDialogOpen(false)
+      setDiscountPinConfigured(true)
+      toast(t('dev.discountPinSaved'), 'success')
+    } catch (error) {
+      setPinError(errText(error))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -352,6 +403,33 @@ export default function DevSettingsPage() {
               <Plus size={16} aria-hidden />
               {t('dev.addDiscountAmount')}
             </Button>
+          </div>
+
+          {/* The ONE shared discount-authorization PIN — a global cafe setting,
+              not a field on any individual staff member. */}
+          <div className="flex flex-col gap-3 md:col-span-2">
+            <h3 className="font-bold text-foreground">{t('dev.discountPin')}</h3>
+
+            <p className="text-sm text-foreground-muted">{t('dev.discountPinHelp')}</p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={discountPinConfigured ? 'success' : 'neutral'} size="sm" dot>
+                {discountPinConfigured
+                  ? t('dev.discountPinConfigured')
+                  : t('dev.discountPinUnconfigured')}
+              </Badge>
+
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setPinError(null)
+                  setPinDialogOpen(true)
+                }}
+              >
+                <Lock size={16} aria-hidden />
+                {discountPinConfigured ? t('dev.changeDiscountPin') : t('dev.setDiscountPin')}
+              </Button>
+            </div>
           </div>
 
           {/* Credit settings */}
@@ -709,6 +787,68 @@ export default function DevSettingsPage() {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* Shared discount PIN — the value is write-only and never read back. */}
+      <Dialog
+        open={pinDialogOpen}
+        onClose={() => {
+          setPinDraft('')
+          setPinError(null)
+          setPinDialogOpen(false)
+        }}
+        title={t('dev.discountPin')}
+      >
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveDiscountPin()
+          }}
+        >
+          <p className="text-sm text-foreground-muted">{t('dev.discountPinHelp')}</p>
+
+          <Field
+            label={t('dev.discountPin')}
+            htmlFor="shared-discount-pin"
+            hint={t('dev.discountPinFormatHint', { length: DISCOUNT_PIN_LENGTH })}
+            error={pinError}
+          >
+            <PinInput
+              id="shared-discount-pin"
+              data-dialog-autofocus
+              value={pinDraft}
+              disabled={busy === 'pin'}
+              onValueChange={(next) => {
+                setPinDraft(next)
+                setPinError(null)
+              }}
+            />
+          </Field>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setPinDraft('')
+                setPinError(null)
+                setPinDialogOpen(false)
+              }}
+            >
+              {t('app.cancel')}
+            </Button>
+
+            <Button
+              type="submit"
+              loading={busy === 'pin'}
+              disabled={busy === 'pin' || !isValidDiscountPin(pinDraft)}
+            >
+              {busy === 'pin' ? null : <Save size={16} aria-hidden />}
+              {busy === 'pin' ? t('app.loading') : t('app.save')}
+            </Button>
+          </div>
+        </form>
       </Dialog>
     </div>
   )

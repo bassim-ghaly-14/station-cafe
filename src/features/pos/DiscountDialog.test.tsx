@@ -1,9 +1,10 @@
 /**
- * The discount flow is: amount → authorization → applied.
+ * The discount flow is: amount → shared PIN → authorized → applied.
  *
  * The amount is OPEN-ENDED (any value the order can carry, not only the
- * configured quick-picks), and NOTHING is applied before the authorization
- * dialog succeeds. These tests assert both halves of that contract.
+ * configured quick-picks), the authorization is the cafe's ONE shared 4-digit
+ * PIN (never a per-cashier credential), and NOTHING is applied before that PIN
+ * is accepted by the backend. These tests assert both halves of that contract.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ToastProvider } from '@/components/ui'
@@ -56,6 +57,15 @@ function authorization() {
   return within(screen.getByRole('dialog', { name: 'الخصم يحتاج إلى صلاحية' }))
 }
 
+/** The shared 4-digit PIN field inside the authorization dialog. */
+function pinField() {
+  return authorization().getByLabelText('رمز تفويض الخصم')
+}
+
+function enterPin(value: string) {
+  fireEvent.change(pinField(), { target: { value } })
+}
+
 describe('DiscountDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -77,7 +87,22 @@ describe('DiscountDialog', () => {
     expect(mocks.setDiscount).not.toHaveBeenCalled()
   })
 
-  it('refuses an amount the invoice cannot carry, before asking for a password', async () => {
+  it('asks for the cafe-wide shared 4-digit PIN, not a per-cashier password', () => {
+    renderDialog()
+    enterAmount('50')
+
+    const pin = pinField()
+    // Numeric, exactly four digits, masked, and LTR inside the Arabic UI.
+    expect(pin).toHaveAttribute('inputmode', 'numeric')
+    expect(pin).toHaveAttribute('maxlength', '4')
+    expect(pin).toHaveAttribute('type', 'password')
+    expect(pin).toHaveAttribute('dir', 'ltr')
+
+    // The hint states the shared nature of the credential.
+    expect(authorization().getByText(/4 أرقام/)).toBeInTheDocument()
+  })
+
+  it('refuses an amount the invoice cannot carry, before asking for a PIN', async () => {
     renderDialog()
 
     enterAmount('5000')
@@ -89,16 +114,19 @@ describe('DiscountDialog', () => {
     expect(mocks.setDiscount).not.toHaveBeenCalled()
   })
 
-  it('applies the discount only after the authorization succeeds', async () => {
+  it('applies the discount only after the shared PIN is entered and accepted', async () => {
     const onApply = renderDialog()
 
     enterAmount('50')
-    fireEvent.change(authorization().getByLabelText('كلمة مرور تفويض الخصم'), {
-      target: { value: 'approve123' },
-    })
+    // An incomplete PIN cannot even submit.
+    enterPin('48')
+    expect(authorization().getByRole('button', { name: 'تفويض الخصم' })).toBeDisabled()
+
+    // A PIN with leading zeros is a valid PIN and is sent as the STRING typed.
+    enterPin('0097')
     fireEvent.click(authorization().getByRole('button', { name: 'تفويض الخصم' }))
 
-    await waitFor(() => expect(mocks.setDiscount).toHaveBeenCalledWith(7, 5_000, 'approve123'))
+    await waitFor(() => expect(mocks.setDiscount).toHaveBeenCalledWith(7, 5_000, '0097'))
     await waitFor(() =>
       expect(onApply).toHaveBeenCalledWith({ mode: 'FIXED', value: 5_000 }, { id: 7 }),
     )
@@ -109,13 +137,11 @@ describe('DiscountDialog', () => {
     renderDialog()
 
     enterAmount('50')
-    fireEvent.change(authorization().getByLabelText('كلمة مرور تفويض الخصم'), {
-      target: { value: 'wrong-one' },
-    })
+    enterPin('1234')
     fireEvent.click(authorization().getByRole('button', { name: 'تفويض الخصم' }))
 
     // Still on the authorization step, and the discount was never applied.
-    expect(await authorization().findByRole('alert')).toHaveTextContent('تفويض الخصم غير صحيح')
+    expect(await authorization().findByRole('alert')).toHaveTextContent('رمز تفويض الخصم غير صحيح')
     expect(mocks.setDiscount).toHaveBeenCalledTimes(1)
   })
 
@@ -129,7 +155,7 @@ describe('DiscountDialog', () => {
     expect(mocks.setDiscount).not.toHaveBeenCalled()
   })
 
-  it('clears an applied discount without asking for a password', async () => {
+  it('clears an applied discount without asking for a PIN', async () => {
     renderDialog({ mode: 'FIXED', value: 5000 })
 
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الخصم' }))

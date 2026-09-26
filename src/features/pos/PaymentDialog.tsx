@@ -82,7 +82,7 @@ export function PaymentDialog({
         method,
         discount_mode: discount.mode,
         discount_value: discount.value,
-        discount_password: null,
+        discount_pin: null,
         service_charge_minor: serviceCharge,
         received: receivedMinor,
       })

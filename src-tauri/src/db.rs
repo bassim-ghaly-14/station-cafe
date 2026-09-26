@@ -1055,6 +1055,39 @@ const MIGRATIONS: &[Migration] = &[
             DELETE FROM app_settings WHERE key = 'discount_authorization_hash';
         "#,
     },
+    Migration {
+        version: 23,
+        name: "restore the global shared discount pin",
+        needs_fk_off: false,
+        sql: r#"
+            -- Corrective migration. Discount authorization is ONE global shared
+            -- PIN for the cafe, stored in app_settings like every other Station
+            -- setting. It is NOT owned by a cashier and never was: there is no
+            -- per-user credential anywhere in the model.
+            --
+            -- Step 1 — do not lose the shared credential. Migration 22 copied the
+            -- previous global hash into EVERY user row, so the oldest non-null
+            -- value is still that one shared Argon2id hash. Restore it to
+            -- app_settings before removing the per-user column. Only inserted
+            -- when no global credential exists yet (never overwrite a PIN that
+            -- was configured after the upgrade).
+            INSERT INTO app_settings (key, value, updated_at)
+            SELECT 'discount_authorization_hash',
+                   json_quote(discount_password_hash),
+                   station_now()
+            FROM users
+            WHERE discount_password_hash IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM app_settings WHERE key = 'discount_authorization_hash'
+              )
+            ORDER BY id
+            LIMIT 1;
+
+            -- Step 2 — remove the misleading per-cashier credential column. The
+            -- authoritative shared PIN now lives in app_settings only.
+            ALTER TABLE users DROP COLUMN discount_password_hash;
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and
@@ -1221,82 +1254,71 @@ mod tests {
         conn
     }
 
-    /// The per-cashier discount credential must arrive without breaking an
-    /// installation that already used the previous GLOBAL discount password:
-    /// every existing account inherits that credential, and the global secret
-    /// itself is retired.
+    /// The corrective migration must not lose the shared credential: an
+    /// installation that ran migration 22 (global hash copied into every user)
+    /// ends up with exactly ONE global hash in app_settings and no per-user
+    /// column at all.
     #[test]
-    fn discount_authorization_migration_preserves_existing_installations() {
+    fn discount_authorization_migration_restores_the_global_pin() {
         let conn = memory_db();
-        apply_migrations(&conn, Some(21)).unwrap();
-        // A pre-upgrade database: two staff accounts and one configured global
-        // discount password (stored as a JSON string, like every setting).
+        apply_migrations(&conn, Some(22)).unwrap();
         conn.execute_batch(
-            "INSERT INTO users (name, role, password_hash) VALUES
-                ('legacy-cashier', 'STAFF', 'x'),
-                ('legacy-manager', 'MANAGER', 'x');",
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO app_settings (key, value) VALUES ('discount_authorization_hash', ?1)",
-            [r#""$argon2id$v=19$legacy$hash""#],
+            "INSERT INTO users (name, role, password_hash, discount_password_hash) VALUES
+                ('legacy-cashier', 'STAFF', 'x', '$argon2id$v=19$legacy$hash'),
+                ('legacy-manager', 'MANAGER', 'x', '$argon2id$v=19$legacy$hash');",
         )
         .unwrap();
 
         migrate(&conn).unwrap();
 
-        // Both accounts keep working: they own the previous credential.
-        let migrated: i64 = conn
+        // Exactly ONE shared global credential, holding the same Argon2id hash.
+        let global: String = conn
             .query_row(
-                "SELECT COUNT(*) FROM users
-                 WHERE discount_password_hash = '$argon2id$v=19$legacy$hash'",
+                "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(migrated, 2);
-        // And the shared global secret is gone, so it can never be reused.
-        let global_left: i64 = conn
+        assert_eq!(global, r#""$argon2id$v=19$legacy$hash""#);
+        let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(global_left, 0);
-        // The new column is nullable: an account nobody configured is a valid,
-        // non-breaking state (it simply cannot authorize a discount yet).
-        let notnull: i64 = conn
+        assert_eq!(count, 1);
+
+        // The per-user credential column is gone: no misleading per-cashier
+        // architecture is left behind.
+        let column: i64 = conn
             .query_row(
-                "SELECT \"notnull\" FROM pragma_table_info('users') WHERE name = 'discount_password_hash'",
+                "SELECT COUNT(*) FROM pragma_table_info('users')
+                 WHERE name = 'discount_password_hash'",
                 [],
                 |r| r.get(0),
             )
-            .expect("the credential column exists after the migration");
-        assert_eq!(notnull, 0, "the column must stay nullable");
+            .unwrap();
+        assert_eq!(column, 0);
     }
 
-    /// A fresh database needs no global password at all: the column simply
-    /// starts empty and every seeded account stays usable.
+    /// A fresh database ends up with the correct global model too: no per-user
+    /// column, and simply no PIN until an ADMIN/MANAGER configures one.
     #[test]
     fn discount_authorization_migration_is_safe_on_a_fresh_database() {
         let conn = memory_db();
         migrate(&conn).unwrap();
         crate::seed::run_if_empty(&conn).unwrap();
 
-        let users: i64 = conn
-            .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
-            .unwrap();
-        let without: i64 = conn
+        let column: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM users WHERE discount_password_hash IS NULL",
+                "SELECT COUNT(*) FROM pragma_table_info('users')
+                 WHERE name = 'discount_password_hash'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        // No account is invalidated by the upgrade; nobody is forced to have a
-        // credential before an ADMIN/MANAGER configures one.
-        assert_eq!(users, without);
+        assert_eq!(column, 0);
         let global_left: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
@@ -1305,6 +1327,46 @@ mod tests {
             )
             .unwrap();
         assert_eq!(global_left, 0);
+    }
+
+    /// An installation that never had any credential keeps none: the corrective
+    /// migration must not invent a PIN, and a second run must not duplicate one.
+    #[test]
+    fn discount_authorization_migration_never_invents_or_duplicates_a_pin() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(22)).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (name, role, password_hash) VALUES
+                ('plain-cashier', 'STAFF', 'x'),
+                ('plain-manager', 'MANAGER', 'x');",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let global_left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(global_left, 0);
+
+        // A PIN configured after the upgrade is never overwritten by a re-run.
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('discount_authorization_hash', ?1)",
+            [r#""$argon2id$v=19$fresh$hash""#],
+        )
+        .unwrap();
+        let stored: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, r#""$argon2id$v=19$fresh$hash""#);
     }
     #[test]
     fn settings_migration_normalizes_observed_legacy_json() {

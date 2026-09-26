@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   serviceCharge: vi.fn(),
   discountOptions: vi.fn(),
   setDiscountOptions: vi.fn(),
+  discountAuthorization: vi.fn(),
+  setDiscountPin: vi.fn(),
   setServiceCharge: vi.fn(),
   setCredit: vi.fn(),
   credit: vi.fn(),
@@ -45,6 +47,8 @@ vi.mock('@/services/posApi', () => ({
     serviceCharge: mocks.serviceCharge,
     discountOptions: mocks.discountOptions,
     setDiscountOptions: mocks.setDiscountOptions,
+    discountAuthorization: mocks.discountAuthorization,
+    setDiscountPin: mocks.setDiscountPin,
     setServiceCharge: mocks.setServiceCharge,
     setCredit: mocks.setCredit,
     credit: mocks.credit,
@@ -70,6 +74,8 @@ describe('DevSettingsPage', () => {
     mocks.serviceCharge.mockReset().mockResolvedValue({ amounts: [1000, 3000, 5000] })
     mocks.discountOptions.mockReset().mockResolvedValue({ amounts: [2000, 5000] })
     mocks.setDiscountOptions.mockReset().mockResolvedValue(undefined)
+    mocks.discountAuthorization.mockReset().mockResolvedValue({ configured: false })
+    mocks.setDiscountPin.mockReset().mockResolvedValue(undefined)
     mocks.setServiceCharge.mockReset().mockResolvedValue(undefined)
     mocks.setCredit.mockReset().mockResolvedValue(undefined)
     mocks.credit
@@ -123,9 +129,36 @@ describe('DevSettingsPage', () => {
     await waitFor(() =>
       expect(mocks.setServiceCharge).toHaveBeenCalledWith({ amounts: [1500, 3000, 5000] }),
     )
-    // The global discount password is gone: it is now a per-cashier credential
-    // configured on the staff screen, never a shared secret on this page.
+    // The shared discount PIN is a GLOBAL setting on this page, and it is a
+    // 4-digit PIN — not a password field on any individual staff member.
+    expect(screen.getByRole('heading', { name: 'رمز تفويض الخصم' })).toBeInTheDocument()
     expect(screen.queryByLabelText('كلمة مرور تفويض الخصم')).not.toBeInTheDocument()
+  })
+
+  it('configures the ONE shared 4-digit discount PIN, cafe-wide', async () => {
+    page()
+    await waitFor(() => expect(mocks.discountAuthorization).toHaveBeenCalled())
+
+    // Status is a boolean only — the PIN is never read back.
+    expect(screen.getByText('غير مُعدّ')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'تعيين الرمز' }))
+
+    const field = within(screen.getByRole('dialog')).getByLabelText('رمز تفويض الخصم')
+    expect(field).toHaveAttribute('inputmode', 'numeric')
+    expect(field).toHaveAttribute('maxlength', '4')
+
+    // Fewer than four digits cannot be saved.
+    fireEvent.change(field, { target: { value: '009' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' }))
+    expect(mocks.setDiscountPin).not.toHaveBeenCalled()
+
+    // A leading-zero PIN is sent exactly as typed, as a string.
+    fireEvent.change(field, { target: { value: '0097' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' }))
+
+    await waitFor(() => expect(mocks.setDiscountPin).toHaveBeenCalledWith('0097'))
+    await waitFor(() => expect(screen.getByText('مُعدّ')).toBeInTheDocument())
   })
 
   it('retains the developer database tools', async () => {

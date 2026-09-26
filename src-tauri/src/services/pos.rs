@@ -335,7 +335,7 @@ pub fn set_discount(
     order_id: i64,
     discount_mode: Option<&str>,
     discount_value: Option<i64>,
-    discount_password: Option<&str>,
+    discount_pin: Option<&str>,
 ) -> AppResult<Order> {
     let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
@@ -352,7 +352,7 @@ pub fn set_discount(
             actor,
             order_id,
             discount_minor,
-            discount_password,
+            discount_pin,
         )?;
     }
     pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;

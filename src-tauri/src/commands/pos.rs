@@ -150,7 +150,7 @@ pub fn set_order_discount(
     order_id: i64,
     discount_mode: Option<String>,
     discount_value: Option<i64>,
-    discount_password: Option<String>,
+    discount_pin: Option<String>,
 ) -> AppResult<Order> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
         pos_svc::set_discount(
@@ -159,7 +159,7 @@ pub fn set_order_discount(
             order_id,
             discount_mode.as_deref(),
             discount_value,
-            discount_password.as_deref(),
+            discount_pin.as_deref(),
         )
     })
 }
@@ -213,7 +213,7 @@ pub fn preview_order(
     order_id: i64,
     discount_mode: Option<String>,
     discount_value: Option<i64>,
-    _discount_password: Option<String>,
+    _discount_pin: Option<String>,
     service_charge_minor: Option<i64>,
 ) -> AppResult<pos_svc::OrderPreview> {
     authorized(&state, &token, "STAFF", move |conn, _| {

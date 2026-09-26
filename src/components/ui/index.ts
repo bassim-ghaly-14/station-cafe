@@ -5,7 +5,16 @@ export { Button, type ButtonProps, buttonVariants } from './button'
 export { Select } from './select'
 export { ProgressBar } from './progress-bar'
 export { DataTable, DataTableRow, DataTableCell, type DataTableColumn } from './data-table'
-export { Input, Textarea, Label, Field, PasswordInput } from './input'
+export {
+  Input,
+  Textarea,
+  Label,
+  Field,
+  PasswordInput,
+  PinInput,
+  isValidDiscountPin,
+  DISCOUNT_PIN_LENGTH,
+} from './input'
 export { iconSize, type LucideIcon } from './icon'
 export { Card, CardHeader } from './card'
 export { Badge, type BadgeProps } from './badge'

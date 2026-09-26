@@ -3,9 +3,9 @@
  *
  * The AMOUNT is open-ended: the admin quick-pick amounts are shortcuts that fill
  * the field, never a ceiling, so any value the order can carry can be typed.
- * Confirming an amount does NOT apply it — it opens the authorization dialog,
- * and the discount is applied only after the backend accepts the cashier's
- * credential. Clearing an existing discount needs no credential.
+ * Confirming an amount does NOT apply it — it opens the authorization dialog for
+ * the cafe's ONE shared 4-digit discount PIN, and the discount is applied only
+ * after the backend accepts that PIN. Clearing an existing discount needs no PIN.
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'

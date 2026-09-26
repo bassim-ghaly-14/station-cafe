@@ -67,7 +67,7 @@ fn pay_cash(
             discount_value,
             // A discount already persisted on the order is settled without
             // asking for the password a second time.
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(1_000_000),
         },
@@ -75,11 +75,11 @@ fn pay_cash(
     .unwrap()
 }
 
-/// Give a cashier a discount-authorization credential, exactly the way the
-/// ADMIN does it from the staff screen.
-fn authorize_cashier(conn: &Connection, cashier: &auth::User, password: &str) {
+/// Configure THE one global shared discount PIN, exactly the way an ADMIN
+/// does it from the settings screen.
+fn configure_shared_pin(conn: &Connection, pin: &str) {
     let admin = login(conn, "admin", "admin123");
-    auth::set_discount_authorization(conn, &admin, cashier.id, password).unwrap();
+    settings::set_discount_authorization_pin(conn, &admin, pin).unwrap();
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    authorize_cashier(&conn, &staff, "approve123");
+    configure_shared_pin(&conn, "4820");
 
     // The admin quick-pick list stays editable configuration — but it is a
     // SHORTCUT list, never a ceiling.
@@ -264,7 +264,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
             order_id,
             Some("FIXED"),
             Some(amount),
-            Some("approve123"),
+            Some("4820"),
         )
         .unwrap();
         assert_eq!(saved.discount_value, Some(amount));
@@ -281,7 +281,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
         order_id,
         Some("FIXED"),
         Some(subtotal + 1),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap_err();
     assert_eq!(err.to_string(), "validation error: discount.invalid");
@@ -293,7 +293,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
         order_id,
         Some("FIXED"),
         Some(0),
-        Some("approve123"),
+        Some("4820"),
     )
     .is_err());
     assert!(pos_svc::set_discount(
@@ -302,7 +302,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
         order_id,
         Some("FIXED"),
         Some(-500),
-        Some("approve123"),
+        Some("4820"),
     )
     .is_err());
 
@@ -313,7 +313,7 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
         order_id,
         Some("PERCENT"),
         Some(10_000),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap_err();
     assert_eq!(
@@ -329,7 +329,7 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    authorize_cashier(&conn, &staff, "approve123");
+    configure_shared_pin(&conn, "4820");
     settings::set_discount_options(
         &conn,
         &developer,
@@ -353,7 +353,7 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
         order_id,
         Some("FIXED"),
         Some(5_000),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap();
 
@@ -378,12 +378,12 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
 }
 
 #[test]
-fn a_wrong_authorization_password_does_not_apply_the_discount() {
+fn a_wrong_shared_pin_does_not_apply_the_discount() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    authorize_cashier(&conn, &staff, "approve123");
+    configure_shared_pin(&conn, "4820");
     pos_svc::add_line(
         &conn,
         &staff,
@@ -393,7 +393,7 @@ fn a_wrong_authorization_password_does_not_apply_the_discount() {
     )
     .unwrap();
 
-    // A wrong password is refused by the authorization gate, and — because the
+    // A wrong PIN is refused by the authorization gate, and — because the
     // gate runs BEFORE the write, in the same transaction — nothing is
     // persisted on the order.
     let err = pos_svc::set_discount(
@@ -418,7 +418,7 @@ fn a_wrong_authorization_password_does_not_apply_the_discount() {
         order_id,
         Some("FIXED"),
         Some(5_000),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap();
     pos_svc::set_discount(&conn, &staff, order_id, None, None, None).unwrap();
@@ -429,10 +429,9 @@ fn a_wrong_authorization_password_does_not_apply_the_discount() {
 }
 
 #[test]
-fn discount_authorization_is_cashier_specific() {
+fn the_discount_pin_is_one_global_shared_credential() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
     pos_svc::add_line(
@@ -444,103 +443,176 @@ fn discount_authorization_is_cashier_specific() {
     )
     .unwrap();
 
-    // Before anyone is configured, no credential authorizes anything — and the
-    // error is identical to a wrong password, so the POS cannot probe for the
+    // Before anyone is configured, nothing authorizes a discount — and the
+    // error is identical to a wrong PIN, so the POS cannot probe for the
     // existence of a stored hash.
-    for password in [None, Some(""), Some("approve123")] {
-        let err =
-            settings::authorize_discount(&conn, &staff, order_id, 500, password).unwrap_err();
+    for pin in [None, Some(""), Some("4820")] {
+        let err = settings::authorize_discount(&conn, &staff, order_id, 500, pin).unwrap_err();
         assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
     }
 
-    // Two real accounts, two different credentials.
-    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
-    auth::set_discount_authorization(&conn, &developer, manager.id, "other1234").unwrap();
+    // ONE global PIN, configured once and owned by nobody.
+    settings::set_discount_authorization_pin(&conn, &manager, "4820").unwrap();
 
-    // Each cashier's OWN credential authorizes their own discount operation.
-    settings::authorize_discount(&conn, &staff, order_id, 500, Some("approve123")).unwrap();
-    settings::authorize_discount(&conn, &manager, order_id, 500, Some("other1234")).unwrap();
+    // Cashier A authorizes with the shared PIN...
+    settings::authorize_discount(&conn, &staff, order_id, 500, Some("4820")).unwrap();
 
-    // A credential configured for ANOTHER cashier never authorizes this one:
-    // there is no global/shared password to fall back on.
-    for (cashier, foreign) in [(&staff, "other1234"), (&manager, "approve123")] {
-        let err = settings::authorize_discount(&conn, cashier, order_id, 500, Some(foreign))
+    // ...and cashier B authorizes with the EXACT SAME shared PIN: no per-cashier
+    // credential, no cross-cashier rejection.
+    let second = crate::repositories::users::insert(
+        &conn,
+        &crate::repositories::users::NewUser {
+            name: "second-cashier",
+            phone: None,
+            role: "STAFF",
+            password_hash: &auth::hash_password("staff123").unwrap(),
+            is_seed: false,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let other_cashier = login(&conn, "second-cashier", "staff123");
+    assert_eq!(other_cashier.id, second);
+    settings::authorize_discount(&conn, &other_cashier, order_id, 500, Some("4820")).unwrap();
+
+    // Identity is only for auditability: the audit event names the ACTING user,
+    // the order and the amount — and never any credential material.
+    let (actor, entity, details): (i64, String, String) = conn
+        .query_row(
+            "SELECT actor_id, entity_id, after_json
+             FROM audit_log WHERE action = 'discount.authorized'
+             ORDER BY id DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(actor, second);
+    assert_eq!(entity, order_id.to_string());
+    assert!(details.contains("\"discount_minor\":500"));
+    assert!(details.contains("AUTHORIZED"));
+    assert!(!details.contains("4820"));
+    assert!(!details.contains("argon2"));
+
+    // A manager's / admin's / cashier's LOGIN password is not a discount
+    // credential — it only works if it happens to equal the shared PIN.
+    for login_password in ["manager123", "admin123", "cashier123"] {
+        let err = settings::authorize_discount(&conn, &staff, order_id, 500, Some(login_password))
             .unwrap_err();
         assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
     }
 
-    // The manager's own LOGIN password is not a discount credential.
-    let err = settings::authorize_discount(
-        &conn,
-        &staff,
-        order_id,
-        500,
-        Some("manager123"),
-    )
-    .unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
-
-    // End to end: the cashier applies the discount on their own order with their
-    // own credential.
+    // End to end: the cashier applies the discount on their own order with the
+    // shared PIN.
     let saved = pos_svc::set_discount(
         &conn,
         &staff,
         order_id,
         Some("FIXED"),
         Some(500),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap();
     assert_eq!(saved.discount_value, Some(500));
 }
 
+#[test]
+fn the_shared_discount_pin_must_be_exactly_four_ascii_digits() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+
+    // Valid: four digits, leading zeros included. The PIN is a STRING, so 0097
+    // is never normalized into 97.
+    for pin in ["1234", "0000", "0097", "4820"] {
+        settings::set_discount_authorization_pin(&conn, &manager, pin).unwrap();
+        settings::authorize_discount(&conn, &manager, 1, 500, Some(pin)).unwrap();
+    }
+
+    // Invalid: wrong length, letters, empty, whitespace, non-ASCII digits.
+    for pin in ["123", "12345", "12a4", "abcd", "", " 1234", "1234 ", "٤٨٢٠"] {
+        let err = settings::set_discount_authorization_pin(&conn, &manager, pin).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "validation error: discount.invalid_pin",
+            "PIN {pin:?} must be rejected"
+        );
+    }
+
+    // A malformed PIN is refused uniformly at the gate, exactly like a wrong
+    // one — never as a different, probe-friendly error.
+    for pin in ["123", "12345", "12a4", ""] {
+        let err = settings::authorize_discount(&conn, &manager, 1, 500, Some(pin)).unwrap_err();
+        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    }
+}
+
 
 #[test]
-fn a_manager_or_admin_configures_the_cashier_credential_and_a_cashier_cannot() {
+fn a_manager_or_admin_configures_the_shared_pin_and_a_cashier_cannot() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
 
-    // A CASHIER may never configure a credential — not their own, not another's.
-    assert!(auth::set_discount_authorization(&conn, &staff, staff.id, "hijack1").is_err());
-    assert!(auth::set_discount_authorization(&conn, &staff, manager.id, "hijack1").is_err());
-    assert!(auth::set_discount_authorization(&conn, &staff, developer.id, "hijack1").is_err());
-    assert!(!auth::discount_authorization_configured(&conn, staff.id).unwrap());
+    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
 
-    // MANAGER may configure a cashier, exactly like the rest of staff
-    // management; ADMIN may configure anyone, including another ADMIN.
-    auth::set_discount_authorization(&conn, &manager, staff.id, "approve123").unwrap();
-    assert!(auth::discount_authorization_configured(&conn, staff.id).unwrap());
-    auth::set_discount_authorization(&conn, &developer, developer.id, "approve123").unwrap();
+    // A CASHIER may never configure the shared PIN.
+    assert!(settings::set_discount_authorization_pin(&conn, &staff, "4820").is_err());
+    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
 
-    // A MANAGER may not touch an ADMIN credential; unknown accounts and
-    // too-short credentials are refused.
-    assert!(auth::set_discount_authorization(&conn, &manager, developer.id, "approve123").is_err());
-    assert!(auth::set_discount_authorization(&conn, &manager, 123_456, "approve123").is_err());
-    assert!(auth::set_discount_authorization(&conn, &manager, staff.id, "123").is_err());
+    // MANAGER may configure it, exactly like the other business settings; ADMIN
+    // may too. There is no target user: the PIN is cafe-wide.
+    settings::set_discount_authorization_pin(&conn, &manager, "4820").unwrap();
+    assert!(settings::get_discount_authorization(&conn).unwrap().configured);
+    settings::set_discount_authorization_pin(&conn, &developer, "0097").unwrap();
 
-    // Stored as a hash, never plaintext, and the audit trail records the change
-    // without any credential material.
+    // Changing the PIN invalidates the previous one immediately, and the new one
+    // works at once — for any cashier.
+    settings::authorize_discount(&conn, &staff, 1, 500, Some("0097")).unwrap();
+    let err = settings::authorize_discount(&conn, &staff, 1, 500, Some("4820")).unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+
+    // Exactly ONE global hash, stored with Argon2id and never as plaintext.
     let stored: String = conn
         .query_row(
-            "SELECT discount_password_hash FROM users WHERE id = ?1",
-            [staff.id],
+            "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
+            [],
             |r| r.get(0),
         )
         .unwrap();
-    assert!(stored.starts_with("$argon2"));
-    assert!(!stored.contains("approve123"));
+    assert!(!stored.contains("0097"));
+    assert!(!stored.contains("4820"));
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1, "there is exactly one shared discount credential");
+
+    // No per-user credential column exists at all.
+    let columns: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('users')
+             WHERE name = 'discount_password_hash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(columns, 0);
+
+    // The audit trail records THAT the shared PIN changed — never its value.
     let logged: String = conn
         .query_row(
             "SELECT COALESCE(before_json, '') || COALESCE(after_json, '')
-             FROM audit_log WHERE action = 'user.discount_authorization_changed'
+             FROM audit_log WHERE action = 'settings.discount_authorization_changed'
              ORDER BY id DESC LIMIT 1",
             [],
             |r| r.get(0),
         )
         .unwrap();
-    assert!(!logged.contains("approve123"));
+    assert!(!logged.contains("0097"));
+    assert!(!logged.contains("4820"));
     assert!(logged.contains("configured"));
 }
 
@@ -550,7 +622,7 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
     let manager = login(&conn, "manager", "manager123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    authorize_cashier(&conn, &staff, "approve123");
+    configure_shared_pin(&conn, "4820");
     pos_svc::add_line(
         &conn,
         &staff,
@@ -570,7 +642,7 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
             method: "CASH".into(),
             discount_mode: Some("FIXED".into()),
             discount_value: Some(5_000),
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(1_000_000),
         },
@@ -586,7 +658,7 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
         order_id,
         Some("FIXED"),
         Some(500),
-        Some("approve123"),
+        Some("4820"),
     )
     .unwrap();
     let err = checkout::checkout(
@@ -597,7 +669,7 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
             method: "CASH".into(),
             discount_mode: Some("FIXED".into()),
             discount_value: Some(8_000),
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: None,
             received: Some(1_000_000),
         },
@@ -619,7 +691,7 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
 }
 
 #[test]
-fn a_cashier_without_a_credential_cannot_discount_but_service_charge_stays_free() {
+fn an_unconfigured_pin_blocks_discounts_but_service_charge_stays_free() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
     let staff = login(&conn, "cashier", "cashier123");
@@ -648,7 +720,7 @@ fn a_cashier_without_a_credential_cannot_discount_but_service_charge_stays_free(
         order_id,
         Some("FIXED"),
         Some(500),
-        Some("approve123"),
+        Some("4820"),
     )
     .is_err());
 
@@ -663,7 +735,7 @@ fn a_cashier_without_a_credential_cannot_discount_but_service_charge_stays_free(
             method: "CASH".into(),
             discount_mode: None,
             discount_value: None,
-            discount_password: None,
+            discount_pin: None,
             service_charge_minor: Some(2_000),
             received: Some(1_000_000),
         },

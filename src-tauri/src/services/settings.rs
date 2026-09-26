@@ -150,42 +150,107 @@ pub fn set_discount_options(conn: &Db, actor: &User, cfg: &DiscountOptionsConfig
     )
 }
 
-/// Verify the acting cashier's OWN discount-authorization credential.
+/// One global shared discount-authorization PIN for the whole cafe.
+///
+/// The PIN is a STRING, never a number: `0097` is a valid PIN. It is stored as
+/// an Argon2id PHC hash in `app_settings` (`discount_authorization_hash`) — the
+/// same global-settings mechanism every other Station setting uses — and is
+/// owned by NOBODY: any authenticated staff member who knows it may authorize a
+/// discount. Only ADMIN/MANAGER may create or change it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiscountAuthorizationConfig {
+    /// Administrator-facing status ONLY. The PIN itself never leaves the
+    /// backend, and this boolean is never used to answer an authorization
+    /// attempt (see `authorize_discount`).
+    pub configured: bool,
+}
+
+pub fn get_discount_authorization(conn: &Db) -> AppResult<DiscountAuthorizationConfig> {
+    let configured = read_json::<Option<String>>(conn, "discount_authorization_hash", None)?
+        .is_some_and(|hash| !hash.is_empty());
+    Ok(DiscountAuthorizationConfig { configured })
+}
+
+/// The shared PIN is exactly FOUR ASCII digits (`0`-`9`), leading zeros allowed.
+///
+/// This is deliberately NOT `validate_password`: the shared discount PIN is not
+/// an account credential, so the account length rules never apply to it.
+pub fn validate_discount_pin(pin: &str) -> AppResult<()> {
+    let digits = pin.as_bytes();
+    if digits.len() != 4 || !digits.iter().all(|b| b.is_ascii_digit()) {
+        return Err(AppError::validation("discount.invalid_pin"));
+    }
+    Ok(())
+}
+
+/// MANAGER+ sets or changes THE ONE shared discount-authorization PIN.
+///
+/// There is no per-user target and no second credential: this is cafe-wide
+/// configuration, hashed with the project's existing Argon2id implementation,
+/// never returned to the frontend, and never written to the audit trail.
+pub fn set_discount_authorization_pin(
+    conn: &Db,
+    actor: &User,
+    pin: &str,
+) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "MANAGER")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
+    validate_discount_pin(pin)?;
+
+    let was_configured = get_discount_authorization(conn)?.configured;
+    let hash = crate::services::auth::hash_password(pin)?;
+    write_json(conn, "discount_authorization_hash", &hash)?;
+
+    // THAT the shared PIN changed — never the PIN, never the hash.
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "settings.discount_authorization_changed",
+        "settings",
+        Some("discount_authorization"),
+        Some(&serde_json::json!({ "configured": was_configured })),
+        Some(&serde_json::json!({ "configured": true })),
+    )
+}
+
+/// Verify THE shared discount-authorization PIN, and record who used it.
 ///
 /// Identity and authorization are separate questions and stay separate here:
-/// `cashier` is WHO is logged in, `password` is the secret that proves this
-/// cashier may approve a discount. The credential is read from the cashier's
-/// own user row, so no global/shared password exists and no manager's own
-/// login password is accepted here.
+/// `actor` answers WHO performed the action (auditability), while `pin` answers
+/// whether the person knows the ONE shared credential. The verification NEVER
+/// consults the actor's login password, any other user's credentials, or any
+/// per-user column — there is exactly one PIN for the system.
 ///
-/// Failure is deliberately uniform — an empty password, a cashier with no
-/// configured credential and a wrong password all return the SAME error — so
-/// the POS can never probe whether a stored hash exists.
+/// Failure is deliberately uniform — a missing PIN, a malformed PIN and a wrong
+/// PIN all return the SAME error — so the POS can never probe whether a stored
+/// hash exists.
 pub fn authorize_discount(
     conn: &Db,
-    cashier: &User,
+    actor: &User,
     order_id: i64,
     discount_minor: i64,
-    password: Option<&str>,
+    pin: Option<&str>,
 ) -> AppResult<()> {
     let denied = || AppError::unauthorized("discount.authorization_failed");
-    let Some(password) = password.filter(|value| !value.is_empty()) else {
+    let Some(pin) = pin.filter(|value| validate_discount_pin(value).is_ok()) else {
         return Err(denied());
     };
-    let Some(hash) = crate::repositories::users::find_discount_password(conn, cashier.id)? else {
+    let hash = read_json::<Option<String>>(conn, "discount_authorization_hash", None)?;
+    let Some(hash) = hash.filter(|value| !value.is_empty()) else {
         return Err(denied());
     };
-    if !crate::services::auth::verify_password(password, &hash) {
+    if !crate::services::auth::verify_password(pin, &hash) {
         return Err(denied());
     }
 
-    // The authorization is audited against the operation it authorizes: this
-    // cashier, this order, this exact amount. The credential is never part of
-    // the record.
+    // The authorization is audited against the operation it authorizes: the
+    // authenticated actor, this order, this exact amount. The credential is
+    // never part of the record.
     crate::services::audit::record(
         conn,
-        Some(cashier.id),
-        Some(&cashier.role),
+        Some(actor.id),
+        Some(&actor.role),
         "discount.authorized",
         "order",
         Some(&order_id.to_string()),

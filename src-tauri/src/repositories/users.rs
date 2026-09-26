@@ -93,39 +93,6 @@ pub fn insert(conn: &Db, u: &NewUser<'_>) -> AppResult<Option<i64>> {
     Ok(Some(conn.last_insert_rowid()))
 }
 
-/// The cashier's OWN discount-authorization credential (Argon2id PHC string).
-///
-/// This is deliberately NOT part of `User`/`UserWithMeta` listing shapes: the
-/// management UI only ever learns WHETHER a credential exists, never its value.
-pub fn find_discount_password(conn: &Db, id: i64) -> AppResult<Option<String>> {
-    match conn.query_row(
-        "SELECT discount_password_hash FROM users WHERE id = ?1",
-        params![id],
-        |r| r.get::<_, Option<String>>(0),
-    ) {
-        Ok(hash) => Ok(hash),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-
-pub fn set_discount_password(conn: &Db, id: i64, hash: &str) -> AppResult<usize> {
-    conn.execute(
-        "UPDATE users SET discount_password_hash = ?2, updated_at = station_now() WHERE id = ?1",
-        params![id, hash],
-    )
-    .map_err(Into::into)
-}
-
-/// Per-account discount-authorization FLAGS for the management screen: a
-/// boolean per user id, never the credential.
-pub fn discount_authorization_states(conn: &Db) -> AppResult<Vec<(i64, bool)>> {
-    let mut stmt =
-        conn.prepare("SELECT id, discount_password_hash IS NOT NULL FROM users ORDER BY name")?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
 pub fn set_status(conn: &Db, id: i64, status: &str) -> AppResult<usize> {
     conn.execute(
         "UPDATE users SET status = ?2, updated_at = station_now() WHERE id = ?1",

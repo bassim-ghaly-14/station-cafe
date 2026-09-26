@@ -275,6 +275,31 @@ pub fn set_discount_options(
     })
 }
 
+/// Administrator-facing status of the ONE shared discount-authorization PIN.
+/// MANAGER+ only; it exposes a boolean, never the PIN.
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_discount_authorization(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<crate::services::settings::DiscountAuthorizationConfig> {
+    authorized(&state, &token, "MANAGER", |conn, _| {
+        crate::services::settings::get_discount_authorization(conn)
+    })
+}
+
+/// MANAGER+ sets or changes THE shared 4-digit discount-authorization PIN.
+/// One credential for the whole cafe — never a per-user one.
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_discount_authorization_pin(
+    state: State<'_, AppState>,
+    token: String,
+    pin: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        crate::services::settings::set_discount_authorization_pin(conn, actor, &pin)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_service_charge(
     state: State<'_, AppState>,

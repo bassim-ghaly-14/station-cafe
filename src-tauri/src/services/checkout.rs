@@ -21,7 +21,7 @@ pub struct CheckoutInput {
     pub method: String, // CASH | CARD | CREDIT
     pub discount_mode: Option<String>,
     pub discount_value: Option<i64>,
-    pub discount_password: Option<String>,
+    pub discount_pin: Option<String>,
     pub service_charge_minor: Option<i64>,
     /// CASH only: what the customer handed over (≥ total).
     pub received: Option<i64>,
@@ -92,7 +92,7 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
             actor,
             input.order_id,
             discount_minor,
-            input.discount_password.as_deref(),
+            input.discount_pin.as_deref(),
         )?;
     }
     let service_charge_minor = match input.service_charge_minor {

@@ -252,27 +252,27 @@ export const api = {
       order_id,
       discount_mode,
       discount_value,
-      discount_password: null,
+      discount_pin: null,
       service_charge_minor,
     }),
   /**
    * Apply a discount amount (or clear it with `null`).
    *
    * The amount is open-ended: it is not limited to the configured quick-pick
-   * options, only to what the order can carry. Applying one REQUIRES the
-   * cashier's own authorization credential, which the backend verifies — the
-   * UI can never bypass it. Clearing a discount needs no credential.
+   * options, only to what the order can carry. Applying one REQUIRES the cafe's
+   * ONE shared 4-digit discount PIN, which the backend verifies — the UI can
+   * never bypass it. Clearing a discount needs no PIN.
    */
   setDiscount: (
     order_id: number,
     amount_minor: number | null,
-    discount_password: string | null = null,
+    discount_pin: string | null = null,
   ) =>
     call<PosOrder>('set_order_discount', {
       order_id,
       discount_mode: amount_minor === null ? null : 'FIXED',
       discount_value: amount_minor,
-      discount_password,
+      discount_pin,
     }),
   checkout: (input: CheckoutInput) => call<CheckoutResult>('checkout_order', { input }),
   getInvoice: (invoice_id: number) =>
@@ -358,9 +358,11 @@ export interface DiscountOptionsConfig {
   amounts: number[]
 }
 
-/** Per-cashier discount-authorization flags. A boolean only, never a value. */
-export interface StaffDiscountAuthorization {
-  user_id: number
+/**
+ * Administrator-facing status of the ONE shared discount-authorization PIN.
+ * A boolean only, never the PIN: the Argon2id hash stays in the backend.
+ */
+export interface DiscountAuthorizationConfig {
   configured: boolean
 }
 
@@ -376,15 +378,12 @@ export const settingsApi = {
   discountOptions: () => call<DiscountOptionsConfig>('get_discount_options'),
   setDiscountOptions: (config: DiscountOptionsConfig) =>
     call<void>('set_discount_options', { config }),
+  /** MANAGER+ status of the ONE shared discount PIN (never the PIN itself). */
+  discountAuthorization: () => call<DiscountAuthorizationConfig>('get_discount_authorization'),
+  /** MANAGER+ sets/changes the ONE shared 4-digit discount PIN, cafe-wide. */
+  setDiscountPin: (pin: string) => call<void>('set_discount_authorization_pin', { pin }),
   credit: () => call<CreditConfig>('get_credit_config'),
   setCredit: (config: CreditConfig) => call<void>('set_credit_config', { config }),
-}
-
-/** Staff management: per-cashier discount authorization (MANAGER+). */
-export const staffApi = {
-  discountAuthorization: () => call<StaffDiscountAuthorization[]>('list_discount_authorization'),
-  setDiscountPassword: (user_id: number, password: string) =>
-    call<void>('set_staff_discount_password', { user_id, password }),
 }
 
 export interface CheckoutInput {
@@ -392,7 +391,7 @@ export interface CheckoutInput {
   method: string
   discount_mode: string | null
   discount_value: number | null
-  discount_password?: string | null
+  discount_pin?: string | null
   service_charge_minor: number
   received: number | null
 }

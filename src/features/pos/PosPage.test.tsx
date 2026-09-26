@@ -383,7 +383,7 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
         method: 'CASH',
         discount_mode: null,
         discount_value: null,
-        discount_password: null,
+        discount_pin: null,
         service_charge_minor: 0,
         received: 6000,
       }),
