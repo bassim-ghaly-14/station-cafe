@@ -106,11 +106,95 @@ describe('Today invoices page', () => {
     ).toBeInTheDocument()
     // The dialog-based screen is gone: nothing is trapped in a modal.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    // A contextual summary of the listed day.
-    expect(screen.getByText(/1 فاتورة في يوم العمل الحالي/)).toBeInTheDocument()
+    // A contextual summary of the listed day, once it has resolved.
+    expect(await screen.findByText(/1 فاتورة في يوم العمل الحالي/)).toBeInTheDocument()
     expect(screen.getByText('إجمالي مبيعات الفواتير')).toBeInTheDocument()
     // And a way back to the POS.
     expect(screen.getByRole('button', { name: 'العودة لنقطة البيع' })).toBeInTheDocument()
+  })
+
+  it('searches LIVE as the user types, with no search button at all', async () => {
+    renderPage()
+    await screen.findByText('#7')
+
+    // The redundant submit control is gone for good: the field filters itself.
+    expect(screen.queryByRole('button', { name: 'بحث' })).not.toBeInTheDocument()
+
+    const callsBefore = mocks.invoices.mock.calls.length
+    fireEvent.change(screen.getByRole('searchbox', { name: 'البحث في الفواتير' }), {
+      target: { value: '1024' },
+    })
+
+    // No button press, no Enter — the debounced query reaches the same command.
+    await waitFor(() => expect(mocks.invoices.mock.calls.length).toBeGreaterThan(callsBefore))
+    await waitFor(() =>
+      expect(mocks.invoices).toHaveBeenLastCalledWith(expect.objectContaining({ query: '1024' })),
+    )
+  })
+
+  it('clears the search from the field itself', async () => {
+    renderPage()
+    await screen.findByText('#7')
+
+    const field = screen.getByRole('searchbox', { name: 'البحث في الفواتير' })
+    fireEvent.change(field, { target: { value: '1024' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'مسح البحث' }))
+
+    expect(field).toHaveValue('')
+    // Clearing the text alone restores the unfiltered query.
+    await waitFor(() =>
+      expect(mocks.invoices).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: undefined }),
+      ),
+    )
+  })
+
+  it('distinguishes "no invoices" from "no results for this search"', async () => {
+    mocks.invoices.mockResolvedValueOnce([invoice()])
+    renderPage()
+    await screen.findByText('#7')
+
+    // The day HAS invoices, but the search hides them: a different message, and
+    // the fix is offered directly.
+    mocks.invoices.mockResolvedValue([])
+    fireEvent.change(screen.getByRole('searchbox', { name: 'البحث في الفواتير' }), {
+      target: { value: 'لا-يوجد' },
+    })
+
+    expect(await screen.findByText('لا توجد فواتير مطابقة')).toBeInTheDocument()
+    // Both the toolbar and the state offer the reset; the state's is the
+    // offered fix (the toolbar's comes first in the DOM).
+    const resetButtons = screen.getAllByRole('button', { name: /مسح التصفية/ })
+    fireEvent.click(resetButtons[resetButtons.length - 1])
+    await waitFor(() => expect(screen.queryByText('لا توجد فواتير مطابقة')).not.toBeInTheDocument())
+  })
+
+  it('renders stacked records on a phone instead of a squeezed table', async () => {
+    // matchMedia is the single source of the layout decision, so a narrow
+    // viewport is simulated the way a browser would report it.
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      onchange: null,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    try {
+      renderPage()
+      expect(await screen.findByText('#7')).toBeInTheDocument()
+      // No table semantics on a phone, but every operational value and both
+      // actions are still present.
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(screen.getByText('أحمد')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /معاينة الطباعة — #7/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'طباعة — #7' })).toBeInTheDocument()
+    } finally {
+      window.matchMedia = original
+    }
   })
 
   it('lists invoices with their status and reuses the same search command', async () => {
@@ -167,7 +251,7 @@ describe('Today invoices page', () => {
     mocks.invoices.mockResolvedValue([])
     renderPage()
 
-    expect(await screen.findByText('لا توجد فواتير اليوم بعد')).toBeInTheDocument()
+    expect(await screen.findByText('لا توجد فواتير بعد')).toBeInTheDocument()
   })
 
   it('surfaces a load failure with a retry', async () => {

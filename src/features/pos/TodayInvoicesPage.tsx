@@ -11,108 +11,104 @@
  * (`search_invoices`, `preview_invoice`, `print_invoice`), and the preview
  * opens through the SAME shared `PrintPreviewDialog` as every other preview
  * entry point — there is no parallel implementation here.
+ *
+ * Page composition:
+ *   1. header — identity, the real shape of the listed set, the way back;
+ *   2. toolbar — LIVE search plus the two filters the backend can answer;
+ *   3. records — a dense table on wide screens, stacked records on narrow ones;
+ *   4. print preview, opened through the shared dialog.
+ *
+ * There is deliberately no "بحث" button. Search runs as the user types (see
+ * `useInvoiceList`), so a submit control could only repeat a query the screen
+ * has already issued.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Badge,
-  Button,
-  Card,
-  ListRowsSkeleton,
-  MoneyDisplay,
-  Select,
-  DisplayTime,
-  useToast,
-} from '@/components/ui'
-import { ArrowRight, Eye, Printer, Search } from '@/components/ui/icon'
-import { Input } from '@/components/ui/input'
-import { EmptyState, ErrorState } from '@/components/states'
+import { Button, Card, MoneyDisplay, ProgressBar, Skeleton, useToast } from '@/components/ui'
+import { ArrowRight, Receipt } from '@/components/ui/icon'
+import { ErrorState } from '@/components/states'
 import { useRouter } from '@/app/router'
 import { api, type InvoiceRow } from '@/services/posApi'
-import { invoiceBadgeVariant } from '@/lib/status-badge'
-import { shiftApi } from '@/services/shiftApi'
 import { sumAmounts } from '@/lib/utils'
 import { PrintPreviewDialog } from './PrintPreviewDialog'
+import { InvoiceEmptyState } from './InvoiceEmptyState'
+import { InvoiceFilters } from './InvoiceFilters'
+import { InvoiceList } from './InvoiceList'
+import { useInvoiceList, type InvoiceListQuery } from './useInvoiceList'
+
+const NO_FILTERS: InvoiceListQuery = { search: '', status: '', method: '' }
 
 export function TodayInvoicesPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const { navigate } = useRouter()
-  const [rows, setRows] = useState<InvoiceRow[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [status, setStatus] = useState('')
-  const [method, setMethod] = useState('')
-  const [dayId, setDayId] = useState<number | null>(null)
+  const [filters, setFilters] = useState<InvoiceListQuery>(NO_FILTERS)
   // Print preview of a persisted invoice — same document as the reprint below.
   const [previewId, setPreviewId] = useState<number | null>(null)
 
-  const load = useCallback(() => {
-    setLoadError(null)
-    void (async () => {
-      try {
-        const st = await shiftApi.state()
-        setDayId(st.day?.id ?? null)
-        setRows(
-          await api.invoices({
-            business_day_id: st.day?.id,
-            query: query.trim() || undefined,
-            status: status || undefined,
-            method: method || undefined,
-          }),
-        )
-      } catch (e) {
-        setLoadError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
-        toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
-      }
-    })()
-  }, [query, status, method, t, toast])
+  const { rows, dayId, initialLoading, refreshing, error, reload } = useInvoiceList(filters)
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const filtered = filters.search.trim() !== '' || filters.status !== '' || filters.method !== ''
 
   /**
    * Contextual summary of exactly the rows listed below. Derived from the rows
    * already in memory — a presentation of the list, never a second query and
    * never a second financial rule.
    */
-  const summary = useMemo(() => {
-    const list = rows ?? []
-    return {
-      count: list.length,
-      total: sumAmounts(list.map((r) => r.total)),
-      credit: list.filter((r) => r.status === 'CREDIT').length,
-    }
-  }, [rows])
+  const summary = useMemo(
+    () => ({
+      count: rows.length,
+      total: sumAmounts(rows.map((r) => r.total)),
+      credit: rows.filter((r) => r.status === 'CREDIT').length,
+    }),
+    [rows],
+  )
 
-  const printAgain = (id: number) =>
-    api
-      .printInvoice(id)
-      .then((o) =>
-        toast(o.duplicate_suppressed ? t('print.duplicateSuppressed') : t('print.done'), 'success'),
-      )
-      .catch((e) =>
-        toast(
-          t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']),
-          'error',
-        ),
-      )
+  const reportError = useCallback(
+    (e: unknown) => t([`errors.${(e as { message?: string }).message}`, 'errors.internal_error']),
+    [t],
+  )
 
-  const filtered = query.trim() !== '' || status !== '' || method !== ''
+  const printAgain = useCallback(
+    (id: number) =>
+      api
+        .printInvoice(id)
+        .then((o) =>
+          toast(
+            o.duplicate_suppressed ? t('print.duplicateSuppressed') : t('print.done'),
+            'success',
+          ),
+        )
+        .catch((e) => toast(reportError(e), 'error')),
+    [toast, t, reportError],
+  )
+
+  const openPreview = (row: InvoiceRow) => setPreviewId(row.id)
+  const resetFilters = () => setFilters(NO_FILTERS)
 
   return (
     <div className="flex flex-col gap-4">
       {/* Page header: identity, the day's shape, and the way back. */}
       <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-heading">{t('pos.todayInvoices')}</h1>
-          <p className="text-caption mt-1">
-            {rows === null
-              ? t('app.loading')
-              : t('invoicesPage.summary', { count: summary.count, credit: summary.credit })}
-          </p>
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            aria-hidden
+            className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary"
+          >
+            <Receipt size={20} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-heading">{t('pos.todayInvoices')}</h1>
+            <p className="text-caption mt-1" aria-live="polite">
+              {/* Only the first load reports progress; a later refresh keeps the
+                  previous summary visible instead of flickering to "loading". */}
+              {initialLoading && rows.length === 0
+                ? t('app.loading')
+                : t('invoicesPage.summary', { count: summary.count, credit: summary.credit })}
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-4">
           <div className="text-end">
             <p className="text-caption">{t('invoicesPage.totalSales')}</p>
@@ -125,142 +121,41 @@ export function TodayInvoicesPage() {
         </div>
       </header>
 
-      {/* Filters — the same fields the dialog had, on the shared Select. */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('pos.invoiceSearchHint')}
-          aria-label={t('pos.invoiceSearch')}
-        />
-        <Select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          aria-label={t('app.status')}
-        >
-          <option value="">{t('pos.allStatuses')}</option>
-          {['PAID', 'PARTIALLY_PAID', 'CREDIT'].map((s) => (
-            <option key={s} value={s}>
-              {t(`invoice.status.${s}`)}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={method}
-          onChange={(e) => setMethod(e.target.value)}
-          aria-label={t('pay.methodLabel')}
-        >
-          <option value="">{t('pos.allMethods')}</option>
-          {['CASH', 'CARD', 'CREDIT'].map((m) => (
-            <option key={m} value={m}>
-              {t(`pay.method.${m}`)}
-            </option>
-          ))}
-        </Select>
-        <Button variant="outline" onClick={load}>
-          <Search size={16} aria-hidden />
-          {t('app.search')}
-        </Button>
-      </div>
+      {/* Toolbar — live search plus the two filters the backend resolves. */}
+      <InvoiceFilters query={filters} onChange={setFilters} onReset={resetFilters} />
 
-      {/* The list grows with the page instead of scrolling inside a dialog. */}
-      <Card className="p-0">
-        {!rows ? (
-          loadError ? (
-            <div className="p-4">
-              <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-            </div>
-          ) : (
-            <div className="p-4">
-              <ListRowsSkeleton rows={8} />
-            </div>
-          )
-        ) : rows.length === 0 ? (
-          <div className="p-4">
-            <EmptyState
-              title={filtered ? t('invoicesPage.noMatches') : t('pos.noInvoices')}
-              action={
-                filtered ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setQuery('')
-                      setStatus('')
-                      setMethod('')
-                    }}
-                  >
-                    {t('invoicesPage.clearFilters')}
-                  </Button>
-                ) : null
-              }
-            />
+      {/* The records grow with the page instead of scrolling inside a dialog.
+          Four distinct situations, four distinct presentations: first load,
+          refresh over existing rows, failure, and "nothing here". */}
+      {error ? (
+        <ErrorState message={error} onRetry={reload} retryLabel={t('app.retry')} />
+      ) : initialLoading ? (
+        <InvoiceRowsSkeleton />
+      ) : rows.length === 0 ? (
+        <InvoiceEmptyState variant={filtered ? 'no-results' : 'no-data'} onReset={resetFilters} />
+      ) : (
+        <Card className="overflow-hidden p-0">
+          <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+            <p className="text-caption tabular-nums" aria-live="polite">
+              {t('invoicesPage.resultsCount', { count: rows.length })}
+            </p>
+            {/* A refresh keeps the rows on screen and marks the list busy, so
+                typing in the search field never blanks the page. */}
+            {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
           </div>
-        ) : (
-          <ul className="flex flex-col">
-            {rows.map((r) => (
-              <li
-                key={r.id}
-                className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-body font-bold">
-                    #{r.invoice_no}
-                    {r.order_type === 'TAKEAWAY' && typeof r.takeaway_no === 'number' ? (
-                      <span className="ms-2 text-caption font-medium" dir="ltr">
-                        TW-{r.takeaway_no}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption">
-                    <span className="truncate">
-                      {r.order_type === 'TAKEAWAY' ? (
-                        <>{t('pos.orderType.TAKEAWAY')}</>
-                      ) : (
-                        <>{r.table_label ?? ''}</>
-                      )}{' '}
-                      {/* An invoice raised without a customer says so explicitly —
-                          never a blank where the identity belongs. */}
-                      · {r.customer_name ?? t('pos.noCustomer')} ·{' '}
-                      <span dir="ltr">{r.car_plate ?? ''}</span>
-                    </span>
-                    <DisplayTime value={r.created_at} />
-                  </span>
-                </span>
-                <Badge variant={invoiceBadgeVariant(r.status)} size="sm" dot>
-                  {t(`invoice.status.${r.status}`)}
-                </Badge>
-                <MoneyDisplay amount={r.total} className="text-body font-medium" />
-                <span className="flex shrink-0 items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`${t('print.preview')} — #${r.invoice_no}`}
-                    onClick={() => setPreviewId(r.id)}
-                  >
-                    <Eye size={16} aria-hidden />
-                    {t('print.preview')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={`${t('app.print')} — #${r.invoice_no}`}
-                    onClick={() => printAgain(r.id)}
-                  >
-                    <Printer size={16} aria-hidden />
-                    {t('app.print')}
-                  </Button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {dayId === null ? (
-          <p className="border-t border-border-subtle px-4 py-2 text-caption">
-            {t('pos.noDayHint')}
-          </p>
-        ) : null}
-      </Card>
+          <InvoiceList
+            rows={rows}
+            onPreview={openPreview}
+            onPrint={(row) => printAgain(row.id)}
+            busy={refreshing}
+          />
+          {dayId === null ? (
+            <p className="border-t border-border-subtle px-3 py-2 text-caption">
+              {t('pos.noDayHint')}
+            </p>
+          ) : null}
+        </Card>
+      )}
 
       {previewId !== null ? (
         <PrintPreviewDialog
@@ -268,6 +163,39 @@ export function TodayInvoicesPage() {
           onClose={() => setPreviewId(null)}
         />
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * First-load placeholder shaped like the real record list.
+ *
+ * It reserves the same geometry as an invoice row — identifier block, context
+ * line, a status tile and a total — so the page does not jump when the day
+ * resolves, and it is one announced status rather than a screen reader full of
+ * empty regions. It is invoices-specific on purpose: a generic unrelated
+ * skeleton would promise a layout this page never uses.
+ */
+function InvoiceRowsSkeleton() {
+  const { t } = useTranslation()
+  return (
+    <div role="status" aria-busy="true" aria-label={t('invoicesPage.loadingRecords')}>
+      <Card className="overflow-hidden p-0">
+        {Array.from({ length: 8 }, (_, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-3 border-b border-border-subtle px-3 py-3 last:border-0"
+          >
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton variant="text" className="h-4 w-20" accessibilityLabel="" />
+              <Skeleton variant="text" className="h-3 w-32" accessibilityLabel="" />
+            </div>
+            <Skeleton variant="text" className="h-5 w-20" accessibilityLabel="" />
+            <Skeleton variant="text" className="h-4 w-24" accessibilityLabel="" />
+          </div>
+        ))}
+      </Card>
+      <span className="sr-only">{t('invoicesPage.loadingRecords')}</span>
     </div>
   )
 }
