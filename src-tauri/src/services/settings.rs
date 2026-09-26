@@ -99,15 +99,11 @@ impl Default for CreditConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DiscountAuthorizationConfig {
-    pub configured: bool,
-}
-
-/// Admin-configured FIXED discount options, in minor units.
+/// Admin-configured discount QUICK-PICK amounts, in minor units.
 ///
-/// This list is the ONLY source of discount amounts in the whole application:
-/// the POS may select an option, never invent a value. A historical invoice
+/// Discounts are open-ended: this list is a set of shortcuts the POS offers,
+/// NOT a whitelist and NOT a ceiling. Any positive amount up to the applicable
+/// subtotal is accepted, whatever this list contains. A historical invoice
 /// keeps the amount that was actually applied, so changing this list never
 /// rewrites past records.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -154,45 +150,51 @@ pub fn set_discount_options(conn: &Db, actor: &User, cfg: &DiscountOptionsConfig
     )
 }
 
-pub fn get_discount_authorization(conn: &Db) -> AppResult<DiscountAuthorizationConfig> {
-    let configured = read_json::<Option<String>>(conn, "discount_authorization_hash", None)?
-        .is_some_and(|hash| !hash.is_empty());
-    Ok(DiscountAuthorizationConfig { configured })
-}
-
-pub fn set_discount_authorization_password(
+/// Verify the acting cashier's OWN discount-authorization credential.
+///
+/// Identity and authorization are separate questions and stay separate here:
+/// `cashier` is WHO is logged in, `password` is the secret that proves this
+/// cashier may approve a discount. The credential is read from the cashier's
+/// own user row, so no global/shared password exists and no manager's own
+/// login password is accepted here.
+///
+/// Failure is deliberately uniform — an empty password, a cashier with no
+/// configured credential and a wrong password all return the SAME error — so
+/// the POS can never probe whether a stored hash exists.
+pub fn authorize_discount(
     conn: &Db,
-    actor: &User,
-    password: &str,
+    cashier: &User,
+    order_id: i64,
+    discount_minor: i64,
+    password: Option<&str>,
 ) -> AppResult<()> {
-    crate::services::auth::require_role(actor, "ADMIN")
-        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
-    if password.len() < 6 {
-        return Err(AppError::validation("discount.password_too_short"));
+    let denied = || AppError::unauthorized("discount.authorization_failed");
+    let Some(password) = password.filter(|value| !value.is_empty()) else {
+        return Err(denied());
+    };
+    let Some(hash) = crate::repositories::users::find_discount_password(conn, cashier.id)? else {
+        return Err(denied());
+    };
+    if !crate::services::auth::verify_password(password, &hash) {
+        return Err(denied());
     }
-    let hash = crate::services::auth::hash_password(password)?;
-    write_json(conn, "discount_authorization_hash", &hash)?;
+
+    // The authorization is audited against the operation it authorizes: this
+    // cashier, this order, this exact amount. The credential is never part of
+    // the record.
     crate::services::audit::record(
         conn,
-        Some(actor.id),
-        Some(&actor.role),
-        "settings.discount_authorization_changed",
-        "settings",
-        Some("discount_authorization"),
+        Some(cashier.id),
+        Some(&cashier.role),
+        "discount.authorized",
+        "order",
+        Some(&order_id.to_string()),
         None,
-        Some(&serde_json::json!({ "configured": true })),
+        Some(&serde_json::json!({
+            "discount_minor": discount_minor,
+            "result": "AUTHORIZED"
+        })),
     )
-}
-
-pub fn authorize_discount(conn: &Db, password: Option<&str>) -> AppResult<()> {
-    if matches!(password, Some(p) if !p.is_empty()) {
-        let hash = read_json::<Option<String>>(conn, "discount_authorization_hash", None)?
-            .ok_or_else(|| AppError::unauthorized("discount.password_required"))?;
-        if crate::services::auth::verify_password(password.unwrap_or_default(), &hash) {
-            return Ok(());
-        }
-    }
-    Err(AppError::unauthorized("discount.password_incorrect"))
 }
 
 pub fn get_credit_config(conn: &Db) -> AppResult<CreditConfig> {

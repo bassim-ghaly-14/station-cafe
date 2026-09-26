@@ -61,7 +61,9 @@ export function OrderPanel({
   const [customer, setCustomer] = useState<OrderCustomer | null>(null)
   const [detaching, setDetaching] = useState(false)
   const [ticketBusy, setTicketBusy] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
+  // The ONE preview system: whichever trigger was used, this single state opens
+  // the same shared dialog.
+  const [previewTarget, setPreviewTarget] = useState<PrintPreviewTarget | null>(null)
 
   const loadProducts = useCallback(() => {
     setProdErr(null)
@@ -77,9 +79,9 @@ export function OrderPanel({
     loadProducts()
   }, [loadProducts])
 
-  // Discount options come from admin configuration (Dev Settings). When the
-  // list is empty the POS simply offers no discount — it never falls back to a
-  // free amount or a percentage.
+  // Discount quick-picks come from admin configuration (Dev Settings). They are
+  // SHORTCUTS, not a limit: the cashier can always type any amount the order
+  // can carry.
   useEffect(() => {
     settingsApi
       .discountOptions()
@@ -101,19 +103,24 @@ export function OrderPanel({
   // Parent owns the preview/discount (single backend fetch); panel is display.
   const shown = preview
   const hasWash = shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')
-  // Current orders always have a read-only preview document. An issued wash
-  // ticket keeps its operational document identity; otherwise the backend
-  // selects CAFE/WASH/HYBRID/TAKEAWAY from the live order without finalizing it.
-  const previewTarget: PrintPreviewTarget =
-    hasWash && typeof order.waiting_no === 'number'
-      ? { kind: 'wash_ticket', order_id: order.id }
-      : {
-          kind: 'order',
-          order_id: order.id,
-          discount_mode: discount.mode,
-          discount_value: discount.value,
-          service_charge_minor: serviceCharge,
-        }
+  const ticketIssued = hasWash && typeof order.waiting_no === 'number'
+  // TWO documents, TWO triggers, ONE preview system.
+  //
+  // The invoice preview always addresses the live order (the backend selects
+  // CAFE/WASH/HYBRID/TAKEAWAY from it without finalizing anything), and an
+  // issued wash ticket gets its own compact trigger beside it. Both open the
+  // SAME `PrintPreviewDialog` — only the trigger presentation differs, so the
+  // preview behaviour can never fork.
+  const orderPreviewTarget: PrintPreviewTarget = {
+    kind: 'order',
+    order_id: order.id,
+    discount_mode: discount.mode,
+    discount_value: discount.value,
+    service_charge_minor: serviceCharge,
+  }
+  const ticketPreviewTarget: PrintPreviewTarget | null = ticketIssued
+    ? { kind: 'wash_ticket', order_id: order.id }
+    : null
   // A fixed discount is labelled with the money it actually removes; a legacy
   // percentage selection is rendered as a number only (read-only), never as an
   // editable control.
@@ -211,10 +218,11 @@ export function OrderPanel({
         detaching={detaching}
         onTicket={hasWash && !ticketBusy ? issueTicket : hasWash ? () => {} : null}
         onReviewPay={onPay}
-        onPrintPreview={() => setPreviewOpen(true)}
+        onPrintPreview={() => setPreviewTarget(orderPreviewTarget)}
+        onTicketPreview={ticketPreviewTarget ? () => setPreviewTarget(ticketPreviewTarget) : null}
       />
-      {previewOpen ? (
-        <PrintPreviewDialog target={previewTarget} onClose={() => setPreviewOpen(false)} />
+      {previewTarget ? (
+        <PrintPreviewDialog target={previewTarget} onClose={() => setPreviewTarget(null)} />
       ) : null}
       {prodErr ? (
         <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
@@ -225,6 +233,7 @@ export function OrderPanel({
         <DiscountDialog
           initial={discount}
           orderId={order.id}
+          subtotal={preview?.subtotal ?? 0}
           amounts={discountOptions}
           onClose={() => setDiscountOpen(false)}
           onApply={(d, refreshed) => {

@@ -1,29 +1,43 @@
-/** Staff management (MANAGER+). Create staff, set status, assign roles. */
+/** Staff management (MANAGER+). Create staff, set status, assign roles,
+ * and configure each cashier's discount-authorization credential. */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import { Badge, Card, CardHeader, EmployeeAvatar, TableSkeleton } from '@/components/ui'
 import { Button } from '@/components/ui/button'
-import { Plus, Power } from '@/components/ui/icon'
+import { Lock, Plus, Power } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { staffBadgeVariant } from '@/lib/status-badge'
 import { call } from '@/services/ipc'
+import { staffApi, type StaffDiscountAuthorization } from '@/services/posApi'
 import { useSession, type User } from '../auth/useSession'
 import { AddStaffDialog } from './AddStaffDialog'
+import { DiscountAuthorizationDialog } from './DiscountAuthorizationDialog'
 
 export default function StaffPage() {
   const { t } = useTranslation()
   const { user } = useSession()
   const toast = useToast()
   const [staff, setStaff] = useState<User[] | null>(null)
+  const [discountAuth, setDiscountAuth] = useState<Record<number, boolean>>({})
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [discountTarget, setDiscountTarget] = useState<User | null>(null)
 
   const refresh = useCallback(() => {
     setStaff(null)
     setError(null)
-    call<User[]>('list_staff')
-      .then(setStaff)
+    Promise.all([
+      call<User[]>('list_staff'),
+      // Flags only — the credential itself never reaches the frontend.
+      staffApi.discountAuthorization().catch(() => [] as StaffDiscountAuthorization[]),
+    ])
+      .then(([people, authorization]) => {
+        setStaff(people)
+        setDiscountAuth(
+          Object.fromEntries(authorization.map((entry) => [entry.user_id, entry.configured])),
+        )
+      })
       .catch((e) => setError(t([`errors.${e.message}`, 'errors.internal_error'])))
   }, [t])
 
@@ -68,6 +82,7 @@ export default function StaffPage() {
                 <th className="p-2 font-medium">{t('staff.name')}</th>
                 <th className="p-2 font-medium">{t('staff.phone')}</th>
                 <th className="p-2 font-medium">{t('roles.title')}</th>
+                <th className="p-2 font-medium">{t('staff.discountAuthorization')}</th>
                 <th className="p-2 font-medium">{t('app.status')}</th>
                 <th className="p-2 font-medium">{t('app.actions')}</th>
               </tr>
@@ -88,6 +103,19 @@ export default function StaffPage() {
                     <Badge role={u.role} size="sm" dot>
                       {t(`roles.${u.role}`)}
                     </Badge>
+                  </td>
+                  <td className="p-2">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant={discountAuth[u.id] ? 'success' : 'neutral'} size="sm">
+                        {discountAuth[u.id]
+                          ? t('staff.discountAuthorizationSet')
+                          : t('staff.discountAuthorizationUnset')}
+                      </Badge>
+                      <Button variant="secondary" size="sm" onClick={() => setDiscountTarget(u)}>
+                        <Lock size={16} aria-hidden />
+                        {t('staff.setDiscountPassword')}
+                      </Button>
+                    </span>
                   </td>
                   <td className="p-2">
                     <Badge variant={staffBadgeVariant(u.status)} size="sm" dot>
@@ -112,6 +140,16 @@ export default function StaffPage() {
         )}
       </Card>
       <AddStaffDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onSaved={refresh} />
+      {discountTarget ? (
+        <DiscountAuthorizationDialog
+          open
+          userId={discountTarget.id}
+          staffName={discountTarget.name}
+          configured={Boolean(discountAuth[discountTarget.id])}
+          onClose={() => setDiscountTarget(null)}
+          onSaved={refresh}
+        />
+      ) : null}
     </div>
   )
 }

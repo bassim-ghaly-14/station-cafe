@@ -1,7 +1,8 @@
 /** Compact checkout summary: totals + optional customer + single pay action. */
 import { useTranslation } from 'react-i18next'
 import { Button, MoneyDisplay } from '@/components/ui'
-import { Eye, Tag, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
+import { Eye, HandCoins, Tag, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
+import { formatMinorMoney } from '@/lib/money'
 import type { OrderCustomer, OrderPreview, PosOrder } from '@/services/posApi'
 
 export function CheckoutSummary({
@@ -19,7 +20,7 @@ export function CheckoutSummary({
   onTicket,
   onReviewPay,
   onPrintPreview,
-  printPreviewHint,
+  onTicketPreview,
 }: {
   order: PosOrder
   shown: OrderPreview | null
@@ -34,9 +35,14 @@ export function CheckoutSummary({
   detaching: boolean
   onTicket: (() => void) | null
   onReviewPay: () => void
-  /** Print preview of the order's printable document; null when none exists yet. */
+  /** Print preview of the order's printable invoice document; null when none exists yet. */
   onPrintPreview: (() => void) | null
-  printPreviewHint?: string | null
+  /**
+   * Print preview of an ISSUED wash ticket, when one exists. Rendered as a
+   * compact trigger and opening the same shared preview dialog as the invoice —
+   * only the button differs.
+   */
+  onTicketPreview?: (() => void) | null
 }) {
   const { t } = useTranslation()
   const subtotal = shown?.subtotal ?? order.lines.reduce((a, l) => a + l.line_total, 0)
@@ -89,26 +95,55 @@ export function CheckoutSummary({
           </Button>
         </span>
       </div>
+      {/*
+        SERVICE CHARGE — an invoice-level charge, exactly like the discount, and
+        never a product line. The amounts come from Dev Settings
+        (`service_charge.amounts`) through the same settings command the POS
+        already used, so no value is hardcoded here, and applying one needs NO
+        authorization: a normal cashier selects it directly, which is the one
+        deliberate difference from the privileged discount flow.
+      */}
       {serviceChargeOptions.length ? (
-        <div className="flex flex-wrap items-center gap-1 border-t border-border-subtle px-3 py-2">
-          <span className="text-xs text-foreground-muted">{t('pos.serviceCharge')}</span>
-          <Button
-            size="sm"
-            variant={serviceCharge === 0 ? 'default' : 'outline'}
-            onClick={() => onServiceCharge(0)}
-          >
-            {t('pos.noServiceCharge')}
-          </Button>
-          {serviceChargeOptions.map((amount) => (
-            <Button
-              key={amount}
-              size="sm"
-              variant={serviceCharge === amount ? 'default' : 'outline'}
-              onClick={() => onServiceCharge(amount)}
-            >
-              <MoneyDisplay amount={amount} />
-            </Button>
-          ))}
+        <div className="flex flex-col gap-1.5 border-t border-border-subtle px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 text-caption font-medium text-foreground-muted">
+              <HandCoins size={15} aria-hidden />
+              {t('pos.serviceCharge')}
+            </span>
+            <span className="flex flex-wrap items-center gap-1">
+              <Button
+                size="sm"
+                variant={serviceCharge === 0 ? 'secondary' : 'ghost'}
+                aria-pressed={serviceCharge === 0}
+                onClick={() => onServiceCharge(0)}
+              >
+                {t('pos.noServiceCharge')}
+              </Button>
+              {serviceChargeOptions.map((amount) => (
+                <Button
+                  key={amount}
+                  size="sm"
+                  variant={serviceCharge === amount ? 'default' : 'outline'}
+                  aria-pressed={serviceCharge === amount}
+                  aria-label={t('pos.serviceChargeOption', {
+                    amount: formatMinorMoney(amount, { variant: 'auto' }),
+                  })}
+                  onClick={() => onServiceCharge(amount)}
+                >
+                  <MoneyDisplay amount={amount} />
+                </Button>
+              ))}
+            </span>
+          </div>
+          {/* States the authorization model in the UI instead of implying a hidden
+              manager step the cashier cannot perform. */}
+          <span className="text-caption text-foreground-subtle">
+            {serviceCharge === 0
+              ? t('pos.serviceChargeNone')
+              : t('pos.serviceChargeApplied', {
+                  amount: formatMinorMoney(serviceCharge, { variant: 'auto' }),
+                })}
+          </span>
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
@@ -123,14 +158,30 @@ export function CheckoutSummary({
           </Button>
         ) : null}
         <span className="flex-1" />
-        {/* Print preview sits beside the pay action: it shows the document the
-            printer draws (or is disabled while no such document exists yet). */}
+        {/*
+          The wash-ticket preview is a COMPACT trigger: the ticket is a small
+          operational document, so it must not compete with the invoice preview
+          or the pay action. It opens the same shared preview dialog — only the
+          presentation differs.
+        */}
+        {onTicketPreview ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onTicketPreview}
+            title={t('pos.ticketPreview')}
+            aria-label={t('pos.ticketPreview')}
+          >
+            <Ticket size={16} aria-hidden />
+          </Button>
+        ) : null}
+        {/* Print preview sits beside the pay action: it shows the invoice
+            document the printer draws, before anything is finalized. */}
         <Button
           variant="outline"
           size="sm"
           onClick={onPrintPreview ?? undefined}
           disabled={!onPrintPreview}
-          title={onPrintPreview ? undefined : (printPreviewHint ?? undefined)}
           aria-label={t('pos.printPreview')}
         >
           <Eye size={15} aria-hidden />
@@ -141,11 +192,6 @@ export function CheckoutSummary({
           {t('pos.reviewAndPay')}
         </Button>
       </div>
-      {!onPrintPreview && printPreviewHint ? (
-        <p className="border-t border-border-subtle px-3 py-1.5 text-xs text-foreground-subtle">
-          {printPreviewHint}
-        </p>
-      ) : null}
     </section>
   )
 }

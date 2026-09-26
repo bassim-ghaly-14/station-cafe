@@ -991,6 +991,70 @@ const MIGRATIONS: &[Migration] = &[
             ALTER TABLE cars ADD COLUMN plate_key TEXT;
         "#,
     },
+    Migration {
+        version: 21,
+        name: "starter service charge options",
+        needs_fk_off: false,
+        sql: r#"
+            -- The Station starter service-charge options (10 / 30 / 50 / 70 / 100
+            -- EGP), in piastres.
+            --
+            -- Idempotent AND configuration-preserving: the list is written only
+            -- when nothing is configured yet, so a database where an admin has
+            -- already chosen their own amounts (or deliberately cleared them)
+            -- keeps that decision. Re-running this migration is a no-op.
+            UPDATE app_settings
+            SET value = '{"amounts":[1000,3000,5000,7000,10000]}',
+                updated_at = station_now()
+            WHERE key = 'service_charge'
+              AND (
+                NOT json_valid(value)
+                OR json_type(value, '$.amounts') IS NULL
+                OR json_type(value, '$.amounts') <> 'array'
+                OR json_array_length(value, '$.amounts') = 0
+              );
+        "#,
+    },
+    Migration {
+        version: 22,
+        name: "per-cashier discount authorization credential",
+        needs_fk_off: false,
+        sql: r#"
+            -- Discount authorization is a CASHIER-SPECIFIC credential, stored
+            -- exactly like every other Station credential: an Argon2id PHC
+            -- string in the user row, never plaintext, never exposed by a
+            -- user API, never in an invoice.
+            --
+            -- NULL means "this cashier has no discount credential yet" — a
+            -- safe, non-breaking default: such a cashier simply cannot apply a
+            -- discount until an ADMIN/MANAGER configures one.
+            ALTER TABLE users ADD COLUMN discount_password_hash TEXT;
+
+            -- Upgrade path for installations that already ran the previous
+            -- GLOBAL discount password: every existing account inherits that
+            -- exact credential, so no cashier loses the ability to authorize a
+            -- discount and no staff account is invalidated by the upgrade.
+            -- The stored value is a JSON string, hence json_extract.
+            UPDATE users
+            SET discount_password_hash = (
+                SELECT json_extract(app_settings.value, '$')
+                FROM app_settings
+                WHERE app_settings.key = 'discount_authorization_hash'
+                  AND json_valid(app_settings.value)
+            )
+            WHERE discount_password_hash IS NULL
+              AND EXISTS (
+                SELECT 1 FROM app_settings
+                WHERE key = 'discount_authorization_hash'
+                  AND json_valid(value)
+                  AND json_type(value) = 'text'
+              );
+
+            -- The global password is retired: a single shared secret is
+            -- exactly what per-cashier authorization replaces.
+            DELETE FROM app_settings WHERE key = 'discount_authorization_hash';
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and
@@ -1156,6 +1220,92 @@ mod tests {
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         conn
     }
+
+    /// The per-cashier discount credential must arrive without breaking an
+    /// installation that already used the previous GLOBAL discount password:
+    /// every existing account inherits that credential, and the global secret
+    /// itself is retired.
+    #[test]
+    fn discount_authorization_migration_preserves_existing_installations() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(21)).unwrap();
+        // A pre-upgrade database: two staff accounts and one configured global
+        // discount password (stored as a JSON string, like every setting).
+        conn.execute_batch(
+            "INSERT INTO users (name, role, password_hash) VALUES
+                ('legacy-cashier', 'STAFF', 'x'),
+                ('legacy-manager', 'MANAGER', 'x');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('discount_authorization_hash', ?1)",
+            [r#""$argon2id$v=19$legacy$hash""#],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        // Both accounts keep working: they own the previous credential.
+        let migrated: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM users
+                 WHERE discount_password_hash = '$argon2id$v=19$legacy$hash'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(migrated, 2);
+        // And the shared global secret is gone, so it can never be reused.
+        let global_left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(global_left, 0);
+        // The new column is nullable: an account nobody configured is a valid,
+        // non-breaking state (it simply cannot authorize a discount yet).
+        let notnull: i64 = conn
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('users') WHERE name = 'discount_password_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("the credential column exists after the migration");
+        assert_eq!(notnull, 0, "the column must stay nullable");
+    }
+
+    /// A fresh database needs no global password at all: the column simply
+    /// starts empty and every seeded account stays usable.
+    #[test]
+    fn discount_authorization_migration_is_safe_on_a_fresh_database() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        crate::seed::run_if_empty(&conn).unwrap();
+
+        let users: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
+            .unwrap();
+        let without: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM users WHERE discount_password_hash IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // No account is invalidated by the upgrade; nobody is forced to have a
+        // credential before an ADMIN/MANAGER configures one.
+        assert_eq!(users, without);
+        let global_left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(global_left, 0);
+    }
     #[test]
     fn settings_migration_normalizes_observed_legacy_json() {
         let conn = memory_db();
@@ -1178,7 +1328,16 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(service, "[]");
+        // The legacy `{mode, value}` JSON is gone, and the shape it became is
+        // the readable one the POS deserializes — seeded with the starter
+        // options rather than left as the unparseable bare `[]` array.
+        let config: crate::services::settings::ServiceChargeConfig =
+            serde_json::from_str(&service).expect("service charge is a readable config object");
+        assert_eq!(config.amounts, vec![1_000, 3_000, 5_000, 7_000, 10_000]);
+        assert!(
+            !service.contains("mode"),
+            "the legacy mode/value shape is replaced"
+        );
         let old_limit: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_limit'",
@@ -1287,6 +1446,72 @@ mod tests {
             .unwrap();
         assert_eq!(once, twice, "a second run must be a no-op");
         assert!(!twice.ends_with("ZZ"));
+    }
+
+    /// A fresh database is seeded with the five starter service-charge options.
+    #[test]
+    fn starter_service_charge_options_are_seeded() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+
+        let raw: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let config: crate::services::settings::ServiceChargeConfig =
+            serde_json::from_str(&raw).expect("service charge config parses");
+        assert_eq!(config.amounts, vec![1_000, 3_000, 5_000, 7_000, 10_000]);
+    }
+
+    /// The seed must never overwrite an amount list an admin already chose, and
+    /// re-running it must not change anything.
+    #[test]
+    fn starter_service_charge_seed_is_idempotent_and_preserves_configuration() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+
+        let sql = MIGRATIONS
+            .iter()
+            .find(|m| m.version == 21)
+            .expect("migration 21 exists")
+            .sql;
+
+        // An admin's own configuration survives the seed.
+        conn.execute(
+            "UPDATE app_settings SET value = '{\"amounts\":[2500]}' WHERE key = 'service_charge'",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(sql).unwrap();
+        let configured: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(configured, "{\"amounts\":[2500]}");
+
+        // Re-running the seed on the already-seeded database is a no-op.
+        let seeded: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute_batch(sql).unwrap();
+        let again: String = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = 'service_charge'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(seeded, again);
     }
 
     /// Business dates are pure calendar days and must never gain a `Z`.

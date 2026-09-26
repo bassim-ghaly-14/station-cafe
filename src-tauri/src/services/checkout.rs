@@ -73,6 +73,13 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
         AppError::Validation(m) => AppError::business(m),
         other => other,
     })?;
+    // A discount that is ALREADY persisted on this order was authorized when it
+    // was set (`pos_svc::set_discount` is the only writer, and it verifies the
+    // authorization for that exact amount first). Re-sending the same amount at
+    // checkout therefore cannot smuggle in an unauthorized discount, while a
+    // CHANGED amount is a new discount operation and must be authorized again —
+    // so a modified client calling checkout(discount=500) without a verified
+    // credential is rejected here.
     let persisted_discount = matches!(
         (order.discount_mode.as_deref(), order.discount_value),
         (Some(stored_mode), Some(stored_value))
@@ -80,7 +87,13 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
                 && input.discount_value == Some(stored_value)
     );
     if discount_minor > 0 && !persisted_discount {
-        settings::authorize_discount(&tx, input.discount_password.as_deref())?;
+        settings::authorize_discount(
+            &tx,
+            actor,
+            input.order_id,
+            discount_minor,
+            input.discount_password.as_deref(),
+        )?;
     }
     let service_charge_minor = match input.service_charge_minor {
         Some(0) => 0,

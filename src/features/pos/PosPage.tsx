@@ -29,12 +29,12 @@ import {
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { tableBadgeVariant } from '@/lib/status-badge'
 import { atLeast, useSession } from '@/features/auth/useSession'
+import { useRouter } from '@/app/router'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
 import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
 import { PaymentDialog } from './PaymentDialog'
 import { ShiftGate } from './ShiftGate'
-import { TodayInvoices } from './TodayInvoices'
 
 /**
  * Shared visual treatment for explicit "start/open" actions.
@@ -49,6 +49,7 @@ export default function PosPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const { user } = useSession()
+  const { navigate } = useRouter()
   const [shiftState, setShiftState] = useState<DayShiftState | null>(null)
   const [tables, setTables] = useState<TableView[] | null>(null)
   const [takeaways, setTakeaways] = useState<TakeawayView[] | null>(null)
@@ -60,7 +61,6 @@ export default function PosPage() {
   const [discount, setDiscount] = useState<DiscountSel>({ mode: null, value: null })
   const [serviceCharge, setServiceCharge] = useState(0)
   const [serviceChargeOptions, setServiceChargeOptions] = useState<number[]>([])
-  const [invoicesOpen, setInvoicesOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<TableView | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   /**
@@ -197,6 +197,12 @@ export default function PosPage() {
       value: order.discount_value ?? null,
     })
 
+    // A service charge is a CHECKOUT selection, never order state: it is not
+    // persisted on the order (the invoice is its only snapshot). So it MUST be
+    // cleared at every order-context change, or it silently follows the cashier
+    // onto the next order and charges a customer who never selected it.
+    setServiceCharge(0)
+
     setPayOpen(false)
   }
 
@@ -325,7 +331,8 @@ export default function PosPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setInvoicesOpen(true)}>
+          {/* History is its own page now, not a dialog stacked over the POS. */}
+          <Button variant="outline" size="sm" onClick={() => navigate('today-invoices')}>
             <Receipt size={16} aria-hidden />
             {t('pos.todayInvoices')}
           </Button>
@@ -475,6 +482,9 @@ export default function PosPage() {
             setPayOpen(false)
             setActiveOrder(null)
             setDiscount({ mode: null, value: null })
+            // The charge was snapshotted onto the invoice; the checkout
+            // selection is now spent and must not leak into the next order.
+            setServiceCharge(0)
             void refresh()
 
             if (outcome?.duplicate_suppressed) {
@@ -508,8 +518,6 @@ export default function PosPage() {
           </div>
         </Dialog>
       ) : null}
-
-      {invoicesOpen ? <TodayInvoices onClose={() => setInvoicesOpen(false)} /> : null}
     </div>
   )
 }

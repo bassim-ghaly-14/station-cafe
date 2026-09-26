@@ -75,6 +75,13 @@ fn pay_cash(
     .unwrap()
 }
 
+/// Give a cashier a discount-authorization credential, exactly the way the
+/// ADMIN does it from the staff screen.
+fn authorize_cashier(conn: &Connection, cashier: &auth::User, password: &str) {
+    let admin = login(conn, "admin", "admin123");
+    auth::set_discount_authorization(conn, &admin, cashier.id, password).unwrap();
+}
+
 #[test]
 fn adding_the_same_product_twice_increments_one_line() {
     let conn = fresh();
@@ -213,14 +220,16 @@ fn an_invoice_without_a_customer_is_recorded_as_no_customer() {
 }
 
 #[test]
-fn only_admin_configured_fixed_discounts_can_be_applied() {
+fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    authorize_cashier(&conn, &staff, "approve123");
 
+    // The admin quick-pick list stays editable configuration — but it is a
+    // SHORTCUT list, never a ceiling.
     settings::set_discount_options(
         &conn,
         &developer,
@@ -229,51 +238,84 @@ fn only_admin_configured_fixed_discounts_can_be_applied() {
         },
     )
     .unwrap();
-    // A manager does not own the discount catalogue.
-    assert!(settings::set_discount_options(
-        &conn,
-        &manager,
-        &settings::DiscountOptionsConfig { amounts: vec![1] }
-    )
-    .is_err());
-    // Zero and duplicated options are configuration mistakes.
-    assert!(settings::set_discount_options(
-        &conn,
-        &developer,
-        &settings::DiscountOptionsConfig { amounts: vec![0] }
-    )
-    .is_err());
-    assert!(settings::set_discount_options(
-        &conn,
-        &developer,
-        &settings::DiscountOptionsConfig {
-            amounts: vec![1_000, 1_000]
-        }
-    )
-    .is_err());
 
     pos_svc::add_line(
         &conn,
         &staff,
         order_id,
         cafe_product(&conn, "قهوة تركي دبل"),
-        10,
+        30,
     )
     .unwrap();
+    // Derived from the authoritative preview, never hardcoded in the test.
+    // The order is deliberately worth more than 1,000 EGP so the "1,000 EGP and
+    // beyond" cases are real discounts, not out-of-range amounts.
+    let subtotal = pos_svc::preview(&conn, order_id, None, None, None)
+        .unwrap()
+        .subtotal;
+    assert!(subtotal >= 100_000);
 
-    // A configured amount is accepted and persisted on the order.
-    let saved = pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(2_000)).unwrap();
-    assert_eq!(saved.discount_value, Some(2_000));
-    let preview = pos_svc::preview(&conn, order_id, Some("FIXED"), Some(2_000), None).unwrap();
-    assert_eq!(preview.discount_minor, 2_000);
+    // 10 / 100 / 500 / 1000 EGP — and an amount nobody configured — are all
+    // valid once the authorized user approves them: there is NO maximum.
+    for amount in [1_000, 10_000, 50_000, 100_000, 777] {
+        let saved = pos_svc::set_discount(
+            &conn,
+            &staff,
+            order_id,
+            Some("FIXED"),
+            Some(amount),
+            Some("approve123"),
+        )
+        .unwrap();
+        assert_eq!(saved.discount_value, Some(amount));
+        let preview = pos_svc::preview(&conn, order_id, Some("FIXED"), Some(amount), None).unwrap();
+        assert_eq!(preview.discount_minor, amount);
+        assert_eq!(preview.total, subtotal - amount);
+    }
 
-    // An amount nobody configured is refused: the POS cannot invent a discount.
-    let err = pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(777)).unwrap_err();
-    assert_eq!(err.to_string(), "validation error: discount.not_configured");
+    // Legitimate invoice constraints remain: a discount may not exceed what the
+    // invoice actually holds, so a total can never go negative.
+    let err = pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(subtotal + 1),
+        Some("approve123"),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "validation error: discount.invalid");
+
+    // Zero and negative amounts are not discounts at all.
+    assert!(pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(0),
+        Some("approve123"),
+    )
+    .is_err());
+    assert!(pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(-500),
+        Some("approve123"),
+    )
+    .is_err());
 
     // The old percentage model can no longer be SELECTED.
-    let err =
-        pos_svc::set_discount(&conn, &staff, order_id, Some("PERCENT"), Some(10_000)).unwrap_err();
+    let err = pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("PERCENT"),
+        Some(10_000),
+        Some("approve123"),
+    )
+    .unwrap_err();
     assert_eq!(
         err.to_string(),
         "validation error: discount.percent_not_allowed"
@@ -287,7 +329,7 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    authorize_cashier(&conn, &staff, "approve123");
     settings::set_discount_options(
         &conn,
         &developer,
@@ -305,8 +347,15 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
         4,
     )
     .unwrap();
-    settings::authorize_discount(&conn, Some("approve123")).unwrap();
-    pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(5_000)).unwrap();
+    pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(5_000),
+        Some("approve123"),
+    )
+    .unwrap();
 
     let result = pay_cash(&conn, &staff, order_id, Some("FIXED"), Some(5_000));
     let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
@@ -332,18 +381,9 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
 fn a_wrong_authorization_password_does_not_apply_the_discount() {
     let conn = fresh();
     let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
-    settings::set_discount_options(
-        &conn,
-        &developer,
-        &settings::DiscountOptionsConfig {
-            amounts: vec![5_000],
-        },
-    )
-    .unwrap();
+    authorize_cashier(&conn, &staff, "approve123");
     pos_svc::add_line(
         &conn,
         &staff,
@@ -354,22 +394,286 @@ fn a_wrong_authorization_password_does_not_apply_the_discount() {
     .unwrap();
 
     // A wrong password is refused by the authorization gate, and — because the
-    // gate runs BEFORE the write — nothing is persisted on the order.
-    let err = settings::authorize_discount(&conn, Some("wrong-one")).unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.password_incorrect");
+    // gate runs BEFORE the write, in the same transaction — nothing is
+    // persisted on the order.
+    let err = pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(5_000),
+        Some("wrong-one"),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
     assert!(pos_svc::get_order(&conn, order_id)
         .unwrap()
         .discount_value
         .is_none());
 
     // Clearing a discount needs no authorization at all.
-    settings::authorize_discount(&conn, Some("approve123")).unwrap();
-    pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(5_000)).unwrap();
-    pos_svc::set_discount(&conn, &staff, order_id, None, None).unwrap();
+    pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(5_000),
+        Some("approve123"),
+    )
+    .unwrap();
+    pos_svc::set_discount(&conn, &staff, order_id, None, None, None).unwrap();
     assert!(pos_svc::get_order(&conn, order_id)
         .unwrap()
         .discount_value
         .is_none());
+}
+
+#[test]
+fn discount_authorization_is_cashier_specific() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let developer = login(&conn, "admin", "admin123");
+    let staff = login(&conn, "cashier", "cashier123");
+    let order_id = open_order(&conn, &manager, &staff);
+    pos_svc::add_line(
+        &conn,
+        &staff,
+        order_id,
+        cafe_product(&conn, "قهوة تركي دبل"),
+        2,
+    )
+    .unwrap();
+
+    // Before anyone is configured, no credential authorizes anything — and the
+    // error is identical to a wrong password, so the POS cannot probe for the
+    // existence of a stored hash.
+    for password in [None, Some(""), Some("approve123")] {
+        let err =
+            settings::authorize_discount(&conn, &staff, order_id, 500, password).unwrap_err();
+        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    }
+
+    // Two real accounts, two different credentials.
+    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
+    auth::set_discount_authorization(&conn, &developer, manager.id, "other1234").unwrap();
+
+    // Each cashier's OWN credential authorizes their own discount operation.
+    settings::authorize_discount(&conn, &staff, order_id, 500, Some("approve123")).unwrap();
+    settings::authorize_discount(&conn, &manager, order_id, 500, Some("other1234")).unwrap();
+
+    // A credential configured for ANOTHER cashier never authorizes this one:
+    // there is no global/shared password to fall back on.
+    for (cashier, foreign) in [(&staff, "other1234"), (&manager, "approve123")] {
+        let err = settings::authorize_discount(&conn, cashier, order_id, 500, Some(foreign))
+            .unwrap_err();
+        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    }
+
+    // The manager's own LOGIN password is not a discount credential.
+    let err = settings::authorize_discount(
+        &conn,
+        &staff,
+        order_id,
+        500,
+        Some("manager123"),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+
+    // End to end: the cashier applies the discount on their own order with their
+    // own credential.
+    let saved = pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(500),
+        Some("approve123"),
+    )
+    .unwrap();
+    assert_eq!(saved.discount_value, Some(500));
+}
+
+
+#[test]
+fn a_manager_or_admin_configures_the_cashier_credential_and_a_cashier_cannot() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let developer = login(&conn, "admin", "admin123");
+    let staff = login(&conn, "cashier", "cashier123");
+
+    // A CASHIER may never configure a credential — not their own, not another's.
+    assert!(auth::set_discount_authorization(&conn, &staff, staff.id, "hijack1").is_err());
+    assert!(auth::set_discount_authorization(&conn, &staff, manager.id, "hijack1").is_err());
+    assert!(auth::set_discount_authorization(&conn, &staff, developer.id, "hijack1").is_err());
+    assert!(!auth::discount_authorization_configured(&conn, staff.id).unwrap());
+
+    // MANAGER may configure a cashier, exactly like the rest of staff
+    // management; ADMIN may configure anyone, including another ADMIN.
+    auth::set_discount_authorization(&conn, &manager, staff.id, "approve123").unwrap();
+    assert!(auth::discount_authorization_configured(&conn, staff.id).unwrap());
+    auth::set_discount_authorization(&conn, &developer, developer.id, "approve123").unwrap();
+
+    // A MANAGER may not touch an ADMIN credential; unknown accounts and
+    // too-short credentials are refused.
+    assert!(auth::set_discount_authorization(&conn, &manager, developer.id, "approve123").is_err());
+    assert!(auth::set_discount_authorization(&conn, &manager, 123_456, "approve123").is_err());
+    assert!(auth::set_discount_authorization(&conn, &manager, staff.id, "123").is_err());
+
+    // Stored as a hash, never plaintext, and the audit trail records the change
+    // without any credential material.
+    let stored: String = conn
+        .query_row(
+            "SELECT discount_password_hash FROM users WHERE id = ?1",
+            [staff.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stored.starts_with("$argon2"));
+    assert!(!stored.contains("approve123"));
+    let logged: String = conn
+        .query_row(
+            "SELECT COALESCE(before_json, '') || COALESCE(after_json, '')
+             FROM audit_log WHERE action = 'user.discount_authorization_changed'
+             ORDER BY id DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!logged.contains("approve123"));
+    assert!(logged.contains("configured"));
+}
+
+#[test]
+fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    let order_id = open_order(&conn, &manager, &staff);
+    authorize_cashier(&conn, &staff, "approve123");
+    pos_svc::add_line(
+        &conn,
+        &staff,
+        order_id,
+        cafe_product(&conn, "قهوة تركي دبل"),
+        2,
+    )
+    .unwrap();
+
+    // A modified client calling checkout with a discount it never applied: the
+    // backend still demands a verified authorization.
+    let err = checkout::checkout(
+        &conn,
+        &staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: Some("FIXED".into()),
+            discount_value: Some(5_000),
+            discount_password: None,
+            service_charge_minor: None,
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+
+    // Authorization is tied to the amount: authorizing 5.00 does not authorize
+    // a later, larger discount on the same order.
+    pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(500),
+        Some("approve123"),
+    )
+    .unwrap();
+    let err = checkout::checkout(
+        &conn,
+        &staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: Some("FIXED".into()),
+            discount_value: Some(8_000),
+            discount_password: None,
+            service_charge_minor: None,
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    // The order still holds exactly the authorized amount.
+    assert_eq!(
+        pos_svc::get_order(&conn, order_id).unwrap().discount_value,
+        Some(500)
+    );
+
+    // Paying the authorized amount settles normally.
+    let result = pay_cash(&conn, &staff, order_id, Some("FIXED"), Some(500));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.discount_minor, 500);
+}
+
+#[test]
+fn a_cashier_without_a_credential_cannot_discount_but_service_charge_stays_free() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    let order_id = open_order(&conn, &manager, &staff);
+    pos_svc::add_line(
+        &conn,
+        &staff,
+        order_id,
+        cafe_product(&conn, "قهوة تركي دبل"),
+        2,
+    )
+    .unwrap();
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![2_000],
+        },
+    )
+    .unwrap();
+
+    // Discount → authorization required, and this cashier has none.
+    assert!(pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(500),
+        Some("approve123"),
+    )
+    .is_err());
+
+    // Service charge → no password, no authorization, exactly as before.
+    let preview = pos_svc::preview(&conn, order_id, None, None, Some(2_000)).unwrap();
+    assert_eq!(preview.service_charge_minor, 2_000);
+    let result = checkout::checkout(
+        &conn,
+        &staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: None,
+            discount_value: None,
+            discount_password: None,
+            service_charge_minor: Some(2_000),
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap();
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 2_000);
+    assert_eq!(invoice.discount_minor, 0);
 }
 
 #[test]

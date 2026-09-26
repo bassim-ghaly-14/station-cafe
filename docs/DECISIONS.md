@@ -21,3 +21,4 @@ Tracked explicitly — do NOT silently resolve these during implementation.
 | Tests           | Vitest + Testing Library (FE), `cargo test` (BE incl. DB via in-memory SQLite) | business-critical logic first                 |
 | Windows builds  | GitHub Actions + tauri-action                                                  | no Windows machine needed                     |
 | Updates         | tauri-plugin-updater + signed GitHub Releases                                  | safe offline-first update flow                |
+| Discount policy | open-ended amount + per-cashier authorization (Argon2id, no global password)   | no ceiling; usage is authorization-controlled |

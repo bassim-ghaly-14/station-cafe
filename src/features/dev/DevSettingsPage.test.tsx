@@ -15,10 +15,8 @@ const mocks = vi.hoisted(() => ({
   clearSessionToken: vi.fn(),
   clearLocalSession: vi.fn(),
   serviceCharge: vi.fn(),
-  discountAuthorization: vi.fn(),
   discountOptions: vi.fn(),
   setDiscountOptions: vi.fn(),
-  setDiscountAuthorizationPassword: vi.fn(),
   setServiceCharge: vi.fn(),
   setCredit: vi.fn(),
   credit: vi.fn(),
@@ -45,10 +43,8 @@ vi.mock('@/services/posApi', () => ({
   api: { tables: mocks.tables, setTableCount: mocks.setTableCount },
   settingsApi: {
     serviceCharge: mocks.serviceCharge,
-    discountAuthorization: mocks.discountAuthorization,
     discountOptions: mocks.discountOptions,
     setDiscountOptions: mocks.setDiscountOptions,
-    setDiscountAuthorizationPassword: mocks.setDiscountAuthorizationPassword,
     setServiceCharge: mocks.setServiceCharge,
     setCredit: mocks.setCredit,
     credit: mocks.credit,
@@ -72,10 +68,8 @@ describe('DevSettingsPage', () => {
     mocks.clearSessionToken.mockReset()
     mocks.clearLocalSession.mockReset()
     mocks.serviceCharge.mockReset().mockResolvedValue({ amounts: [1000, 3000, 5000] })
-    mocks.discountAuthorization.mockReset().mockResolvedValue({ configured: false })
     mocks.discountOptions.mockReset().mockResolvedValue({ amounts: [2000, 5000] })
     mocks.setDiscountOptions.mockReset().mockResolvedValue(undefined)
-    mocks.setDiscountAuthorizationPassword.mockReset().mockResolvedValue(undefined)
     mocks.setServiceCharge.mockReset().mockResolvedValue(undefined)
     mocks.setCredit.mockReset().mockResolvedValue(undefined)
     mocks.credit
@@ -121,19 +115,17 @@ describe('DevSettingsPage', () => {
     await waitFor(() => expect(mocks.setTableCount).toHaveBeenCalledWith(13))
   })
 
-  it('configures fixed service charge amounts without exposing a stored password', async () => {
+  it('configures fixed service charge amounts and quick-pick discounts only', async () => {
     page()
     await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
     fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '15' } })
-    fireEvent.change(screen.getByLabelText('كلمة مرور تفويض الخصم'), {
-      target: { value: 'approve123' },
-    })
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الإعدادات' }))
     await waitFor(() =>
       expect(mocks.setServiceCharge).toHaveBeenCalledWith({ amounts: [1500, 3000, 5000] }),
     )
-    expect(mocks.setDiscountAuthorizationPassword).toHaveBeenCalledWith('approve123')
-    expect(screen.queryByDisplayValue('approve123')).not.toBeInTheDocument()
+    // The global discount password is gone: it is now a per-cashier credential
+    // configured on the staff screen, never a shared secret on this page.
+    expect(screen.queryByLabelText('كلمة مرور تفويض الخصم')).not.toBeInTheDocument()
   })
 
   it('retains the developer database tools', async () => {
@@ -151,7 +143,6 @@ describe('DevSettingsPage display formatting', () => {
     resetFormattingPreferences()
     mocks.user.role = 'ADMIN'
     mocks.serviceCharge.mockResolvedValue({ amounts: [1000] })
-    mocks.discountAuthorization.mockResolvedValue({ configured: false })
     mocks.credit.mockResolvedValue({ enabled: true, mode: 'LIST', allowed_customer_ids: [] })
     mocks.tables.mockResolvedValue([])
   })

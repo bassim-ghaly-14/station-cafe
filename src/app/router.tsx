@@ -7,7 +7,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 
 export type View =
-  'pos' | 'staff' | 'catalog' | 'inventory' | 'expenses' | 'reports' | 'dev-settings'
+  | 'pos'
+  | 'today-invoices'
+  | 'staff'
+  | 'catalog'
+  | 'inventory'
+  | 'expenses'
+  | 'reports'
+  | 'dev-settings'
 
 interface RouterCtx {
   view: View
@@ -19,6 +26,7 @@ const Ctx = createContext<RouterCtx | null>(null)
 
 const VIEW_PATHS: Record<View, string> = {
   pos: '/pos',
+  'today-invoices': '/pos/invoices',
   staff: '/staff',
   catalog: '/catalog',
   inventory: '/inventory',

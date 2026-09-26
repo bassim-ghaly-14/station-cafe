@@ -276,27 +276,6 @@ pub fn set_discount_options(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn get_discount_authorization(
-    state: State<'_, AppState>,
-    token: String,
-) -> AppResult<crate::services::settings::DiscountAuthorizationConfig> {
-    authorized(&state, &token, "STAFF", |conn, _| {
-        crate::services::settings::get_discount_authorization(conn)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn set_discount_authorization_password(
-    state: State<'_, AppState>,
-    token: String,
-    password: String,
-) -> AppResult<()> {
-    authorized(&state, &token, "ADMIN", move |conn, actor| {
-        crate::services::settings::set_discount_authorization_password(conn, actor, &password)
-    })
-}
-
-#[tauri::command(rename_all = "snake_case")]
 pub fn get_service_charge(
     state: State<'_, AppState>,
     token: String,

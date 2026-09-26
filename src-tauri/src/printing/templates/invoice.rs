@@ -1,16 +1,18 @@
 use super::super::escpos::{ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, stamp, WIDTH};
+use super::shared::{
+    footer, header, items_and_totals, stamp, DocLine, DocSettlement, DocTotals, WIDTH,
+};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 
-/// Cafe / Wash / Hybrid invoice. The hybrid layout is the same template with
-/// department sections — a presentation mode, not a separate entity.
+/// Cafe / Wash / Hybrid invoice. The hybrid layout is the shared composer with
+/// department sections — a presentation mode, not a separate entity, and not a
+/// second rendering path.
 pub fn invoice(
     mode: ArabicMode,
     codepage: u8,
     inv: &InvoiceRow,
     lines: &[InvoiceLine],
-    show_dept_sections: bool,
     logo: bool,
 ) -> PrintDoc {
     let mut p = EscPos::new(mode, codepage);
@@ -38,8 +40,39 @@ pub fn invoice(
         p.kv_line("نوع السيارة", model, WIDTH);
     }
     p.hr(WIDTH);
-    items_and_totals(&mut p, inv, lines, show_dept_sections);
+    items_and_totals(
+        &mut p,
+        &doc_lines(lines),
+        &DocTotals {
+            subtotal: inv.subtotal,
+            discount_minor: inv.discount_minor,
+            service_charge_minor: inv.service_charge,
+            total: inv.total,
+            // The stored snapshot: a historical invoice always prints the
+            // department subtotals it was settled with.
+            dept_subtotals: Some((inv.cafe_total, inv.wash_total)),
+            settlement: Some(DocSettlement {
+                paid_amount: inv.paid_amount,
+                credit_remaining: (inv.status == "CREDIT").then_some(inv.total - inv.paid_amount),
+            }),
+        },
+        None,
+    );
     footer(p)
+}
+
+/// Adapt persisted invoice lines to the neutral composer shape.
+pub(super) fn doc_lines(lines: &[InvoiceLine]) -> Vec<DocLine<'_>> {
+    lines
+        .iter()
+        .map(|l| DocLine {
+            department: &l.department,
+            product_name: &l.product_name,
+            unit_price: l.unit_price,
+            quantity: l.quantity,
+            line_total: l.line_total,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -95,7 +128,10 @@ mod tests {
                 line_total: 160_00,
             },
         ];
-        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, true, false);
+        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false);
+        // Hybrid: each department is separated and states its own subtotal.
+        assert!(bytes_has(&doc.escpos, "إجمالي الكافيه الفرعي"));
+        assert!(bytes_has(&doc.escpos, "إجمالي المغسلة الفرعي"));
         assert!(bytes_has(&doc.escpos, "70.00"));
         assert!(bytes_has(&doc.escpos, "160.00"));
         assert!(bytes_has(&doc.escpos, "تويوتا"));
@@ -138,7 +174,7 @@ mod tests {
             business_day_id: Some(1),
         };
         let lines = vec![];
-        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false, false);
+        let doc = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false);
         assert!(
             bytes_has(&doc.escpos, "2026-09-25 17:30"),
             "the receipt must print 17:30 (Cairo), not 14:30 (UTC)"
@@ -148,7 +184,7 @@ mod tests {
         // A legacy unmarked value converts identically — same instant, same
         // printed result, so historical invoices reprint consistently.
         inv.created_at = "2026-09-25 14:30:00".into();
-        let legacy = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false, false);
+        let legacy = invoice(ArabicMode::Cp1256, 22, &inv, &lines, false);
         assert!(bytes_has(&legacy.escpos, "2026-09-25 17:30"));
     }
 }

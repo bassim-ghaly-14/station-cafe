@@ -6,7 +6,7 @@ use crate::error::{AppError, AppResult};
 use crate::repositories::users;
 use crate::services::auth;
 use crate::AppState;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[tauri::command(rename_all = "snake_case")]
@@ -94,6 +94,45 @@ pub fn create_staff(
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_staff(state: State<'_, AppState>, token: String) -> AppResult<Vec<users::User>> {
     authorized(&state, &token, "MANAGER", |conn, _actor| users::list(conn))
+}
+
+/// Per-cashier discount-authorization flags for the staff screen.
+///
+/// MANAGER+ only (same boundary as managing staff accounts), and it returns a
+/// BOOLEAN per user — the credential itself never leaves the backend.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_discount_authorization(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<StaffDiscountAuthorization>> {
+    authorized(&state, &token, "MANAGER", |conn, _| {
+        Ok(users::discount_authorization_states(conn)?
+            .into_iter()
+            .map(|(user_id, configured)| StaffDiscountAuthorization {
+                user_id,
+                configured,
+            })
+            .collect())
+    })
+}
+
+#[derive(Serialize)]
+pub struct StaffDiscountAuthorization {
+    pub user_id: i64,
+    pub configured: bool,
+}
+
+/// MANAGER+ sets ONE cashier's discount-authorization credential.
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_staff_discount_password(
+    state: State<'_, AppState>,
+    token: String,
+    user_id: i64,
+    password: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        auth::set_discount_authorization(conn, actor, user_id, &password)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]

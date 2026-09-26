@@ -324,18 +324,37 @@ pub fn remove_line(conn: &Db, actor: &User, line_id: i64) -> AppResult<()> {
 /// Persist the validated discount selection on the order and return the
 /// refreshed authoritative order. Validation stays backend-side so the
 /// discount survives refresh / reopen / restart (never React-only).
+///
+/// This service function is the authorization choke point for "a discount is
+/// applied to an order": validation, authorization and persistence happen in ONE
+/// transaction, so no caller (including a modified client) can persist a
+/// discount without a verified authorization for that exact amount.
 pub fn set_discount(
     conn: &Db,
     actor: &User,
     order_id: i64,
     discount_mode: Option<&str>,
     discount_value: Option<i64>,
+    discount_password: Option<&str>,
 ) -> AppResult<Order> {
     let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    validate_discount_selection(&tx, subtotal, discount_mode, discount_value)?;
+    let discount_minor =
+        validate_discount_selection(subtotal, discount_mode, discount_value)?;
+    // Authorization is bound to THIS operation and to the amount that is about
+    // to be persisted — it can never be replayed for a different amount.
+    // Clearing a discount needs no authorization (it removes value, not adds).
+    if discount_minor > 0 {
+        settings::authorize_discount(
+            &tx,
+            actor,
+            order_id,
+            discount_minor,
+            discount_password,
+        )?;
+    }
     pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;
     let refreshed = get_order(&tx, order_id)?;
     tx.commit()?;
@@ -444,11 +463,17 @@ pub fn validate_discount(
 
 /// Validate a NEW discount SELECTION made by the POS.
 ///
-/// Only admin-configured fixed options may be selected: there is no percentage
-/// mode, no free amount, and no value that is not in the Dev Settings list.
-/// This is the rule that makes "discount" configuration instead of invention.
+/// The AMOUNT is open-ended: there is no maximum percentage, no maximum EGP
+/// value, no hardcoded ceiling and no cashier-side limit. The only rules are
+/// the mathematical/business ones that keep the invoice valid:
+///   * the amount must be positive (a discount of 0 is "no discount"), and
+///   * it may not exceed the applicable subtotal, so a total can never go
+///     negative (or reach zero, which checkout refuses separately).
+///
+/// The admin "quick-pick" list is NOT consulted: it is a UI shortcut, never a
+/// whitelist. Authorization of the amount is enforced separately (and always)
+/// by `set_discount`.
 pub fn validate_discount_selection(
-    conn: &Db,
     subtotal: i64,
     mode: Option<&str>,
     value: Option<i64>,
@@ -456,20 +481,9 @@ pub fn validate_discount_selection(
     match (mode, value) {
         // Clearing the discount is always allowed (no authorization needed).
         (None, _) => Ok(0),
-        (_, None) => Err(AppError::validation("discount.not_configured")),
         (Some("PERCENT"), _) => Err(AppError::validation("discount.percent_not_allowed")),
-        (Some("FIXED"), Some(amount)) => {
-            if !settings::get_discount_options(conn)?
-                .amounts
-                .contains(&amount)
-            {
-                return Err(AppError::validation("discount.not_configured"));
-            }
-            if amount > subtotal {
-                return Err(AppError::validation("discount.invalid"));
-            }
-            Ok(amount)
-        }
+        (Some("FIXED"), Some(amount)) if amount > 0 && amount <= subtotal => Ok(amount),
+        // Zero, negative, or larger than what the invoice actually holds.
         _ => Err(AppError::validation("discount.invalid")),
     }
 }

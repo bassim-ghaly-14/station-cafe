@@ -1,9 +1,13 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, stamp, WIDTH};
-use crate::money::format_minor_for_print;
+use super::shared::{footer, header, items_and_totals, stamp, DocLine, DocTotals, WIDTH};
 use crate::repositories::pos::Order;
 
+/// Pre-payment preview of the current order.
+///
+/// It carries its own identity (no invoice number, a "before payment" marker)
+/// but composes its BODY with the shared composer, so a hybrid order separates
+/// the cafe and wash subtotals here exactly as it will on the printed invoice.
 pub fn current_order(
     mode: ArabicMode,
     codepage: u8,
@@ -45,84 +49,38 @@ pub fn current_order(
         p.kv_line("نوع السيارة", model, WIDTH);
     }
     p.hr(WIDTH);
-    let cafe_lines: Vec<_> = order
-        .lines
-        .iter()
-        .filter(|l| l.department == "CAFE")
-        .collect();
-    let wash_lines: Vec<_> = order
-        .lines
-        .iter()
-        .filter(|l| l.department == "WASH")
-        .collect();
-    let hybrid = !cafe_lines.is_empty() && !wash_lines.is_empty();
-    let mut first_section = true;
-    for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "المغسلة")] {
-        let dept_lines: Vec<_> = order
-            .lines
-            .iter()
-            .filter(|l| !hybrid || l.department == dept)
-            .collect();
-        if hybrid && dept_lines.is_empty() {
-            continue;
-        }
-        if hybrid {
-            if !first_section {
-                p.hr(WIDTH);
-            }
-            first_section = false;
-            p.bold(true);
-            p.line(title);
-            p.bold(false);
-        }
-        for line in dept_lines {
-            p.item(
-                &line.product_name,
-                &line.quantity.to_string(),
-                &format_minor_for_print(line.unit_price),
-                &format_minor_for_print(line.line_total),
-            );
-        }
-        if hybrid {
-            let dept_subtotal: i64 = order
-                .lines
-                .iter()
-                .filter(|l| l.department == dept)
-                .map(|l| l.line_total)
-                .sum();
-            p.financial(
-                &format!("{title} الفرعي"),
-                &format_minor_for_print(dept_subtotal),
-                false,
-            );
-        }
-    }
-    p.hr(WIDTH);
-    p.financial(
-        "الإجمالي الفرعي",
-        &format_minor_for_print(totals.subtotal),
-        false,
+    // The car model already appears in the identity block above, so the
+    // composer is told not to repeat it inside the wash section.
+    items_and_totals(
+        &mut p,
+        &order_doc_lines(&order.lines),
+        &DocTotals {
+            subtotal: totals.subtotal,
+            discount_minor: totals.discount_minor,
+            service_charge_minor: totals.service_charge_minor,
+            total: totals.total,
+            // A live order has no persisted snapshot: each department subtotal
+            // is derived from the very line totals printed above it.
+            dept_subtotals: None,
+            settlement: None,
+        },
+        None,
     );
-    if totals.discount_minor > 0 {
-        p.financial(
-            "الخصم",
-            &format_minor_for_print(totals.discount_minor),
-            false,
-        );
-    }
-    if totals.service_charge_minor > 0 {
-        p.financial(
-            "خدمة",
-            &format_minor_for_print(totals.service_charge_minor),
-            false,
-        );
-    }
-    p.bold(true);
-    p.size(1, 2);
-    p.financial("الإجمالي", &format_minor_for_print(totals.total), true);
-    p.size(1, 1);
-    p.bold(false);
     p.align(Align::Center);
     p.line("معاينة الطلب — قبل الدفع");
     footer(p)
+}
+
+/// Adapt live order lines to the neutral composer shape.
+pub(super) fn order_doc_lines(lines: &[crate::repositories::pos::OrderLine]) -> Vec<DocLine<'_>> {
+    lines
+        .iter()
+        .map(|l| DocLine {
+            department: &l.department,
+            product_name: &l.product_name,
+            unit_price: l.unit_price,
+            quantity: l.quantity,
+            line_total: l.line_total,
+        })
+        .collect()
 }

@@ -141,7 +141,8 @@ pub fn mark_ready_to_pay(
     })
 }
 
-/// Persist the order-level discount selection (validated server-side).
+/// Persist the order-level discount selection (validated AND authorized
+/// server-side, in one transaction).
 #[tauri::command(rename_all = "snake_case")]
 pub fn set_order_discount(
     state: State<'_, AppState>,
@@ -152,15 +153,13 @@ pub fn set_order_discount(
     discount_password: Option<String>,
 ) -> AppResult<Order> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
-        if discount_value.is_some() {
-            crate::services::settings::authorize_discount(conn, discount_password.as_deref())?;
-        }
         pos_svc::set_discount(
             conn,
             actor,
             order_id,
             discount_mode.as_deref(),
             discount_value,
+            discount_password.as_deref(),
         )
     })
 }

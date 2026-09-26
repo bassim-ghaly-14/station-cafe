@@ -256,9 +256,12 @@ export const api = {
       service_charge_minor,
     }),
   /**
-   * Apply an admin-configured FIXED discount, or clear it with `null`.
-   * There is deliberately no percentage and no free-text amount: the caller can
-   * only pass one of the amounts the backend published as an option.
+   * Apply a discount amount (or clear it with `null`).
+   *
+   * The amount is open-ended: it is not limited to the configured quick-pick
+   * options, only to what the order can carry. Applying one REQUIRES the
+   * cashier's own authorization credential, which the backend verifies — the
+   * UI can never bypass it. Clearing a discount needs no credential.
    */
   setDiscount: (
     order_id: number,
@@ -346,16 +349,19 @@ export interface ServiceChargeConfig {
   amounts: number[]
 }
 
-export interface DiscountAuthorizationConfig {
-  configured: boolean
-}
-
 /**
- * Admin-configured fixed discount options (minor units). The POS may only ever
- * select one of these amounts — it never accepts a free or percentage value.
+ * Admin-configured discount QUICK-PICK amounts (minor units). These are
+ * shortcuts the POS offers the cashier — NOT a whitelist and NOT a ceiling:
+ * any positive amount up to the order subtotal can be applied once authorized.
  */
 export interface DiscountOptionsConfig {
   amounts: number[]
+}
+
+/** Per-cashier discount-authorization flags. A boolean only, never a value. */
+export interface StaffDiscountAuthorization {
+  user_id: number
+  configured: boolean
 }
 
 export interface CreditConfig {
@@ -372,9 +378,13 @@ export const settingsApi = {
     call<void>('set_discount_options', { config }),
   credit: () => call<CreditConfig>('get_credit_config'),
   setCredit: (config: CreditConfig) => call<void>('set_credit_config', { config }),
-  discountAuthorization: () => call<DiscountAuthorizationConfig>('get_discount_authorization'),
-  setDiscountAuthorizationPassword: (password: string) =>
-    call<void>('set_discount_authorization_password', { password }),
+}
+
+/** Staff management: per-cashier discount authorization (MANAGER+). */
+export const staffApi = {
+  discountAuthorization: () => call<StaffDiscountAuthorization[]>('list_discount_authorization'),
+  setDiscountPassword: (user_id: number, password: string) =>
+    call<void>('set_staff_discount_password', { user_id, password }),
 }
 
 export interface CheckoutInput {

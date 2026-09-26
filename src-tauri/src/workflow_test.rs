@@ -104,22 +104,29 @@ fn fixed_service_charge_options_and_authorized_discounts() {
     assert_eq!(selected.service_charge_minor, 3_000);
     assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(2_500)).is_err());
 
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
-    assert!(
-        settings::get_discount_authorization(&conn)
-            .unwrap()
-            .configured
-    );
+    // The cashier's discount credential is configured by the ADMIN — per user,
+    // never as a shared global password, and stored as a hash.
+    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
+    assert!(auth::discount_authorization_configured(&conn, staff.id).unwrap());
     let stored: String = conn
         .query_row(
-            "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
-            [],
+            "SELECT discount_password_hash FROM users WHERE id = ?1",
+            [staff.id],
             |r| r.get(0),
         )
         .unwrap();
     assert!(!stored.contains("approve123"));
-    assert!(settings::authorize_discount(&conn, Some("wrong123")).is_err());
-    settings::authorize_discount(&conn, Some("approve123")).unwrap();
+    // The global discount password is gone for good.
+    let global_left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM app_settings WHERE key = 'discount_authorization_hash'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(global_left, 0);
+    assert!(settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("wrong123")).is_err());
+    settings::authorize_discount(&conn, &staff, order_id, 2_960, Some("approve123")).unwrap();
     assert_eq!(
         pos_svc::validate_discount(&conn, 14_800, Some("PERCENT"), Some(20_000)).unwrap(),
         2_960
@@ -275,7 +282,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     pos_svc::mark_ready_to_pay(&conn, &staff, order_id).unwrap();
 
     let developer = login(&conn, "admin", "admin123");
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
     // ---- pay CASH with change ---------------------------------------------
     let result = checkout::checkout(
         &conn,
@@ -1036,7 +1043,7 @@ fn discount_survives_reload_and_reaches_invoice() {
     .unwrap();
 
     let developer = login(&conn, "admin", "admin123");
-    settings::set_discount_authorization_password(&conn, &developer, "approve123").unwrap();
+    auth::set_discount_authorization(&conn, &developer, staff.id, "approve123").unwrap();
     settings::set_service_charge(
         &conn,
         &manager,
@@ -1053,8 +1060,16 @@ fn discount_survives_reload_and_reaches_invoice() {
         },
     )
     .unwrap();
-    // Persist an admin-configured fixed discount on the order row itself.
-    let saved = pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(2_000)).unwrap();
+    // Persist an authorized fixed discount on the order row itself.
+    let saved = pos_svc::set_discount(
+        &conn,
+        &staff,
+        order_id,
+        Some("FIXED"),
+        Some(2_000),
+        Some("approve123"),
+    )
+    .unwrap();
     assert_eq!(saved.discount_mode.as_deref(), Some("FIXED"));
     assert_eq!(saved.discount_value, Some(2_000));
 

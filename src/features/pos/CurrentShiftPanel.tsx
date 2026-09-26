@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Dialog, EmployeeAvatar, MoneyDisplay, useToast } from '@/components/ui'
+import {
+  AmountAutoFill,
+  Badge,
+  Button,
+  Dialog,
+  EmployeeAvatar,
+  MoneyDisplay,
+  useToast,
+} from '@/components/ui'
 import { DisplayDateTime } from '@/components/ui/display-datetime'
 import { Clock, Eye, Lock } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { ListRowsSkeleton, Skeleton } from '@/components/ui'
 import { ErrorState } from '@/components/states'
 import { parseMajor } from '@/lib/utils'
+import { formatMinorMoney } from '@/lib/money'
 import { normalizeToUtcIso } from '@/lib/date'
 import { shiftApi, type ShiftClosingPreview, type ShiftRow } from '@/services/shiftApi'
 import { api } from '@/services/posApi'
@@ -304,6 +313,26 @@ export function CurrentShiftPanel({
                     disabled={busy}
                   />
                 </Field>
+                {/* The expected cash is a safe, backend-computed amount, so the
+                    balanced-drawer case needs no typing. Same shared auto-fill
+                    affordance as the payment dialog — an ACTION that writes the
+                    field, never a second amount reading. */}
+                {preview ? (
+                  <AmountAutoFill
+                    className="mt-2"
+                    amount={preview.expected_cash}
+                    label={t('shift.autoFillLabel', {
+                      amount: formatMinorMoney(preview.expected_cash),
+                    })}
+                    hint={t('shift.autoFillHint')}
+                    active={parsedCash === preview.expected_cash}
+                    disabled={busy}
+                    onFill={() => {
+                      setActualCash((preview.expected_cash / 100).toFixed(2))
+                      if (error) setError(null)
+                    }}
+                  />
+                ) : null}
                 {variance !== null ? (
                   <div
                     className={`mt-3 flex items-center justify-between gap-3 rounded-md border p-3 ${variance === 0 ? 'border-success-border bg-success-soft text-success-foreground' : variance < 0 ? 'border-destructive-border bg-destructive-soft text-destructive-soft-foreground' : 'border-warning-border bg-warning-soft text-warning-foreground'}`}

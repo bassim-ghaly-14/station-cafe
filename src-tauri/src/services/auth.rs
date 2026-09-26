@@ -210,6 +210,56 @@ pub fn change_password(
     )
 }
 
+/// MANAGER+ configures ONE cashier's discount-authorization credential.
+///
+/// Discount authorization is deliberately a PER-USER credential, not a shared
+/// global password: approving a discount is verified against the acting
+/// cashier's own row, so one cashier can never be authorized by another
+/// cashier's secret and revoking one cashier revokes exactly that cashier.
+///
+/// The role model mirrors `change_password` / `set_staff_status`: a MANAGER may
+/// configure anyone below ADMIN, and an ADMIN credential stays ADMIN-only.
+/// The credential is stored with the project's existing Argon2id hashing, is
+/// never returned to the frontend, and never reaches the audit trail.
+pub fn set_discount_authorization(
+    conn: &Db,
+    actor: &User,
+    target_id: i64,
+    new_password: &str,
+) -> AppResult<()> {
+    require_role(actor, "MANAGER")?;
+    let target = users::find_by_id(conn, target_id)?
+        .ok_or_else(|| AppError::not_found("user.not_found"))?;
+    if target.role == "ADMIN" && actor.role != "ADMIN" {
+        return Err(AppError::unauthorized("auth.admin_only"));
+    }
+
+    validate_password(new_password)?;
+
+    let was_configured = users::find_discount_password(conn, target_id)?.is_some();
+    let hash = hash_password(new_password)?;
+    users::set_discount_password(conn, target_id, &hash)?;
+
+    // The audit trail records THAT the credential changed — never the value,
+    // never the hash.
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "user.discount_authorization_changed",
+        "user",
+        Some(&target_id.to_string()),
+        Some(&serde_json::json!({ "configured": was_configured })),
+        Some(&serde_json::json!({ "configured": true })),
+    )
+}
+
+/// Whether a cashier currently has a discount-authorization credential.
+/// A boolean for the management screen — never the credential itself.
+pub fn discount_authorization_configured(conn: &Db, user_id: i64) -> AppResult<bool> {
+    Ok(users::find_discount_password(conn, user_id)?.is_some())
+}
+
 /// Minimum password length for Station accounts.
 ///
 /// Five characters allows staff passwords/PIN-style credentials such as

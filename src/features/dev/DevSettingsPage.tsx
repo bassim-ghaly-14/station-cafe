@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  Badge,
-  Button,
-  Card,
-  CardHeader,
-  Dialog,
-  Field,
-  Input,
-  PasswordInput,
-} from '@/components/ui'
+import { Badge, Button, Card, CardHeader, Dialog, Field, Input } from '@/components/ui'
 import {
   ArrowRight,
   Minus,
@@ -49,8 +40,6 @@ export default function DevSettingsPage() {
 
   const [serviceAmounts, setServiceAmounts] = useState<string[]>([])
   const [discountAmounts, setDiscountAmounts] = useState<string[]>([])
-  const [discountPassword, setDiscountPassword] = useState('')
-  const [discountConfigured, setDiscountConfigured] = useState(false)
 
   const [credit, setCredit] = useState<CreditConfig>({
     enabled: true,
@@ -111,14 +100,12 @@ export default function DevSettingsPage() {
     void Promise.all([
       settingsApi.serviceCharge(),
       settingsApi.discountOptions(),
-      settingsApi.discountAuthorization(),
       settingsApi.credit(),
       api.tables(),
     ])
-      .then(([serviceCharge, discountOptions, authorization, creditConfig, tables]) => {
+      .then(([serviceCharge, discountOptions, creditConfig, tables]) => {
         setServiceAmounts(serviceCharge.amounts.map((amount) => String(amount / 100)))
         setDiscountAmounts(discountOptions.amounts.map((amount) => String(amount / 100)))
-        setDiscountConfigured(authorization.configured)
         setCredit(creditConfig)
         setTableCount(tables.length)
         setSavedTableCount(tables.length)
@@ -156,14 +143,8 @@ export default function DevSettingsPage() {
       await Promise.all([
         settingsApi.setServiceCharge({ amounts }),
         settingsApi.setDiscountOptions({ amounts: discounts }),
-        discountPassword
-          ? settingsApi.setDiscountAuthorizationPassword(discountPassword)
-          : Promise.resolve(),
         settingsApi.setCredit(credit),
       ])
-
-      setDiscountPassword('')
-      setDiscountConfigured(true)
 
       toast(t('dev.settingsSaved'), 'success')
     } catch (error) {
@@ -324,7 +305,7 @@ export default function DevSettingsPage() {
             </Button>
           </div>
 
-          {/* Discount options — the ONLY amounts the POS can apply */}
+          {/* Discount quick-picks — shortcuts only, never a limit */}
           <div className="flex flex-col gap-3 md:col-span-2">
             <h3 className="font-bold text-foreground">{t('dev.discountOptions')}</h3>
 
@@ -372,17 +353,6 @@ export default function DevSettingsPage() {
               {t('dev.addDiscountAmount')}
             </Button>
           </div>
-
-          {/* Discount password */}
-          <Field label={t('dev.discountPassword')} htmlFor="discount-authorization-password">
-            <PasswordInput
-              id="discount-authorization-password"
-              autoComplete="new-password"
-              value={discountPassword}
-              placeholder={discountConfigured ? t('dev.passwordConfigured') : ''}
-              onChange={(e) => setDiscountPassword(e.target.value)}
-            />
-          </Field>
 
           {/* Credit settings */}
           <div className="flex flex-col gap-3 md:col-span-2">

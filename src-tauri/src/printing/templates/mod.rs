@@ -10,6 +10,7 @@ mod wash_ticket;
 pub use current_order::current_order;
 pub use day_report::day_report;
 pub use invoice::invoice;
+pub use shared::is_hybrid;
 pub use shared::WIDTH;
 pub use shift_closing::shift_closing;
 pub use takeaway_receipt::takeaway_receipt;

@@ -1,17 +1,21 @@
 /** Payment dialog: method + live totals, cash tendered/change, print. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, Loader, MoneyDisplay } from '@/components/ui'
+import { AmountAutoFill, Button, Dialog, Loader, MoneyDisplay } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui'
 import { api, type DiscountSel, type OrderPreview, type PrintOutcome } from '@/services/posApi'
 import { TotalsBlock } from './CheckoutSummary'
 import { parseMajor } from '@/lib/utils'
+import { formatMinorMoney } from '@/lib/money'
 
 /**
  * Smallest 5 EGP note/bill at or above `total`, so the cashier can take the
  * common "customer hands the rounded-up amount" case in one tap.
+ *
+ * When the total is already a multiple of 5 this returns `total` itself — the
+ * caller de-duplicates, so the same amount is never offered twice.
  */
 function roundUpToFive(total: number): number {
   const step = 5 * 100
@@ -145,18 +149,21 @@ export function PaymentDialog({
 
       {method === 'CASH' ? (
         <>
-          {/* Exact-amount shortcuts: the most common cash sale needs no typing. */}
+          {/* Auto-fill shortcuts. These are ACTIONS that write the exact amount
+              into the field below — never a second amount reading — and the
+              list is de-duplicated so the same amount is never offered twice
+              (a total that is already a multiple of 5 rounds up to itself). */}
           {preview && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {[preview.total, roundUpToFive(preview.total)].map((amount) => (
-                <Button
+            <div className="mb-2 flex flex-wrap items-start gap-2">
+              {[...new Set([preview.total, roundUpToFive(preview.total)])].map((amount) => (
+                <AmountAutoFill
                   key={amount}
-                  size="sm"
-                  variant={received === (amount / 100).toFixed(2) ? 'default' : 'outline'}
-                  onClick={() => setReceived((amount / 100).toFixed(2))}
-                >
-                  <MoneyDisplay amount={amount} />
-                </Button>
+                  amount={amount}
+                  label={t('pay.autoFillLabel', { amount: formatMinorMoney(amount) })}
+                  hint={t('pay.autoFillHint')}
+                  active={parseMajor(received) === amount}
+                  onFill={() => setReceived((amount / 100).toFixed(2))}
+                />
               ))}
             </div>
           )}

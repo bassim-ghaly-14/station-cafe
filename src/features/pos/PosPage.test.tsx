@@ -2,10 +2,11 @@
  * Table lifecycle + takeaway UX (safe card click, explicit mutations).
  * The card container selects/inspects only; open/start/close/takeaway mutate.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
+import { RouterProvider } from '@/app/router'
 import '@/lib/i18n'
 import { formatMinorMoney } from '@/lib/money'
 import { resetFormattingPreferences, updateDateSettings } from '@/lib/formatting'
@@ -52,7 +53,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/services/posApi', () => ({
   settingsApi: {
-    serviceCharge: vi.fn().mockResolvedValue({ amounts: [] }),
+    serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
     discountOptions: vi.fn().mockResolvedValue({ amounts: [2000, 5000, 10000] }),
   },
   api: {
@@ -192,10 +193,14 @@ function renderCard(tv: TableView) {
 }
 
 function renderPage() {
+  // The POS page navigates to Today's Invoices, so it renders inside the same
+  // RouterProvider the application shell provides in production.
   return render(
     <ToastProvider>
       <SessionProvider>
-        <PosPage />
+        <RouterProvider>
+          <PosPage />
+        </RouterProvider>
       </SessionProvider>
     </ToastProvider>,
   )
@@ -387,6 +392,51 @@ describe('payment entry — one direct action (issues 1 & 2)', () => {
     await screen.findByText('تم الدفع — فاتورة #77')
 
     expect(screen.queryByText('قهوة')).not.toBeInTheDocument()
+  })
+
+  it('offers the received amount as ONE auto-fill shortcut, never a duplicate', async () => {
+    // 60.00 EGP = 6000 minor, a whole multiple of 5 — the exact case where the
+    // "round up to a 5 EGP note" shortcut used to equal the exact amount.
+    mocks.getOrder.mockResolvedValue(order())
+    mocks.preview.mockResolvedValue(previewOf(6000))
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
+
+    const shortcuts = await screen.findAllByRole('button', {
+      name: /ملء المبلغ المستلم تلقائيًا/,
+    })
+    // Exactly one: the duplicated control is gone.
+    expect(shortcuts).toHaveLength(1)
+    // It is announced as an action with an explicit affordance label.
+    expect(shortcuts[0]).toHaveAttribute('aria-label', expect.stringContaining('60'))
+    expect(screen.getByText('اضغط لملء المبلغ المستلم تلقائيًا')).toBeInTheDocument()
+
+    // Pressing it writes the amount into the field; it is not a second value.
+    fireEvent.click(shortcuts[0])
+    const cash = screen.getByPlaceholderText('0.00')
+    expect(cash).toHaveValue('60.00')
+    expect(shortcuts[0]).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('keeps both shortcuts when the rounded amount genuinely differs', async () => {
+    // 62.00 EGP rounds up to the 65.00 EGP note, so two distinct shortcuts exist.
+    mocks.getOrder.mockResolvedValue(order())
+    mocks.preview.mockResolvedValue(previewOf(6200))
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'مراجعة والدفع' }))
+
+    const shortcuts = await screen.findAllByRole('button', {
+      name: /ملء المبلغ المستلم تلقائيًا/,
+    })
+    expect(shortcuts).toHaveLength(2)
+    fireEvent.click(shortcuts[1])
+    expect(screen.getByPlaceholderText('0.00')).toHaveValue('65.00')
   })
 
   it('still surfaces backend payment rejections inside the dialog', async () => {
@@ -698,17 +748,79 @@ describe('print preview action beside the pay action', () => {
     }
 
     mocks.printPreviewTicket.mockResolvedValue(ticket)
+    // A real PrintPreview shape: the viewer renders `ops`, so an order-preview
+    // fixture must be a document, not a bare OrderPreview.
+    mocks.printPreviewOrder.mockResolvedValue({
+      doc_type: 'WASH_INVOICE',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [
+        {
+          kind: 'text',
+          text: 'فاتورة رقم 7',
+          align: 'center',
+          bold: true,
+          width: 1,
+          height: 1,
+        },
+      ],
+    })
 
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
-    fireEvent.click(await screen.findByRole('button', { name: 'معاينة الطباعة' }))
+
+    // The wash ticket has its OWN compact trigger — it is a different document,
+    // and pressing the invoice preview must no longer silently show a ticket.
+    const ticketPreview = await screen.findByRole('button', { name: 'معاينة تذكرة المغسلة' })
+    fireEvent.click(ticketPreview)
 
     await waitFor(() => expect(mocks.printPreviewTicket).toHaveBeenCalledWith(9))
-
     expect(await screen.findByText('رقم الانتظار')).toBeInTheDocument()
-
     expect(screen.getByRole('button', { name: /إعادة طبع/ })).toBeEnabled()
+
+    // Same shared dialog, and the invoice preview is still the invoice document.
+    fireEvent.click(within(screen.getByRole('dialog')).getAllByRole('button', { name: 'إغلاق' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'معاينة الطباعة' }))
+    await waitFor(() => expect(mocks.printPreviewOrder).toHaveBeenCalledWith(9, null, null, 0))
+    expect(mocks.printPreviewTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('never carries a checkout service charge onto the next order', async () => {
+    // A service charge is a checkout SELECTION, not order state: it is never
+    // persisted on the order, so the POS must clear it at every order-context
+    // change. Otherwise the next customer is silently charged for a service fee
+    // the cashier never selected for them.
+    mocks.getOrder.mockResolvedValue(order())
+    mocks.preview.mockResolvedValue(previewOf())
+    mocks.printPreviewOrder.mockResolvedValue({
+      doc_type: 'CAFE_INVOICE',
+      paper_mm: 80,
+      width_chars: 42,
+      ops: [],
+    })
+
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    // Apply a 10.00 service charge in checkout.
+    fireEvent.click(await screen.findByRole('button', { name: /إضافة خدمة 10.00/ }))
+    await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 1000))
+
+    // Re-opening the order (the same path a cashier takes to a different
+    // table) must NOT re-submit the spent charge.
+    fireEvent.click(screen.getByRole('button', { name: /رؤية الطلب/ }))
+    await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(9, null, null, 0))
+  })
+
+  it('offers no ticket preview trigger before a ticket is issued', async () => {
+    mocks.getOrder.mockResolvedValue(order())
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    expect(screen.queryByRole('button', { name: 'معاينة تذكرة المغسلة' })).not.toBeInTheDocument()
   })
 })
 
@@ -809,6 +921,32 @@ describe('shift lifecycle UI', () => {
     expect(mocks.printShift.mock.invocationCallOrder[0]).toBeGreaterThan(
       mocks.closeShift.mock.invocationCallOrder[0],
     )
+  })
+
+  it('auto-fills the expected cash through the SAME shortcut pattern as payment', async () => {
+    render(
+      <ToastProvider>
+        <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /تقفيل الوردية/ }))
+
+    // One shortcut, the same affordance language as the payment dialog, and it
+    // fills the field rather than being a second amount reading.
+    const shortcut = await screen.findByRole('button', {
+      name: /ملء النقد الفعلي تلقائيًا/,
+    })
+    expect(screen.getAllByRole('button', { name: /ملء النقد الفعلي تلقائيًا/ })).toHaveLength(1)
+    expect(screen.getByText('اضغط لملء النقد المتوقع تلقائيًا')).toBeInTheDocument()
+
+    const input = screen.getByPlaceholderText('0.00')
+    expect(input).toHaveValue('')
+    fireEvent.click(shortcut)
+
+    // expected_cash is 30.00 EGP, and the balanced state is reflected live.
+    expect(input).toHaveValue('30.00')
+    expect(shortcut).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('النقد مطابق')).toBeInTheDocument()
   })
 
   it('keeps the dialog open and exposes a backend close error', async () => {

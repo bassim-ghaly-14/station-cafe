@@ -1,7 +1,6 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::shared::{footer, header, items_and_totals, stamp, WIDTH};
-use crate::money::format_minor_for_print;
+use super::shared::{footer, header, items_and_totals, stamp, DocSettlement, DocTotals, WIDTH};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 use crate::repositories::pos::Order;
 use crate::services::pos::{OrderCustomer, OrderPreview};
@@ -55,72 +54,29 @@ pub(crate) fn takeaway_order(
     if let Some(plate) = car_plate {
         p.kv_line("رقم السيارة", plate, WIDTH);
     }
-    let hybrid = order.lines.iter().any(|l| l.department == "CAFE")
-        && order.lines.iter().any(|l| l.department == "WASH");
-    if !hybrid {
+    // The car model belongs to the wash section, and the shared composer prints
+    // it there for a hybrid document — so it is only stated in the identity
+    // block when this order has no wash items of its own.
+    let has_wash = order.lines.iter().any(|l| l.department == "WASH");
+    if !has_wash {
         if let Some(model) = car_model {
             p.kv_line("نوع السيارة", model, WIDTH);
         }
     }
     p.hr(WIDTH);
-    let mut first_section = true;
-    for (dept, title) in [("CAFE", "الكافيه"), ("WASH", "المغسلة")] {
-        let dept_lines: Vec<_> = order
-            .lines
-            .iter()
-            .filter(|l| !hybrid || l.department == dept)
-            .collect();
-        if hybrid && dept_lines.is_empty() {
-            continue;
-        }
-        if hybrid {
-            if !first_section {
-                p.hr(WIDTH);
-            }
-            first_section = false;
-            if dept == "WASH" {
-                if let Some(model) = car_model {
-                    p.kv_line("نوع السيارة", model, WIDTH);
-                }
-            }
-            p.bold(true);
-            p.line(title);
-            p.bold(false);
-        }
-        for line in dept_lines {
-            p.item(
-                &line.product_name,
-                &line.quantity.to_string(),
-                &format_minor_for_print(line.unit_price),
-                &format_minor_for_print(line.line_total),
-            );
-        }
-    }
-    p.hr(WIDTH);
-    p.financial(
-        "الإجمالي الفرعي",
-        &format_minor_for_print(totals.subtotal),
-        false,
+    items_and_totals(
+        &mut p,
+        &super::current_order::order_doc_lines(&order.lines),
+        &DocTotals {
+            subtotal: totals.subtotal,
+            discount_minor: totals.discount_minor,
+            service_charge_minor: totals.service_charge_minor,
+            total: totals.total,
+            dept_subtotals: None,
+            settlement: None,
+        },
+        car_model.filter(|_| has_wash),
     );
-    if totals.discount_minor > 0 {
-        p.financial(
-            "الخصم",
-            &format_minor_for_print(totals.discount_minor),
-            false,
-        );
-    }
-    if totals.service_charge_minor > 0 {
-        p.financial(
-            "خدمة",
-            &format_minor_for_print(totals.service_charge_minor),
-            false,
-        );
-    }
-    p.bold(true);
-    p.size(1, 2);
-    p.financial("الإجمالي", &format_minor_for_print(totals.total), true);
-    p.size(1, 1);
-    p.bold(false);
     p.align(Align::Center);
     p.line("معاينة الطلب — قبل الدفع");
     footer(p)
@@ -167,8 +123,21 @@ pub fn takeaway_receipt(
         );
     }
     p.hr(WIDTH);
-    let hybrid = lines.iter().any(|l| l.department == "CAFE")
-        && lines.iter().any(|l| l.department == "WASH");
-    items_and_totals(&mut p, inv, lines, hybrid);
+    items_and_totals(
+        &mut p,
+        &super::invoice::doc_lines(lines),
+        &DocTotals {
+            subtotal: inv.subtotal,
+            discount_minor: inv.discount_minor,
+            service_charge_minor: inv.service_charge,
+            total: inv.total,
+            dept_subtotals: Some((inv.cafe_total, inv.wash_total)),
+            settlement: Some(DocSettlement {
+                paid_amount: inv.paid_amount,
+                credit_remaining: (inv.status == "CREDIT").then_some(inv.total - inv.paid_amount),
+            }),
+        },
+        None,
+    );
     footer(p)
 }

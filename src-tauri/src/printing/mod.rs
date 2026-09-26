@@ -159,11 +159,12 @@ fn send(
     }
 }
 
-/// Document identity + renderer for every invoice-shaped sale.
+/// Document identity for every invoice-shaped sale.
 ///
 /// This is the ONLY place the CAFE / WASH / HYBRID / TAKEAWAY selection rule
 /// lives: the real print and the read-only preview both call it, so the
-/// preview can never pick a different template than the printer.
+/// preview can never pick a different template than the printer — and the
+/// identity is derived from the SAME shared `is_hybrid` rule the layout uses.
 fn invoice_document(
     cfg: &PrintConfig,
     inv: &InvoiceRow,
@@ -173,22 +174,27 @@ fn invoice_document(
     if inv.order_type == "TAKEAWAY" {
         return (
             "TAKEAWAY_INVOICE".to_string(),
-            templates::takeaway_receipt(mode_of(cfg), cfg.codepage, inv, lines, true),
+            templates::takeaway_receipt(mode_of(cfg), cfg.codepage, inv, lines, cfg.logo),
         );
     }
-    let hybrid = lines.iter().any(|l| l.department == "WASH")
-        && lines.iter().any(|l| l.department == "CAFE");
-    let doc = if hybrid {
+    let doc = document_kind(lines.iter().map(|l| l.department.as_str()));
+    (
+        doc.to_string(),
+        templates::invoice(mode_of(cfg), cfg.codepage, inv, lines, cfg.logo),
+    )
+}
+
+/// The one document-identity rule, shared by the persisted invoice and the live
+/// order preview so the name and the layout can never disagree.
+fn document_kind<'a, I: IntoIterator<Item = &'a str>>(departments: I) -> &'static str {
+    let departments: Vec<&str> = departments.into_iter().collect();
+    if templates::is_hybrid(departments.iter().copied()) {
         "HYBRID_INVOICE"
-    } else if lines.iter().any(|l| l.department == "WASH") {
+    } else if departments.contains(&"WASH") {
         "WASH_INVOICE"
     } else {
         "CAFE_INVOICE"
-    };
-    (
-        doc.to_string(),
-        templates::invoice(mode_of(cfg), cfg.codepage, inv, lines, hybrid, true),
-    )
+    }
 }
 
 /// Read-only preview of the current order. Uses the same EscPos/template
@@ -210,13 +216,8 @@ pub fn preview_order(
     )?;
     let doc = if current.order.order_type == "TAKEAWAY" {
         "TAKEAWAY_INVOICE"
-    } else if current.totals.has_wash && current.order.lines.iter().any(|l| l.department == "CAFE")
-    {
-        "HYBRID_INVOICE"
-    } else if current.totals.has_wash {
-        "WASH_INVOICE"
     } else {
-        "CAFE_INVOICE"
+        document_kind(current.order.lines.iter().map(|l| l.department.as_str()))
     };
     let rendered = templates::current_order(
         mode_of(&cfg),
@@ -943,5 +944,79 @@ mod tests {
             preview_invoice(&conn, 4242).unwrap_err().kind(),
             crate::error::ErrorKind::NotFound
         );
+    }
+
+    /// Labels of the separated department subtotals, in printed order.
+    fn subtotal_labels(doc: &PrintPreview) -> Vec<String> {
+        doc.ops
+            .iter()
+            .filter_map(|op| match op {
+                ir::PreviewOp::Financial { label, .. } => Some(label.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The composition rule is shared: a HYBRID document separates the cafe and
+    /// wash subtotals whether it is previewed from Checkout (a live order) or
+    /// from Today's Invoices (a persisted invoice) — and the document identity
+    /// agrees with the layout on both paths.
+    #[test]
+    fn hybrid_subtotal_separation_is_identical_on_every_preview_path() {
+        let conn = fresh();
+        let staff = open_day_and_shift(&conn);
+
+        let order_id = order_with_wash(&conn, &staff);
+        // Make it hybrid: the same order shape as the settled invoice below.
+        pos_svc::add_line(
+            &conn,
+            &staff,
+            order_id,
+            product_id(&conn, "CAFE", "مياه"),
+            1,
+        )
+        .unwrap();
+        let from_checkout = preview_order(&conn, order_id, None, None, None).unwrap();
+        let from_checkout_labels = subtotal_labels(&from_checkout);
+        assert_eq!(from_checkout.doc_type, "HYBRID_INVOICE");
+        assert!(from_checkout_labels.contains(&"إجمالي الكافيه الفرعي".to_string()));
+        assert!(from_checkout_labels.contains(&"إجمالي المغسلة الفرعي".to_string()));
+
+        let paid = checkout::checkout(
+            &conn,
+            &staff,
+            &checkout::CheckoutInput {
+                order_id,
+                method: "CASH".into(),
+                discount_mode: None,
+                discount_value: None,
+                discount_password: None,
+                service_charge_minor: None,
+                received: Some(1_000_000),
+            },
+        )
+        .unwrap();
+        let from_today = preview_invoice(&conn, paid.invoice_id).unwrap();
+        let from_today_labels = subtotal_labels(&from_today);
+
+        assert_eq!(from_today.doc_type, "HYBRID_INVOICE");
+        // Both paths share the composer, so the money rows agree exactly; the
+        // persisted invoice simply appends its settlement rows.
+        assert!(
+            from_today_labels
+                .iter()
+                .filter(|label| from_checkout_labels.contains(label))
+                .count()
+                >= from_checkout_labels.len()
+        );
+        assert!(from_today_labels.contains(&"إجمالي الكافيه الفرعي".to_string()));
+        assert!(from_today_labels.contains(&"إجمالي المغسلة الفرعي".to_string()));
+
+        // A cafe-only invoice stays clean: no department sections at all.
+        let cafe_only = preview_invoice(&conn, cafe_invoice(&conn, &staff)).unwrap();
+        assert_eq!(cafe_only.doc_type, "CAFE_INVOICE");
+        let cafe_labels = subtotal_labels(&cafe_only);
+        assert!(!cafe_labels.contains(&"إجمالي الكافيه الفرعي".to_string()));
+        assert!(!cafe_labels.contains(&"إجمالي المغسلة الفرعي".to_string()));
     }
 }
