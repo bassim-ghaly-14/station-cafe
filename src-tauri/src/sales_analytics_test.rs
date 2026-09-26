@@ -24,6 +24,7 @@ fn fresh() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
     migrate(&conn).unwrap();
+
     for (name, role) in [
         ("manager", "MANAGER"),
         ("cashier", "STAFF"),
@@ -35,6 +36,7 @@ fn fresh() -> Connection {
         )
         .unwrap();
     }
+
     conn
 }
 
@@ -44,6 +46,7 @@ fn actor(conn: &Connection, name: &str) -> User {
             Ok((r.get(0)?, r.get(1)?))
         })
         .unwrap();
+
     User {
         id,
         name: name.to_string(),
@@ -67,16 +70,25 @@ fn add_day(conn: &Connection, date: &str) -> i64 {
         [date],
     )
     .unwrap();
+
     conn.last_insert_rowid()
 }
 
 fn add_order(conn: &Connection, day_id: i64, user_id: i64, customer_id: Option<i64>) -> i64 {
     conn.execute(
-        "INSERT INTO orders (order_type, table_id, user_id, business_day_id, customer_id, status)
+        "INSERT INTO orders (
+            order_type,
+            table_id,
+            user_id,
+            business_day_id,
+            customer_id,
+            status
+         )
          VALUES ('TAKEAWAY', NULL, ?2, ?1, ?3, 'CLOSED')",
         rusqlite::params![day_id, user_id, customer_id],
     )
     .unwrap();
+
     conn.last_insert_rowid()
 }
 
@@ -117,6 +129,7 @@ fn add_invoice(
     lines: &[(&str, &str, i64, i64)],
 ) -> i64 {
     let order_id = add_order(conn, day_id, user_id, customer_id);
+
     let snap: Vec<InvoiceLine> = lines
         .iter()
         .map(|(department, name, quantity, line_total)| InvoiceLine {
@@ -132,6 +145,7 @@ fn add_invoice(
             line_total: *line_total,
         })
         .collect();
+
     invoices::insert_invoice(
         conn,
         invoice_no,
@@ -167,8 +181,10 @@ fn cash_sale(conn: &Connection, no: i64, day_id: i64, user_id: i64, amount: i64)
         Sale::cafe(amount),
         &[("CAFE", "قهوة", 1, amount)],
     );
+
     invoices::insert_payment(conn, id, "CASH", amount, None, None, user_id).unwrap();
     invoices::apply_payment_to_invoice(conn, id, amount).unwrap();
+
     id
 }
 
@@ -213,8 +229,10 @@ fn summary_reports_totals_count_average_discounts_and_service_charge() {
         },
         &[("CAFE", "قهوة", 2, 3_000)],
     );
+
     invoices::insert_payment(&conn, first, "CASH", 2_900, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, first, 2_900).unwrap();
+
     cash_sale(&conn, 2, day, 1, 1_100);
 
     let summary = sales::summary(&conn, &filter()).unwrap();
@@ -223,6 +241,7 @@ fn summary_reports_totals_count_average_discounts_and_service_charge() {
     assert_eq!(summary.subtotal, 4_100);
     assert_eq!(summary.discounts, 300);
     assert_eq!(summary.service_charges, 200);
+
     // The authoritative revenue is the invoice total: subtotal − discount + service.
     assert_eq!(summary.total_sales, 4_000);
     assert_eq!(summary.average_invoice, 2_000);
@@ -249,12 +268,15 @@ fn payment_methods_come_from_the_ledger_and_credit_is_never_collected_cash() {
         Sale::cafe(2_000),
         &[("CAFE", "شاي", 2, 2_000)],
     );
+
     invoices::insert_payment(&conn, card, "CARD", 2_000, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, card, 2_000).unwrap();
 
     conn.execute("INSERT INTO customers (name) VALUES ('عميل آجل')", [])
         .unwrap();
+
     let credit_customer = conn.last_insert_rowid();
+
     let credit = add_invoice(
         &conn,
         3,
@@ -264,6 +286,7 @@ fn payment_methods_come_from_the_ledger_and_credit_is_never_collected_cash() {
         Sale::cafe(1_000),
         &[("CAFE", "عصير", 1, 1_000)],
     );
+
     invoices::insert_payment(&conn, credit, "CREDIT", 1_000, None, None, 1).unwrap();
     invoices::mark_invoice_credit(&conn, credit).unwrap();
 
@@ -272,6 +295,7 @@ fn payment_methods_come_from_the_ledger_and_credit_is_never_collected_cash() {
     assert_eq!(summary.cash, 3_000);
     assert_eq!(summary.card, 2_000);
     assert_eq!(summary.credit, 1_000);
+
     // Revenue includes the credit invoice; the settled split never does.
     assert_eq!(summary.total_sales, 6_000);
     assert_eq!(
@@ -284,7 +308,9 @@ fn payment_methods_come_from_the_ledger_and_credit_is_never_collected_cash() {
 fn a_cancelled_invoice_counts_nowhere_but_is_reported_as_an_exception() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
+
     cash_sale(&conn, 1, day, 1, 5_000);
+
     let voided = cash_sale(&conn, 2, day, 1, 9_000);
     invoices::cancel_invoice(&conn, voided).unwrap();
 
@@ -292,24 +318,29 @@ fn a_cancelled_invoice_counts_nowhere_but_is_reported_as_an_exception() {
 
     assert_eq!(summary.invoices_count, 1);
     assert_eq!(summary.total_sales, 5_000);
+
     // The payment row survives cancellation (it is the audit trail) and must
     // never leak into the settled figures.
     assert_eq!(summary.cash, 5_000);
     assert_eq!(summary.cancelled_count, 1);
+
     assert_eq!(
         sales::items(&conn, &filter(), ItemSort::Revenue, None)
             .unwrap()
             .len(),
         1
     );
+
     assert_eq!(sales::invoices(&conn, &filter()).unwrap().len(), 1);
 }
 
 #[test]
 fn the_period_filters_by_business_day_not_by_the_utc_instant() {
     let conn = fresh();
+
     let inside = add_day(&conn, "2026-09-10");
     let outside = add_day(&conn, "2026-09-20");
+
     cash_sale(&conn, 1, inside, 1, 4_000);
     cash_sale(&conn, 2, outside, 1, 7_000);
 
@@ -318,11 +349,14 @@ fn the_period_filters_by_business_day_not_by_the_utc_instant() {
         to: Some("2026-09-10".into()),
         ..SalesFilter::default()
     };
+
     let summary = sales::summary(&conn, &period).unwrap();
 
     assert_eq!(summary.invoices_count, 1);
     assert_eq!(summary.total_sales, 4_000);
+
     let trend = sales::trend(&conn, &period).unwrap();
+
     assert_eq!(trend.len(), 1);
     assert_eq!(trend[0].day_date, "2026-09-10");
     assert_eq!(trend[0].total_sales, 4_000);
@@ -331,8 +365,10 @@ fn the_period_filters_by_business_day_not_by_the_utc_instant() {
 #[test]
 fn the_trend_keeps_a_business_day_that_has_no_matching_sale() {
     let conn = fresh();
+
     let busy = add_day(&conn, "2026-09-10");
-    let quiet = add_day(&conn, "2026-09-11");
+    add_day(&conn, "2026-09-11");
+
     cash_sale(&conn, 1, busy, 1, 4_000);
 
     let period = SalesFilter {
@@ -340,6 +376,7 @@ fn the_trend_keeps_a_business_day_that_has_no_matching_sale() {
         to: Some("2026-09-11".into()),
         ..SalesFilter::default()
     };
+
     let trend = sales::trend(&conn, &period).unwrap();
 
     assert_eq!(trend.len(), 2);
@@ -352,7 +389,9 @@ fn the_trend_keeps_a_business_day_that_has_no_matching_sale() {
 fn the_method_filter_narrows_every_read_at_once() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
+
     cash_sale(&conn, 1, day, 1, 4_000);
+
     let card = add_invoice(
         &conn,
         2,
@@ -362,6 +401,7 @@ fn the_method_filter_narrows_every_read_at_once() {
         Sale::cafe(6_000),
         &[("CAFE", "كابتشينو", 1, 6_000)],
     );
+
     invoices::insert_payment(&conn, card, "CARD", 6_000, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, card, 6_000).unwrap();
 
@@ -369,17 +409,22 @@ fn the_method_filter_narrows_every_read_at_once() {
         method: Some("CARD".into()),
         ..SalesFilter::default()
     };
+
     let summary = sales::summary(&conn, &card_only).unwrap();
 
     assert_eq!(summary.invoices_count, 1);
     assert_eq!(summary.total_sales, 6_000);
     assert_eq!(summary.cash, 0);
     assert_eq!(summary.card, 6_000);
+
     // The same set feeds the items and the invoice list.
     let items = sales::items(&conn, &card_only, ItemSort::Revenue, None).unwrap();
+
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].product_name, "كابتشينو");
+
     let invoices = sales::invoices(&conn, &card_only).unwrap();
+
     assert_eq!(invoices.len(), 1);
     assert_eq!(invoices[0].payment_method.as_deref(), Some("CARD"));
 }
@@ -389,6 +434,7 @@ fn the_cashier_and_status_filters_narrow_the_same_set() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
     let ahmed = user_id(&conn, "ahmed");
+
     cash_sale(&conn, 1, day, 1, 4_000);
     cash_sale(&conn, 2, day, ahmed, 6_000);
 
@@ -396,7 +442,9 @@ fn the_cashier_and_status_filters_narrow_the_same_set() {
         user_id: Some(ahmed),
         ..SalesFilter::default()
     };
+
     let summary = sales::summary(&conn, &by_cashier).unwrap();
+
     assert_eq!(summary.total_sales, 6_000);
     assert_eq!(
         sales::invoices(&conn, &by_cashier).unwrap()[0]
@@ -409,11 +457,14 @@ fn the_cashier_and_status_filters_narrow_the_same_set() {
         status: Some("PAID".into()),
         ..SalesFilter::default()
     };
+
     assert_eq!(sales::summary(&conn, &paid).unwrap().invoices_count, 2);
+
     let credit_only = SalesFilter {
         status: Some("CREDIT".into()),
         ..SalesFilter::default()
     };
+
     assert_eq!(
         sales::summary(&conn, &credit_only).unwrap().invoices_count,
         0
@@ -424,12 +475,15 @@ fn the_cashier_and_status_filters_narrow_the_same_set() {
 fn the_customer_filter_matches_the_snapshotted_name() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
+
     conn.execute(
         "INSERT INTO customers (name, phone) VALUES ('أحمد سيد', '0100')",
         [],
     )
     .unwrap();
+
     let customer = conn.last_insert_rowid();
+
     let named = add_invoice(
         &conn,
         1,
@@ -439,18 +493,24 @@ fn the_customer_filter_matches_the_snapshotted_name() {
         Sale::cafe(5_000),
         &[("CAFE", "قهوة", 1, 5_000)],
     );
+
     invoices::insert_invoice_customer(&conn, named, "أحمد سيد", Some("0100"), None, None).unwrap();
+
     invoices::insert_payment(&conn, named, "CASH", 5_000, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, named, 5_000).unwrap();
+
     cash_sale(&conn, 2, day, 1, 1_000);
 
     let by_customer = SalesFilter {
         customer: Some("أحمد".into()),
         ..SalesFilter::default()
     };
+
     let summary = sales::summary(&conn, &by_customer).unwrap();
+
     assert_eq!(summary.invoices_count, 1);
     assert_eq!(summary.total_sales, 5_000);
+
     assert_eq!(
         sales::invoices(&conn, &by_customer).unwrap()[0]
             .customer_name
@@ -463,6 +523,7 @@ fn the_customer_filter_matches_the_snapshotted_name() {
 fn items_aggregate_quantity_revenue_and_share_and_honour_both_sort_orders() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
+
     // Two espressos on one invoice, plus a cold brew and a wash on a hybrid order.
     let first = add_invoice(
         &conn,
@@ -473,8 +534,10 @@ fn items_aggregate_quantity_revenue_and_share_and_honour_both_sort_orders() {
         Sale::cafe(1_000),
         &[("CAFE", "قهوة", 2, 1_000)],
     );
+
     invoices::insert_payment(&conn, first, "CASH", 1_000, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, first, 1_000).unwrap();
+
     add_invoice(
         &conn,
         2,
@@ -494,19 +557,23 @@ fn items_aggregate_quantity_revenue_and_share_and_honour_both_sort_orders() {
     );
 
     let by_revenue = sales::items(&conn, &filter(), ItemSort::Revenue, None).unwrap();
+
     assert_eq!(by_revenue[0].product_name, "غسيل خارجي");
     assert_eq!(by_revenue[0].revenue, 3_000);
     assert_eq!(by_revenue[0].department, "WASH");
+
     // 3,000 of 5,200 item revenue = 58%.
     assert_eq!(by_revenue[0].share_percent, 58);
     assert_eq!(by_revenue.len(), 3);
 
     // The same three rows, ordered by how often they sold.
     let by_quantity = sales::items(&conn, &filter(), ItemSort::Quantity, None).unwrap();
+
     assert_eq!(by_quantity.len(), 3);
     assert_eq!(by_quantity[0].product_name, "قهوة");
     assert_eq!(by_quantity[0].quantity, 2);
     assert_eq!(by_quantity[0].revenue, 1_000);
+
     // The share belongs to the row, not to its position.
     assert_eq!(by_quantity[0].share_percent, 19);
 }
@@ -515,6 +582,7 @@ fn items_aggregate_quantity_revenue_and_share_and_honour_both_sort_orders() {
 fn invoice_rows_expose_the_manager_fields_of_the_activity_list() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
+
     let id = add_invoice(
         &conn,
         1,
@@ -529,15 +597,21 @@ fn invoice_rows_expose_the_manager_fields_of_the_activity_list() {
         },
         &[("CAFE", "قهوة", 1, 4_000)],
     );
+
     invoices::insert_invoice_customer(&conn, id, "بدون عميل", None, None, None).unwrap();
+
     invoices::insert_payment(&conn, id, "CARD", 4_000, None, None, 1).unwrap();
     invoices::apply_payment_to_invoice(&conn, id, 4_000).unwrap();
+
     cash_sale(&conn, 2, day, 1, 1_000);
 
     let rows = sales::invoices(&conn, &filter()).unwrap();
+
     // Newest first.
     assert_eq!(rows[0].invoice_no, 2);
+
     let row = rows.iter().find(|row| row.invoice_no == 1).unwrap();
+
     assert_eq!(row.day_date, "2026-09-10");
     assert_eq!(row.subtotal, 4_000);
     assert_eq!(row.discount_minor, 500);
@@ -554,6 +628,7 @@ fn invoice_rows_expose_the_manager_fields_of_the_activity_list() {
 fn a_cashier_is_refused_every_sales_aggregate() {
     let conn = fresh();
     let cashier = actor(&conn, "cashier");
+
     assert!(sales_svc::overview(&conn, &cashier, &filter(), ItemSort::Revenue).is_err());
     assert!(sales_svc::invoices(&conn, &cashier, &filter()).is_err());
     assert!(sales_svc::cashiers(&conn, &cashier).is_err());
@@ -564,9 +639,11 @@ fn a_manager_receives_the_whole_page_in_one_call() {
     let conn = fresh();
     let manager = actor(&conn, "manager");
     let day = add_day(&conn, "2026-09-10");
+
     cash_sale(&conn, 1, day, 1, 2_500);
 
     let overview = sales_svc::overview(&conn, &manager, &filter(), ItemSort::Revenue).unwrap();
+
     assert_eq!(overview.summary.total_sales, 2_500);
     assert_eq!(overview.trend.len(), 1);
     assert_eq!(overview.items.len(), 1);
@@ -580,29 +657,35 @@ fn malformed_filters_are_refused_before_any_query_runs() {
         ..SalesFilter::default()
     })
     .is_err());
+
     assert!(sales_svc::validate(&SalesFilter {
         from: Some("2026-09-20".into()),
         to: Some("2026-09-10".into()),
         ..SalesFilter::default()
     })
     .is_err());
+
     assert!(sales_svc::validate(&SalesFilter {
         method: Some("TRANSFER".into()),
         ..SalesFilter::default()
     })
     .is_err());
+
     assert!(sales_svc::validate(&SalesFilter {
         status: Some("REFUNDED".into()),
         ..SalesFilter::default()
     })
     .is_err());
+
     // An emptied field is "no filter", not an invalid one.
     let blank = SalesFilter {
         from: Some("  ".into()),
         method: Some(String::new()),
         ..SalesFilter::default()
     };
+
     assert!(sales_svc::validate(&blank).is_ok());
+
     // And it reads back as no filter at all, not as a match-everything.
     assert!(blank.is_empty());
 }
