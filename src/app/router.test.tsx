@@ -59,8 +59,8 @@ describe('RouterProvider URL persistence', () => {
     expect(screen.getByTestId('view')).toHaveTextContent('pos')
   })
 
-  it('treats removed routes as unknown POS fallbacks without a dedicated view', () => {
-    window.history.replaceState(null, '', '/customers/123')
+  it('treats unknown routes as POS fallbacks without a dedicated view', () => {
+    window.history.replaceState(null, '', '/dashboard/123')
     const { unmount } = render(
       <RouterProvider>
         <RouteProbe />
@@ -79,6 +79,18 @@ describe('RouterProvider URL persistence', () => {
     )
 
     expect(screen.getByTestId('view')).toHaveTextContent('pos')
+  })
+
+  it('routes the customers workspace to its own view', () => {
+    window.history.replaceState(null, '', '/customers')
+    render(
+      <RouterProvider>
+        <RouteProbe />
+      </RouterProvider>,
+    )
+
+    expect(screen.getByTestId('view')).toHaveTextContent('customers')
+    expect(screen.getByTestId('params')).toHaveTextContent('{}')
   })
 
   it('updates the URL when navigating through the existing router API', async () => {

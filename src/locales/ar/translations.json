@@ -466,6 +466,120 @@
     "saved": "تم الحفظ",
     "empty": "لا يوجد موظفون بعد"
   },
+  "customers": {
+    "subtitle": "إدارة بيانات العملاء وسياراتهم ونشاطهم على الكافيه والمغسلة",
+    "search": {
+      "label": "بحث عن عميل",
+      "placeholder": "ابحث بالاسم أو رقم التليفون أو رقم اللوحة…",
+      "hint": "النتائج تتحدث أثناء الكتابة",
+      "clear": "مسح البحث"
+    },
+    "filters": {
+      "reset": "إلغاء التصفية"
+    },
+    "period": {
+      "label": "فترة التحليل"
+    },
+    "columns": {
+      "customer": "العميل",
+      "phone": "التليفون",
+      "cars": "السيارات",
+      "created": "تاريخ التسجيل",
+      "orders": "الطلبات",
+      "paid": "المدفوع",
+      "credit": "الرصيد الآجل",
+      "lastActivity": "آخر نشاط"
+    },
+    "table": {
+      "caption": "قائمة العملاء"
+    },
+    "actions": {
+      "details": "تفاصيل {{name}}",
+      "edit": "تعديل {{name}}"
+    },
+    "kpi": {
+      "loading": "جارٍ تحميل مؤشرات العملاء…",
+      "total": "إجمالي العملاء",
+      "active": "العملاء النشطون",
+      "activeHint": "لديهم {{orders}} طلب خلال الفترة",
+      "paid": "إجمالي المدفوعات من العملاء",
+      "average": "متوسط إنفاق العميل",
+      "topOrders": "الأكثر طلباً",
+      "topOrdersHint": "{{count}} طلب",
+      "topSpend": "الأكثر دفعاً",
+      "none": "لا يوجد نشاط في هذه الفترة",
+      "cafeOrders": "طلبات كافيه العملاء",
+      "washOrders": "طلبات مغسلة العملاء",
+      "takeawayOrders": "طلبات تيك اواي",
+      "tableOrdersHint": "منها {{count}} طلب طاولة",
+      "outstandingCredit": "إجمالي الأرصدة الآجلة",
+      "creditHint": "الرصيد القائم على العملاء"
+    },
+    "stats": {
+      "orders": "إجمالي الطلبات",
+      "total": "إجمالي قيمة الطلبات",
+      "paid": "إجمالي المدفوع",
+      "average": "متوسط قيمة الطلب",
+      "discounts": "إجمالي الخصومات",
+      "serviceCharges": "إجمالي رسوم الخدمة",
+      "credit": "الرصيد الآجل المستحق",
+      "creditOriginal": "إجمالي الآجل",
+      "creditPaid": "المسدد من الآجل",
+      "firstOrder": "أول طلب",
+      "lastOrder": "آخر طلب"
+    },
+    "breakdown": {
+      "cafe": "كافيه",
+      "wash": "مغسلة",
+      "takeaway": "تيك اواي",
+      "table": "طاولات",
+      "ordersCount": "{{count}} طلب",
+      "share": "{{count}} طلب · {{amount}}"
+    },
+    "vehicles": {
+      "hasCars": "لديه سيارات",
+      "noCars": "بدون سيارات"
+    },
+    "identity": {
+      "since": "عميل منذ",
+      "lastActivity": "آخر نشاط"
+    },
+    "drawer": {
+      "activity": "نشاط العميل خلال الفترة",
+      "breakdown": "توزيع النشاط على نوع الخدمة",
+      "breakdownHint": "التوزيع بالنوع (كافيه / مغسلة) وبنوع الطلب (طاولة / تيك اواي) — كل طلب يُحتسب مرة واحدة في كل توزيع.",
+      "history": "آخر الفواتير",
+      "noActivity": "لا توجد فواتير مسجلة لهذا العميل",
+      "noPhone": "بدون رقم تليفون",
+      "noCars": "لا توجد سيارات مسجلة",
+      "registered": "تاريخ التسجيل:",
+      "periodNote": "الأرقام محسوبة للفترة من {{from}} إلى {{to}}",
+      "allTimeNote": "الأرقام محسوبة على كل الفترات",
+      "profile": "الملف الشخصي",
+      "performance": "ملخص الأداء",
+      "business": "توزيع النشاط",
+      "businessHint": "محور النشاط: كل طلب يُحتسب هنا مرة واحدة فقط.",
+      "orderType": "توزيع نوع الطلب",
+      "orderTypeHint": "محور نوع الطلب: منفصل عن النشاط حتى لا يُحتسب الطلب الهجين مرتين.",
+      "invoice": "فاتورة",
+      "paid": "المدفوع"
+    },
+    "states": {
+      "noData": "لا يوجد عملاء مسجلون بعد",
+      "noResults": "لا يوجد عملاء مطابقون للبحث",
+      "count": "{{count}} عميل"
+    },
+    "form": {
+      "createTitle": "عميل جديد",
+      "editTitle": "تعديل بيانات العميل",
+      "name": "اسم العميل",
+      "phone": "رقم التليفون",
+      "plate": "رقم اللوحة (اختياري)",
+      "model": "نوع السيارة (اختياري)",
+      "created": "تم إضافة العميل",
+      "updated": "تم تحديث بيانات العميل"
+    }
+  },
   "pos": {
     "tables": "الطاولات",
     "shiftRunning": "وردية مفتوحة",
@@ -530,19 +644,16 @@
     "confirmPay": "تأكيد الدفع",
     "openTakeaways": "الطلبات الخارجية",
     "invoiceSearchHint": "رقم فاتورة / طاولة / طلب خارجي / عميل / لوحة",
-
     "takeaway": "طلبات خارجية",
     "startTakeaway": "بدء الطلب",
     "takeawayActive": "طلب خارجي نشط",
     "takeawayNo": "رقم الطلب الخارجي",
     "takeawayStarted": "تم بدء الطلب الخارجي",
     "takeawayHint": "بدون طاولة — يُستلم خارج الصالة",
-
     "orderType": {
       "TABLE": "صالة",
       "TAKEAWAY": "طلب خارجي"
     },
-
     "customerCar": "العميل والسيارة",
     "washTicket": "تذكرة المغسلة",
     "ticketIssued": "تم إصدار تذكرة المغسلة — رقم الانتظار {{no}}",
@@ -856,6 +967,8 @@
     "customers.phone_taken": "رقم التليفون مسجل بالفعل لعميل آخر",
     "customers.plate_required": "رقم اللوحة مطلوب",
     "customers.plate_taken": "رقم اللوحة مسجل بالفعل",
+    "customers.not_found": "العميل غير موجود",
+    "customers.invalid_period": "الفترة الزمنية غير صحيحة",
     "customers.car_not_found": "السيارة غير مسجلة",
     "customers.car_other_owner": "هذه السيارة مسجلة لعميل آخر",
     "day.already_open": "يوجد يوم عمل مفتوح بالفعل",

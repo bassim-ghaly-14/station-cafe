@@ -18,6 +18,7 @@ import LoginPage from '@/features/auth/LoginPage'
 import AppShell from '@/app/AppShell'
 import { RouterProvider, useRouter } from '@/app/router'
 import StaffPage from '@/features/staff/StaffPage'
+import CustomersPage from '@/features/customers/CustomersPage'
 import PosPage from '@/features/pos/PosPage'
 import CatalogPage from '@/features/catalog/CatalogPage'
 import ExpensesPage from '@/features/expenses/ExpensesPage'
@@ -36,6 +37,8 @@ function RoutedViews() {
   switch (view) {
     case 'staff':
       return <StaffPage />
+    case 'customers':
+      return <CustomersPage />
     case 'catalog':
       return <CatalogPage />
     case 'expenses':

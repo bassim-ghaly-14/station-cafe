@@ -2,6 +2,7 @@
 pub mod audit;
 pub mod auth;
 pub mod checkout;
+pub mod customers;
 pub mod developer;
 pub mod ops;
 pub mod pos;

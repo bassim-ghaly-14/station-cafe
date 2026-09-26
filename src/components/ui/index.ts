@@ -33,6 +33,7 @@ export {
   type EmployeeAvatarSize,
 } from './employee-avatar'
 export { Dialog } from './dialog'
+export { Drawer } from './drawer'
 export { AmountAutoFill } from './amount-auto-fill'
 export { ThemeToggle } from './theme-toggle'
 export { DateRangePicker, type DateRange } from './date-range-picker'

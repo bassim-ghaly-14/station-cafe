@@ -10,6 +10,7 @@ export type View =
   | 'pos'
   | 'today-invoices'
   | 'staff'
+  | 'customers'
   | 'catalog'
   | 'inventory'
   | 'expenses'
@@ -28,6 +29,7 @@ const VIEW_PATHS: Record<View, string> = {
   pos: '/pos',
   'today-invoices': '/pos/invoices',
   staff: '/staff',
+  customers: '/customers',
   catalog: '/catalog',
   inventory: '/inventory',
   expenses: '/expenses',

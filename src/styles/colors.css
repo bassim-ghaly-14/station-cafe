@@ -98,6 +98,44 @@
   --role-fallback-badge-border: #e6d5b8;
   --role-fallback-badge-fg: #5e3f25;
 
+  /* Customer identity avatars — a COMPLETELY SEPARATE system from employee role
+     colors, on purpose. Role colors (violet / teal / blue) stay reserved for
+     ADMIN / MANAGER / STAFF and are never reused for a customer, and no
+     authorization, permission or staff-status color is borrowed here either.
+
+     These are SOLID muted jewel fills with a light foreground rather than the
+     pale role tints: the difference in treatment is what keeps a customer from
+     ever being read as an employee. Hues are spaced far apart and stay
+     desaturated so a list of them reads as a premium palette, not a rainbow.
+     Selection is deterministic (see lib/customer-visual.ts), so a customer
+     keeps the same tone forever. */
+  --customer-avatar-1-bg: #2f6f62; /* jade */
+  --customer-avatar-1-fg: #e4f3f0;
+  --customer-avatar-2-bg: #4a5a9c; /* indigo */
+  --customer-avatar-2-fg: #e6e9f8;
+  --customer-avatar-3-bg: #8a4a5e; /* wine */
+  --customer-avatar-3-fg: #f8e6ec;
+  --customer-avatar-4-bg: #2b6a8c; /* steel */
+  --customer-avatar-4-fg: #e0eff7;
+  --customer-avatar-5-bg: #5c7233; /* olive */
+  --customer-avatar-5-fg: #edf3e0;
+  --customer-avatar-6-bg: #7a4470; /* plum */
+  --customer-avatar-6-fg: #f4e3f2;
+  --customer-avatar-7-bg: #8a5a2f; /* clay */
+  --customer-avatar-7-fg: #f8e9dc;
+  --customer-avatar-8-bg: #4a5560; /* graphite */
+  --customer-avatar-8-fg: #e6eaef;
+
+  /* Customer vehicle status — a customer-domain semantic, unrelated to the
+     employee role/permission and workflow-state families. "Has cars" is the
+     affirmative, marked with an icon AND a word, never by color alone. */
+  --customer-vehicle-has-bg: #e3eeea;
+  --customer-vehicle-has-border: #a9cdc4;
+  --customer-vehicle-has-fg: #23574d;
+  --customer-vehicle-none-bg: #f2ece3;
+  --customer-vehicle-none-border: #ddd2c0;
+  --customer-vehicle-none-fg: #6b5a45;
+
   /* Primary (brand action). */
   --primary: #7a5230;
   --primary-hover: #5e3f25;
@@ -304,6 +342,33 @@
   --role-fallback-badge-border: #45413b;
   --role-fallback-badge-fg: #c8c0b5;
 
+  /* Customer avatar palette (dark): the same eight hues, re-tuned for dark
+     surfaces — slightly deeper, less chroma, with a light foreground so the
+     initials keep their contrast against the drawer/table surface. */
+  --customer-avatar-1-bg: #2a6157;
+  --customer-avatar-1-fg: #dcf0ec;
+  --customer-avatar-2-bg: #414d84;
+  --customer-avatar-2-fg: #e2e5f7;
+  --customer-avatar-3-bg: #773f52;
+  --customer-avatar-3-fg: #f5e2e8;
+  --customer-avatar-4-bg: #275b78;
+  --customer-avatar-4-fg: #dfeaf3;
+  --customer-avatar-5-bg: #4f6330;
+  --customer-avatar-5-fg: #e8efdc;
+  --customer-avatar-6-bg: #6a3c61;
+  --customer-avatar-6-fg: #f2e0ef;
+  --customer-avatar-7-bg: #7a4f2a;
+  --customer-avatar-7-fg: #f6e6d8;
+  --customer-avatar-8-bg: #414a54;
+  --customer-avatar-8-fg: #e2e7ec;
+
+  --customer-vehicle-has-bg: #1b322d;
+  --customer-vehicle-has-border: #2f6157;
+  --customer-vehicle-has-fg: #9fd3c7;
+  --customer-vehicle-none-bg: #2a2620;
+  --customer-vehicle-none-border: #453d32;
+  --customer-vehicle-none-fg: #c3b6a2;
+
   /* Brown is reserved for Station actions; its dark-mode foreground is dark to
      maintain contrast as hover/active actions become brighter. */
   --primary: #ad763f;
@@ -488,6 +553,29 @@
   --color-role-fallback-badge-bg: var(--role-fallback-badge-bg);
   --color-role-fallback-badge-border: var(--role-fallback-badge-border);
   --color-role-fallback-badge-fg: var(--role-fallback-badge-fg);
+  --color-customer-vehicle-has-bg: var(--customer-vehicle-has-bg);
+  --color-customer-vehicle-has-border: var(--customer-vehicle-has-border);
+  --color-customer-vehicle-has-fg: var(--customer-vehicle-has-fg);
+  --color-customer-vehicle-none-bg: var(--customer-vehicle-none-bg);
+  --color-customer-vehicle-none-border: var(--customer-vehicle-none-border);
+  --color-customer-vehicle-none-fg: var(--customer-vehicle-none-fg);
+  --color-customer-avatar-1-bg: var(--customer-avatar-1-bg);
+  --color-customer-avatar-1-fg: var(--customer-avatar-1-fg);
+  --color-customer-avatar-2-bg: var(--customer-avatar-2-bg);
+  --color-customer-avatar-2-fg: var(--customer-avatar-2-fg);
+  --color-customer-avatar-3-bg: var(--customer-avatar-3-bg);
+  --color-customer-avatar-3-fg: var(--customer-avatar-3-fg);
+  --color-customer-avatar-4-bg: var(--customer-avatar-4-bg);
+  --color-customer-avatar-4-fg: var(--customer-avatar-4-fg);
+  --color-customer-avatar-5-bg: var(--customer-avatar-5-bg);
+  --color-customer-avatar-5-fg: var(--customer-avatar-5-fg);
+  --color-customer-avatar-6-bg: var(--customer-avatar-6-bg);
+  --color-customer-avatar-6-fg: var(--customer-avatar-6-fg);
+  --color-customer-avatar-7-bg: var(--customer-avatar-7-bg);
+  --color-customer-avatar-7-fg: var(--customer-avatar-7-fg);
+  --color-customer-avatar-8-bg: var(--customer-avatar-8-bg);
+  --color-customer-avatar-8-fg: var(--customer-avatar-8-fg);
+
   --color-badge-neutral-bg: var(--badge-neutral-bg);
   --color-badge-neutral-border: var(--badge-neutral-border);
   --color-badge-neutral-fg: var(--badge-neutral-fg);

@@ -2,7 +2,9 @@
 
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
+use crate::repositories::customer_analytics::{CustomerDetails, CustomerList, CustomerOverview};
 use crate::repositories::customers::{self, Car, Customer, CustomerWithCars};
+use crate::services::customers::{self as customer_svc, CustomerPeriod};
 use crate::AppState;
 use serde::Deserialize;
 use tauri::State;
@@ -25,6 +27,57 @@ pub fn search_customers(
 ) -> AppResult<Vec<CustomerWithCars>> {
     authorized(&state, &token, "STAFF", move |conn, _| {
         customers::search(conn, query.trim())
+    })
+}
+
+/// The customers page list. Open to every authenticated role; the service
+/// decides whether the caller's role may also receive the period aggregate, and
+/// a cashier's payload simply has no financial field in it.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_customers(
+    state: State<'_, AppState>,
+    token: String,
+    query: Option<String>,
+    period: Option<CustomerPeriod>,
+) -> AppResult<CustomerList> {
+    let period = period.unwrap_or_default();
+    customer_svc::validate_period(&period)?;
+    let (from, to) = period.bounds();
+    let query = query.unwrap_or_default();
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        customer_svc::list(conn, actor, query.trim(), from, to)
+    })
+}
+
+/// Page-level customer KPIs. The service enforces the MANAGER gate itself, so
+/// the refusal is a real refusal, not a hidden section.
+#[tauri::command(rename_all = "snake_case")]
+pub fn customer_overview(
+    state: State<'_, AppState>,
+    token: String,
+    period: Option<CustomerPeriod>,
+) -> AppResult<CustomerOverview> {
+    let period = period.unwrap_or_default();
+    customer_svc::validate_period(&period)?;
+    let (from, to) = period.bounds();
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        customer_svc::overview(conn, actor, from, to)
+    })
+}
+
+/// One customer's details drawer payload. Manager-level, for the same reason.
+#[tauri::command(rename_all = "snake_case")]
+pub fn customer_details(
+    state: State<'_, AppState>,
+    token: String,
+    customer_id: i64,
+    period: Option<CustomerPeriod>,
+) -> AppResult<CustomerDetails> {
+    let period = period.unwrap_or_default();
+    customer_svc::validate_period(&period)?;
+    let (from, to) = period.bounds();
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        customer_svc::details(conn, actor, customer_id, from, to)
     })
 }
 

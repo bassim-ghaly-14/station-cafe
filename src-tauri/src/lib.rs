@@ -12,6 +12,8 @@
 
 #[cfg(test)]
 mod analytics_test;
+#[cfg(test)]
+mod customer_analytics_test;
 mod commands;
 mod db;
 mod error;
@@ -95,6 +97,9 @@ pub fn run() {
             commands::catalog::get_discount_authorization,
             commands::catalog::set_discount_authorization_pin,
             commands::customers::search_customers,
+            commands::customers::list_customers,
+            commands::customers::customer_overview,
+            commands::customers::customer_details,
             commands::customers::list_cars_of,
             commands::customers::find_cars_by_plate,
             commands::customers::create_customer,

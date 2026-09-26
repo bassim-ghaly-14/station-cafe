@@ -74,6 +74,42 @@ select:focus-visible {
 }
 
 /* ---------------------------------------------------------------------------
+ * Drawer motion.
+ * The panel slides in along the INLINE axis, so it enters from the reading
+ * side in RTL without a direction-specific rule: `translate` is a physical
+ * property, so the direction-aware version uses `margin-inline-start`, which
+ * the browser resolves per `dir`. Two short, fast steps — no bounce, no scale,
+ * no glow. `motion-safe:` on the elements plus a reduced-motion block below
+ * means the drawer still appears instantly when the user asked for less motion.
+ * ------------------------------------------------------------------------- */
+@keyframes drawer-panel-in {
+  from {
+    opacity: 0;
+    margin-inline-start: -100%;
+  }
+  to {
+    opacity: 1;
+    margin-inline-start: 0;
+  }
+}
+
+@keyframes drawer-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*='drawer-panel-in'],
+  [class*='drawer-scrim-in'] {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Boot screen (application startup loading state).
  * Rendered size targets ~3–4× the previous 88px logo:
  *   1280×800  → 308px (3.5×, capped)

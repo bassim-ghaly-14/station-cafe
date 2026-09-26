@@ -14,6 +14,7 @@ import {
   Receipt,
   Store,
   Settings,
+  UserRound,
   Users,
   type LucideIcon,
 } from '@/components/ui/icon'
@@ -31,6 +32,9 @@ interface NavItem {
 const NAV: NavItem[] = [
   { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store },
   { view: 'catalog', minRole: 'STAFF', labelKey: 'nav.catalog', icon: Package },
+  // The customer workspace is operational: every role may list, search and
+  // register customers. Its financial layer is gated by the backend, not here.
+  { view: 'customers', minRole: 'STAFF', labelKey: 'nav.customers', icon: UserRound },
   { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
   { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
