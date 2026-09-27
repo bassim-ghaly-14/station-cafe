@@ -102,10 +102,9 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
                 // keeps the three rules that communicate document structure.
                 if (current === 0) return <div key={index} className="h-0.5" aria-hidden />
                 return (
-                  <div
+                  <hr
                     key={index}
-                    role="separator"
-                    className="my-[1.5mm] h-px border-t border-dashed border-print-rule"
+                    className="my-[1.5mm] h-px border-0 border-t border-dashed border-print-rule"
                   />
                 )
               }

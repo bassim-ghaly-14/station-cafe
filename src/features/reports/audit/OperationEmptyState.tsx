@@ -71,7 +71,7 @@ export function OperationEmptyState({
 function LogMotif() {
   return (
     <div aria-hidden dir="ltr" className="w-full max-w-64">
-      <svg viewBox="0 0 256 96" className="h-auto w-full" role="presentation" focusable="false">
+      <svg viewBox="0 0 256 96" className="h-auto w-full" focusable="false">
         <rect
           x="8"
           y="8"

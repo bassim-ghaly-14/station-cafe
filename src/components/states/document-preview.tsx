@@ -187,7 +187,7 @@ function DocumentSkeleton() {
 export function DocumentPaperMotif({ className }: { className?: string }) {
   return (
     <div aria-hidden dir="ltr" className={cn('w-full max-w-48', className)}>
-      <svg viewBox="0 0 224 120" className="h-auto w-full" role="presentation" focusable="false">
+      <svg viewBox="0 0 224 120" className="h-auto w-full" focusable="false">
         <rect
           x="8"
           y="8"

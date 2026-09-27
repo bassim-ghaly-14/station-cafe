@@ -111,7 +111,7 @@ function ChartFrame({ compact }: { compact: boolean }) {
 
   return (
     <div aria-hidden dir="ltr" className={cn('w-full', compact ? 'max-w-56' : 'max-w-80')}>
-      <svg viewBox="0 0 320 160" className="h-auto w-full" role="presentation" focusable="false">
+      <svg viewBox="0 0 320 160" className="h-auto w-full" focusable="false">
         <defs>
           <linearGradient id="station-chart-motif" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-motif-strong)" stopOpacity="0.5" />
