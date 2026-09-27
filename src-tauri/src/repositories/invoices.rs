@@ -66,6 +66,14 @@ pub fn insert_invoice(
         ],
     )?;
     let inv = conn.last_insert_rowid();
+    // The wash-worker attribution is written in the SAME transaction as the
+    // invoice itself, immediately after the row exists. It is deliberately a
+    // separate statement rather than a 20th INSERT column: the invoice's
+    // financial columns are a fixed snapshot contract that every existing
+    // writer and test already depends on, and the attribution is orthogonal to
+    // the money. `None` on a cafe-only or hybrid-without-wash invoice is
+    // meaningful — nobody washed anything, and no worker is invented for it.
+    set_invoice_wash_employee(conn, inv, wash_employee_id_of(conn, order_id)?)?;
     let mut stmt = conn.prepare(
         "INSERT INTO invoice_lines (invoice_id, department, product_name, unit_price, quantity,
             discount_minor, line_total) VALUES (?1,?2,?3,?4,?5,?6,?7)",
@@ -82,6 +90,28 @@ pub fn insert_invoice(
         ])?;
     }
     Ok(inv)
+}
+
+/// Read the wash-worker attribution a checkout is about to snapshot.
+fn wash_employee_id_of(conn: &Db, order_id: i64) -> AppResult<Option<i64>> {
+    Ok(conn.query_row(
+        "SELECT wash_employee_id FROM orders WHERE id = ?1",
+        [order_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// Write the wash-worker attribution onto a freshly created invoice.
+pub fn set_invoice_wash_employee(
+    conn: &Db,
+    invoice_id: i64,
+    wash_employee_id: Option<i64>,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE invoices SET wash_employee_id = ?2 WHERE id = ?1",
+        params![invoice_id, wash_employee_id],
+    )?;
+    Ok(())
 }
 
 /// Snapshot customer/car data at transaction time.
@@ -187,14 +217,6 @@ pub fn mark_invoice_credit(conn: &Db, invoice_id: i64) -> AppResult<()> {
     Ok(())
 }
 
-pub fn cancel_invoice(conn: &Db, invoice_id: i64) -> AppResult<()> {
-    conn.execute(
-        "UPDATE invoices SET status = 'CANCELLED', cancelled_at = station_now() WHERE id = ?1",
-        [invoice_id],
-    )?;
-    Ok(())
-}
-
 // ---- SEARCH ---------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,7 +289,7 @@ pub fn search_invoices(
         "SELECT {INV_COLS} FROM invoices i
          LEFT JOIN customers k ON k.id = i.customer_id
          LEFT JOIN invoice_customers ic ON ic.invoice_id = i.id
-         WHERE i.status != 'CANCELLED'"
+         WHERE 1=1"
     );
     let mut args: Vec<String> = Vec::new();
     if let Some(d) = business_day_id {

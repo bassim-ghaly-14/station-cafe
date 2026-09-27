@@ -84,6 +84,10 @@ pub struct Order {
     pub waiting_no: Option<i64>,
     pub takeaway_no: Option<i64>,
     pub shift_id: Option<i64>,
+    /// The WASH_WORKER this job is attributed to, chosen by the cashier while
+    /// the order is open. Checked-out invoices SNAPSHOT this value, so a closed
+    /// document is never re-read from the order.
+    pub wash_employee_id: Option<i64>,
     /// Authoritative table label (joined from `cafe_tables`) for TABLE orders;
     /// `None` for TAKEAWAY — a takeaway never fakes a table.
     pub table_label: Option<String>,
@@ -310,7 +314,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         .query_row(
             "SELECT o.id, o.order_type, o.table_id, o.user_id, o.status, o.customer_id, o.discount_mode,
                     o.discount_value, o.opened_at,
-                    o.waiting_no, o.takeaway_no, o.shift_id, t.label
+                    o.waiting_no, o.takeaway_no, o.shift_id, o.wash_employee_id, t.label
              FROM orders o
              LEFT JOIN cafe_tables t ON t.id = o.table_id
              WHERE o.id = ?1",
@@ -329,7 +333,8 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
                     r.get::<_, Option<i64>>(9)?,
                     r.get::<_, Option<i64>>(10)?,
                     r.get::<_, Option<i64>>(11)?,
-                    r.get::<_, Option<String>>(12)?,
+                    r.get::<_, Option<i64>>(12)?,
+                    r.get::<_, Option<String>>(13)?,
                 ))
             },
         )
@@ -351,6 +356,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         waiting_no,
         takeaway_no,
         shift_id,
+        wash_employee_id,
         table_label,
     ) = head;
     let lines = lines_of(conn, order_id)?;
@@ -367,6 +373,7 @@ pub fn get_order(conn: &Db, order_id: i64) -> AppResult<Option<Order>> {
         waiting_no,
         takeaway_no,
         shift_id,
+        wash_employee_id,
         table_label,
         lines,
     }))
@@ -443,6 +450,22 @@ pub fn set_waiting_no(conn: &Db, order_id: i64, waiting_no: i64) -> AppResult<()
     conn.execute(
         "UPDATE orders SET waiting_no = ?2 WHERE id = ?1",
         params![order_id, waiting_no],
+    )?;
+    Ok(())
+}
+
+/// Attribute the wash job to a wash worker (`None` clears it).
+///
+/// Only the ORDER carries the attribution; checkout snapshots it onto the
+/// invoice, so a finalized document never depends on this row again.
+pub fn set_order_wash_employee(
+    conn: &Db,
+    order_id: i64,
+    wash_employee_id: Option<i64>,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE orders SET wash_employee_id = ?2 WHERE id = ?1",
+        params![order_id, wash_employee_id],
     )?;
     Ok(())
 }

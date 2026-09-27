@@ -345,42 +345,6 @@ fn checkout_invoice(
     })
 }
 
-/// Manager-level invoice cancellation — only while the day is still open.
-pub fn cancel_invoice(conn: &Db, actor: &User, invoice_id: i64, reason: &str) -> AppResult<()> {
-    if reason.trim().is_empty() {
-        return Err(AppError::validation("invoice.cancel_reason_required"));
-    }
-    let tx = conn.unchecked_transaction()?;
-    let day = crate::repositories::shifts::current_day(&tx)?
-        .ok_or_else(|| AppError::business("pos.no_business_day"))?;
-    let inv: (Option<i64>, String) = tx
-        .query_row(
-            "SELECT business_day_id, status FROM invoices WHERE id = ?1",
-            [invoice_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(|_| AppError::not_found("invoice.not_found"))?;
-    if inv.1 == "CANCELLED" {
-        return Err(AppError::business("invoice.already_cancelled"));
-    }
-    if inv.0 != Some(day.id) {
-        return Err(AppError::business("invoice.cancel_day_closed"));
-    }
-    invoices::cancel_invoice(&tx, invoice_id)?;
-    crate::services::audit::record(
-        &tx,
-        Some(actor.id),
-        Some(&actor.role),
-        "invoice.cancelled",
-        "invoice",
-        Some(&invoice_id.to_string()),
-        Some(&serde_json::json!({ "status": inv.1 })),
-        Some(&serde_json::json!({ "status": "CANCELLED", "reason": reason })),
-    )?;
-    tx.commit()?;
-    Ok(())
-}
-
 /// Credit settlement (partial or full) with explicit transaction + audit.
 pub fn settle_credit(conn: &Db, actor: &User, customer_id: i64, amount: i64) -> AppResult<String> {
     if amount <= 0 {

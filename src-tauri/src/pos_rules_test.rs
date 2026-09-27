@@ -89,7 +89,7 @@ fn adding_the_same_product_twice_increments_one_line() {
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
 
-    let tea = cafe_product(&conn, "شاي كلاسيك");
+    let tea = cafe_product(&conn, "شاي");
     pos_svc::add_line(&conn, &staff, order_id, tea, 1).unwrap();
     let after_second = pos_svc::add_line(&conn, &staff, order_id, tea, 1).unwrap();
     let after_third = pos_svc::add_line(&conn, &staff, order_id, tea, 1).unwrap();
@@ -112,7 +112,7 @@ fn distinct_purchasable_items_stay_on_separate_lines() {
     let order_id = open_order(&conn, &manager, &staff);
 
     // The same drink in two sizes are two catalog items, hence two lines.
-    let small = cafe_product(&conn, "قهوة تركي صغير");
+    let small = cafe_product(&conn, "قهوة تركي سينجل");
     let double = cafe_product(&conn, "قهوة تركي دبل");
     pos_svc::add_line(&conn, &staff, order_id, small, 1).unwrap();
     let order = pos_svc::add_line(&conn, &staff, order_id, double, 1).unwrap();
@@ -201,7 +201,7 @@ fn an_invoice_without_a_customer_is_recorded_as_no_customer() {
     let staff = login(&conn, "cashier", "cashier123");
     let order_id = open_order(&conn, &manager, &staff);
 
-    pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "شاي كلاسيك"), 1).unwrap();
+    pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "شاي"), 1).unwrap();
     let result = pay_cash(&conn, &staff, order_id, None, None);
 
     let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
@@ -405,7 +405,10 @@ fn a_wrong_shared_pin_does_not_apply_the_discount() {
         Some("wrong-one"),
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    assert_eq!(
+        err.to_string(),
+        "unauthorized: discount.authorization_failed"
+    );
     assert!(pos_svc::get_order(&conn, order_id)
         .unwrap()
         .discount_value
@@ -448,7 +451,10 @@ fn the_discount_pin_is_one_global_shared_credential() {
     // existence of a stored hash.
     for pin in [None, Some(""), Some("4820")] {
         let err = settings::authorize_discount(&conn, &staff, order_id, 500, pin).unwrap_err();
-        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+        assert_eq!(
+            err.to_string(),
+            "unauthorized: discount.authorization_failed"
+        );
     }
 
     // ONE global PIN, configured once and owned by nobody.
@@ -498,7 +504,10 @@ fn the_discount_pin_is_one_global_shared_credential() {
     for login_password in ["manager123", "admin123", "cashier123"] {
         let err = settings::authorize_discount(&conn, &staff, order_id, 500, Some(login_password))
             .unwrap_err();
-        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+        assert_eq!(
+            err.to_string(),
+            "unauthorized: discount.authorization_failed"
+        );
     }
 
     // End to end: the cashier applies the discount on their own order with the
@@ -541,10 +550,12 @@ fn the_shared_discount_pin_must_be_exactly_four_ascii_digits() {
     // one — never as a different, probe-friendly error.
     for pin in ["123", "12345", "12a4", ""] {
         let err = settings::authorize_discount(&conn, &manager, 1, 500, Some(pin)).unwrap_err();
-        assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+        assert_eq!(
+            err.to_string(),
+            "unauthorized: discount.authorization_failed"
+        );
     }
 }
-
 
 #[test]
 fn a_manager_or_admin_configures_the_shared_pin_and_a_cashier_cannot() {
@@ -553,23 +564,38 @@ fn a_manager_or_admin_configures_the_shared_pin_and_a_cashier_cannot() {
     let developer = login(&conn, "admin", "admin123");
     let staff = login(&conn, "cashier", "cashier123");
 
-    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
+    assert!(
+        !settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
 
     // A CASHIER may never configure the shared PIN.
     assert!(settings::set_discount_authorization_pin(&conn, &staff, "4820").is_err());
-    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
+    assert!(
+        !settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
 
     // MANAGER may configure it, exactly like the other business settings; ADMIN
     // may too. There is no target user: the PIN is cafe-wide.
     settings::set_discount_authorization_pin(&conn, &manager, "4820").unwrap();
-    assert!(settings::get_discount_authorization(&conn).unwrap().configured);
+    assert!(
+        settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
     settings::set_discount_authorization_pin(&conn, &developer, "0097").unwrap();
 
     // Changing the PIN invalidates the previous one immediately, and the new one
     // works at once — for any cashier.
     settings::authorize_discount(&conn, &staff, 1, 500, Some("0097")).unwrap();
     let err = settings::authorize_discount(&conn, &staff, 1, 500, Some("4820")).unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    assert_eq!(
+        err.to_string(),
+        "unauthorized: discount.authorization_failed"
+    );
 
     // Exactly ONE global hash, stored with Argon2id and never as plaintext.
     let stored: String = conn
@@ -648,7 +674,10 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
         },
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    assert_eq!(
+        err.to_string(),
+        "unauthorized: discount.authorization_failed"
+    );
 
     // Authorization is tied to the amount: authorizing 5.00 does not authorize
     // a later, larger discount on the same order.
@@ -675,7 +704,10 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
         },
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), "unauthorized: discount.authorization_failed");
+    assert_eq!(
+        err.to_string(),
+        "unauthorized: discount.authorization_failed"
+    );
     // The order still holds exactly the authorized amount.
     assert_eq!(
         pos_svc::get_order(&conn, order_id).unwrap().discount_value,
@@ -768,11 +800,11 @@ fn historical_percentage_discounts_stay_readable_and_payable() {
 
     // Reading and settling it still resolve the stored value exactly.
     let preview = pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(10_000), None).unwrap();
-    assert_eq!(preview.discount_minor, 440);
+    assert_eq!(preview.discount_minor, 500);
     let result = pay_cash(&conn, &staff, order_id, Some("PERCENT"), Some(10_000));
     let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
         .unwrap()
         .unwrap();
-    assert_eq!(invoice.discount_minor, 440);
+    assert_eq!(invoice.discount_minor, 500);
     assert_eq!(invoice.total, preview.total);
 }

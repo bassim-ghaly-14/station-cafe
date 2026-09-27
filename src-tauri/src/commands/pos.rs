@@ -283,19 +283,6 @@ pub fn search_invoices(
     })
 }
 
-/// Cancellation is MANAGER+, same business day only, always audited.
-#[tauri::command(rename_all = "snake_case")]
-pub fn cancel_invoice(
-    state: State<'_, AppState>,
-    token: String,
-    invoice_id: i64,
-    reason: String,
-) -> AppResult<()> {
-    authorized(&state, &token, "MANAGER", move |conn, actor| {
-        checkout::cancel_invoice(conn, actor, invoice_id, &reason)
-    })
-}
-
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_credit_accounts(
     state: State<'_, AppState>,

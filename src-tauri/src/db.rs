@@ -1786,7 +1786,7 @@ mod tests {
         apply_migrations(&conn, Some(31)).unwrap();
         conn.execute_batch(
             "INSERT INTO users (id, name, role, password_hash) VALUES (1,'cashier','STAFF','x');
-             INSERT INTO business_days (id, day_date) VALUES (1,'2026-09-10');
+             INSERT INTO business_days (id, day_date, opened_at) VALUES (1,'2026-09-10','2026-09-10 08:00:00');
              INSERT INTO invoices (id, invoice_no, business_day_id, user_id, status,
                                    subtotal, service_charge, total, paid_amount,
                                    cafe_total, wash_total)
@@ -1856,7 +1856,7 @@ mod tests {
         migrate(&conn).unwrap();
         conn.execute_batch(
             "INSERT INTO users (id, name, role, password_hash) VALUES (1,'cashier','STAFF','x');
-             INSERT INTO business_days (id, day_date) VALUES (1,'2026-09-10');
+             INSERT INTO business_days (id, day_date, opened_at) VALUES (1,'2026-09-10','2026-09-10 08:00:00');
              INSERT INTO invoices (id, invoice_no, business_day_id, user_id, status,
                                    subtotal, total, cafe_total)
              VALUES (1, 1, 1, 1, 'PAID', 1_000, 1_000, 1_000);",
@@ -2201,7 +2201,14 @@ mod tests {
     #[test]
     fn explicit_utc_migration_marks_every_timestamp() {
         let conn = memory_db();
-        migrate(&conn).unwrap();
+        // Stop AT migration 19 rather than migrating to the latest: this test
+        // re-runs migration 19's own SQL below, and that SQL names the columns
+        // as they existed then. A later migration may legitimately retire a
+        // column it normalised (the invoice-cancellation migration dropped
+        // `invoices.cancelled_at`), and re-running the historical SQL against a
+        // newer schema would then fail on a column that no longer exists —
+        // testing the schema instead of the migration.
+        apply_migrations(&conn, Some(19)).unwrap();
         conn.execute(
             "INSERT INTO users (name, role, password_hash) VALUES ('a', 'ADMIN', 'x')",
             [],
@@ -2239,7 +2246,8 @@ mod tests {
     #[test]
     fn explicit_utc_migration_is_idempotent() {
         let conn = memory_db();
-        migrate(&conn).unwrap();
+        // Migrate only to 19, for the same reason as the test above.
+        apply_migrations(&conn, Some(19)).unwrap();
         let sql = MIGRATIONS
             .iter()
             .find(|m| m.version == 19)
@@ -2335,7 +2343,8 @@ mod tests {
     #[test]
     fn business_dates_are_never_rewritten_as_instants() {
         let conn = memory_db();
-        migrate(&conn).unwrap();
+        // Migrate only to 19, for the same reason as the test above.
+        apply_migrations(&conn, Some(19)).unwrap();
         conn.execute(
             "INSERT INTO business_days (day_date, opened_at) VALUES ('2026-09-25', '2026-09-25 09:00:00')",
             [],

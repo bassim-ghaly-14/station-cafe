@@ -341,19 +341,12 @@ pub fn set_discount(
     let order = get_order(&tx, order_id)?;
     require_editable(&order, actor)?;
     let subtotal: Money = order.lines.iter().map(|l: &OrderLine| l.line_total).sum();
-    let discount_minor =
-        validate_discount_selection(subtotal, discount_mode, discount_value)?;
+    let discount_minor = validate_discount_selection(subtotal, discount_mode, discount_value)?;
     // Authorization is bound to THIS operation and to the amount that is about
     // to be persisted — it can never be replayed for a different amount.
     // Clearing a discount needs no authorization (it removes value, not adds).
     if discount_minor > 0 {
-        settings::authorize_discount(
-            &tx,
-            actor,
-            order_id,
-            discount_minor,
-            discount_pin,
-        )?;
+        settings::authorize_discount(&tx, actor, order_id, discount_minor, discount_pin)?;
     }
     pos::set_order_discount(&tx, order_id, discount_mode, discount_value)?;
     let refreshed = get_order(&tx, order_id)?;

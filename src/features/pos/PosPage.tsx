@@ -463,6 +463,7 @@ export default function PosPage() {
               toast(t('shift.closedSuccess'), 'success')
               await refresh()
             }}
+            onRefresh={refresh}
           />
 
           {atLeast(user?.role, 'MANAGER') && shiftState.day ? (

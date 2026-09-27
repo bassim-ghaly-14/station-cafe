@@ -48,10 +48,19 @@ const mocks = vi.hoisted(() => ({
   settleDay: vi.fn(),
   daySettlementHistory: vi.fn(),
   dayReport: vi.fn(),
+  previewDayClose: vi.fn(),
   closeDay: vi.fn(),
+  shiftExpenses: vi.fn(async () => []),
+  expenseCategories: vi.fn(async () => [
+    { code: 'SUPPLIES', name_ar: 'مشتريات', is_system: true, is_active: true },
+  ]),
+  createExpense: vi.fn(),
 }))
 
-vi.mock('@/services/posApi', () => ({
+vi.mock('@/services/posApi', async (importOriginal) => ({
+  // Partial mock: the real payload guard (`isPrintPreview`) stays in place, only
+  // the command surface the page drives is replaced.
+  ...(await importOriginal<typeof import('@/services/posApi')>()),
   settingsApi: {
     serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
     discountOptions: vi.fn().mockResolvedValue({ amounts: [2000, 5000, 10000] }),
@@ -95,7 +104,17 @@ vi.mock('@/services/shiftApi', () => ({
     settleDay: mocks.settleDay,
     daySettlementHistory: mocks.daySettlementHistory,
     dayReport: mocks.dayReport,
+    previewDayClose: mocks.previewDayClose,
     closeDay: mocks.closeDay,
+  },
+}))
+
+// The POS shift panel books expenses through the ops API.
+vi.mock('@/services/opsApi', () => ({
+  opsApi: {
+    shiftExpenses: mocks.shiftExpenses,
+    expenseCategories: mocks.expenseCategories,
+    createExpense: mocks.createExpense,
   },
 }))
 
@@ -845,6 +864,52 @@ describe('shift lifecycle UI', () => {
     expected_cash: 3000,
     actual_cash: null,
     cash_difference: null,
+    cafe_invoices: 1,
+    wash_invoices: 0,
+    hybrid_invoices: 0,
+    subtotal: 5500,
+    // The card's headline figure is the BACKEND's `total_sales` for the shift.
+    // It is deliberately not cash+card+credit computed in React: those three
+    // only coincide with the invoice total when every invoice is fully settled,
+    // and re-deriving the total in the client is exactly the duplication this
+    // flow forbids.
+    total_sales: 5500,
+    cafe_sales: 5500,
+    wash_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
+  }
+
+  // The authoritative backend reconciliation, in exactly the shape the screen,
+  // the preview and the printer all consume. Tests assert on these values
+  // rather than on anything the UI computes.
+  const shiftReport = {
+    shift,
+    areas: { cafe_invoices: 2, wash_invoices: 1, hybrid_invoices: 0 },
+    invoices_count: 3,
+    cafe_sales: 2000,
+    wash_sales: 1000,
+    subtotal: 3500,
+    discounts: 500,
+    service_charges: 500,
+    total_sales: 3500,
+    cash_sales: 2000,
+    card_sales: 3000,
+    credit_sales: 500,
+    expenses: 0,
+    cash_expenses: 0,
+    expense_breakdown: [],
+    cash: {
+      opening_cash: 1000,
+      cash_inflows: 2000,
+      cash_outflows: 0,
+      expected_cash: 3000,
+      actual_cash: 3000,
+      difference: 0,
+      shortage: 0,
+      surplus: 0,
+      status: 'BALANCED' as const,
+    },
   }
 
   beforeEach(() => {
@@ -857,11 +922,15 @@ describe('shift lifecycle UI', () => {
       credit_sales: 500,
       invoices_count: 3,
       expected_cash: 3000,
+      cash_expenses: 0,
+      expenses: 0,
+      report: shiftReport,
     })
     mocks.closeShift.mockResolvedValue({
       shift: { ...shift, status: 'CLOSED' },
       expected_cash: 3000,
       difference: 0,
+      report: shiftReport,
     })
     mocks.printShift.mockResolvedValue({ duplicate_suppressed: false, job_id: 1 })
     mocks.printPreviewShift.mockResolvedValue({
@@ -946,7 +1015,7 @@ describe('shift lifecycle UI', () => {
     // expected_cash is 30.00 EGP, and the balanced state is reflected live.
     expect(input).toHaveValue('30.00')
     expect(shortcut).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('النقد مطابق')).toBeInTheDocument()
+    expect(screen.getByText('متوازن')).toBeInTheDocument()
   })
 
   it('keeps the dialog open and exposes a backend close error', async () => {
@@ -1027,16 +1096,16 @@ describe('shift lifecycle UI', () => {
 
     // Exactly the expected amount → balanced.
     fireEvent.change(input, { target: { value: '30' } })
-    expect(await screen.findByText('النقد مطابق')).toBeInTheDocument()
+    expect(await screen.findByText('متوازن')).toBeInTheDocument()
     expect(confirm()).toBeEnabled()
 
     // Short → deficit; over → surplus. The action stays available either way.
     fireEvent.change(input, { target: { value: '25' } })
-    expect(await screen.findByText('نقص في النقد')).toBeInTheDocument()
+    expect(await screen.findByText('عجز')).toBeInTheDocument()
     expect(confirm()).toBeEnabled()
 
     fireEvent.change(input, { target: { value: '35' } })
-    expect(await screen.findByText('زيادة في النقد')).toBeInTheDocument()
+    expect(await screen.findByText('زيادة')).toBeInTheDocument()
   })
 
   // The card must not be the dialog's responsibility: the numbers the card
@@ -1049,7 +1118,8 @@ describe('shift lifecycle UI', () => {
         <CurrentShiftPanel shift={shift} onClosed={vi.fn()} />
       </ToastProvider>,
     )
-    // 2000 + 3000 + 500 = 5500 minor units.
+    // The card renders the shift row's own figures: the backend's total sales
+    // as the headline, and each payment method beside it.
     expect(container.textContent).toContain(money(5500))
     expect(container.textContent).toContain(money(2000))
     expect(container.textContent).toContain(money(3000))
@@ -1058,12 +1128,18 @@ describe('shift lifecycle UI', () => {
     rerender(
       <ToastProvider>
         <CurrentShiftPanel
-          shift={{ ...shift, cash_sales: 2500, card_sales: 3000, credit_sales: 500 }}
+          shift={{
+            ...shift,
+            total_sales: 6000,
+            cash_sales: 2500,
+            card_sales: 3000,
+            credit_sales: 500,
+          }}
           onClosed={vi.fn()}
         />
       </ToastProvider>,
     )
-    // 2500 + 3000 + 500 = 6000 minor units: the card followed the new data.
+    // The card followed the new data.
     expect(container.textContent).toContain(money(6000))
     expect(container.textContent).toContain(money(2500))
     expect(mocks.previewShiftClose).not.toHaveBeenCalled()
@@ -1149,10 +1225,13 @@ describe('shift lifecycle UI', () => {
       credit_sales: 500,
       invoices_count: 3,
       expected_cash: 3000,
+      cash_expenses: 0,
+      expenses: 0,
+      report: shiftReport,
     })
 
     await waitFor(() => expect(confirm).toBeEnabled())
-    expect(await screen.findByText('النقد مطابق')).toBeInTheDocument()
+    expect(await screen.findByText('متوازن')).toBeInTheDocument()
     // The typed value survived the load — no remount, no reset.
     expect(input).toHaveValue('30')
   })
@@ -1178,6 +1257,9 @@ describe('shift lifecycle UI', () => {
       credit_sales: 500,
       invoices_count: 3,
       expected_cash: 3000,
+      cash_expenses: 0,
+      expenses: 0,
+      report: shiftReport,
     })
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
     expect(await screen.findByText('النقد المتوقع')).toBeInTheDocument()
@@ -1203,7 +1285,17 @@ describe('day closing UI', () => {
     expected_cash: 2000,
     actual_cash: 2000,
     cash_difference: 0,
+    cafe_invoices: 1,
+    wash_invoices: 0,
+    hybrid_invoices: 0,
+    subtotal: 0,
+    total_sales: 0,
+    cafe_sales: 0,
+    wash_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
   }
+  // The authoritative day report, exactly as the backend returns it.
   const day = {
     day: {
       id: 1,
@@ -1212,28 +1304,55 @@ describe('day closing UI', () => {
       opened_at: '2026-09-24 16:00:00Z',
       closed_at: null,
     },
-    totals: {
-      invoices_count: 1,
-      cafe_sales: 1000,
-      wash_sales: 2000,
-      subtotal: 3000,
-      discounts: 0,
-      service_charges: 0,
-      total_sales: 3000,
-      cash: 1000,
-      card: 2000,
-      credit: 0,
-      expenses: 0,
+    areas: { cafe_invoices: 1, wash_invoices: 1, hybrid_invoices: 0 },
+    shift_count: 1,
+    open_shift_count: 0,
+    invoices_count: 1,
+    cafe_sales: 1000,
+    wash_sales: 2000,
+    subtotal: 3000,
+    discounts: 0,
+    service_charges: 0,
+    total_sales: 3000,
+    cash_sales: 1000,
+    card_sales: 2000,
+    credit_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
+    expense_breakdown: [],
+    cash: {
+      opening_cash: 1000,
+      cash_inflows: 1000,
+      cash_outflows: 0,
+      expected_cash: 2000,
+      actual_cash: 2000,
+      difference: 0,
+      shortage: 0,
+      surplus: 0,
+      status: 'BALANCED',
     },
+    included_shift_ids: [7],
     shifts: [closedShift],
-    expected_drawer_cash: 2000,
-    cash_differences: 0,
   }
-  const settlement = { business_day_id: 1, pending_shifts: [closedShift], totals: day.totals }
+  const dayTotals = {
+    invoices_count: 1,
+    cafe_sales: 1000,
+    wash_sales: 2000,
+    subtotal: 3000,
+    discounts: 0,
+    service_charges: 0,
+    total_sales: 3000,
+    cash: 1000,
+    card: 2000,
+    credit: 0,
+    expenses: 0,
+  }
+  const settlement = { business_day_id: 1, pending_shifts: [closedShift], totals: dayTotals }
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.dayReport.mockResolvedValue(day)
+    mocks.previewDayClose.mockResolvedValue({ report: day, open_shifts: [], open_orders: 0 })
     mocks.previewDaySettlement.mockResolvedValue(settlement)
     mocks.daySettlementHistory.mockResolvedValue([])
     mocks.settleDay.mockResolvedValue({
@@ -1242,10 +1361,10 @@ describe('day closing UI', () => {
       closed_by: 1,
       closed_at: '2026-09-24 23:00:00Z',
       shift_ids: [7],
-      totals: day.totals,
+      totals: dayTotals,
       final_snapshot: false,
     })
-    mocks.closeDay.mockResolvedValue(day.totals)
+    mocks.closeDay.mockResolvedValue({ totals: dayTotals, report: day })
     mocks.printDay.mockResolvedValue({ duplicate_suppressed: false, job_id: 1 })
   })
 
@@ -1295,7 +1414,7 @@ describe('day closing UI', () => {
     mocks.previewDaySettlement.mockResolvedValue({
       business_day_id: 1,
       pending_shifts: [],
-      totals: day.totals,
+      totals: dayTotals,
     })
     mocks.daySettlementHistory.mockResolvedValue([
       {
@@ -1304,7 +1423,7 @@ describe('day closing UI', () => {
         closed_by: 1,
         closed_at: '2026-09-24 23:00:00Z',
         shift_ids: [7],
-        totals: day.totals,
+        totals: dayTotals,
         final_snapshot: false,
       },
     ])
@@ -1330,7 +1449,7 @@ describe('day closing UI', () => {
     mocks.previewDaySettlement.mockResolvedValue({
       business_day_id: 1,
       pending_shifts: [],
-      totals: day.totals,
+      totals: dayTotals,
     })
     mocks.closeDay.mockRejectedValue({ message: 'day.orders_open' })
     render(
@@ -1364,7 +1483,13 @@ describe('day closing UI', () => {
     // A completed sale lands: the POS page refreshes and bumps the revision.
     mocks.dayReport.mockResolvedValue({
       ...day,
-      totals: { ...day.totals, total_sales: 999_900, cash: 999_900 },
+      total_sales: 999_900,
+      cash_sales: 999_900,
+    })
+    mocks.previewDayClose.mockResolvedValue({
+      report: { ...day, total_sales: 999_900, cash_sales: 999_900 },
+      open_shifts: [],
+      open_orders: 0,
     })
     rerender(
       <ToastProvider>
@@ -1424,6 +1549,15 @@ describe('closing card system', () => {
     expected_cash: 3000,
     actual_cash: null,
     cash_difference: null,
+    cafe_invoices: 1,
+    wash_invoices: 0,
+    hybrid_invoices: 0,
+    subtotal: 0,
+    total_sales: 0,
+    cafe_sales: 0,
+    wash_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
   }
   const totals = {
     invoices_count: 1,
@@ -1439,6 +1573,47 @@ describe('closing card system', () => {
     expenses: 0,
   }
 
+  // The day report, in the authoritative backend shape. The UI renders these
+  // figures; it never derives them.
+  const cardDay = {
+    day: {
+      id: 1,
+      day_date: '2026-09-24',
+      status: 'OPEN',
+      opened_at: '2026-09-24T08:00:00Z',
+      closed_at: null,
+    },
+    areas: { cafe_invoices: 1, wash_invoices: 0, hybrid_invoices: 0 },
+    shift_count: 1,
+    open_shift_count: 0,
+    invoices_count: 1,
+    cafe_sales: 1000,
+    wash_sales: 2000,
+    subtotal: 3000,
+    discounts: 0,
+    service_charges: 0,
+    total_sales: 3000,
+    cash_sales: 3000,
+    card_sales: 0,
+    credit_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
+    expense_breakdown: [],
+    cash: {
+      opening_cash: 0,
+      cash_inflows: 3000,
+      cash_outflows: 0,
+      expected_cash: 3000,
+      actual_cash: 3000,
+      difference: 0,
+      shortage: 0,
+      surplus: 0,
+      status: 'BALANCED',
+    },
+    included_shift_ids: [shiftRow.id],
+    shifts: [{ ...shiftRow, status: 'CLOSED', closed_at: '2026-09-24 23:00:00Z' }],
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.previewShiftClose.mockResolvedValue({
@@ -1449,20 +1624,39 @@ describe('closing card system', () => {
       credit_sales: 500,
       invoices_count: 3,
       expected_cash: 3000,
-    })
-    mocks.dayReport.mockResolvedValue({
-      day: {
-        id: 1,
-        day_date: '2026-09-24',
-        status: 'OPEN',
-        opened_at: '2026-09-24T08:00:00Z',
-        closed_at: null,
+      cash_expenses: 0,
+      expenses: 0,
+      report: {
+        shift: shiftRow,
+        areas: { cafe_invoices: 1, wash_invoices: 0, hybrid_invoices: 0 },
+        invoices_count: 3,
+        cafe_sales: 2000,
+        wash_sales: 0,
+        subtotal: 3000,
+        discounts: 0,
+        service_charges: 0,
+        total_sales: 3000,
+        cash_sales: 2000,
+        card_sales: 3000,
+        credit_sales: 500,
+        expenses: 0,
+        cash_expenses: 0,
+        expense_breakdown: [],
+        cash: {
+          opening_cash: 1000,
+          cash_inflows: 2000,
+          cash_outflows: 0,
+          expected_cash: 3000,
+          actual_cash: 0,
+          difference: 0,
+          shortage: 0,
+          surplus: 0,
+          status: 'BALANCED',
+        },
       },
-      totals,
-      shifts: [{ ...shiftRow, status: 'CLOSED', closed_at: '2026-09-24 23:00:00Z' }],
-      expected_drawer_cash: 3000,
-      cash_differences: 0,
     })
+    mocks.dayReport.mockResolvedValue(cardDay)
+    mocks.previewDayClose.mockResolvedValue({ report: cardDay, open_shifts: [], open_orders: 0 })
     mocks.previewDaySettlement.mockResolvedValue({
       business_day_id: 1,
       pending_shifts: [],

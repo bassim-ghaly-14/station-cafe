@@ -27,7 +27,8 @@ vi.mock('@/services/shiftApi', () => ({
   shiftApi: { state: mocks.state },
 }))
 
-vi.mock('@/services/posApi', () => ({
+vi.mock('@/services/posApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/posApi')>()),
   api: {
     invoices: mocks.invoices,
     printPreviewInvoice: mocks.printPreviewInvoice,
