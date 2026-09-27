@@ -312,6 +312,50 @@ export function DailyBarChart({
   const dateText = dateLabel ?? DEFAULT_DATE_LABEL
   const peakValue = (value: number) => format(primary?.key ?? '', value)
 
+  // The tooltip HEADING: the day, read from the mark's own datum so the full
+  // "٢٧ سبتمبر ٢٠٢٦" is what a reader is shown — never the axis' abbreviated
+  // form, and never a raw ISO value. Declared here rather than inline so the
+  // tooltip primitive receives a stable render function.
+  const renderTooltipLabel = (_label: ReactNode, items?: { payload?: unknown }[]) => {
+    const datum = items?.[0]?.payload as DailyBarDatum | undefined
+    return (
+      <>
+        <span className="text-foreground-subtle">{dateText}</span>{' '}
+        {datum?.fullLabel ?? datum?.label ?? ''}
+      </>
+    )
+  }
+
+  // The tooltip VALUE: printed AS WHAT IT IS, so a currency series states ج.م
+  // through the shared money formatter and a count states `42`. Nothing here
+  // infers money from "a number", which is exactly what once produced
+  // `عدد الفواتير 0.04 ج.م`.
+  const renderTooltipValue = (
+    value: unknown,
+    _name: unknown,
+    item: { dataKey?: string | number; name?: string | number },
+  ) => tooltipValue(String(item.dataKey ?? item.name ?? _name), Number(value))
+
+  // Under the rows: the day's other REAL readings — the count of invoices, the
+  // average of one — separated by the primitive's own rule so the hierarchy
+  // reads primary → secondary.
+  const renderTooltipFooter = (items: { payload?: unknown }[]) => {
+    const datum = items?.[0]?.payload as DailyBarDatum | undefined
+    if (!datum) return null
+    const rows = metricRows(datum)
+    if (showTotal) {
+      rows.push(
+        <div key="daily-total" className="flex items-center justify-between gap-4">
+          <span className="text-foreground-muted">{totalText}</span>
+          <span className="tabular-nums">
+            {format(primary?.key ?? '', dayTotal(datum, series))}
+          </span>
+        </div>,
+      )
+    }
+    return rows.length ? <div className="flex w-full flex-col gap-1.5">{rows}</div> : null
+  }
+
   // The secondary readings of one hovered day, each printed ONLY when that day
   // actually carries it — a day with no invoices has no average invoice value,
   // and a `0.00 ج.م` there would state a measurement nobody made. The rows are
@@ -462,18 +506,7 @@ export function DailyBarChart({
               cursor={false}
               content={
                 <ChartTooltipContent
-                  // The HEADING is the DAY, read from the mark's own datum so the
-                  // full "٢٧ سبتمبر ٢٠٢٦" is what a reader is shown — never the
-                  // axis' abbreviated form, and never a raw ISO value.
-                  labelFormatter={(_label, items) => {
-                    const datum = items?.[0]?.payload as DailyBarDatum | undefined
-                    return (
-                      <>
-                        <span className="text-foreground-subtle">{dateText}</span>{' '}
-                        {datum?.fullLabel ?? datum?.label ?? ''}
-                      </>
-                    )
-                  }}
+                  labelFormatter={renderTooltipLabel}
                   // Each ROW is about ONE figure and is named by the CHART'S OWN
                   // Arabic label for it, never by the mark's key. The day is
                   // already the heading above.
@@ -481,41 +514,8 @@ export function DailyBarChart({
                   // The name is what the manager is looking for in a row of
                   // figures, so it carries the project's bold weight.
                   boldItemLabel
-                  // The VALUE alone, printed AS WHAT IT IS: a currency series
-                  // states ج.م through the shared money formatter, a count states
-                  // `42`. Nothing here infers money from "a number", which is
-                  // exactly what produced `عدد الفواتير 0.04 ج.م`.
-                  formatter={(value, _name, item) =>
-                    tooltipValue(String(item.dataKey ?? item.name ?? _name), Number(value))
-                  }
-                  // Under the rows: the day's other REAL readings — the count of
-                  // invoices, the average of one — separated by the primitive's
-                  // own rule so the hierarchy reads primary → secondary.
-                  footer={
-                    metrics.length || showTotal
-                      ? (items: { payload?: unknown }[]) => {
-                          const datum = items?.[0]?.payload as DailyBarDatum | undefined
-                          if (!datum) return null
-                          const rows = metricRows(datum)
-                          if (showTotal) {
-                            rows.push(
-                              <div
-                                key="daily-total"
-                                className="flex items-center justify-between gap-4"
-                              >
-                                <span className="text-foreground-muted">{totalText}</span>
-                                <span className="tabular-nums">
-                                  {format(primary?.key ?? '', dayTotal(datum, series))}
-                                </span>
-                              </div>,
-                            )
-                          }
-                          return rows.length ? (
-                            <div className="flex w-full flex-col gap-1.5">{rows}</div>
-                          ) : null
-                        }
-                      : undefined
-                  }
+                  formatter={renderTooltipValue}
+                  footer={metrics.length || showTotal ? renderTooltipFooter : undefined}
                 />
               }
             />
