@@ -88,7 +88,7 @@ function MovementRow({ row }: { readonly row: MovementRow }) {
         <p className="text-body">{row.product_name}</p>
         <p className="min-w-0 text-caption">
           <DisplayDateTime value={row.created_at} separator="" />
-          {row.note ? ` · ${t([`inventory.note.${row.note}`, row.note])}` : ''}
+          {row.note ? ` · ${t(['inventory.note.' + row.note, row.note])}` : ''}
         </p>
       </div>
       <Badge variant={row.change > 0 ? 'success' : 'danger'} size="sm" dot>

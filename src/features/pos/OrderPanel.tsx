@@ -183,8 +183,8 @@ export function OrderPanel({
           // Table identity comes from the authoritative order row (backend
           // join) — never from a UI selection. Takeaways show no fake table.
           order.order_type === 'TABLE' && order.table_label
-            ? `${order.table_label} · ${t(`pos.state.${order.status}`)}`
-            : t(`pos.state.${order.status}`)
+            ? `${order.table_label} · ${t('pos.state.' + order.status)}`
+            : t('pos.state.' + order.status)
         }
         actions={
           onDiscard ? (
