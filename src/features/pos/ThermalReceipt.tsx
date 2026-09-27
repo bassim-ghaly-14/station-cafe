@@ -83,11 +83,20 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
             case 'logo':
               return <ScreenLogo key={index} align={op.align} />
             case 'item':
+              // The column header is emitted by the first item only. Assigning it
+              // as its own statement keeps the render pure and readable.
+              if (!itemHeaderShown) {
+                itemHeaderShown = true
+                return (
+                  <div key={index}>
+                    <ItemColumnHeader />
+                    <ItemRow op={op} />
+                  </div>
+                )
+              }
               return (
                 <div key={index}>
-                  {!itemHeaderShown ? <ItemColumnHeader /> : null}
                   <ItemRow op={op} />
-                  {itemHeaderShown ? null : (itemHeaderShown = true)}
                 </div>
               )
             case 'financial':

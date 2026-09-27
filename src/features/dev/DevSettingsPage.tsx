@@ -357,7 +357,7 @@ export default function DevSettingsPage() {
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {serviceAmounts.map((amount, index) => (
-                <div key={index} className="flex min-w-0 items-center gap-2">
+                <div key={amount} className="flex min-w-0 items-center gap-2">
                   <Input
                     type="number"
                     min="0.01"
@@ -442,7 +442,7 @@ export default function DevSettingsPage() {
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {discountAmounts.map((amount, index) => (
-                <div key={index} className="flex min-w-0 items-center gap-2">
+                <div key={amount} className="flex min-w-0 items-center gap-2">
                   <Input
                     type="number"
                     min="0.01"
