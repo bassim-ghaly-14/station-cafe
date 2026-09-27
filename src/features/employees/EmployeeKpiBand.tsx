@@ -101,11 +101,10 @@ export function EmployeeKpiBand({
 
   if (loading && !overview) {
     return (
-      <div
-        role="status"
+      <output
         aria-busy="true"
         aria-label={t('employees.kpi.loading')}
-        className={cn(BAND_GRID, className)}
+        className={cn('block', BAND_GRID, className)}
       >
         {Array.from({ length: 5 }, (_, index) => (
           <Card key={index} className="flex flex-col gap-2 border-border-subtle p-3.5">
@@ -117,7 +116,7 @@ export function EmployeeKpiBand({
           </Card>
         ))}
         <span className="sr-only">{t('employees.kpi.loading')}</span>
-      </div>
+      </output>
     )
   }
 

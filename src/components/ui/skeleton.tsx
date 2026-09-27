@@ -14,7 +14,7 @@ const skeletonVariants = cva('block animate-pulse bg-skeleton motion-reduce:anim
 })
 
 export interface SkeletonProps
-  extends HTMLAttributes<HTMLSpanElement>, VariantProps<typeof skeletonVariants> {
+  extends HTMLAttributes<HTMLElement>, VariantProps<typeof skeletonVariants> {
   /** Defaults to the Arabic production loading label; use an empty string for decorative groups. */
   accessibilityLabel?: string
 }
@@ -28,8 +28,7 @@ export function Skeleton({
 }: SkeletonProps) {
   const labelled = accessibilityLabel.length > 0
   return (
-    <span
-      role={labelled ? 'status' : undefined}
+    <output
       aria-label={labelled ? accessibilityLabel : undefined}
       aria-hidden={labelled ? undefined : true}
       className={cn(skeletonVariants({ variant }), className)}

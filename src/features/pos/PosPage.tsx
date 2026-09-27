@@ -114,13 +114,9 @@ export default function PosPage() {
 
   if (!tables || !shiftState) {
     return (
-      <div
-        role="status"
-        aria-label={t('app.loading')}
-        className="flex min-h-64 justify-center py-16"
-      >
+      <output aria-label={t('app.loading')} className="flex min-h-64 justify-center py-16">
         <Loader size="lg" />
-      </div>
+      </output>
     )
   }
 

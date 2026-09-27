@@ -77,7 +77,11 @@ export function SalesKpiBand({
 
   if (loading && !summary) {
     return (
-      <div role="status" aria-busy="true" aria-label={t('sales.kpi.loading')} className={className}>
+      <output
+        aria-busy="true"
+        aria-label={t('sales.kpi.loading')}
+        className={cn('block', className)}
+      >
         <Card className="mb-3 flex flex-col gap-3 p-4">
           <Skeleton variant="text" className="h-3 w-32" accessibilityLabel="" />
           <Skeleton variant="text" className="h-8 w-56" accessibilityLabel="" />
@@ -91,7 +95,7 @@ export function SalesKpiBand({
           ))}
         </div>
         <span className="sr-only">{t('sales.kpi.loading')}</span>
-      </div>
+      </output>
     )
   }
 

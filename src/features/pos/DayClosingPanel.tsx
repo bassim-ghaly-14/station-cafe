@@ -254,9 +254,7 @@ export function DayClosingPanel({
             ))}
           </div>
         </div>
-        <span className="sr-only" role="status">
-          {t('settlement.loading')}
-        </span>
+        <output className="sr-only">{t('settlement.loading')}</output>
       </Card>
     )
   if (!report || !settlement)

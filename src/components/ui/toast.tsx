@@ -31,11 +31,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div aria-live="polite" className="fixed bottom-4 left-4 z-60 flex w-80 flex-col gap-2">
         {toasts.map((t) => (
-          <div
+          <output
             key={t.id}
-            role="status"
             className={cn(
-              'rounded-md border px-4 py-3 text-sm shadow-md',
+              'block rounded-md border px-4 py-3 text-sm shadow-md',
               t.tone === 'success' &&
                 'border-success-border bg-success-soft text-success-foreground',
               t.tone === 'error' &&
@@ -44,7 +43,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
           >
             {t.message}
-          </div>
+          </output>
         ))}
       </div>
     </ToastCtx.Provider>

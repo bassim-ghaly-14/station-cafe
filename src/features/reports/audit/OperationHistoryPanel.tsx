@@ -122,7 +122,7 @@ export function OperationHistoryPanel() {
 function OperationRowsSkeleton() {
   const { t } = useTranslation()
   return (
-    <div role="status" aria-busy="true" aria-label={t('app.loading')}>
+    <output aria-busy="true" aria-label={t('app.loading')} className="block">
       <div className="flex flex-col">
         {Array.from({ length: 6 }, (_, index) => (
           <div
@@ -139,6 +139,6 @@ function OperationRowsSkeleton() {
         ))}
       </div>
       <span className="sr-only">{t('app.loading')}</span>
-    </div>
+    </output>
   )
 }

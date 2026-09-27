@@ -68,8 +68,7 @@ export function DocumentPreviewState({
 
   if (variant === 'loading') {
     return (
-      <div
-        role="status"
+      <output
         aria-busy="true"
         aria-label={t('documentPreview.loading')}
         className={cn(
@@ -78,7 +77,7 @@ export function DocumentPreviewState({
         )}
       >
         <DocumentSkeleton />
-      </div>
+      </output>
     )
   }
 
@@ -160,7 +159,7 @@ function ErrorGlyph() {
  * A receipt-shaped skeleton, not a centred spinner: it reserves the geometry the
  * real paper will occupy, so `loading → content` does not reflow the dialog. The
  * rules are decorative (`accessibilityLabel=""` → `aria-hidden`) and the single
- * `role="status"` above them is what a screen reader hears.
+ * `<output>` above them is what a screen reader hears.
  */
 function DocumentSkeleton() {
   return (

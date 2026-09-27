@@ -12,14 +12,14 @@ import { RefreshCw } from '@/components/ui/icon'
  *
  * The statement is brand copy, not a loading-status description: it is passed
  * in already translated and rendered as the screen's closing line. The bar
- * carries the loading meaning visually; the block keeps `role="status"` so the
- * screen is announced without inventing a second loading phrase.
+ * carries the loading meaning visually; the block is an `<output>`, whose
+ * implicit `status` role announces the screen without inventing a second
+ * loading phrase.
  * Language-independent animation: the sweep uses physical transforms only.
  */
 export function BootLoadingIndicator({ statement }: { statement?: string }) {
   return (
-    <div
-      role="status"
+    <output
       aria-live="polite"
       className="boot-loading-block flex w-full max-w-60 flex-col items-center gap-3"
     >
@@ -27,7 +27,7 @@ export function BootLoadingIndicator({ statement }: { statement?: string }) {
         <div className="boot-progress-bar" />
       </div>
       {statement ? <p className="text-section text-center text-balance">{statement}</p> : null}
-    </div>
+    </output>
   )
 }
 

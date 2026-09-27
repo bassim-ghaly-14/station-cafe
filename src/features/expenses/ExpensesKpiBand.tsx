@@ -69,11 +69,10 @@ export function ExpensesKpiBand({
 
   if (loading && !overview) {
     return (
-      <div
-        role="status"
+      <output
         aria-busy="true"
         aria-label={t('expenses.kpi.loading')}
-        className={className}
+        className={cn('block', className)}
       >
         <Card className="mb-3 flex flex-col gap-3 p-4">
           <Skeleton variant="text" className="h-3 w-32" accessibilityLabel="" />
@@ -88,7 +87,7 @@ export function ExpensesKpiBand({
           ))}
         </div>
         <span className="sr-only">{t('expenses.kpi.loading')}</span>
-      </div>
+      </output>
     )
   }
 

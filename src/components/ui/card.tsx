@@ -1,9 +1,19 @@
 import { cn } from '@/lib/utils'
 import type { HTMLAttributes, ReactNode } from 'react'
 
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+/**
+ * Surface variant. The `loading` state renders an `<output>`, whose implicit
+ * `status` role announces the busy block without a redundant ARIA override.
+ * The attribute type is widened to the common denominator of both elements so
+ * the variant stays interchangeable at every call site.
+ */
+export function Card({
+  className,
+  as: Tag = 'div',
+  ...props
+}: HTMLAttributes<HTMLElement> & { as?: 'div' | 'output' }) {
   return (
-    <div
+    <Tag
       className={cn('rounded-lg border border-border bg-surface-card p-4 shadow-sm', className)}
       {...props}
     />

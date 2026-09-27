@@ -129,9 +129,9 @@ export function PaymentDialog({
       {preview ? (
         <TotalsBlock shown={preview} />
       ) : (
-        <div role="status" aria-label={t('app.loading')} className="flex justify-center py-8">
+        <output aria-label={t('app.loading')} className="flex justify-center py-8">
           <Loader size="lg" />
-        </div>
+        </output>
       )}
 
       <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label={t('pay.methodLabel')}>

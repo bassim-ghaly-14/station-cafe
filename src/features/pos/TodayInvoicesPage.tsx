@@ -179,7 +179,7 @@ export function TodayInvoicesPage() {
 function InvoiceRowsSkeleton() {
   const { t } = useTranslation()
   return (
-    <div role="status" aria-busy="true" aria-label={t('invoicesPage.loadingRecords')}>
+    <output aria-busy="true" aria-label={t('invoicesPage.loadingRecords')} className="block">
       <Card className="overflow-hidden p-0">
         {Array.from({ length: 8 }, (_, index) => (
           <div
@@ -196,6 +196,6 @@ function InvoiceRowsSkeleton() {
         ))}
       </Card>
       <span className="sr-only">{t('invoicesPage.loadingRecords')}</span>
-    </div>
+    </output>
   )
 }

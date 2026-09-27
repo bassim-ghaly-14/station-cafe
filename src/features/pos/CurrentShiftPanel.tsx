@@ -334,9 +334,9 @@ export function CurrentShiftPanel({
                 <ExpectedCashSection cash={preview.report.cash} />
               </div>
             ) : (
-              <div role="status" aria-label={t('app.loading')}>
+              <output aria-label={t('app.loading')} className="block">
                 <ListRowsSkeleton rows={6} />
-              </div>
+              </output>
             )}
             <div className="grid gap-4 sm:grid-cols-2">
               <section className="rounded-md border border-border-subtle p-3">

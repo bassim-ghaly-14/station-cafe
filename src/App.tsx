@@ -64,8 +64,8 @@ function RoutedViews() {
 /**
  * Branded startup screen. The only visible copy is the Station brand statement
  * (`boot.statement`) — it is marketing, not a loading-status description; the
- * progress bar and `role="status"` carry the loading meaning. Initialization,
- * timing and the exit transition are unchanged.
+ * progress bar and the surrounding `<output>` carry the loading meaning.
+ * Initialization, timing and the exit transition are unchanged.
  */
 function BootScreen({ exiting }: { exiting?: boolean }) {
   const { t } = useTranslation()

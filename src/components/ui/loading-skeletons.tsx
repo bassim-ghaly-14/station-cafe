@@ -18,9 +18,7 @@ export function ListRowsSkeleton({ rows = 5, className }: { rows?: number; class
           <Skeleton variant="text" className="h-6 w-20" accessibilityLabel="" />
         </div>
       ))}
-      <span className="sr-only" role="status">
-        جارٍ تحميل المحتوى
-      </span>
+      <output className="sr-only">جارٍ تحميل المحتوى</output>
     </div>
   )
 }
@@ -53,9 +51,7 @@ export function TableSkeleton({
           ))}
         </div>
       ))}
-      <span className="sr-only" role="status">
-        جارٍ تحميل الجدول
-      </span>
+      <output className="sr-only">جارٍ تحميل الجدول</output>
     </div>
   )
 }
@@ -77,9 +73,8 @@ export function ChartGridSkeleton({
   className?: string
 }) {
   return (
-    <div
-      className={className}
-      role="status"
+    <output
+      className={cn('block', className)}
       aria-label="جارٍ تحميل الرسوم البيانية"
       aria-busy="true"
     >
@@ -106,7 +101,7 @@ export function ChartGridSkeleton({
         ))}
       </div>
       <span className="sr-only">جارٍ تحميل الرسوم البيانية</span>
-    </div>
+    </output>
   )
 }
 
@@ -120,10 +115,10 @@ export function ChartGridSkeleton({
 export function ChartCardSkeleton({ className }: { className?: string }) {
   return (
     <Card
-      className={cn('min-h-88 space-y-5 p-5', className)}
-      role="status"
+      className={cn('block min-h-88 space-y-5 p-5', className)}
       aria-busy="true"
       aria-label="جارٍ تحميل الرسم البياني"
+      as="output"
     >
       <div className="flex items-center gap-3">
         <Skeleton variant="rect" className="size-10" accessibilityLabel="" />
@@ -165,9 +160,7 @@ export function CardGridSkeleton({ cards = 6, className }: { cards?: number; cla
           <Skeleton className="h-9" accessibilityLabel="" />
         </Card>
       ))}
-      <span className="sr-only" role="status">
-        جارٍ تحميل البيانات
-      </span>
+      <output className="sr-only">جارٍ تحميل البيانات</output>
     </div>
   )
 }
