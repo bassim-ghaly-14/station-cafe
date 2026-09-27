@@ -191,7 +191,13 @@ mod tests {
 
         load_official_data(&conn, &admin).unwrap();
 
-        assert_eq!(count(&conn, "users"), 5);
+        // The preserved developer account plus every starter account. Derived
+        // from the seed list itself, so adding a starter account cannot make
+        // this assertion lie.
+        assert_eq!(
+            count(&conn, "users"),
+            crate::seed::DEFAULT_USERS.len() as i64 + 1
+        );
         for name in ["Belly", "admin", "manager", "amira", "cashier"] {
             let exists: i64 = conn
                 .query_row(
@@ -208,7 +214,7 @@ mod tests {
         let markers: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM app_settings
-                 WHERE key IN ('seed.completed_at','seed.catalog.v3.completed_at')",
+                 WHERE key IN ('seed.completed_at','seed.catalog.v4.completed_at')",
                 [],
                 |r| r.get(0),
             )
@@ -241,7 +247,7 @@ mod tests {
                 [],
                 |r| r.get::<_, i64>(0)
             ),
-            Ok(5)
+            Ok(crate::seed::DEFAULT_USERS.len() as i64 + 1)
         );
     }
 
@@ -294,5 +300,178 @@ mod tests {
         )
         .unwrap();
         assert_foreign_keys(&conn);
+    }
+
+    /// The real foreign-key graph, read from the live migrated schema.
+    fn foreign_key_edges(conn: &Connection) -> Vec<(String, String)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.name, p.\"table\"
+                 FROM sqlite_schema m
+                 JOIN pragma_foreign_key_list(m.name) p
+                 WHERE m.type = 'table'
+                   AND m.name NOT LIKE 'sqlite_%'
+                   AND m.name <> '_migrations'",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap();
+        let mut edges: Vec<(String, String)> = rows.map(|row| row.unwrap()).collect();
+        edges.sort();
+        edges
+    }
+
+    /// Regression guard for the deletion order.
+    ///
+    /// `clear_all` runs with `foreign_keys = ON` and every FK is NO ACTION, so a
+    /// parent deleted before its child aborts the entire reset. That is exactly
+    /// what happened when migration 25 introduced `expenses.shift_id ->
+    /// shifts(id)`: `shifts` was deleted first and the reset started failing for
+    /// any database that had a shift-scoped expense.
+    ///
+    /// Rather than trusting a hand-audited comment, this derives the true graph
+    /// from `pragma_foreign_key_list` and asserts that
+    /// `APPLICATION_DATA_TABLES` is a valid child-first order for it. A future
+    /// migration that adds a relationship now fails here instead of silently
+    /// breaking the developer reset in the running app.
+    #[test]
+    fn reset_order_matches_the_live_foreign_key_graph() {
+        let conn = db();
+        let position = |table: &str| {
+            developer::APPLICATION_DATA_TABLES
+                .iter()
+                .position(|candidate| *candidate == table)
+        };
+
+        for (child, parent) in foreign_key_edges(&conn) {
+            // A self-reference (e.g. an advance pointing at the advance it
+            // reverses) carries no ordering information: the reset empties the
+            // whole table with one DELETE, and SQLite checks a statement's
+            // foreign keys at the END of that statement, so a row can never be
+            // observed half-deleted. Only a DISTINCT parent imposes an order.
+            if child == parent {
+                continue;
+            }
+            // A parent that is deliberately preserved (system configuration) or
+            // that is not reset at all imposes no ordering constraint.
+            let (Some(child_at), Some(parent_at)) = (position(&child), position(&parent)) else {
+                continue;
+            };
+            assert!(
+                child_at < parent_at,
+                "reset order must delete the child `{child}` before its parent `{parent}` \
+                 (positions {child_at} and {parent_at})"
+            );
+        }
+    }
+
+    /// The reset must survive the shift-scoped expenses that migration 25 added.
+    ///
+    /// This is the concrete scenario that made "Clear Database" fail: a cashier
+    /// books an expense against an open shift, the developer then resets, and the
+    /// FK violation rolled the whole reset back.
+    #[test]
+    fn clear_succeeds_with_shift_scoped_expenses() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO business_days (day_date, opened_at, status, closed_at)
+             VALUES ('2026-02-01', station_now(), 'CLOSED', station_now())",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO shifts (business_day_id, user_id, status, closed_at)
+             VALUES (1, 1, 'CLOSED', station_now())",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO expenses
+                (category, amount, expense_date, business_day_id, shift_id, user_id)
+             VALUES ('SUPPLIES', 100, '2026-02-01', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        clear_database(&conn, &user(1, "ADMIN")).unwrap();
+
+        assert_empty_except_developer(&conn);
+        assert_developer_account(&conn);
+    }
+
+    /// `expense_categories` is migration-owned reference data, not reset data.
+    ///
+    /// The starter seed never recreates it, so a reset that deleted it would
+    /// leave the database unable to record any expense again.
+    #[test]
+    fn clear_preserves_system_expense_categories() {
+        let conn = db();
+        let before: i64 = count(&conn, "expense_categories");
+        assert!(before > 0, "the migration seeds the expense categories");
+
+        clear_database(&conn, &user(1, "ADMIN")).unwrap();
+
+        assert_eq!(count(&conn, "expense_categories"), before);
+    }
+
+    /// Clear → Load Official Data must produce a usable database.
+    ///
+    /// The two developer actions are only ever used as a pair, and the official
+    /// seed re-runs the FULL starter seed (the reset wipes `app_settings`, so the
+    /// completion marker is gone). This asserts the post-reset state is a valid,
+    /// fully seeded application again, including the preserved developer account.
+    #[test]
+    fn clear_then_load_official_data_yields_a_valid_application() {
+        let conn = db();
+        let admin = user(1, "ADMIN");
+
+        clear_database(&conn, &admin).unwrap();
+        load_official_data(&conn, &admin).unwrap();
+
+        assert!(count(&conn, "products") > 0);
+        assert_eq!(count(&conn, "cafe_tables"), 12);
+        assert_developer_account(&conn);
+        for name in ["admin", "manager", "amira", "cashier"] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
+                    [name],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{name} must be restored by the official seed");
+        }
+
+        // The preserved expense reference data survived the whole round trip.
+        assert!(count(&conn, "expense_categories") > 0);
+        assert_foreign_keys(&conn);
+    }
+
+    /// Loading the official data repeatedly must not duplicate anything.
+    ///
+    /// `run_if_empty` keys off the `seed.completed_at` marker the reset deletes,
+    /// so the first load after a clear seeds fully. A SECOND load must then be a
+    /// no-op rather than inserting a second copy of every product and user.
+    #[test]
+    fn repeated_official_data_load_does_not_duplicate() {
+        let conn = db();
+        let admin = user(1, "ADMIN");
+
+        clear_database(&conn, &admin).unwrap();
+        load_official_data(&conn, &admin).unwrap();
+        let products_after_first = count(&conn, "products");
+        let users_after_first = count(&conn, "users");
+        let tables_after_first = count(&conn, "cafe_tables");
+
+        for _ in 0..3 {
+            load_official_data(&conn, &admin).unwrap();
+        }
+
+        assert_eq!(count(&conn, "products"), products_after_first);
+        assert_eq!(count(&conn, "users"), users_after_first);
+        assert_eq!(count(&conn, "cafe_tables"), tables_after_first);
     }
 }

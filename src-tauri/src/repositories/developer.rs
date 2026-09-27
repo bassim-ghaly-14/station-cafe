@@ -4,35 +4,61 @@
 use crate::error::AppResult;
 use crate::repositories::Db;
 
-/// Audited from migrations v1-v14. `_migrations` is the only schema table
-/// intentionally excluded. The order is child-first for the current FK graph.
+/// Application tables the developer reset empties, in a strict CHILD-FIRST
+/// order that satisfies the live foreign-key graph (see
+/// `assert_order_matches_foreign_key_graph` in the service tests, which derives
+/// the real graph from `pragma_foreign_key_list` and fails if this list drifts).
+///
+/// `_migrations` is the only schema table intentionally excluded: it is schema
+/// metadata, not application data, and removing it would re-run every migration
+/// over an already-migrated file.
+///
+/// `expense_categories` is deliberately NOT listed either. It is a system
+/// reference table populated by its own migration and referenced by
+/// `expenses.category`, so it behaves like configuration, not like the rows a
+/// developer reset should destroy. The starter seed does not recreate it, so
+/// deleting it here would leave the database permanently broken.
+///
+/// Order matters and is not cosmetic: every FK in this schema is NO ACTION, so
+/// deleting a parent before its child aborts the whole transaction. Migration 25
+/// added `expenses.shift_id -> shifts(id)`; `shifts` used to be deleted first,
+/// which made the reset fail outright once any expense was booked against a
+/// shift.
 pub const APPLICATION_DATA_TABLES: &[&str] = &[
     "day_closing_shifts",
     "day_closing_expenses",
-    "day_closings",
-    "credit_payments",
-    "credit_accounts",
-    "invoice_customers",
-    "invoice_lines",
-    "payments",
     "stock_movements",
     "order_lines",
-    "wash_tickets",
-    "invoices",
+    "invoice_lines",
+    "invoice_customers",
+    "payments",
     "table_sessions",
-    "orders",
-    "shifts",
-    "inventory_items",
+    "wash_tickets",
     "expenses",
+    "credit_payments",
+    "credit_accounts",
+    "cars",
+    "inventory_items",
+    "invoices",
     "print_jobs",
     "audit_log",
+    "orders",
+    // The employees domain hangs off `users`, and an attendance day also
+    // references the shift it happened on — so the whole domain is emptied
+    // before `shifts` and `employees`, and `employees` immediately before its
+    // parent `users`.
+    "attendance_days",
+    "employee_advances",
+    "payroll_runs",
+    "day_closings",
+    "shifts",
     "sessions",
     "products",
     "categories",
     "cafe_tables",
-    "cars",
     "customers",
     "business_days",
+    "employees",
     "users",
     "app_settings",
 ];

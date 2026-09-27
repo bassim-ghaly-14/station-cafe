@@ -88,6 +88,18 @@ export function useSession(): SessionCtx {
   return ctx
 }
 
+/**
+ * The session, or `null` when there is no provider.
+ *
+ * For screens that must render a SAFE default before/without a resolved session
+ * — role-gated presentation, for instance — where throwing would take the whole
+ * page down over a missing context. Anything that genuinely requires a session
+ * must keep using {@link useSession}, which still fails loudly.
+ */
+export function useOptionalSession(): SessionCtx | null {
+  return useContext(Ctx)
+}
+
 /** Role helpers — UI convenience only; the backend is the real gate. */
 export function atLeast(role: UserRole | undefined, min: UserRole): boolean {
   const rank = (r: string | undefined) =>

@@ -93,7 +93,7 @@ fn fixed_service_charge_options_and_authorized_discounts() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         2,
     )
     .unwrap();
@@ -107,7 +107,11 @@ fn fixed_service_charge_options_and_authorized_discounts() {
     // The cafe's ONE shared discount PIN is configured by an ADMIN — global
     // configuration, never a per-cashier credential, and stored as a hash.
     settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
-    assert!(settings::get_discount_authorization(&conn).unwrap().configured);
+    assert!(
+        settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
     let stored: String = conn
         .query_row(
             "SELECT value FROM app_settings WHERE key = 'discount_authorization_hash'",
@@ -210,7 +214,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
 
     // ---- cafe items + wash service on the SAME table ----------------------
     //
-    // CROISSANT ROMI = 7400 × 2 = 14800
+    // HOT CHOCOLATE = 7400 × 2 = 14800
     // WATER          = 1000
     // WASH FULL SEDAN = 17500
     // Subtotal = 33300
@@ -218,7 +222,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         2,
     )
     .unwrap();
@@ -316,7 +320,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     assert_eq!(inv.paid_amount, 31_970);
 
     // Cafe:
-    // CROISSANT ROMI × 2 = 14800
+    // HOT CHOCOLATE × 2 = 14800
     // WATER × 1 = 1000
     // Cafe total = 15800
     assert_eq!(inv.cafe_total, 15_800);
@@ -342,7 +346,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     );
 
     // ---- a later price change must NOT move history -----------------------
-    catalog::update_price(&conn, cafe_product(&conn, "كرواسون رومي"), 9_900).unwrap();
+    catalog::update_price(&conn, cafe_product(&conn, "هوت شوكليت"), 9_900).unwrap();
 
     let (inv_again, _) = invoices::get_invoice_full(&conn, result.invoice_id)
         .unwrap()
@@ -371,7 +375,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     let settlement = shift_svc::settle_day(&conn, &manager).unwrap();
     assert_eq!(settlement.shift_ids, vec![shift_id]);
 
-    let totals = shift_svc::close_day(&conn, &manager).unwrap();
+    let totals = shift_svc::close_day(&conn, &manager).unwrap().totals;
 
     assert_eq!(totals.invoices_count, 1);
     assert_eq!(totals.total_sales, 31_970);
@@ -682,8 +686,15 @@ fn credit_flow_tracks_outstanding_until_settled() {
 
     let order_id = pos_svc::start_order(&conn, &manager, table.id).unwrap();
 
-    // ESPRESSO = 52.00 EGP × 2 = 104.00 EGP.
-    pos_svc::add_line(&conn, &manager, order_id, cafe_product(&conn, "إسبريسو"), 2).unwrap();
+    // ESPRESSO SINGLE = 56.00 EGP × 2 = 104.00 EGP.
+    pos_svc::add_line(
+        &conn,
+        &manager,
+        order_id,
+        cafe_product(&conn, "إسبريسو سينجل"),
+        2,
+    )
+    .unwrap();
 
     pos_svc::attach_customer(&conn, order_id, customer_id, None).unwrap();
 
@@ -724,7 +735,7 @@ fn credit_flow_tracks_outstanding_until_settled() {
         .unwrap()
         .unwrap();
 
-    assert_eq!(acct.1, 10_400);
+    assert_eq!(acct.1, 11_200);
     assert_eq!(acct.2, 0);
 
     // Partial settlement → PARTIALLY_PAID, then full → PAID.
@@ -734,12 +745,67 @@ fn credit_flow_tracks_outstanding_until_settled() {
     );
 
     assert_eq!(
-        checkout::settle_credit(&conn, &manager, customer_id, 8_400).unwrap(),
+        checkout::settle_credit(&conn, &manager, customer_id, 9_200).unwrap(),
         "PAID"
     );
 
     // Overpayment is refused.
     assert!(checkout::settle_credit(&conn, &manager, customer_id, 100).is_err());
+}
+
+#[test]
+fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_default() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+
+    // An installation that never configured it reads the default: a trading year.
+    assert_eq!(
+        settings::get_monthly_sales_period(&conn).unwrap().months,
+        12
+    );
+    assert_eq!(settings::MonthlySalesPeriodConfig::default().months, 12);
+
+    // Every supported window is accepted and survives a re-read.
+    for months in settings::MONTHLY_SALES_PERIOD_MONTHS {
+        settings::set_monthly_sales_period(
+            &conn,
+            &manager,
+            &settings::MonthlySalesPeriodConfig { months },
+        )
+        .unwrap();
+
+        assert_eq!(
+            settings::get_monthly_sales_period(&conn).unwrap().months,
+            months
+        );
+    }
+
+    // Nonsense is refused by the service, not merely hidden by the UI.
+    for months in [0, -5, 5, 7, 25, 9999] {
+        assert!(
+            settings::set_monthly_sales_period(
+                &conn,
+                &manager,
+                &settings::MonthlySalesPeriodConfig { months },
+            )
+            .is_err(),
+            "{months} months must be refused"
+        );
+    }
+    // A refused value leaves the stored one untouched.
+    assert_eq!(
+        settings::get_monthly_sales_period(&conn).unwrap().months,
+        24
+    );
+
+    // A cashier cannot reconfigure a management report.
+    assert!(settings::set_monthly_sales_period(
+        &conn,
+        &staff,
+        &settings::MonthlySalesPeriodConfig { months: 6 },
+    )
+    .is_err());
 }
 
 #[test]
@@ -755,12 +821,12 @@ fn takeaway_order_has_takeaway_number_and_no_table_session() {
     // A takeaway starts as its own first-class order.
     let order_id = pos_svc::start_takeaway(&conn, &staff).unwrap();
 
-    // CROISSANT ROMI = 7400 × 2 = 14800.
+    // HOT CHOCOLATE = 7400 × 2 = 14800.
     pos_svc::add_line(
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         2,
     )
     .unwrap();
@@ -840,12 +906,12 @@ fn open_order_pays_directly_with_no_payment_request_step() {
 
     let order_id = pos_svc::start_order(&conn, &staff, table.id).unwrap();
 
-    // CROISSANT ROMI × 2 = 14800.
+    // HOT CHOCOLATE × 2 = 14800.
     pos_svc::add_line(
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         2,
     )
     .unwrap();
@@ -954,8 +1020,8 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
 
     let b = pos_svc::start_takeaway(&conn, &staff).unwrap();
 
-    // CROISSANT ROMI × 2 = 14800.
-    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "كرواسون رومي"), 2).unwrap();
+    // HOT CHOCOLATE × 2 = 14800.
+    pos_svc::add_line(&conn, &staff, a, cafe_product(&conn, "هوت شوكليت"), 2).unwrap();
 
     // 3-5. They remain open and discoverable.
     let open = pos_svc::list_open_takeaways(&conn, &staff).unwrap();
@@ -1038,7 +1104,7 @@ fn discount_survives_reload_and_reaches_invoice() {
         &conn,
         &staff,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         2,
     )
     .unwrap();
@@ -1187,7 +1253,7 @@ fn table_count_reduction_rejects_open_and_ready_orders() {
             &conn,
             &manager,
             order_id,
-            cafe_product(&conn, "كرواسون رومي"),
+            cafe_product(&conn, "هوت شوكليت"),
             1,
         )
         .unwrap();
@@ -1213,7 +1279,7 @@ fn table_count_deactivation_preserves_historical_order_references() {
         &conn,
         &manager,
         order_id,
-        cafe_product(&conn, "كرواسون رومي"),
+        cafe_product(&conn, "هوت شوكليت"),
         1,
     )
     .unwrap();
@@ -1299,7 +1365,7 @@ fn closed_shift_snapshot_is_never_recomputed() {
     let staff = login(&conn, "cashier", "cashier123");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
-    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    sell_cafe_cash(&conn, &staff, "هوت شوكليت");
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
 
     // A frozen copy of the persisted closing snapshot.
@@ -1311,10 +1377,10 @@ fn closed_shift_snapshot_is_never_recomputed() {
     let first = reports::shift_report(&conn, shift_id).unwrap();
     let second = reports::shift_report(&conn, shift_id).unwrap();
     assert_eq!(first.cash_sales, frozen.cash_sales);
-    assert_eq!(first.expected_cash, frozen.expected_cash);
-    assert_eq!(first.actual_cash, frozen.actual_cash);
+    assert_eq!(first.cash.expected_cash, frozen.expected_cash);
+    assert_eq!(first.cash.actual_cash, frozen.actual_cash.unwrap_or(0));
     assert_eq!(second.cash_sales, frozen.cash_sales);
-    assert_eq!(second.expected_cash, frozen.expected_cash);
+    assert_eq!(second.cash.expected_cash, frozen.expected_cash);
 
     // Hydration is a no-op for a closed shift: the stored row is untouched.
     let mut reread = shifts::get_shift(&conn, shift_id).unwrap().unwrap();
@@ -1331,7 +1397,7 @@ fn a_closed_shift_is_no_longer_treated_as_active() {
     let staff = login(&conn, "cashier", "cashier123");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
-    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    sell_cafe_cash(&conn, &staff, "هوت شوكليت");
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
 
     let state = shift_svc::state(&conn, &staff).unwrap();
@@ -1364,7 +1430,7 @@ fn active_shift_state_reports_live_totals_after_every_completed_sale() {
     assert_eq!(before.expected_cash, 10_000, "opening float only");
 
     // ---- complete a sale ---------------------------------------------------
-    let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "كرواسون رومي"));
+    let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "هوت شوكليت"));
 
     // The card is refreshed from `day_shift_state` after a sale; it must now
     // carry the real figures without opening any dialog.
@@ -1389,7 +1455,7 @@ fn shift_closing_dialog_and_card_always_agree() {
     let staff = login(&conn, "cashier", "cashier123");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
-    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    sell_cafe_cash(&conn, &staff, "هوت شوكليت");
 
     let card = shift_svc::state(&conn, &staff).unwrap().my_shift.unwrap();
     let preview = shift_svc::preview_shift_close(&conn, &staff).unwrap();
@@ -1409,7 +1475,7 @@ fn closing_persists_the_same_numbers_the_live_view_reported() {
     let staff = login(&conn, "cashier", "cashier123");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 1_000).unwrap();
-    sell_cafe_cash(&conn, &staff, "كرواسون رومي");
+    sell_cafe_cash(&conn, &staff, "هوت شوكليت");
 
     let preview = shift_svc::preview_shift_close(&conn, &staff).unwrap();
     let expected = preview.expected_cash;
@@ -1477,9 +1543,9 @@ fn a_historical_day_report_is_reproducible_from_the_stored_snapshot() {
     let first = reports::day_report(&conn, day_id).unwrap();
     let second = reports::day_report(&conn, day_id).unwrap();
     assert_eq!(first.day.status, "CLOSED");
-    assert_eq!(first.totals.total_sales, total);
-    assert_eq!(second.totals.total_sales, total);
-    assert_eq!(first.expected_drawer_cash, second.expected_drawer_cash);
+    assert_eq!(first.total_sales, total);
+    assert_eq!(second.total_sales, total);
+    assert_eq!(first.cash.expected_cash, second.cash.expected_cash);
     assert_eq!(first.shifts.len(), 1);
     assert_eq!(first.shifts[0].status, "CLOSED");
 }

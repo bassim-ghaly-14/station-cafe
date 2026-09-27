@@ -8,9 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 function LoginProbe() {
   const { login } = useSession()
-  return (
-    <button onClick={() => void login('Belly', 'test-password')}>login</button>
-  )
+  return <button onClick={() => void login('Belly', 'test-password')}>login</button>
 }
 
 describe('SessionProvider login IPC', () => {
