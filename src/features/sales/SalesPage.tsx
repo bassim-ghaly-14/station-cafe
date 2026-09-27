@@ -27,7 +27,7 @@ import { EmptyState, ErrorState } from '@/components/states'
 import { Button, Card, ProgressBar, TableSkeleton } from '@/components/ui'
 import { HandCoins } from '@/components/ui/icon'
 import { PrintPreviewDialog } from '@/features/pos/PrintPreviewDialog'
-import { todayIso } from '@/lib/date'
+import { formatDate, todayIso } from '@/lib/date'
 import {
   salesApi,
   type SalesCashier,
@@ -39,7 +39,7 @@ import { SalesBreakdown } from './SalesBreakdown'
 import { SalesFilters } from './SalesFilters'
 import { SalesInvoiceTable } from './SalesInvoiceTable'
 import { SalesKpiBand } from './SalesKpiBand'
-import { SalesTrendChart } from './SalesTrendChart'
+import { SalesDailyChart } from './SalesDailyChart'
 import { TopItemsTable } from './TopItemsTable'
 import { useSalesData } from './useSalesData'
 
@@ -110,6 +110,10 @@ export default function SalesPage() {
     (filter.status ?? '') !== '' ||
     filter.user_id != null ||
     (filter.customer ?? '') !== ''
+  // The period the chart states on its card and prints in its export: the SAME
+  // `from`/`to` the overview was read with, formatted by the central formatter, so
+  // the chart can never describe a different window than the KPIs above it.
+  const period = `${formatDate(filter.from)} — ${formatDate(filter.to)}`
 
   const resetFilters = useCallback(() => {
     setFilter((current) => ({ ...current, method: '', status: '', user_id: null, customer: '' }))
@@ -166,7 +170,7 @@ export default function SalesPage() {
             </Card>
           ) : (
             <>
-              <SalesTrendChart trend={trend} />
+              <SalesDailyChart trend={trend} period={period} />
               {summary ? <SalesBreakdown summary={summary} /> : null}
               <TopItemsTable items={items} sort={sort} onSortChange={setSort} />
             </>

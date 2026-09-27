@@ -5,10 +5,10 @@
 //! `repositories::shifts`, restated here because a sales report is historical
 //! financial data and must not drift:
 //!
-//! - **A `CANCELLED` invoice never counts** — not in the invoice count, not in
-//!   any money column, and not through its payment rows. The payment ledger of
-//!   a cancelled invoice is deliberately left in place (it is the audit trail),
-//!   so every payment sum is joined back to a NON-cancelled invoice.
+//! - **Every invoice counts.** Station has no cancelled invoice: the lifecycle
+//!   is raised, then settled in full, in part, or on credit, and there is no
+//!   other outcome. Every persisted invoice is therefore a real document and
+//!   belongs in every figure below — there is no defensive exclusion to apply.
 //! - **Money is the immutable invoice snapshot** (`subtotal`, `discount_minor`,
 //!   `service_charge`, `total`, `cafe_total`, `wash_total`). Nothing is
 //!   recomputed from the mutable catalog, the customer row or the shift.
@@ -183,7 +183,7 @@ fn scoped_invoices_cte(filter: &SalesFilter) -> (String, Vec<String>) {
             JOIN business_days d ON d.id = i.business_day_id
             LEFT JOIN invoice_customers ic ON ic.invoice_id = i.id
             LEFT JOIN customers k ON k.id = i.customer_id
-            WHERE i.status != 'CANCELLED'{predicate}
+            WHERE 1=1{predicate}
         ),
         pay AS (
             SELECT p.invoice_id,
@@ -207,10 +207,8 @@ pub struct SalesOverview {
 /// Headline aggregates of the filtered period.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SalesSummary {
-    /// Non-cancelled invoices in the period.
+    /// Invoices in the period.
     pub invoices_count: i64,
-    /// Cancelled invoices in the period — reported, never counted as revenue.
-    pub cancelled_count: i64,
     /// Sum of the invoice subtotals: line revenue BEFORE discount and service charge.
     pub subtotal: i64,
     pub discounts: i64,
@@ -243,6 +241,62 @@ pub struct SalesDayRow {
     pub cash: i64,
     pub card: i64,
     pub credit: i64,
+}
+
+/// One calendar month of the monthly comparison report.
+///
+/// The `month` key is the STABLE `YYYY-MM` form produced by SQLite, never a
+/// display name: grouping by it is what keeps January 2025 and January 2026 in
+/// two different buckets instead of merging them into one "January".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SalesMonthRow {
+    /// `YYYY-MM`, the grouping key and the chart's category identity.
+    pub month: String,
+    /// Non-cancelled invoices in the month.
+    pub invoices_count: i64,
+    /// `subtotal - discounts + service_charges` over the month.
+    pub total_sales: i64,
+    /// Sum of the immutable `cafe_total` snapshot over the month.
+    pub cafe_sales: i64,
+    /// Sum of the immutable `wash_total` snapshot over the month.
+    pub wash_sales: i64,
+}
+
+/// Revenue aggregated by calendar month, for one explicit business-day window.
+///
+/// Deliberately NOT built on [`SalesFilter`]: this report is a monthly series
+/// over a period the caller states, so it can never be narrowed by the Sales
+/// page's own period picker. Every invoice is a real document and the money is
+/// the invoice snapshot, so the monthly figures can never disagree with the
+/// daily trend or the KPIs.
+///
+/// Months that have a business day but no matching invoice are KEPT as a zero
+/// month (the same rule the daily trend follows), so a quiet month reads as
+/// zero instead of vanishing from the series.
+pub fn monthly(conn: &Db, from: &str, to: &str) -> AppResult<Vec<SalesMonthRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT strftime('%Y-%m', d.day_date) AS month,
+                COUNT(inv.id),
+                COALESCE(SUM(inv.total), 0),
+                COALESCE(SUM(inv.cafe_total), 0),
+                COALESCE(SUM(inv.wash_total), 0)
+         FROM business_days d
+         LEFT JOIN invoices inv
+           ON inv.business_day_id = d.id
+         WHERE d.day_date >= ?1 AND d.day_date <= ?2
+         GROUP BY month
+         ORDER BY month",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![from, to], |r| {
+        Ok(SalesMonthRow {
+            month: r.get(0)?,
+            invoices_count: r.get(1)?,
+            total_sales: r.get(2)?,
+            cafe_sales: r.get(3)?,
+            wash_sales: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 /// One product/service of the item analysis, from the invoice line SNAPSHOT.
@@ -301,7 +355,8 @@ fn share(part: i64, whole: i64) -> i64 {
     }
 }
 
-/// The KPI block. TWO fixed queries: the aggregates, then the exception count.
+/// The KPI block. ONE query: every persisted invoice in the period is a real
+/// document, so there is no second "exception" count to run beside the totals.
 pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
     let (cte, args) = scoped_invoices_cte(filter);
     let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = conn.query_row(
@@ -336,22 +391,6 @@ pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
         },
     )?;
 
-    // The exception count is deliberately a SEPARATE query: it is the one figure
-    // that must look at cancelled invoices, so it can never leak into a money
-    // column or into the invoice count.
-    let (predicate, args) = filter_sql(filter, 0);
-    let cancelled: i64 = conn.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM invoices i
-             JOIN business_days d ON d.id = i.business_day_id
-             LEFT JOIN invoice_customers ic ON ic.invoice_id = i.id
-             LEFT JOIN customers k ON k.id = i.customer_id
-             WHERE i.status = 'CANCELLED'{predicate}"
-        ),
-        to_sql_refs(&args).as_slice(),
-        |r| r.get(0),
-    )?;
-
     let (
         invoices_count,
         subtotal,
@@ -370,7 +409,6 @@ pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
     let settled = cash + card + credit;
     Ok(SalesSummary {
         invoices_count,
-        cancelled_count: cancelled,
         subtotal,
         discounts,
         service_charges,

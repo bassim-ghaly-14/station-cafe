@@ -12,16 +12,42 @@
 
 use crate::error::{AppError, AppResult};
 use crate::repositories::sales_analytics::{
-    self, ItemSort, SalesCashier, SalesFilter, SalesInvoiceRow, SalesOverview,
+    self, ItemSort, SalesCashier, SalesFilter, SalesInvoiceRow, SalesMonthRow, SalesOverview,
 };
 use crate::repositories::users::User;
 use crate::repositories::Db;
 use crate::services::auth;
+use crate::services::settings::{self, MonthlySalesPeriodConfig};
+use crate::time;
+use serde::{Deserialize, Serialize};
 
 /// Payment methods Station can record on a sale.
 const METHODS: [&str; 3] = ["CASH", "CARD", "CREDIT"];
 /// Invoice statuses a manager may narrow the page to.
 const STATUSES: [&str; 4] = ["PENDING_PAYMENT", "PAID", "PARTIALLY_PAID", "CREDIT"];
+
+/// The monthly Cafe-vs-Wash revenue series, with the period it describes.
+///
+/// The period is a TRAILING CALENDAR WINDOW, derived here from Station's own
+/// business clock, and it travels with the data so the chart can label what it
+/// is showing without inventing a period of its own.
+///
+/// WHY THIS IGNORES `SalesFilter` (and therefore the Sales page date picker):
+/// this report is a monthly comparison between two business lines. Slicing a
+/// calendar series by an arbitrary business-day range produces half-months and
+/// an unreadable comparison, and wiring it to the page filter would silently
+/// change the meaning of every bar. The page's date picker scopes the KPIs, the
+/// daily trend, the item analysis and the invoice list — this series states its
+/// own period instead, and says so on screen.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SalesMonthlyReport {
+    /// First business date of the window, inclusive.
+    pub from: String,
+    /// Last business date of the window, inclusive (today).
+    pub to: String,
+    /// Ascending by `month` (`YYYY-MM`).
+    pub months: Vec<SalesMonthRow>,
+}
 
 /// The page payload: KPIs, trend and item analysis from one filtered read.
 pub fn overview(
@@ -44,6 +70,39 @@ pub fn invoices(conn: &Db, actor: &User, filter: &SalesFilter) -> AppResult<Vec<
     auth::require_role(actor, "MANAGER")?;
     validate(filter)?;
     sales_analytics::invoices(conn, filter)
+}
+
+/// The monthly Cafe-vs-Wash series over the window configured in Dev Settings.
+///
+/// Manager-level, like the rest of the page.
+///
+/// The month count is NOT a rule of this service: it is the persisted
+/// `monthly_sales_period` setting, read through the same typed accessor as every
+/// other Station setting. `months` lets a caller state it explicitly (the UI does,
+/// so the screen and the query always agree); when it is absent the stored
+/// setting is used, and an installation that never configured it reads the
+/// default — a full trading year — exactly as before.
+///
+/// The count is INCLUSIVE of the current month, so the window is
+/// `business_date_months_ago(months - 1) .. today`: 6 covers the current month
+/// and the five before it, 12 covers a trading year. It is re-validated here, so
+/// an out-of-range value is refused by the server no matter where it came from.
+pub fn monthly(conn: &Db, actor: &User, months: Option<i64>) -> AppResult<SalesMonthlyReport> {
+    auth::require_role(actor, "MANAGER")?;
+    let config = match months {
+        Some(value) => MonthlySalesPeriodConfig { months: value },
+        None => settings::get_monthly_sales_period(conn)?,
+    };
+    config.validate()?;
+    // The window is inclusive on both ends: the first day of the month
+    // `months - 1` back, through today.
+    let from = time::business_date_months_ago(config.months - 1);
+    let to = time::today_business_date();
+    Ok(SalesMonthlyReport {
+        months: sales_analytics::monthly(conn, &from, &to)?,
+        from,
+        to,
+    })
 }
 
 /// The cashier options of the filter. Manager-level, like the rest of the page.

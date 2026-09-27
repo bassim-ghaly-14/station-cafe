@@ -11,24 +11,20 @@
  *  - **قيمة الفواتير قبل الخصومات** is `SUM(invoice.subtotal)`, the same
  *    invoices before the discount. It is a gross comparator, never a second
  *    "revenue".
- *  - **Cash / card / credit** come from the payments ledger of non-cancelled
- *    invoices. A credit invoice is invoiced credit, never collected cash, so the
- *    three tiles need not add up to revenue — the breakdown states that too.
- *  - **Cancelled invoices** are surfaced as an exception line, never folded
- *    into any money tile.
+ *  - **Cash / card / credit** come from the payments ledger. A credit invoice
+ *    is invoiced credit, never collected cash, so the three tiles need not add
+ *    up to revenue — the breakdown states that too.
  *
  * Layout: a hero tile for the headline revenue plus a compact strip for the
  * supporting figures, instead of a wall of identical cards.
  */
 import { useTranslation } from 'react-i18next'
-import { Badge } from '@/components/ui/badge'
 import { Card, MoneyDisplay, Skeleton } from '@/components/ui'
 import {
   Coffee,
   Droplets,
   HandCoins,
   Percent,
-  Receipt,
   ShoppingBag,
   Ticket,
   TrendingUp,
@@ -171,16 +167,6 @@ export function SalesKpiBand({
         </StatTile>
         <StatTile icon={Droplets} label={t('sales.kpi.wash')}>
           <MoneyDisplay amount={summary.wash_sales} variant="auto" />
-        </StatTile>
-        <StatTile icon={Receipt} label={t('sales.kpi.exceptions')}>
-          {/* Only an exception worth naming earns a badge; zero is just zero. */}
-          {summary.cancelled_count > 0 ? (
-            <Badge variant="warning" size="sm" dot>
-              {t('sales.kpi.cancelled', { count: summary.cancelled_count })}
-            </Badge>
-          ) : (
-            <span className="text-foreground-faint">—</span>
-          )}
         </StatTile>
       </div>
     </div>

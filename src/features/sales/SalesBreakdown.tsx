@@ -5,8 +5,8 @@
  * The two axes are deliberately kept apart, because mixing them would double
  * count a hybrid order:
  *
- *  - **Payment method** comes from the `payments` ledger of non-cancelled
- *    invoices, so the three rows are SETTLED money. The card says so, and it
+ *  - **Payment method** comes from the `payments` ledger, so the three rows are
+ *    SETTLED money. The card says so, and it
  *    therefore does not have to equal total revenue when a credit invoice is
  *    still outstanding.
  *  - **Business type** comes from the invoice snapshot totals (`cafe_total` /
@@ -20,83 +20,17 @@
  * bar widths are sized from the very same numbers, so the visual and the figure
  * can never disagree, and colour is never the only signal — the percentage is
  * printed and the bar carries an accessible label.
+ *
+ * The card itself is the SHARED `ProportionCard`, the same component the
+ * Expenses category ranking uses; only the slices are sales-specific.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, MoneyDisplay } from '@/components/ui'
-import {
-  Coffee,
-  Droplets,
-  HandCoins,
-  ShoppingBag,
-  Wallet,
-  type LucideIcon,
-} from '@/components/ui/icon'
+import { ProportionCard, type ProportionSlice } from '@/components/charts/ProportionCard'
+import { MoneyDisplay } from '@/components/ui'
+import { Coffee, Droplets, HandCoins, ShoppingBag, Wallet } from '@/components/ui/icon'
+import { chartBarColor } from '@/lib/chart-colors'
 import { cn } from '@/lib/utils'
 import type { SalesSummary } from '@/services/salesApi'
-
-interface Slice {
-  key: string
-  label: string
-  amount: number
-  share: number
-  icon: LucideIcon
-  /** A Station semantic token, so light and dark mode stay the theme's job. */
-  tone: string
-}
-
-/** The bar itself: a proportional fill plus the number, never colour alone. */
-function SliceRow({ slice }: { slice: Slice }) {
-  return (
-    <li className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2 font-medium">
-          <span className="flex size-6 shrink-0 items-center justify-center rounded bg-accent text-primary">
-            <slice.icon size={13} aria-hidden />
-          </span>
-          <span className="truncate">{slice.label}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-3 tabular-nums">
-          <MoneyDisplay amount={slice.amount} variant="auto" className="text-foreground" />
-          <strong className="min-w-10 text-end text-foreground-strong">{slice.share}%</strong>
-        </span>
-      </div>
-      <div
-        className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted"
-        role="img"
-        aria-label={`${slice.label}: ${slice.share}%`}
-      >
-        <div
-          className={cn('h-full rounded-full', slice.tone)}
-          style={{ width: `${slice.share}%` }}
-        />
-      </div>
-    </li>
-  )
-}
-
-function BreakdownCard({
-  title,
-  hint,
-  slices,
-  className,
-}: {
-  title: string
-  hint: string
-  slices: Slice[]
-  className?: string
-}) {
-  return (
-    <Card className={className}>
-      <h2 className="text-section text-foreground-strong">{title}</h2>
-      <p className="mt-0.5 mb-3 text-caption text-foreground-subtle">{hint}</p>
-      <ul className="flex flex-col gap-3">
-        {slices.map((slice) => (
-          <SliceRow key={slice.key} slice={slice} />
-        ))}
-      </ul>
-    </Card>
-  )
-}
 
 /** Whole-percent share of a part against a whole, mirroring the backend rule. */
 function share(part: number, whole: number): number {
@@ -116,57 +50,61 @@ export function SalesBreakdown({
 
   return (
     <div className={cn('grid grid-cols-1 gap-4 lg:grid-cols-2', className)}>
-      <BreakdownCard
+      <ProportionCard
         title={t('sales.breakdown.paymentTitle')}
         hint={t('sales.breakdown.paymentHint')}
-        slices={[
-          {
-            key: 'cash',
-            label: t('pay.method.CASH'),
-            amount: summary.cash,
-            share: summary.cash_share,
-            icon: Wallet,
-            tone: 'bg-success',
-          },
-          {
-            key: 'card',
-            label: t('pay.method.CARD'),
-            amount: summary.card,
-            share: summary.card_share,
-            icon: ShoppingBag,
-            tone: 'bg-info',
-          },
-          {
-            key: 'credit',
-            label: t('pay.method.CREDIT'),
-            amount: summary.credit,
-            share: summary.credit_share,
-            icon: HandCoins,
-            tone: 'bg-warning',
-          },
-        ]}
+        slices={
+          [
+            {
+              key: 'cash',
+              label: t('pay.method.CASH'),
+              amount: summary.cash,
+              share: summary.cash_share,
+              icon: Wallet,
+              color: chartBarColor('quaternary'),
+            },
+            {
+              key: 'card',
+              label: t('pay.method.CARD'),
+              amount: summary.card,
+              share: summary.card_share,
+              icon: ShoppingBag,
+              color: chartBarColor('secondary'),
+            },
+            {
+              key: 'credit',
+              label: t('pay.method.CREDIT'),
+              amount: summary.credit,
+              share: summary.credit_share,
+              icon: HandCoins,
+              color: chartBarColor('tertiary'),
+            },
+          ] satisfies ProportionSlice[]
+        }
       />
-      <BreakdownCard
+      <ProportionCard
         title={t('sales.breakdown.businessTitle')}
         hint={t('sales.breakdown.businessHint')}
-        slices={[
-          {
-            key: 'cafe',
-            label: t('catalog.CAFE'),
-            amount: summary.cafe_sales,
-            share: share(summary.cafe_sales, business),
-            icon: Coffee,
-            tone: 'bg-info',
-          },
-          {
-            key: 'wash',
-            label: t('catalog.WASH'),
-            amount: summary.wash_sales,
-            share: share(summary.wash_sales, business),
-            icon: Droplets,
-            tone: 'bg-primary',
-          },
-        ]}
+        slices={
+          [
+            {
+              key: 'cafe',
+              label: t('catalog.CAFE'),
+              amount: summary.cafe_sales,
+              share: share(summary.cafe_sales, business),
+              icon: Coffee,
+              color: chartBarColor('secondary'),
+            },
+            {
+              key: 'wash',
+              label: t('catalog.WASH'),
+              amount: summary.wash_sales,
+              share: share(summary.wash_sales, business),
+              icon: Droplets,
+              color: chartBarColor('primary'),
+            },
+          ] satisfies ProportionSlice[]
+        }
       />
       {/* Stating the settled total keeps the honest gap visible: invoiced
           revenue can exceed it while a credit invoice is still open. */}

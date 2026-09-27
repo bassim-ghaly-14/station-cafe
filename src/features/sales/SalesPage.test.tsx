@@ -27,6 +27,16 @@ const mocks = vi.hoisted(() => ({
   overview: vi.fn(),
   invoices: vi.fn(),
   cashiers: vi.fn(),
+  monthly: vi.fn(),
+  monthlySalesPeriod: vi.fn(),
+}))
+
+// The monthly chart window is a SETTING, read through the same settings API the
+// Dev Settings page writes to — never the page's own date filter.
+vi.mock('@/services/posApi', () => ({
+  settingsApi: {
+    monthlySalesPeriod: mocks.monthlySalesPeriod,
+  },
 }))
 
 vi.mock('@/services/salesApi', () => ({
@@ -34,6 +44,7 @@ vi.mock('@/services/salesApi', () => ({
     overview: mocks.overview,
     invoices: mocks.invoices,
     cashiers: mocks.cashiers,
+    monthly: mocks.monthly,
   },
 }))
 
@@ -65,7 +76,6 @@ const viewMonth = parseIsoDate(today) ?? { year: 2026, month: 1, day: 1 }
 
 const SUMMARY = {
   invoices_count: 4,
-  cancelled_count: 1,
   subtotal: 40_000,
   discounts: 2_000,
   service_charges: 1_000,
@@ -171,6 +181,27 @@ function applyPeriod(from: string, to: string) {
   fireEvent.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
 }
 
+const MONTHLY = {
+  from: '2026-01-01',
+  to: '2026-09-26',
+  months: [
+    {
+      month: '2026-08',
+      invoices_count: 2,
+      total_sales: 20_000,
+      cafe_sales: 12_000,
+      wash_sales: 8_000,
+    },
+    {
+      month: '2026-09',
+      invoices_count: 2,
+      total_sales: 25_000,
+      cafe_sales: 15_000,
+      wash_sales: 10_000,
+    },
+  ],
+}
+
 describe('SalesPage', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -180,6 +211,8 @@ describe('SalesPage', () => {
       { id: 1, name: 'محمد', role: 'STAFF' },
       { id: 2, name: 'سارة', role: 'MANAGER' },
     ])
+    mocks.monthly.mockReset().mockResolvedValue(MONTHLY)
+    mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
   })
 
   it('opens on today and sends that one period to BOTH reads', async () => {
@@ -193,6 +226,19 @@ describe('SalesPage', () => {
     expect(mocks.invoices).toHaveBeenCalledWith(filter)
     // The default ordering is "best revenue", resolved by the backend.
     expect(sort).toBe('revenue')
+  })
+
+  // The monthly comparison MOVED to Reports → Charts. This page must not keep a
+  // second instance mounted: one chart, one location, one read.
+  it('no longer renders the monthly comparison, which lives in Reports', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.overview).toHaveBeenCalled())
+
+    expect(mocks.monthly).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('heading', { name: 'الإيرادات الشهرية: الكافيه مقابل المغسلة' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId('monthly-chart-sales-monthly-cafe-wash')).not.toBeInTheDocument()
   })
 
   it('re-reads both surfaces when the period changes', async () => {
@@ -231,8 +277,10 @@ describe('SalesPage', () => {
     expect(
       screen.getByText(formatMinorMoney(SUMMARY.average_invoice, { variant: 'auto' })),
     ).toBeInTheDocument()
-    // The exception is named, because a cancelled invoice is worth seeing.
-    expect(screen.getByText('1 فاتورة ملغاة')).toBeInTheDocument()
+    // There is no "exceptions" tile: Station has no cancelled invoice, so the
+    // concept must not be rendered at all.
+    expect(screen.queryByText('استثناءات')).not.toBeInTheDocument()
+    expect(screen.queryByText(/فاتورة ملغاة/)).not.toBeInTheDocument()
     // The top items, with their share of the period's item revenue.
     expect(screen.getByText('كابتشينو')).toBeInTheDocument()
     expect(screen.getByText('60%')).toBeInTheDocument()

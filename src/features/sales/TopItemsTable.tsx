@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/states'
 import { Button, Card, MoneyDisplay } from '@/components/ui'
 import { DataTable, DataTableCell, DataTableRow, type DataTableColumn } from '@/components/ui'
 import { ArrowUpDown, Coffee, Droplets } from '@/components/ui/icon'
+import { chartBarColor } from '@/lib/chart-colors'
 import { cn } from '@/lib/utils'
 import type { SalesItemRow, SalesItemSort } from '@/services/salesApi'
 
@@ -130,8 +131,12 @@ export function TopItemsTable({
                 <span className="flex items-center gap-2">
                   <span className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-muted">
                     <span
-                      className="block h-full rounded-full bg-primary"
+                      className="block h-full rounded-full"
                       style={{
+                        // The same CENTRALIZED chart bar role every other bar uses
+                        // (`lib/chart-colors.ts`), so a Dev Settings change repaints
+                        // this ranking bar with the rest of the application.
+                        background: chartBarColor('primary'),
                         width: `${topShare > 0 ? Math.max(4, (item.share_percent / topShare) * 100) : 0}%`,
                       }}
                     />

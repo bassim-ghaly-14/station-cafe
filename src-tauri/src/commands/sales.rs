@@ -8,6 +8,7 @@
 use super::common::authorized;
 use crate::error::AppResult;
 use crate::repositories::sales_analytics::{ItemSort, SalesFilter, SalesInvoiceRow, SalesOverview};
+use crate::services::sales::SalesMonthlyReport;
 use crate::AppState;
 use tauri::State;
 
@@ -36,6 +37,22 @@ pub fn sales_invoices(
     let filter = filter.unwrap_or_default();
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         crate::services::sales::invoices(conn, actor, &filter)
+    })
+}
+
+/// The monthly Cafe-vs-Wash revenue series.
+///
+/// Carries its OWN trailing window and no `filter` argument at all — that absence
+/// is the contract: this calendar series is never narrowed by the Sales page's
+/// date picker, so the command physically cannot be handed one.
+#[tauri::command(rename_all = "snake_case")]
+pub fn sales_monthly(
+    state: State<'_, AppState>,
+    token: String,
+    months: Option<i64>,
+) -> AppResult<SalesMonthlyReport> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        crate::services::sales::monthly(conn, actor, months)
     })
 }
 

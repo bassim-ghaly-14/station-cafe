@@ -3,7 +3,7 @@
 
 use crate::db::migrate;
 use crate::repositories::invoices::{self, InvoiceLine};
-use crate::repositories::{analytics, ops};
+use crate::repositories::{analytics, expenses};
 use rusqlite::Connection;
 
 /// Migrated in-memory database plus the one user every FK needs.
@@ -227,8 +227,7 @@ fn credit_is_never_counted_as_cash_or_card_revenue() {
     assert_eq!(value(&report, "cash-visa", "cash"), 0);
     assert_eq!(value(&report, "cash-visa", "visa"), 0);
     assert!(!chart(&report, "cash-visa").has_data);
-    // The credit sale is still turnover for the sales-vs-expenses comparison,
-    // exactly like `day_totals.total_sales` counts non-cancelled invoices.
+    // The credit sale is still turnover for the sales-vs-expenses comparison.
     assert_eq!(value(&report, "sales-expenses", "sales"), 10_000);
 }
 
@@ -262,11 +261,13 @@ fn partially_paid_invoice_counts_only_the_settled_amount() {
     assert_eq!(value(&report, "cash-visa", "cash"), 4_000);
 }
 
+/// Every invoice is a real document, so every chart counts all of them: the
+/// department split, the payment ledger and the revenue total.
 #[test]
-fn cancelled_invoices_are_excluded_from_every_chart() {
+fn every_invoice_reaches_every_chart() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-13");
-    let kept = add_invoice(
+    let first = add_invoice(
         &conn,
         InvoiceFixture {
             invoice_no: 1,
@@ -277,7 +278,7 @@ fn cancelled_invoices_are_excluded_from_every_chart() {
             discount_minor: 0,
         },
     );
-    let cancelled = add_invoice(
+    let second = add_invoice(
         &conn,
         InvoiceFixture {
             invoice_no: 2,
@@ -288,10 +289,9 @@ fn cancelled_invoices_are_excluded_from_every_chart() {
             discount_minor: 0,
         },
     );
-    pay(&conn, kept, "CASH", 6_000);
-    pay(&conn, cancelled, "CASH", 18_000);
-    invoices::cancel_invoice(&conn, cancelled).unwrap();
-    ops::insert_expense(
+    pay(&conn, first, "CASH", 6_000);
+    pay(&conn, second, "CASH", 18_000);
+    expenses::insert(
         &conn,
         "SUPPLIES",
         2_000,
@@ -300,16 +300,18 @@ fn cancelled_invoices_are_excluded_from_every_chart() {
         false,
         None,
         Some(day),
+        None,
+        true,
         1,
     )
     .unwrap();
 
     let report = analytics::analytics_charts(&conn, None, None).unwrap();
 
-    assert_eq!(value(&report, "laundry-cafe", "laundry"), 1_000);
-    assert_eq!(value(&report, "laundry-cafe", "cafe"), 5_000);
-    assert_eq!(value(&report, "cash-visa", "cash"), 6_000);
-    assert_eq!(value(&report, "sales-expenses", "sales"), 6_000);
+    assert_eq!(value(&report, "laundry-cafe", "laundry"), 10_000);
+    assert_eq!(value(&report, "laundry-cafe", "cafe"), 14_000);
+    assert_eq!(value(&report, "cash-visa", "cash"), 24_000);
+    assert_eq!(value(&report, "sales-expenses", "sales"), 24_000);
     assert_eq!(value(&report, "sales-expenses", "expenses"), 2_000);
 }
 
@@ -413,7 +415,7 @@ fn sales_total_keeps_the_invoice_total_with_discount_and_service_charge() {
             discount_minor: 1_000,
         },
     );
-    ops::insert_expense(
+    expenses::insert(
         &conn,
         "UTILITY",
         5_200,
@@ -422,11 +424,13 @@ fn sales_total_keeps_the_invoice_total_with_discount_and_service_charge() {
         false,
         None,
         Some(day),
+        None,
+        true,
         1,
     )
     .unwrap();
     // Expenses outside the period must not leak in.
-    ops::insert_expense(
+    expenses::insert(
         &conn,
         "UTILITY",
         9_999,
@@ -435,6 +439,8 @@ fn sales_total_keeps_the_invoice_total_with_discount_and_service_charge() {
         false,
         None,
         Some(day),
+        None,
+        true,
         1,
     )
     .unwrap();

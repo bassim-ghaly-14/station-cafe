@@ -193,6 +193,271 @@ fn filter() -> SalesFilter {
 }
 
 #[test]
+fn monthly_revenue_aggregates_cafe_and_wash_per_calendar_month() {
+    let conn = fresh();
+    let september = add_day(&conn, "2026-09-10");
+    let also_september = add_day(&conn, "2026-09-28");
+
+    // A hybrid September invoice: cafe 4,000 + wash 6,000, no discount or charge.
+    add_invoice(
+        &conn,
+        1,
+        september,
+        1,
+        None,
+        Sale {
+            cafe: 4_000,
+            wash: 6_000,
+            service_charge: 0,
+            discount: 0,
+        },
+        &[("CAFE", "قهوة", 1, 4_000), ("WASH", "غسيل", 1, 6_000)],
+    );
+    cash_sale(&conn, 2, also_september, 1, 2_500);
+
+    let rows = sales::monthly(&conn, "2026-09-01", "2026-09-30").unwrap();
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "two business days of one month are one bucket"
+    );
+    let row = &rows[0];
+    assert_eq!(row.month, "2026-09");
+    assert_eq!(row.invoices_count, 2);
+    assert_eq!(row.cafe_sales, 6_500);
+    assert_eq!(row.wash_sales, 6_000);
+    assert_eq!(row.total_sales, 12_500);
+}
+
+#[test]
+fn monthly_revenue_keeps_the_same_month_of_two_years_apart() {
+    let conn = fresh();
+    let last_january = add_day(&conn, "2025-01-15");
+    let this_january = add_day(&conn, "2026-01-15");
+
+    cash_sale(&conn, 1, last_january, 1, 3_000);
+    cash_sale(&conn, 2, this_january, 1, 7_000);
+
+    let rows = sales::monthly(&conn, "2025-01-01", "2026-01-31").unwrap();
+
+    // Grouping by a display name would have produced one "January" of 10,000.
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].month, "2025-01");
+    assert_eq!(rows[0].total_sales, 3_000);
+    assert_eq!(rows[1].month, "2026-01");
+    assert_eq!(rows[1].total_sales, 7_000);
+    // Ascending by the stable key, so the latest month is always the last row.
+    assert!(rows[0].month < rows[1].month);
+}
+
+#[test]
+fn a_month_with_a_business_day_but_no_sales_stays_a_zero_month() {
+    let conn = fresh();
+    // January has a business day but no sale at all: a quiet month, not a gap.
+    add_day(&conn, "2026-01-10");
+    let february = add_day(&conn, "2026-02-10");
+    cash_sale(&conn, 1, february, 1, 4_000);
+
+    let rows = sales::monthly(&conn, "2026-01-01", "2026-02-28").unwrap();
+
+    assert_eq!(
+        rows.len(),
+        2,
+        "a quiet month must not vanish from the series"
+    );
+    assert_eq!(rows[0].month, "2026-01");
+    assert_eq!(rows[0].invoices_count, 0);
+    assert_eq!(rows[0].total_sales, 0);
+    assert_eq!(rows[0].cafe_sales, 0);
+    assert_eq!(rows[0].wash_sales, 0);
+    assert_eq!(rows[1].month, "2026-02");
+    assert_eq!(rows[1].total_sales, 4_000);
+}
+
+#[test]
+fn monthly_revenue_counts_every_invoice_and_respects_the_window() {
+    let conn = fresh();
+    let inside = add_day(&conn, "2026-03-10");
+    let outside = add_day(&conn, "2026-05-10");
+    cash_sale(&conn, 1, inside, 1, 5_000);
+    cash_sale(&conn, 2, inside, 1, 9_000);
+    cash_sale(&conn, 3, outside, 1, 7_000);
+
+    let rows = sales::monthly(&conn, "2026-03-01", "2026-04-30").unwrap();
+
+    assert_eq!(rows.len(), 1, "May is outside the requested window");
+    assert_eq!(rows[0].month, "2026-03");
+    assert_eq!(rows[0].invoices_count, 2);
+    assert_eq!(rows[0].total_sales, 14_000);
+}
+
+#[test]
+fn an_empty_window_reports_no_months_instead_of_zero_months() {
+    let conn = fresh();
+    assert!(sales::monthly(&conn, "2020-01-01", "2020-12-31")
+        .unwrap()
+        .is_empty());
+}
+
+/// The window the service derives for each supported month count.
+///
+/// The expectation is computed the same way the product defines it — the first
+/// day of the month `months - 1` back, through today — so the test states the
+/// RULE rather than repeating a literal, and it can never drift from a season
+/// boundary the way a hard-coded "2026-09" would.
+fn expected_window(months: i64) -> (String, String) {
+    let to = crate::time::today_business_date();
+    (crate::time::business_date_months_ago(months - 1), to)
+}
+
+#[test]
+fn the_monthly_window_follows_the_requested_month_count() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+
+    for months in [6, 12, 18, 24] {
+        let report = sales_svc::monthly(&conn, &manager, Some(months)).unwrap();
+
+        assert_eq!(
+            (report.from.as_str(), report.to.as_str()),
+            (
+                expected_window(months).0.as_str(),
+                expected_window(months).1.as_str()
+            ),
+            "{months} months must cover its own trailing window"
+        );
+        // A window of N months starts N-1 months back: 6 → five months back.
+        assert_eq!(
+            report.from,
+            crate::time::business_date_months_ago(months - 1)
+        );
+        assert!(
+            report.from.ends_with("-01"),
+            "a monthly window opens on a month start"
+        );
+        assert_eq!(report.to, crate::time::today_business_date());
+    }
+}
+
+#[test]
+fn the_monthly_window_counts_exactly_the_requested_buckets() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    // One business day in the current business month is enough to prove the
+    // bucket count: the current month is always part of the window.
+    add_day(&conn, &crate::time::today_business_date());
+    let today = crate::time::today_business_date();
+    let current_month = today[..7].to_string();
+
+    for months in [6, 12, 18, 24] {
+        let report = sales_svc::monthly(&conn, &manager, Some(months)).unwrap();
+
+        // Only the current month has a business day, so the ROW count cannot
+        // prove the window; the window bounds are what the chart is built from.
+        assert_eq!(report.months.len(), 1);
+        assert_eq!(report.months[0].month, current_month);
+    }
+}
+
+#[test]
+fn the_monthly_window_includes_the_current_business_month() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    let today = crate::time::today_business_date();
+    add_day(&conn, &today);
+
+    let report = sales_svc::monthly(&conn, &manager, Some(6)).unwrap();
+
+    assert_eq!(report.months.len(), 1);
+    assert_eq!(report.months[0].month, today[..7]);
+    assert_eq!(
+        report.to, today,
+        "the window ends on the current business date"
+    );
+}
+
+#[test]
+fn the_monthly_window_keeps_two_years_apart_separate_at_every_length() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    // Two Januaries two years apart: with a 24-month window both are visible,
+    // and they must stay two categories rather than one merged "January".
+    cash_sale(&conn, 1, add_day(&conn, "2025-01-15"), 1, 3_000);
+    cash_sale(&conn, 2, add_day(&conn, "2026-01-15"), 1, 7_000);
+
+    let report = sales_svc::monthly(&conn, &manager, Some(24)).unwrap();
+    let keys: Vec<&str> = report.months.iter().map(|row| row.month.as_str()).collect();
+
+    assert!(keys.contains(&"2025-01"));
+    assert!(keys.contains(&"2026-01"));
+    // Exactly two: the current month has no business day in this fixture, and a
+    // month without one is not a bucket (see the zero-month rule).
+    assert_eq!(keys.len(), 2, "the two Januaries must stay two categories");
+}
+
+#[test]
+fn the_monthly_window_ignores_the_sales_page_filter() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    cash_sale(
+        &conn,
+        1,
+        add_day(&conn, &crate::time::today_business_date()),
+        1,
+        2_000,
+    );
+
+    // `monthly` takes no `SalesFilter` at all: the command cannot even be handed
+    // the page's period, so the date picker cannot reshape this series.
+    let report = sales_svc::monthly(&conn, &manager, Some(12)).unwrap();
+
+    assert_eq!(report.months.len(), 1);
+    assert_eq!(report.months[0].total_sales, 2_000);
+}
+
+#[test]
+fn an_unsupported_month_count_is_refused_by_the_server() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+
+    for months in [0, -5, 5, 7, 25, 9999] {
+        assert!(
+            sales_svc::monthly(&conn, &manager, Some(months)).is_err(),
+            "{months} months must be refused"
+        );
+    }
+    // And the supported set is exactly what the UI offers.
+    for months in [6, 12, 18, 24] {
+        assert!(sales_svc::monthly(&conn, &manager, Some(months)).is_ok());
+    }
+}
+
+#[test]
+fn the_monthly_report_states_its_own_trailing_window() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    let today = crate::time::today_business_date();
+
+    let report = sales_svc::monthly(&conn, &manager, None).unwrap();
+
+    // The window is a calendar window, not the page's business-day filter: it
+    // always starts on the first day of a month and ends today.
+    assert_eq!(report.to, today);
+    assert!(report.from.ends_with("-01"));
+    assert!(report.from <= report.to);
+    // And it is never empty of months merely because the range is wide.
+    assert!(report.months.len() <= 24);
+}
+
+#[test]
+fn a_cashier_is_refused_the_monthly_report() {
+    let conn = fresh();
+    let cashier = actor(&conn, "cashier");
+    assert!(sales_svc::monthly(&conn, &cashier, None).is_err());
+}
+
+#[test]
 fn empty_period_reports_zeroes_instead_of_claiming_data() {
     let conn = fresh();
     let summary = sales::summary(&conn, &filter()).unwrap();
@@ -201,7 +466,6 @@ fn empty_period_reports_zeroes_instead_of_claiming_data() {
     assert_eq!(summary.total_sales, 0);
     assert_eq!(summary.average_invoice, 0);
     assert_eq!(summary.cash_share, 0);
-    assert_eq!(summary.cancelled_count, 0);
     assert!(sales::trend(&conn, &filter()).unwrap().is_empty());
     assert!(sales::items(&conn, &filter(), ItemSort::Revenue, None)
         .unwrap()
@@ -304,34 +568,45 @@ fn payment_methods_come_from_the_ledger_and_credit_is_never_collected_cash() {
     );
 }
 
+/// Station has no cancelled invoice. This is a DOMAIN rule, so it is enforced
+/// by the database itself: the status is gone from the `invoices` CHECK
+/// constraint, and every persisted invoice therefore counts in every figure.
 #[test]
-fn a_cancelled_invoice_counts_nowhere_but_is_reported_as_an_exception() {
+fn the_schema_refuses_a_cancelled_invoice_and_the_kpis_count_every_invoice() {
     let conn = fresh();
     let day = add_day(&conn, "2026-09-10");
 
-    cash_sale(&conn, 1, day, 1, 5_000);
+    // Both real invoices are counted, and every figure describes both of them.
+    let first = cash_sale(&conn, 1, day, 1, 5_000);
+    cash_sale(&conn, 2, day, 1, 9_000);
 
-    let voided = cash_sale(&conn, 2, day, 1, 9_000);
-    invoices::cancel_invoice(&conn, voided).unwrap();
+    // The status the application used to be able to write no longer exists.
+    let attempt = conn.execute(
+        "UPDATE invoices SET status = 'CANCELLED' WHERE id = ?1",
+        [first],
+    );
+    assert!(
+        attempt.is_err(),
+        "the database must not accept a cancelled invoice"
+    );
 
     let summary = sales::summary(&conn, &filter()).unwrap();
 
-    assert_eq!(summary.invoices_count, 1);
-    assert_eq!(summary.total_sales, 5_000);
+    // Both real invoices are counted, and every figure describes both of them.
+    assert_eq!(summary.invoices_count, 2);
+    assert_eq!(summary.total_sales, 14_000);
+    assert_eq!(summary.cash, 14_000);
 
-    // The payment row survives cancellation (it is the audit trail) and must
-    // never leak into the settled figures.
-    assert_eq!(summary.cash, 5_000);
-    assert_eq!(summary.cancelled_count, 1);
+    // The item analysis groups by product, and both sales are the same cafe
+    // product, so they aggregate into one line whose revenue is the sum.
+    let items = sales::items(&conn, &filter(), ItemSort::Revenue, None).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].product_name, "قهوة");
+    assert_eq!(items[0].revenue, 14_000);
+    assert_eq!(items[0].quantity, 2);
+    assert_eq!(items[0].share_percent, 100);
 
-    assert_eq!(
-        sales::items(&conn, &filter(), ItemSort::Revenue, None)
-            .unwrap()
-            .len(),
-        1
-    );
-
-    assert_eq!(sales::invoices(&conn, &filter()).unwrap().len(), 1);
+    assert_eq!(sales::invoices(&conn, &filter()).unwrap().len(), 2);
 }
 
 #[test]

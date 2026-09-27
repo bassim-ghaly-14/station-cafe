@@ -27,7 +27,6 @@ export type SalesItemSort = 'revenue' | 'quantity'
 
 export interface SalesSummary {
   invoices_count: number
-  cancelled_count: number
   /** Invoice subtotals: line revenue before discount and service charge. */
   subtotal: number
   discounts: number
@@ -94,6 +93,33 @@ export interface SalesOverview {
   items: SalesItemRow[]
 }
 
+/**
+ * One calendar month of the monthly comparison report.
+ *
+ * `month` is the stable `YYYY-MM` grouping key, never a display name — that is
+ * what keeps January 2025 and January 2026 in two buckets.
+ */
+export interface SalesMonthRow {
+  month: string
+  invoices_count: number
+  total_sales: number
+  cafe_sales: number
+  wash_sales: number
+}
+
+/**
+ * The monthly series AND the calendar window it describes.
+ *
+ * The window travels with the data on purpose: this report states its own
+ * trailing period, so the chart labels what it shows instead of borrowing the
+ * page's business-day filter.
+ */
+export interface SalesMonthlyReport {
+  from: string
+  to: string
+  months: SalesMonthRow[]
+}
+
 export interface SalesCashier {
   id: number
   name: string
@@ -121,4 +147,13 @@ export const salesApi = {
     call<SalesInvoiceRow[]>('sales_invoices', { filter: filterArg(filter) }),
   /** Cashier options for the filter. */
   cashiers: () => call<SalesCashier[]>('sales_cashiers'),
+  /**
+   * The monthly revenue series over its OWN trailing calendar window.
+   *
+   * It takes no `SalesFilter` — that is deliberate, not an omission: a calendar
+   * comparison is not a range-filtered report, and the command cannot be handed
+   * the page's date range in the first place.
+   */
+  monthly: (months?: number) =>
+    call<SalesMonthlyReport>('sales_monthly', { months: months ?? null }),
 }

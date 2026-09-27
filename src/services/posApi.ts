@@ -254,6 +254,27 @@ export interface PrintPreview {
   ops: PreviewOp[]
 }
 
+/**
+ * Runtime guard for a `preview_*` answer.
+ *
+ * `invoke<T>` is a compile-time claim, not a guarantee: a backend that changes
+ * its shape, a future command, or a serialization failure can deliver
+ * `undefined`, `null`, or an object whose `ops` is not an array. The preview
+ * renders `ops` and reads `doc_type` directly, so an unchecked payload would
+ * either throw inside the renderer or — worse — be mistaken for an empty
+ * document. Callers must treat a false result as a failure.
+ */
+export function isPrintPreview(value: unknown): value is PrintPreview {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<PrintPreview>
+  return (
+    typeof candidate.doc_type === 'string' &&
+    typeof candidate.paper_mm === 'number' &&
+    typeof candidate.width_chars === 'number' &&
+    Array.isArray(candidate.ops)
+  )
+}
+
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
   setTableCount: (count: number) => call<void>('set_table_count', { count }),
@@ -402,6 +423,20 @@ export interface CreditConfig {
   allowed_customer_ids: number[]
 }
 
+/**
+ * How many calendar months the monthly sales comparison chart covers.
+ *
+ * The supported windows are a closed set configured in Dev Settings; the backend
+ * owns that set and validates every value, so this is a mirror of it, not a
+ * second source of truth.
+ */
+export interface MonthlySalesPeriodConfig {
+  months: number
+}
+
+/** The windows Dev Settings offers, mirroring the backend's accepted set. */
+export const MONTHLY_SALES_PERIOD_MONTHS = [6, 12, 18, 24] as const
+
 export const settingsApi = {
   serviceCharge: () => call<ServiceChargeConfig>('get_service_charge'),
   setServiceCharge: (config: ServiceChargeConfig) => call<void>('set_service_charge', { config }),
@@ -414,6 +449,10 @@ export const settingsApi = {
   setDiscountPin: (pin: string) => call<void>('set_discount_authorization_pin', { pin }),
   credit: () => call<CreditConfig>('get_credit_config'),
   setCredit: (config: CreditConfig) => call<void>('set_credit_config', { config }),
+  /** The configured monthly sales chart window (12 months when never set). */
+  monthlySalesPeriod: () => call<MonthlySalesPeriodConfig>('get_monthly_sales_period'),
+  setMonthlySalesPeriod: (config: MonthlySalesPeriodConfig) =>
+    call<void>('set_monthly_sales_period', { config }),
 }
 
 export interface CheckoutInput {
