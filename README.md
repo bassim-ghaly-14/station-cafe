@@ -1,4 +1,4 @@
-# Station Cafe — ستيشن كافيه
+# Station Cafe & Wash Cars — ستيشن كافيه
 
 Production-grade, **100% offline-first** POS & management system for a cafe + car wash.
 
