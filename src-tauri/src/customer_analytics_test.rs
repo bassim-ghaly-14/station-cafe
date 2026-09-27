@@ -6,9 +6,10 @@
 //!    (no `stats` object, and the drawer/KPI calls are refused), while manager
 //!    and admin receive the real aggregate.
 //! 2. **Aggregation** — the numbers come from persisted invoice snapshots and
-//!    the credit ledger, follow the existing revenue rules (cancelled never
-//!    counts, credit is never "paid"), split by business type without double
-//!    counting a hybrid invoice, and honour the business-day period filter.
+//!    the credit ledger, follow the existing revenue rules (every invoice is a
+//!    real document, credit is never "paid"), split by business type without
+//!    double counting a hybrid invoice, and honour the business-day period
+//!    filter.
 
 use crate::db::migrate;
 use crate::error::AppError;
@@ -23,7 +24,11 @@ fn fresh() -> Connection {
     let conn = Connection::open_in_memory().unwrap();
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
     migrate(&conn).unwrap();
-    for (name, role) in [("manager", "MANAGER"), ("cashier", "STAFF"), ("admin", "ADMIN")] {
+    for (name, role) in [
+        ("manager", "MANAGER"),
+        ("cashier", "STAFF"),
+        ("admin", "ADMIN"),
+    ] {
         conn.execute(
             "INSERT INTO users (name, role, password_hash) VALUES (?1, ?2, 'x')",
             rusqlite::params![name, role],
@@ -35,11 +40,9 @@ fn fresh() -> Connection {
 
 fn actor(conn: &Connection, name: &str) -> User {
     let (id, role) = conn
-        .query_row(
-            "SELECT id, role FROM users WHERE name = ?1",
-            [name],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+        .query_row("SELECT id, role FROM users WHERE name = ?1", [name], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .unwrap();
     User {
         id,
@@ -82,7 +85,6 @@ struct InvoiceFixture {
     discount: i64,
     service_charge: i64,
     paid: i64,
-    cancel: bool,
 }
 
 impl InvoiceFixture {
@@ -145,9 +147,6 @@ fn add_invoice(conn: &Connection, invoice_no: i64, fixture: InvoiceFixture) -> i
         invoices::insert_payment(conn, id, "CASH", fixture.paid, None, None, 1).unwrap();
         invoices::apply_payment_to_invoice(conn, id, fixture.paid).unwrap();
     }
-    if fixture.cancel {
-        invoices::cancel_invoice(conn, id).unwrap();
-    }
     id
 }
 
@@ -161,11 +160,10 @@ fn base(customer_id: i64, day_id: i64) -> InvoiceFixture {
         discount: 0,
         service_charge: 0,
         paid: 0,
-        cancel: false,
     }
 }
 
-/// One customer with a hybrid invoice, a cancelled invoice, an invoice in
+/// One customer with a hybrid invoice, a takeaway invoice, an invoice in
 /// another business day, and a partly settled credit account.
 fn populated(conn: &Connection) -> (i64, i64) {
     let day = add_day(conn, "2026-09-10");
@@ -193,17 +191,6 @@ fn populated(conn: &Connection) -> (i64, i64) {
             order_type: "TAKEAWAY",
             cafe_total: 2_000,
             paid: 2_000,
-            ..base(customer, day)
-        },
-    );
-    // Cancelled: must never reach any figure.
-    add_invoice(
-        conn,
-        3,
-        InvoiceFixture {
-            cafe_total: 9_999,
-            paid: 9_999,
-            cancel: true,
             ..base(customer, day)
         },
     );
@@ -263,7 +250,9 @@ fn manager_and_admin_receive_the_real_aggregate() {
             .find(|row| row.name == "أحمد سيد")
             .expect("seeded customer listed");
         let stats = row.stats.as_ref().expect("manager receives stats");
-        assert_eq!(stats.invoices_count, 3, "{name}: cancelled invoice excluded");
+        // Invoices 1, 2 and 4 — the one outside the period is a different day,
+        // and every invoice that exists is a real document, so all three count.
+        assert_eq!(stats.invoices_count, 3, "{name}");
         assert_eq!(stats.paid, 19_500, "{name}");
     }
 }
@@ -289,8 +278,8 @@ fn manager_and_admin_can_read_customer_analytics() {
 
     for name in ["manager", "admin"] {
         let actor = actor(&conn, name);
-        let overview = customer_svc::overview(&conn, &actor, Some("2026-09-01"), Some("2026-09-30"))
-            .unwrap();
+        let overview =
+            customer_svc::overview(&conn, &actor, Some("2026-09-01"), Some("2026-09-30")).unwrap();
         assert_eq!(overview.active_customers, 1, "{name}");
         assert_eq!(overview.total_paid, 19_500, "{name}");
 
@@ -300,7 +289,6 @@ fn manager_and_admin_can_read_customer_analytics() {
         let _ = day;
     }
 }
-
 
 // ---- AGGREGATION -----------------------------------------------------------
 
@@ -420,7 +408,7 @@ fn overview_reports_period_kpis_and_leaders() {
 
     assert_eq!(overview.total_customers, 2, "all registered customers");
     assert_eq!(overview.active_customers, 2, "both ordered in the period");
-    assert_eq!(overview.total_orders, 3, "the cancelled invoice never counts");
+    assert_eq!(overview.total_orders, 3);
     assert_eq!(overview.total_paid, 12_500);
     assert_eq!(overview.average_spend, 12_500 / 2);
     // Department axis: hybrid + cafe takeaway + cafe-only = 3 cafe orders.
@@ -451,9 +439,8 @@ fn details_returns_identity_cars_and_recent_activity() {
     assert_eq!(details.cars.len(), 1);
     assert_eq!(details.cars[0].plate_no, "ABC123");
     assert!(!details.created_at.is_empty());
-    // Newest first, cancelled excluded.
+    // Newest first.
     assert_eq!(details.activity[0].invoice_no, 4);
-    assert!(details.activity.iter().all(|row| row.status != "CANCELLED"));
     let hybrid = details
         .activity
         .iter()
@@ -494,7 +481,6 @@ fn period_bounds_must_be_iso_dates() {
     ));
 }
 
-
 #[test]
 fn overview_of_an_empty_period_reports_zeroes_not_errors() {
     let conn = fresh();
@@ -530,10 +516,9 @@ fn search_and_period_apply_alongside_the_aggregate_join() {
     assert_eq!(stats.paid, 11_500);
 
     // A customer with no activity in the period is listed with zeroes, not lost.
-    let none = analytics::list_rows(&conn, "محمود", Some("2026-09-01"), Some("2026-09-15"), true)
-        .unwrap();
+    let none =
+        analytics::list_rows(&conn, "محمود", Some("2026-09-01"), Some("2026-09-15"), true).unwrap();
     assert_eq!(none.len(), 1);
     assert_eq!(none[0].id, other);
     assert_eq!(none[0].stats.as_ref().unwrap().invoices_count, 0);
 }
-

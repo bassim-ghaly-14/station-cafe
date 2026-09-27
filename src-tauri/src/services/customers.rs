@@ -14,6 +14,7 @@ use crate::error::{AppError, AppResult};
 use crate::repositories::customer_analytics::{
     self, CustomerDetails, CustomerList, CustomerOverview,
 };
+use crate::repositories::customers;
 use crate::repositories::users::User;
 use crate::repositories::Db;
 use crate::services::auth;
@@ -65,6 +66,65 @@ pub fn details(
     customer_analytics::details(conn, customer_id, from, to)
 }
 
+/// Permanently delete a customer. ADMIN only.
+///
+/// # What is deleted and what is refused
+///
+/// Station's customer table is a live registry — a customer with no activity is
+/// a duplicate or a mistake, and removing the row is the correct answer. So this
+/// really does delete, and the safety comes from the dependency check rather than
+/// from keeping the record:
+///
+///   - **Cars are deleted with the customer.** A vehicle is an owned
+///     registration with no independent history: an invoice never reads a car's
+///     row, it snapshots the plate into `invoice_customers`. Deleting the owner
+///     without its plates would orphan a plate nothing could reach.
+///   - **Orders, invoices and credit accounts BLOCK the delete.** These are the
+///     financial history. Cascading them would destroy paid invoices and money
+///     movements to make a record removable, which is exactly what must never
+///     happen — so the call returns a domain error and changes nothing.
+///     Deactivation is not a customer concept here; a customer with history is
+///     simply permanent, which is the correct answer for a financial ledger.
+///
+/// The check runs BEFORE any write, and the writes then share one transaction
+/// with the audit entry, so there is no partial deletion: the cars and the
+/// customer are removed together or not at all.
+pub fn delete(conn: &Db, actor: &User, customer_id: i64) -> AppResult<()> {
+    auth::require_role(actor, "ADMIN")?;
+
+    let tx = conn.unchecked_transaction()?;
+    let customer = customers::find_by_id(&tx, customer_id)?
+        .ok_or_else(|| AppError::not_found("customers.not_found"))?;
+
+    let blockers = customers::delete_blockers(&tx, customer_id)?;
+    if !blockers.is_empty() {
+        return Err(AppError::business("customers.has_history"));
+    }
+
+    // Only reached once the customer is proven to own no history, so the only
+    // dependent rows here are the vehicle registrations, which are owned.
+    let cars_deleted = customers::delete_cars_of(&tx, customer_id)?;
+    customers::delete(&tx, customer_id)?;
+
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "customer.deleted",
+        "customer",
+        Some(&customer_id.to_string()),
+        Some(&serde_json::json!({
+            "name": customer.name,
+            "phone": customer.phone,
+            "cars_deleted": cars_deleted,
+        })),
+        None,
+    )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
 /// The activity band + the period a customer is being viewed for. Pure input
 /// normalization shared by the list, the KPIs and the drawer so all three
 /// always describe the same window.
@@ -88,7 +148,10 @@ fn clean(value: Option<&str>) -> Option<&str> {
 
 /// Reject a malformed period before it can reach a report query.
 pub fn validate_period(period: &CustomerPeriod) -> AppResult<()> {
-    for value in [clean(period.from.as_deref()), clean(period.to.as_deref())].into_iter().flatten() {
+    for value in [clean(period.from.as_deref()), clean(period.to.as_deref())]
+        .into_iter()
+        .flatten()
+    {
         if !is_iso_date(value) {
             return Err(AppError::validation("customers.invalid_period"));
         }

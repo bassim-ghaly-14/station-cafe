@@ -219,3 +219,65 @@ pub fn insert_car(
     }
     Ok(Some(conn.last_insert_rowid()))
 }
+
+/// The references that make a customer undeletable.
+///
+/// `cars` is deliberately ABSENT: a vehicle is an owned registration with no
+/// history of its own — an invoice never reads a car's row, it snapshots the
+/// plate into `invoice_customers` — so cars are deleted with their owner.
+///
+/// Everything listed here is a live `REFERENCES customers(id)` foreign key
+/// holding real business history, and none of it may be cascaded.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DeleteBlockers {
+    /// Open or settled POS orders.
+    pub orders: i64,
+    /// Invoices of any status, because an invoice is a numbered document in the
+    /// sequence the moment it is raised.
+    pub invoices: i64,
+    /// The credit account row. Its payments are a money history in their own
+    /// right, so an account with ANY history blocks deletion even when the
+    /// balance is fully settled.
+    pub credit_accounts: i64,
+}
+
+impl DeleteBlockers {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+pub fn delete_blockers(conn: &Db, id: i64) -> AppResult<DeleteBlockers> {
+    conn.query_row(
+        "SELECT
+            (SELECT COUNT(*) FROM orders          WHERE customer_id = ?1),
+            (SELECT COUNT(*) FROM invoices        WHERE customer_id = ?1),
+            (SELECT COUNT(*) FROM credit_accounts WHERE customer_id = ?1)",
+        params![id],
+        |r| {
+            Ok(DeleteBlockers {
+                orders: r.get(0)?,
+                invoices: r.get(1)?,
+                credit_accounts: r.get(2)?,
+            })
+        },
+    )
+    .map_err(Into::into)
+}
+
+/// Remove the customer's vehicles. An owned registration, not history, so it
+/// goes with the owner rather than orphaning a plate nothing can reach.
+pub fn delete_cars_of(conn: &Db, customer_id: i64) -> AppResult<usize> {
+    conn.execute(
+        "DELETE FROM cars WHERE customer_id = ?1",
+        params![customer_id],
+    )
+    .map_err(Into::into)
+}
+
+/// Physically remove the customer row. Reached only after [`delete_blockers`]
+/// proved there is no history. The caller owns the transaction.
+pub fn delete(conn: &Db, id: i64) -> AppResult<usize> {
+    conn.execute("DELETE FROM customers WHERE id = ?1", params![id])
+        .map_err(Into::into)
+}

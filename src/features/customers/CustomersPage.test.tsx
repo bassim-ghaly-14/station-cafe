@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   createCar: vi.fn(),
+  remove: vi.fn(),
   role: { current: 'MANAGER' as 'STAFF' | 'MANAGER' | 'ADMIN' },
 }))
 
@@ -41,6 +42,7 @@ vi.mock('@/services/customersApi', () => ({
     create: mocks.create,
     update: mocks.update,
     createCar: mocks.createCar,
+    remove: mocks.remove,
   },
 }))
 
@@ -382,5 +384,100 @@ describe('CustomersPage — states', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /إعادة المحاولة/ })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Permanent deletion — ADMIN only.
+ *
+ * The same three guarantees as the employees page, and for the same reason: a
+ * hidden button is not a security control, so the tests assert visibility,
+ * confirmation (the click sends nothing; only confirm resolves it) and feedback
+ * (success refreshes, a refusal is reported in Arabic and never read as success).
+ *
+ * The authorization guarantee itself — that a MANAGER or CASHIER cannot invoke
+ * `delete_customer` at all — is enforced in the service and covered by the Rust
+ * suite in `deletion_test.rs`.
+ */
+describe('CustomersPage — permanent delete (ADMIN only)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.role.current = 'ADMIN'
+    mocks.list.mockResolvedValue(MANAGER_LIST)
+    mocks.overview.mockResolvedValue(OVERVIEW)
+    mocks.details.mockResolvedValue(DETAILS)
+    mocks.remove.mockResolvedValue(undefined)
+  })
+
+  it('offers the delete action to an ADMIN', async () => {
+    renderPage()
+    expect(await screen.findByTestId('customer-row-delete')).toBeInTheDocument()
+  })
+
+  it('does not offer it to a MANAGER or a CASHIER', async () => {
+    for (const role of ['MANAGER', 'STAFF'] as const) {
+      mocks.role.current = role
+      const view = renderPage()
+      await screen.findByRole('button', { name: /تفاصيل/ })
+      expect(screen.queryByTestId('customer-row-delete')).not.toBeInTheDocument()
+      view.unmount()
+    }
+  })
+
+  it('confirms before deleting, and the click alone sends nothing', async () => {
+    renderPage()
+    await screen.findByTestId('customer-row-delete')
+
+    fireEvent.click(screen.getByTestId('customer-row-delete'))
+
+    const dialog = await screen.findByRole('dialog', { name: 'حذف العميل' })
+    // The confirmation names the customer and states the action is permanent.
+    expect(within(dialog).getByText('هل أنت متأكد من حذف «أحمد سيد» نهائيًا؟')).toBeInTheDocument()
+    expect(within(dialog).getByText(/لا يمكن التراجع/)).toBeInTheDocument()
+    // The primary button says "permanent delete", not a generic "confirm".
+    expect(within(dialog).getByRole('button', { name: 'حذف نهائي' })).toBeInTheDocument()
+    // Nothing has been sent yet.
+    expect(mocks.remove).not.toHaveBeenCalled()
+  })
+
+  it('cancels without sending anything', async () => {
+    renderPage()
+    await screen.findByTestId('customer-row-delete')
+
+    fireEvent.click(screen.getByTestId('customer-row-delete'))
+    const dialog = await screen.findByRole('dialog', { name: 'حذف العميل' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(mocks.remove).not.toHaveBeenCalled()
+  })
+
+  it('deletes on confirm and refreshes the customer queries', async () => {
+    renderPage()
+    await screen.findByTestId('customer-row-delete')
+
+    fireEvent.click(screen.getByTestId('customer-row-delete'))
+    const dialog = await screen.findByRole('dialog', { name: 'حذف العميل' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حذف نهائي' }))
+
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(1))
+    expect(await screen.findByText(/تم حذف العميل/)).toBeInTheDocument()
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a backend refusal in Arabic and never claims success', async () => {
+    // The service refuses a customer with invoices, orders or a credit account.
+    // The page must surface that rather than swallow it.
+    mocks.remove.mockRejectedValue({ kind: 'business_rule', message: 'customers.has_history' })
+
+    renderPage()
+    await screen.findByTestId('customer-row-delete')
+
+    fireEvent.click(screen.getByTestId('customer-row-delete'))
+    const dialog = await screen.findByRole('dialog', { name: 'حذف العميل' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حذف نهائي' }))
+
+    expect(await screen.findByText(/لا يمكن حذف العميل لوجود فواتير أو طلبات/)).toBeInTheDocument()
+    expect(screen.queryByText(/تم حذف العميل/)).not.toBeInTheDocument()
   })
 })

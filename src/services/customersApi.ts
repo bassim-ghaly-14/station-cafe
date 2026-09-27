@@ -123,4 +123,14 @@ export const customersApi = {
   ) => call<void>('update_customer', { customer_id: customerId, input }),
   createCar: (input: { customer_id: number; plate_no: string; car_model?: string | null }) =>
     call<number>('create_car', { input }),
+  /**
+   * ADMIN-only PERMANENT delete of a customer, together with the vehicles it
+   * owns (a plate is a registration, not history).
+   *
+   * A customer with orders, invoices or a credit account is REFUSED by the
+   * backend with a domain error rather than being force-deleted, because their
+   * financial history must survive. The refusal surfaces through the normal
+   * Arabic error mapping, and nothing is removed.
+   */
+  remove: (customerId: number) => call<void>('delete_customer', { customer_id: customerId }),
 }

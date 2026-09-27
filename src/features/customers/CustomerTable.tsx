@@ -25,10 +25,12 @@ import {
   DataTableCell,
   DataTableRow,
   MoneyDisplay,
+  TableActionButton,
+  TableActionDivider,
+  TableActionGroup,
   type DataTableColumn,
 } from '@/components/ui'
-import { Button } from '@/components/ui/button'
-import { Car, Eye, Pencil } from '@/components/ui/icon'
+import { Car, Eye, Pencil, Trash2 } from '@/components/ui/icon'
 import { CustomerAvatar } from '@/lib/customer-visual'
 import { CustomerVehicleBadge } from './CustomerVehicleBadge'
 import { DisplayDate, DisplayDateTime } from '@/components/ui/display-datetime'
@@ -37,16 +39,25 @@ import type { CustomerRow } from '@/services/customersApi'
 export function CustomerTable({
   customers,
   financialVisible,
+  canDelete,
   onOpenDetails,
   onEdit,
+  onDelete,
   busy,
   className,
 }: {
   customers: CustomerRow[]
   /** From the backend payload — the same flag gates the KPI band and drawer. */
   financialVisible: boolean
+  /**
+   * ADMIN only. The backend service re-checks the role on `delete_customer` and
+   * refuses a MANAGER or CASHIER regardless of what this button offers.
+   */
+  canDelete?: boolean
   onOpenDetails: (customer: CustomerRow) => void
   onEdit: (customer: CustomerRow) => void
+  /** Record the delete INTENT only. The page confirms, requests and toasts. */
+  onDelete: (customer: CustomerRow) => void
   busy?: boolean
   className?: string
 }) {
@@ -92,7 +103,10 @@ export function CustomerTable({
               <div className="flex min-w-0 items-center gap-3">
                 <CustomerAvatar id={customer.id} name={customer.name} size="sm" />
                 <div className="min-w-0">
-                  <span className="block max-w-48 truncate font-bold text-foreground-strong">
+                  {/* Same weight as the employee name in the Employees roster:
+                      the row's lead text is emphasised by colour and size, not
+                      by a heavier weight the Employees table does not use. */}
+                  <span className="block max-w-48 truncate font-medium text-foreground-strong">
                     {customer.name}
                   </span>
                   <span className="mt-0.5 flex items-center gap-2">
@@ -112,7 +126,7 @@ export function CustomerTable({
             <DataTableCell className="hidden md:table-cell">
               {/* One compact badge states the whole vehicle situation; the
                   plates stay as the detail underneath it, never as a count. */}
-              <div className="flex flex-col items-start gap-1.5">
+              <div className="flex flex-col items-start gap-1">
                 <CustomerVehicleBadge carsCount={customer.cars_count} />
                 {customer.plates.length > 0 ? (
                   <span className="flex flex-wrap items-center gap-1">
@@ -166,26 +180,46 @@ export function CustomerTable({
 
             {financialVisible ? (
               <DataTableCell>
-                <div className="flex items-center justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
+                {/* The SAME action column the Employees roster uses — the shared
+                    `TableAction*` primitives — so switching between the two
+                    screens shows one control in one size with one spacing rule,
+                    not two hand-rolled versions of the same idea. Read is
+                    `info`, change is `warning`, and the one irreversible action
+                    is `destructive` and sits last, behind a hairline. */}
+                <TableActionGroup>
+                  <TableActionButton
+                    tone="info"
                     onClick={() => onOpenDetails(customer)}
                     aria-label={t('customers.actions.details', { name: customer.name })}
                     title={t('customers.actions.details', { name: customer.name })}
                   >
-                    <Eye size={16} aria-hidden />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
+                    <Eye size={24} aria-hidden />
+                  </TableActionButton>
+                  <TableActionButton
+                    tone="warning"
                     onClick={() => onEdit(customer)}
                     aria-label={t('customers.actions.edit', { name: customer.name })}
                     title={t('customers.actions.edit', { name: customer.name })}
                   >
-                    <Pencil size={16} aria-hidden />
-                  </Button>
-                </div>
+                    <Pencil size={24} aria-hidden />
+                  </TableActionButton>
+                  {/* Permanent delete. ADMIN only, and last in the group: it is
+                      the one customer action that cannot be undone. */}
+                  {canDelete ? (
+                    <>
+                      <TableActionDivider />
+                      <TableActionButton
+                        tone="danger"
+                        onClick={() => onDelete(customer)}
+                        aria-label={t('customers.actions.delete', { name: customer.name })}
+                        title={t('customers.actions.delete', { name: customer.name })}
+                        data-testid="customer-row-delete"
+                      >
+                        <Trash2 size={24} aria-hidden />
+                      </TableActionButton>
+                    </>
+                  ) : null}
+                </TableActionGroup>
               </DataTableCell>
             ) : null}
           </DataTableRow>

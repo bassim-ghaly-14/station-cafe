@@ -5,7 +5,8 @@
 //! `service_charge` / `order_type`) and the credit ledger. It follows the
 //! revenue rules already established by `repositories::analytics`:
 //!
-//! - a `CANCELLED` invoice never counts;
+//! - every invoice is a real document — Station has no cancelled invoice, so
+//!   there is no defensive exclusion to apply;
 //! - `paid_amount` is the cash/card money actually settled on the invoice; a
 //!   `CREDIT` invoice keeps `paid_amount = 0` and is represented by the
 //!   customer's credit account, so credit is never counted as paid revenue;
@@ -215,7 +216,7 @@ fn customer_invoice_aggregate(from: Option<&str>, to: Option<&str>) -> (String, 
     let sql = format!(
         "SELECT i.customer_id, {AGG_COLUMNS}
          FROM invoices i JOIN business_days d ON d.id = i.business_day_id
-         WHERE i.customer_id IS NOT NULL AND i.status != 'CANCELLED'{range}
+         WHERE i.customer_id IS NOT NULL{range}
          GROUP BY i.customer_id"
     );
     (sql, args)
@@ -335,7 +336,6 @@ pub fn list_rows(
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
-
 /// Aggregated activity for one customer. Period-scoped, with the standing
 /// credit balance attached.
 pub fn stats_for(
@@ -349,7 +349,7 @@ pub fn stats_for(
     let sql = format!(
         "SELECT {AGG_COLUMNS}
          FROM invoices i JOIN business_days d ON d.id = i.business_day_id
-         WHERE i.customer_id = ?1 AND i.status != 'CANCELLED'{range}"
+         WHERE i.customer_id = ?1{range}"
     );
     let refs = to_sql_refs(&args);
     // No rows means "no activity in this period", which is a real answer.
@@ -384,7 +384,7 @@ pub fn recent_activity(
         "SELECT i.invoice_no, i.order_type, i.table_label, i.takeaway_no, i.status,
                 i.total, i.paid_amount, i.cafe_total, i.wash_total, i.created_at
          FROM invoices i
-         WHERE i.customer_id = ?1 AND i.status != 'CANCELLED'
+         WHERE i.customer_id = ?1
          ORDER BY i.id DESC LIMIT ?2",
     )?;
     let rows = stmt.query_map(params![customer_id, limit.clamp(1, 50)], |r| {
@@ -413,8 +413,8 @@ pub fn details(
     to: Option<&str>,
 ) -> AppResult<CustomerDetails> {
     let (customer, created_at) = {
-        let mut stmt = conn
-            .prepare("SELECT id, name, phone, notes, created_at FROM customers WHERE id = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, phone, notes, created_at FROM customers WHERE id = ?1")?;
         let mut rows = stmt.query([customer_id])?;
         match rows.next()? {
             Some(row) => (
@@ -438,20 +438,27 @@ pub fn details(
     })
 }
 
-
 /// Page-level KPI block across every customer.
 pub fn overview(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<CustomerOverview> {
-    let total_customers: i64 = conn.query_row("SELECT COUNT(*) FROM customers", [], |r| r.get(0))?;
+    let total_customers: i64 =
+        conn.query_row("SELECT COUNT(*) FROM customers", [], |r| r.get(0))?;
 
     // ONE aggregate query answers every activity KPI of the band, so the whole
     // header costs a constant number of statements however many customers exist.
     let (range, args) = day_range(from, to, 0);
     let refs = to_sql_refs(&args);
     type Totals = (i64, i64, i64, i64, i64, i64, i64);
-    let (active_customers, total_orders, total_paid, cafe_orders, wash_orders, takeaway_orders, table_orders): Totals =
-        conn.query_row(
-            &format!(
-                "SELECT COUNT(DISTINCT i.customer_id),
+    let (
+        active_customers,
+        total_orders,
+        total_paid,
+        cafe_orders,
+        wash_orders,
+        takeaway_orders,
+        table_orders,
+    ): Totals = conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT i.customer_id),
                         COUNT(*),
                         COALESCE(SUM(i.paid_amount), 0),
                         COALESCE(SUM(CASE WHEN i.cafe_total > 0 THEN 1 ELSE 0 END), 0),
@@ -459,21 +466,21 @@ pub fn overview(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<Cu
                         COALESCE(SUM(CASE WHEN i.order_type = 'TAKEAWAY' THEN 1 ELSE 0 END), 0),
                         COALESCE(SUM(CASE WHEN i.order_type = 'TABLE' THEN 1 ELSE 0 END), 0)
                  FROM invoices i JOIN business_days d ON d.id = i.business_day_id
-                 WHERE i.customer_id IS NOT NULL AND i.status != 'CANCELLED'{range}"
-            ),
-            refs.as_slice(),
-            |r| {
-                Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    r.get(2)?,
-                    r.get(3)?,
-                    r.get(4)?,
-                    r.get(5)?,
-                    r.get(6)?,
-                ))
-            },
-        )?;
+                 WHERE i.customer_id IS NOT NULL{range}"
+        ),
+        refs.as_slice(),
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        },
+    )?;
 
     // Standing credit across every account — a balance, not a period movement.
     let outstanding_credit: i64 = conn.query_row(
@@ -524,7 +531,7 @@ fn top_customer(
                  FROM invoices i
                  JOIN customers k ON k.id = i.customer_id
                  JOIN business_days d ON d.id = i.business_day_id
-                 WHERE i.customer_id IS NOT NULL AND i.status != 'CANCELLED'{range}
+                 WHERE i.customer_id IS NOT NULL{range}
                  GROUP BY k.id, k.name ORDER BY 3 DESC, k.id LIMIT 1"
             ),
             refs.as_slice(),

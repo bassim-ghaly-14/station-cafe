@@ -17,31 +17,54 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
-import { Button, Card, ProgressBar, TableSkeleton } from '@/components/ui'
+import { Button, Card, ConfirmDialog, ProgressBar, TableSkeleton, useToast } from '@/components/ui'
 import { UserPlus, Users } from '@/components/ui/icon'
 import { atLeast, useSession } from '@/features/auth/useSession'
+import { useErrText } from '@/lib/err'
 import { CustomerDetailsDrawer } from './CustomerDetailsDrawer'
 import { CustomerDialog, type CustomerDialogMode } from './CustomerDialog'
 import { CustomerFilters } from './CustomerFilters'
 import { CustomerKpiBand } from './CustomerKpiBand'
 import { CustomerTable } from './CustomerTable'
 import { useCustomerList, useCustomerOverview } from './useCustomerData'
+import { customersApi } from '@/services/customersApi'
 import type { CustomerRow } from '@/services/customersApi'
 
 const NO_RANGE = { from: '', to: '' }
 
+/**
+ * The customer a permanent delete is pending for, or `null`.
+ *
+ * Nothing is executed on the click that OPENS the dialog — the click only records
+ * the intent, and the request is sent from the confirm handler. A customer is a
+ * financial record, so no click may ever remove one.
+ */
+type PendingDelete = { customer: CustomerRow } | null
+
 export default function CustomersPage() {
   const { t } = useTranslation()
   const { user } = useSession()
+  const errText = useErrText(t)
+  const toast = useToast()
   const [query, setQuery] = useState('')
   const [range, setRange] = useState(NO_RANGE)
   const [dialog, setDialog] = useState<CustomerDialogMode | null>(null)
   const [detailsId, setDetailsId] = useState<number | null>(null)
   const [detailsName, setDetailsName] = useState('')
+  // The single pending confirmation, plus its busy state so a slow command
+  // cannot be fired twice.
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // The role decides which analytics are REQUESTED. The backend still refuses
   // anything unauthorized — this only avoids asking for what cannot be had.
   const canSeeAnalytics = atLeast(user?.role, 'MANAGER')
+  /**
+   * Delete is narrower than analytics: only an ADMIN may permanently remove a
+   * customer. This hides the affordance; the REAL boundary is the backend
+   * command + service, which refuse a MANAGER or CASHIER call outright.
+   */
+  const canDelete = user?.role === 'ADMIN'
   const period = useMemo(() => ({ from: range.from, to: range.to }), [range.from, range.to])
 
   const list = useCustomerList(query, range.from, range.to)
@@ -61,6 +84,42 @@ export default function CustomersPage() {
   function resetFilters() {
     setQuery('')
     setRange(NO_RANGE)
+  }
+
+  /**
+   * Permanently delete a customer. ADMIN only.
+   *
+   * This only records the intent: the command is sent from `confirmDelete`,
+   * after the dialog has been answered. A refusal from the backend — a customer
+   * with invoices or a credit balance — is reported through the existing Arabic
+   * error toast and never swallowed, and the customer stays exactly where it was.
+   */
+  function deleteCustomer(customer: CustomerRow) {
+    setPendingDelete({ customer })
+  }
+
+  /**
+   * The ONLY place the delete request is sent. The dialog's state is cleared
+   * before the await, so a slow command cannot leave a stale confirmation on
+   * screen, and `deleting` blocks a double submit while it is in flight.
+   */
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    const target = pendingDelete.customer
+    setPendingDelete(null)
+    setDeleting(true)
+    try {
+      await customersApi.remove(target.id)
+      toast(t('customers.confirm.deleted', { name: target.name }), 'success')
+      // The removed customer leaves the list, and the KPI band's headcount and
+      // active-customer count both read the same rows.
+      list.reload()
+      overview.reload()
+    } catch (cause) {
+      toast(errText(cause), 'error')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -139,8 +198,10 @@ export default function CustomersPage() {
           <CustomerTable
             customers={customers}
             financialVisible={financialVisible}
+            canDelete={canDelete}
             onOpenDetails={openDetails}
             onEdit={(customer) => setDialog({ kind: 'edit', customer })}
+            onDelete={deleteCustomer}
             busy={list.refreshing}
           />
         </Card>
@@ -163,6 +224,30 @@ export default function CustomersPage() {
           customerName={detailsName}
           period={period}
           onClose={() => setDetailsId(null)}
+        />
+      ) : null}
+
+      {/*
+        The confirmation for the one irreversible action on this page.
+
+        It is mounted only for a role that may have the delete, and it is an
+        interaction affordance rather than the boundary: a caller that invokes
+        `delete_customer` directly bypasses it entirely and is refused by the
+        service anyway.
+      */}
+      {canDelete ? (
+        <ConfirmDialog
+          open={pendingDelete !== null}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+          title={t('customers.confirm.deleteTitle')}
+          body={t('customers.confirm.deleteBody', { name: pendingDelete?.customer.name ?? '' })}
+          detail={t('customers.confirm.deleteDetail', {
+            name: pendingDelete?.customer.name ?? '',
+          })}
+          confirmLabel={t('customers.confirm.deleteConfirm')}
+          destructive
+          busy={deleting}
         />
       ) : null}
     </div>

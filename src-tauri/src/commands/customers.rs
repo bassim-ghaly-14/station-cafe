@@ -161,6 +161,28 @@ pub fn update_customer(
     })
 }
 
+/// ADMIN-only permanent delete of a customer.
+///
+/// Narrower than `update_customer` above, which is MANAGER-level: editing who
+/// somebody is is routine, removing them from the registry is not. Only an ADMIN
+/// may do it, and the service re-checks the role so a direct invocation from a
+/// MANAGER or CASHIER session is refused as well.
+///
+/// The customer's cars go with them — a plate is an owned registration with no
+/// history of its own. A customer with orders, invoices or a credit account is
+/// REFUSED with a domain error instead, because their financial history must
+/// outlive the ability to remove them from the list.
+#[tauri::command(rename_all = "snake_case")]
+pub fn delete_customer(
+    state: State<'_, AppState>,
+    token: String,
+    customer_id: i64,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        customer_svc::delete(conn, actor, customer_id)
+    })
+}
+
 #[derive(Deserialize)]
 pub struct CarInput {
     pub customer_id: i64,

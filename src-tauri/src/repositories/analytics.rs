@@ -2,8 +2,8 @@
 //!
 //! Every number is computed from persisted production tables (invoices,
 //! payments, business_days, expenses) with the same revenue rules the day/
-//! shift closings use: cancelled invoices never count, cash/card revenue comes
-//! from the `payments` ledger, and credit never counts as settled cash/card.
+//! shift closings use: cash/card revenue comes from the `payments` ledger, and
+//! credit never counts as settled cash/card.
 
 use crate::error::AppResult;
 use crate::repositories::Db;
@@ -128,14 +128,14 @@ fn department_sales(
     query_total(
         conn,
         &format!(
-            "SELECT COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.{column} ELSE 0 END), 0)
+            "SELECT COALESCE(SUM(i.{column}), 0)
              FROM invoices i JOIN business_days d ON d.id = i.business_day_id WHERE 1=1{filter}"
         ),
         &args,
     )
 }
 
-/// Cash/card revenue from the payment ledger (cancelled invoices excluded).
+/// Cash/card revenue from the payment ledger.
 fn payment_sum(conn: &Db, from: Option<&str>, to: Option<&str>, method: &str) -> AppResult<i64> {
     debug_assert!(matches!(method, "CASH" | "CARD"));
     let (filter, mut args) = day_range("d", from, to, 1);
@@ -146,7 +146,7 @@ fn payment_sum(conn: &Db, from: Option<&str>, to: Option<&str>, method: &str) ->
             "SELECT COALESCE(SUM(p.amount), 0)
              FROM payments p JOIN invoices i ON i.id = p.invoice_id
              JOIN business_days d ON d.id = i.business_day_id
-             WHERE i.status != 'CANCELLED' AND p.method = ?1{filter}"
+             WHERE p.method = ?1{filter}"
         ),
         &args,
     )
@@ -157,7 +157,7 @@ fn sales_total(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResult<i64
     query_total(
         conn,
         &format!(
-            "SELECT COALESCE(SUM(CASE WHEN i.status != 'CANCELLED' THEN i.total ELSE 0 END), 0)
+            "SELECT COALESCE(SUM(i.total), 0)
              FROM invoices i JOIN business_days d ON d.id = i.business_day_id WHERE 1=1{filter}"
         ),
         &args,
