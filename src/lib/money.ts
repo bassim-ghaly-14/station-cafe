@@ -1,4 +1,4 @@
-import { MINOR_PER_MAJOR, type Money } from './utils'
+import { MINOR_PER_MAJOR } from './utils'
 import { getMoneySettings, type MoneyFormatSettings } from './formatting'
 
 /** The one human-readable currency label used throughout Station. */
@@ -172,5 +172,3 @@ export function formatMinorMoneyInput(value: MoneyInput): string {
   const number = normalize(value)
   return number === null ? '' : formatMoneyInput(number / MINOR_PER_MAJOR)
 }
-
-export type { Money }

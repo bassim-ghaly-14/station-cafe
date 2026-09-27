@@ -20,7 +20,6 @@ import { useTranslation } from 'react-i18next'
 import { Button, Dialog, MoneyDisplay, isValidDiscountPin } from '@/components/ui'
 import { Lock } from '@/components/ui/icon'
 import { DISCOUNT_PIN_LENGTH, Field, PinInput } from '@/components/ui/input'
-import type { Money } from '@/lib/utils'
 
 export function DiscountAuthorizationDialog({
   amount,
@@ -30,7 +29,7 @@ export function DiscountAuthorizationDialog({
   onCancel,
 }: {
   /** The exact amount this authorization covers, in minor units. */
-  amount: Money
+  amount: number
   busy: boolean
   error: string | null
   onSubmit: (pin: string) => void
