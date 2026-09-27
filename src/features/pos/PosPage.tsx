@@ -759,6 +759,7 @@ export function TableCard({
 
   return (
     <article
+      role="button"
       aria-label={`${tv.label} — ${statusLabel}`}
       aria-current={selected ? true : undefined}
       onClick={onSelect}

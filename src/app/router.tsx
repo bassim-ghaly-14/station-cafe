@@ -43,8 +43,16 @@ const PATH_VIEWS: Record<string, View> = Object.fromEntries(
   Object.entries(VIEW_PATHS).map(([view, path]) => [path, view as View]),
 )
 
+// Linear alternative to replacing a trailing-slash run: a regex like /\/+$/ can
+// backtrack on long inputs that do not match, so trim from the end instead.
+const trimTrailingSlashes = (pathname: string): string => {
+  let end = pathname.length
+  while (end > 0 && pathname[end - 1] === '/') end -= 1
+  return end === pathname.length ? pathname : pathname.slice(0, end)
+}
+
 function readRoute() {
-  const pathname = window.location.pathname.replace(/\/+$/, '')
+  const pathname = trimTrailingSlashes(window.location.pathname)
   const segments = pathname.split('/').filter(Boolean)
   const view = PATH_VIEWS[pathname] ?? PATH_VIEWS[`/${segments[0] ?? ''}`] ?? 'pos'
   return { view, params: segments.length > 1 ? { segments: segments.slice(1) } : {} }
