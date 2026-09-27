@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import '@/lib/i18n'
 import type { PreviewOp, PrintPreview } from '@/services/posApi'
 import { ThermalReceipt } from './ThermalReceipt'
 

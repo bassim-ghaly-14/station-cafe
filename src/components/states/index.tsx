@@ -65,3 +65,5 @@ export function ErrorState({
     </div>
   )
 }
+
+export { DocumentPaperMotif, DocumentPreviewState } from './document-preview'

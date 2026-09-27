@@ -71,7 +71,12 @@ fn business_local(value: &str) -> Option<DateTime<Tz>> {
 /// left with a blank date.
 pub(super) fn invoice_date(value: &str) -> String {
     match business_local(value) {
-        Some(local) => format!("{:02}/{:02}/{:04}", local.day(), local.month(), local.year()),
+        Some(local) => format!(
+            "{:02}/{:02}/{:04}",
+            local.day(),
+            local.month(),
+            local.year()
+        ),
         None => value.to_string(),
     }
 }
@@ -155,11 +160,11 @@ pub(super) fn printed_text_lines(doc: &crate::printing::ir::PrintDoc) -> Vec<Str
     /// Parameter bytes that follow a command byte.
     fn params(command: u8) -> usize {
         match command {
-            b'@' => 0,                        // ESC @   — reset
-            b't' | b'a' | b'E' | b'd' => 1,   // ESC t/a/E/d
-            b'!' => 1,                        // GS !    — character size
-            b'v' => 3,                        // GS v    — raster image
-            b'V' => 1,                        // GS V    — cut
+            b'@' => 0,                      // ESC @   — reset
+            b't' | b'a' | b'E' | b'd' => 1, // ESC t/a/E/d
+            b'!' => 1,                      // GS !    — character size
+            b'v' => 3,                      // GS v    — raster image
+            b'V' => 1,                      // GS V    — cut
             _ => 0,
         }
     }
@@ -207,8 +212,14 @@ mod tests {
             invoice_currency_note(ArabicMode::Cp1256),
             invoice_currency_note(ArabicMode::Latin),
         ] {
-            assert!(!note.contains('.'), "an invoice states the currency in full: {note}");
-            assert!(!note.contains("ج.م"), "must not follow the app label: {note}");
+            assert!(
+                !note.contains('.'),
+                "an invoice states the currency in full: {note}"
+            );
+            assert!(
+                !note.contains("ج.م"),
+                "must not follow the app label: {note}"
+            );
         }
     }
 
@@ -234,7 +245,7 @@ mod tests {
         // The two boundaries a receipt must never get wrong.
         assert_eq!(invoice_time("2026-09-25 21:00:00Z"), "12:00 AM"); // midnight
         assert_eq!(invoice_time("2026-09-25 09:00:00Z"), "12:00 PM"); // noon
-        // The legacy unmarked storage shape prints identically.
+                                                                      // The legacy unmarked storage shape prints identically.
         assert_eq!(invoice_time("2026-09-25 14:30:00"), "05:30 PM");
         // Egypt is UTC+2 in winter, and the printed clock follows the tz
         // database rather than a fixed offset.
@@ -271,7 +282,11 @@ mod tests {
         let rows = printed_text_lines(&doc);
         assert_eq!(rows.len(), 2);
         for row in rows {
-            assert_eq!(row.chars().count(), WIDTH, "row must span the paper: {row:?}");
+            assert_eq!(
+                row.chars().count(),
+                WIDTH,
+                "row must span the paper: {row:?}"
+            );
         }
     }
 

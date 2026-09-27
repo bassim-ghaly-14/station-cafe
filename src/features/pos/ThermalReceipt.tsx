@@ -4,6 +4,7 @@
  * dialog's scaling layer scales the complete paper as one unit.
  */
 import type { CSSProperties, ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type {
   PreviewFinancialOp,
   PreviewItemOp,
@@ -49,6 +50,7 @@ function textStyle(op: PreviewTextOp): CSSProperties {
 const LOGO_MM = 31
 
 export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
+  const { t } = useTranslation()
   let separatorIndex = 0
   let itemHeaderShown = false
 
@@ -68,7 +70,7 @@ export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
   return (
     <article
       dir="ltr"
-      aria-label="معاينة الإيصال الحراري"
+      aria-label={t('print.previewSurface')}
       data-testid="print-receipt-paper"
       data-paper-mm={preview.paper_mm}
       data-width-chars={preview.width_chars}

@@ -27,41 +27,53 @@ pub struct TodaySummary {
     pub day: Option<shifts::BusinessDay>,
     pub totals: DayTotals,
     pub shifts: Vec<ShiftRow>,
-    /// Cash expected in the drawer = shift openings + cash sales − expenses.
+    /// Cash expected in the drawer = shift openings + cash sales − cash expenses.
+    ///
+    /// Computed from the shifts' OWN expense rows, so an expense is only counted
+    /// once and never against a shift it was not booked to. This is the live
+    /// operational view; the closing documents use the persisted snapshot.
     pub expected_drawer_cash: i64,
+    /// Signed sum of the shifts' recorded differences.
     pub cash_differences: i64,
     pub stock_alerts: i64,
 }
 
 pub fn today_summary(conn: &Db) -> AppResult<TodaySummary> {
     let day = shifts::current_day(conn)?;
-    let (totals, shift_list) = match &day {
+    let (totals, mut shift_list) = match &day {
         Some(d) => (
             shifts::day_totals(conn, d.id)?,
             shifts::shifts_of_day(conn, d.id)?,
         ),
         None => (DayTotals::default(), Vec::new()),
     };
-    let openings: i64 = shift_list.iter().map(|s| s.opening_cash).sum();
-    let cash_diffs: i64 = shift_list.iter().filter_map(|s| s.cash_difference).sum();
-    let cash_expenses: i64 = match &day {
-        Some(d) => conn.query_row(
-            "SELECT COALESCE(SUM(amount),0) FROM expenses WHERE business_day_id = ?1",
-            [d.id],
-            |r| r.get(0),
-        )?,
-        None => 0,
-    };
+    // An ACTIVE shift has no persisted snapshot yet, so its aggregate columns are
+    // still defaults. Hydrating it here is what makes this live header state the
+    // same drawer the POS card and the closing dialog show — including the cash
+    // expenses booked to that shift. A CLOSED shift is left untouched.
+    for shift in shift_list.iter_mut() {
+        shifts::hydrate_active_totals(conn, shift)?;
+    }
+    // Each shift resolves the drawer through the ONE shared formula, so the day
+    // figure is the sum of the shifts' own expected cash rather than a second,
+    // independently written expression of the same arithmetic.
+    let expected_drawer_cash: i64 = shift_list.iter().map(|s| s.expected_cash).sum();
+    let cash_differences: i64 = shift_list
+        .iter()
+        .map(|s| s.cash_difference.unwrap_or(0))
+        .sum();
     let stock_alerts: i64 = conn.query_row(
         "SELECT COUNT(*) FROM inventory_items i
          JOIN products p ON p.id = i.product_id
-         WHERE p.track_inventory = 1 AND i.quantity <= i.min_quantity",
+         WHERE p.track_inventory = 1
+           AND p.deleted_at IS NULL
+           AND i.quantity <= i.min_quantity",
         [],
         |r| r.get(0),
     )?;
     Ok(TodaySummary {
-        expected_drawer_cash: openings + totals.cash - cash_expenses,
-        cash_differences: cash_diffs,
+        expected_drawer_cash,
+        cash_differences,
         stock_alerts,
         day,
         totals,
@@ -69,52 +81,29 @@ pub fn today_summary(conn: &Db) -> AppResult<TodaySummary> {
     })
 }
 
-#[derive(Debug, Serialize)]
-pub struct ShiftReport {
-    pub shift: ShiftRow,
-    pub invoices_count: i64,
-    pub cash_sales: i64,
-    pub card_sales: i64,
-    pub credit_sales: i64,
-    pub service_charges: i64,
-    pub discounts: i64,
-    pub expected_cash: i64,
-    pub actual_cash: Option<i64>,
-    pub difference: Option<i64>,
+/// The shift-closing report. This is a thin ALIAS of the reconciliation
+/// module's struct: there is exactly one report type, so the screen, the
+/// preview and the printer cannot drift apart.
+pub type ShiftReport = crate::services::reconciliation::ShiftReconciliation;
+pub type DayReport = crate::services::reconciliation::DayReconciliation;
+
+pub fn shift_report(
+    conn: &Db,
+    shift_id: i64,
+) -> AppResult<crate::services::reconciliation::ShiftReconciliation> {
+    crate::services::reconciliation::shift_report(conn, shift_id)
 }
 
-pub fn shift_report(conn: &Db, shift_id: i64) -> AppResult<ShiftReport> {
-    let mut s = shifts::get_shift(conn, shift_id)?
-        .ok_or_else(|| crate::error::AppError::not_found("shift.not_found"))?;
-    // An ACTIVE shift has no persisted closing snapshot yet, so its report is
-    // hydrated from live transactions. A CLOSED shift is served straight from
-    // the immutable snapshot written at close time and is never recomputed —
-    // that is what keeps historical shift reports reproducible.
-    shifts::hydrate_active_totals(conn, &mut s)?;
-    Ok(ShiftReport {
-        invoices_count: s.invoices_count,
-        cash_sales: s.cash_sales,
-        card_sales: s.card_sales,
-        credit_sales: s.credit_sales,
-        service_charges: s.service_charges,
-        discounts: s.discounts,
-        expected_cash: s.expected_cash,
-        actual_cash: s.actual_cash,
-        difference: s.cash_difference,
-        shift: s,
-    })
-}
-
-#[derive(Debug, Serialize)]
-pub struct DayReport {
-    pub day: shifts::BusinessDay,
-    pub totals: DayTotals,
-    pub shifts: Vec<ShiftRow>,
-    pub expected_drawer_cash: i64,
-    pub cash_differences: i64,
-}
-
-pub fn day_report(conn: &Db, day_id: i64) -> AppResult<DayReport> {
+/// The day-closing report.
+///
+/// A CLOSED day is served from its immutable persisted final snapshot, so the
+/// document always states the figures that were true at closing time even if
+/// configuration changes later. An OPEN day is reported LIVE from the settled
+/// shifts the inclusion rule selects, with any open shifts explicitly excluded.
+pub fn day_report(
+    conn: &Db,
+    day_id: i64,
+) -> AppResult<crate::services::reconciliation::DayReconciliation> {
     let day: shifts::BusinessDay = conn
         .query_row(
             "SELECT id, day_date, status, opened_at, closed_at FROM business_days WHERE id = ?1",
@@ -130,22 +119,19 @@ pub fn day_report(conn: &Db, day_id: i64) -> AppResult<DayReport> {
             },
         )
         .map_err(|_| crate::error::AppError::not_found("day.not_found"))?;
-    let shift_list = shifts::shifts_of_day(conn, day_id)?;
-    let totals = if day.status == "CLOSED" {
-        shifts::final_day_totals(conn, day_id)?
-            .ok_or_else(|| crate::error::AppError::not_found("day.closing_not_found"))?
-    } else {
-        shifts::day_totals(conn, day_id)?
-    };
-    let openings: i64 = shift_list.iter().map(|s| s.opening_cash).sum();
-    let diffs: i64 = shift_list.iter().filter_map(|s| s.cash_difference).sum();
-    Ok(DayReport {
-        expected_drawer_cash: openings + totals.cash - totals.expenses,
-        cash_differences: diffs,
-        day,
-        totals,
-        shifts: shift_list,
-    })
+    if day.status == "CLOSED" {
+        return shifts::final_day_report(conn, day);
+    }
+    // An open day: aggregate exactly its settled shifts, using the SAME
+    // inclusion rule `close_day` will apply.
+    let all = shifts::shifts_of_day(conn, day_id)?;
+    let (settled, open): (Vec<ShiftRow>, Vec<ShiftRow>) =
+        all.into_iter().partition(|s| s.status == "CLOSED");
+    let ids: Vec<i64> = settled.iter().map(|s| s.id).collect();
+    let mut report =
+        crate::services::reconciliation::aggregate_day(conn, day.clone(), &ids, &settled)?;
+    report.open_shift_count = open.len() as i64;
+    Ok(report)
 }
 
 #[derive(Debug, Serialize)]

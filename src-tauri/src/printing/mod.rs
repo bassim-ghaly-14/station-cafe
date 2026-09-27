@@ -449,7 +449,7 @@ mod tests {
             conn,
             staff,
             order_id,
-            product_id(conn, "CAFE", "كرواسون رومي"),
+            product_id(conn, "CAFE", "هوت شوكليت"),
             2,
         )
         .unwrap();
@@ -629,7 +629,7 @@ mod tests {
             &conn,
             &staff,
             order_id,
-            product_id(&conn, "CAFE", "كرواسون رومي"),
+            product_id(&conn, "CAFE", "هوت شوكليت"),
             2,
         )
         .unwrap();
@@ -1040,7 +1040,14 @@ mod tests {
 
         // The open checkout preview in its takeaway shape (no table involved).
         let takeaway_order = pos_svc::start_takeaway(&conn, &staff).unwrap();
-        pos_svc::add_line(&conn, &staff, takeaway_order, product_id(&conn, "CAFE", "مياه"), 1).unwrap();
+        pos_svc::add_line(
+            &conn,
+            &staff,
+            takeaway_order,
+            product_id(&conn, "CAFE", "مياه"),
+            1,
+        )
+        .unwrap();
         let takeaway_preview = preview_order(&conn, takeaway_order, None, None, None).unwrap();
 
         // The open checkout preview in its table shape, plus the wash ticket.
@@ -1098,7 +1105,12 @@ mod tests {
                 .ops
                 .iter()
                 .filter_map(|op| match op {
-                    ir::PreviewOp::Meta { label, value, emphasis, align } => {
+                    ir::PreviewOp::Meta {
+                        label,
+                        value,
+                        emphasis,
+                        align,
+                    } => {
                         assert_eq!(*align, escpos::Align::Right, "{name} metadata alignment");
                         Some((label.as_str(), value.as_str(), *emphasis))
                     }

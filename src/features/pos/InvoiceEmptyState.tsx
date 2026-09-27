@@ -8,11 +8,13 @@
  *   - `no-results` invoices exist but the current search/filters exclude all of
  *                  them. The fix is one click, so the reset is offered directly.
  *
- * The motif is a quiet receipt frame drawn from the Station chart tokens, so it
- * follows light and dark without any page-specific colour.
+ * The motif is the shared document frame drawn from the Station chart tokens, so
+ * it follows light and dark without any page-specific colour and looks exactly
+ * like the "no document" motif inside the preview dialog.
  */
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui'
+import { DocumentPaperMotif } from '@/components/states'
 import { FilterX } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
@@ -36,7 +38,7 @@ export function InvoiceEmptyState({
         className,
       )}
     >
-      <ReceiptMotif />
+      <DocumentPaperMotif className="max-w-40" />
 
       <div className="flex max-w-md flex-col gap-1.5">
         <h2 className="text-section text-balance">
@@ -55,48 +57,6 @@ export function InvoiceEmptyState({
           {t('invoicesPage.filters.reset')}
         </Button>
       ) : null}
-    </div>
-  )
-}
-
-/** A ruled receipt frame. Decorative only: it encodes no records. */
-function ReceiptMotif() {
-  return (
-    <div aria-hidden dir="ltr" className="w-full max-w-56">
-      <svg viewBox="0 0 224 120" className="h-auto w-full" role="presentation" focusable="false">
-        <rect
-          x="8"
-          y="8"
-          width="208"
-          height="104"
-          rx="8"
-          fill="none"
-          stroke="var(--chart-frame)"
-          strokeWidth="1.25"
-          strokeDasharray="4 4"
-        />
-        {[32, 52, 72, 92].map((y, index) => (
-          <g key={y}>
-            <rect
-              x="24"
-              y={y - 6}
-              width="14"
-              height="12"
-              rx="3"
-              fill={index === 3 ? 'var(--chart-grid)' : 'var(--chart-motif-strong)'}
-            />
-            <rect
-              x="48"
-              y={y - 3}
-              width={index === 3 ? 64 : 88 + index * 10}
-              height="6"
-              rx="3"
-              fill="var(--chart-grid)"
-            />
-            <rect x="150" y={y - 3} width="46" height="6" rx="3" fill="var(--chart-grid)" />
-          </g>
-        ))}
-      </svg>
     </div>
   )
 }

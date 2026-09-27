@@ -79,6 +79,31 @@ export function printDocumentLabel(t: TFunction, docType: string | null | undefi
   return t(printDocumentPresentation(docType).labelKey)
 }
 
+/**
+ * The document families a preview surface must be able to NAME in its own copy.
+ *
+ * `PrintDocumentType` is a backend identity, but user-facing sentences need a
+ * noun («فاتورة» / «تذكرة» / «تقرير»), not an identity. This is the one place
+ * that maps an identity onto that noun family; unknown types fall back to the
+ * neutral «مستند» so a new document type can never inherit the wrong wording.
+ */
+export type PrintDocumentFamily = 'invoice' | 'ticket' | 'report' | 'document'
+
+const DOCUMENT_FAMILY: Record<PrintDocumentType, PrintDocumentFamily> = {
+  CAFE_INVOICE: 'invoice',
+  WASH_INVOICE: 'invoice',
+  HYBRID_INVOICE: 'invoice',
+  TAKEAWAY_INVOICE: 'invoice',
+  WASH_TICKET: 'ticket',
+  SHIFT_REPORT: 'report',
+  DAY_REPORT: 'report',
+  TEST: 'document',
+}
+
+export function printDocumentFamily(docType: string | null | undefined): PrintDocumentFamily {
+  return DOCUMENT_FAMILY[docType as PrintDocumentType] ?? 'document'
+}
+
 /** Job statuses the printing service records in `print_jobs.status`. */
 export const PRINT_JOB_STATUSES = ['PENDING', 'PRINTED', 'FAILED'] as const
 

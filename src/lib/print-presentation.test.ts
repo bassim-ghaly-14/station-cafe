@@ -11,6 +11,7 @@ import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import {
   PRINT_DOCUMENT_TYPES,
   PRINT_JOB_STATUSES,
+  printDocumentFamily,
   printDocumentLabel,
   printDocumentPresentation,
   printErrorMessage,
@@ -47,6 +48,43 @@ describe('print document presentation', () => {
   it('never echoes the raw document identifier', () => {
     for (const docType of [...PRINT_DOCUMENT_TYPES, 'SOME_FUTURE_DOC']) {
       expect(printDocumentLabel(t, docType)).not.toContain(docType)
+    }
+  })
+
+  it('groups every document into the noun family its own copy needs', () => {
+    // Preview copy must be able to say «فاتورة» / «تذكرة» / «تقرير» without
+    // repeating itself per backend identity.
+    const families = Object.fromEntries(
+      PRINT_DOCUMENT_TYPES.map((docType) => [docType, printDocumentFamily(docType)]),
+    )
+    expect(families).toEqual({
+      CAFE_INVOICE: 'invoice',
+      WASH_INVOICE: 'invoice',
+      HYBRID_INVOICE: 'invoice',
+      TAKEAWAY_INVOICE: 'invoice',
+      WASH_TICKET: 'ticket',
+      SHIFT_REPORT: 'report',
+      DAY_REPORT: 'report',
+      TEST: 'document',
+    })
+  })
+
+  it('falls back to the neutral document family for anything unknown', () => {
+    expect(printDocumentFamily('SOME_FUTURE_DOC')).toBe('document')
+    expect(printDocumentFamily(null)).toBe('document')
+    expect(printDocumentFamily(undefined)).toBe('document')
+    // The fallback must not borrow another document's noun.
+    expect(printDocumentFamily('SOME_FUTURE_DOC')).not.toBe('invoice')
+  })
+
+  it('has a translated empty-state message for every document family', () => {
+    // Guards against a new family shipping with an untranslated preview state.
+    const families = ['invoice', 'ticket', 'report', 'document'] as const
+    for (const family of families) {
+      expect(t(`documentPreview.empty.${family}.title`)).not.toBe(
+        `documentPreview.empty.${family}.title`,
+      )
+      expect(t(`documentPreview.empty.${family}.body`).length).toBeGreaterThan(0)
     }
   })
 })
