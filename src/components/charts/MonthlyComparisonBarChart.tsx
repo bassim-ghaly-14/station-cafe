@@ -135,6 +135,20 @@ export function MonthlyComparisonBarChart({
   // the series compose one. The default therefore follows the layout.
   const totalVisible = showTotal ?? stacked
 
+  // The tooltip FOOTER: the period total for the hovered row, read from that
+  // row's own datum — never recomputed outside the chart, never a static value.
+  // Declared here so the tooltip primitive receives a stable render function.
+  const renderTooltipFooter = (items: { payload?: unknown }[]) => {
+    const datum = items?.[0]?.payload as MonthlyComparisonDatum | undefined
+    if (!datum) return null
+    return (
+      <>
+        <span className="text-foreground-muted">{t('reports.charts.tooltipTotal')}</span>
+        <span className="tabular-nums">{format(monthTotal(datum, series))}</span>
+      </>
+    )
+  }
+
   // The card, its header, the fullscreen dialog and the export menu are the
   // SHARED `ChartShell` — the same one the reports donuts and the daily bar
   // chart use. Only the plot and the legend below are this chart's own.
@@ -213,24 +227,7 @@ export function MonthlyComparisonBarChart({
                   // appears when the caller says its series compose one. Either way
                   // the figure is read from the hovered row — never recomputed
                   // outside the chart, and never a static value.
-                  {...(totalVisible
-                    ? {
-                        footer: (items: { payload?: unknown }[]) => {
-                          const datum = items?.[0]?.payload as MonthlyComparisonDatum | undefined
-                          if (!datum) return null
-                          return (
-                            <>
-                              <span className="text-foreground-muted">
-                                {t('reports.charts.tooltipTotal')}
-                              </span>
-                              <span className="tabular-nums">
-                                {format(monthTotal(datum, series))}
-                              </span>
-                            </>
-                          )
-                        },
-                      }
-                    : {})}
+                  {...(totalVisible ? { footer: renderTooltipFooter } : {})}
                 />
               }
             />
