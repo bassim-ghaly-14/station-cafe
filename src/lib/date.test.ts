@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import { resetFormattingPreferences, updateDateSettings } from './formatting'
 import {
   addDays,
@@ -110,17 +110,24 @@ describe('canonical Station time model', () => {
 
   it('derives today from the Station business date, not the browser zone', () => {
     // `todayIso` is a business date, so it must be stable regardless of the
-    // machine's timezone or the instant's UTC day.
-    const today = todayIso()
-    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    // It agrees with the Cairo calendar date of the same instant.
-    const cairoDay = new Intl.DateTimeFormat('en-CA', {
-      timeZone: STATION_TZ,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date())
-    expect(today).toBe(cairoDay)
+    // machine's timezone or the instant's UTC day. The clock is pinned because
+    // `todayIso()` and the `Date` read below are separate instants.
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-25T22:30:00Z'))
+      const today = todayIso()
+      expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // It agrees with the Cairo calendar date of the same instant.
+      const cairoDay = new Intl.DateTimeFormat('en-CA', {
+        timeZone: STATION_TZ,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
+      expect(today).toBe(cairoDay)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('pins the business timezone to one IANA zone', () => {
@@ -153,9 +160,24 @@ describe('business dates are plain YYYY-MM-DD strings', () => {
     expect(formatIsoDate('nonsense', 'en-US')).toBe('nonsense')
   })
 
-  it('reads today from the local calendar, not from UTC', () => {
-    const now = new Date()
-    expect(todayIso()).toBe(isoDate(now.getFullYear(), now.getMonth() + 1, now.getDate()))
+  it('reads today from the business calendar, not the machine or UTC', () => {
+    // `todayIso` is the STATION business date, so it follows Cairo — not the
+    // machine's own timezone and not the UTC day. The clock is pinned because
+    // `todayIso()` and any later `Date` read are separate instants.
+    vi.useFakeTimers()
+    try {
+      // 22:30 UTC on the 25th: still the 25th in New York, already the 26th in
+      // Cairo. The business date must be the Cairo one, which is exactly the
+      // behaviour a machine-local assertion could never pin down.
+      vi.setSystemTime(new Date('2026-09-25T22:30:00Z'))
+      expect(todayIso()).toBe('2026-09-26')
+
+      // Earlier the same UTC day, Cairo is still on the 25th.
+      vi.setSystemTime(new Date('2026-09-25T10:00:00Z'))
+      expect(todayIso()).toBe('2026-09-25')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('steps business dates by whole days, also across months and years', () => {
