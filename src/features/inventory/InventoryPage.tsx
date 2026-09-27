@@ -21,6 +21,96 @@ import { opsApi, STOCK_REASONS, type MovementRow, type StockRow } from '@/servic
 import { useErrText } from '@/lib/err'
 import { cn } from '@/lib/utils'
 
+/** One stock line, with the low-stock warning the table contract promises. */
+function StockRow({
+  row,
+  onAdjust,
+}: {
+  readonly row: StockRow
+  readonly onAdjust: (row: StockRow) => void
+}) {
+  const { t } = useTranslation()
+  const low = row.quantity <= row.min_quantity
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-2.5">
+      <div className="min-w-40 flex-1">
+        <p className="text-body font-bold">{row.product_name}</p>
+        <p className="text-caption">
+          {t(`catalog.${row.department}`)} · {t('catalog.category')}: {row.category_name} ·{' '}
+          {t(`catalog.${row.item_type}`)} · {t('inventory.min')}: {row.min_quantity}
+        </p>
+      </div>
+      <span
+        className={cn('text-money', low ? 'text-destructive' : 'text-foreground-muted')}
+        aria-label={low ? t('inventory.low') : undefined}
+      >
+        {row.quantity}
+      </span>
+      {low ? (
+        <Badge variant="warning" size="sm" dot>
+          {t('inventory.low')}
+        </Badge>
+      ) : null}
+      <Button variant="outline" size="sm" onClick={() => onAdjust(row)}>
+        <SlidersHorizontal size={16} aria-hidden />
+        {t('inventory.adjust')}
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * The stock rows, kept as their own component so the loading/error/empty/data
+ * decision above reads as a flat chain rather than a nested ternary.
+ */
+function StockRows({
+  rows,
+  onAdjust,
+}: {
+  readonly rows: readonly StockRow[]
+  readonly onAdjust: (row: StockRow) => void
+}) {
+  return (
+    <>
+      {rows.map((row) => (
+        <StockRow key={row.product_id} row={row} onAdjust={onAdjust} />
+      ))}
+    </>
+  )
+}
+
+/** One movement line: the product, when it happened, why, and the signed change. */
+function MovementRow({ row }: { readonly row: MovementRow }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-2">
+      <div className="min-w-40 flex-1">
+        <p className="text-body">{row.product_name}</p>
+        <p className="min-w-0 text-caption">
+          <DisplayDateTime value={row.created_at} separator="" />
+          {row.note ? ` · ${t([`inventory.note.${row.note}`, row.note])}` : ''}
+        </p>
+      </div>
+      <Badge variant={row.change > 0 ? 'success' : 'danger'} size="sm" dot>
+        {t(`inventory.reason.${row.reason}`)}
+      </Badge>
+      <span className={cn('text-money', row.change > 0 ? 'text-success' : 'text-destructive')}>
+        {row.change > 0 ? `+${row.change}` : row.change}
+      </span>
+    </div>
+  )
+}
+
+function MovementRows({ rows }: { readonly rows: readonly MovementRow[] }) {
+  return (
+    <>
+      {rows.map((row) => (
+        <MovementRow key={row.id} row={row} />
+      ))}
+    </>
+  )
+}
+
 export default function InventoryPage() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -73,35 +163,7 @@ export default function InventoryPage() {
         <Card>
           <CardHeader title={t('inventory.stock')} subtitle={t('inventory.stockHint')} />
           <div className="flex flex-col divide-y divide-border-subtle">
-            {stock.map((s) => {
-              const low = s.quantity <= s.min_quantity
-              return (
-                <div key={s.product_id} className="flex flex-wrap items-center gap-3 py-2.5">
-                  <div className="min-w-40 flex-1">
-                    <p className="text-body font-bold">{s.product_name}</p>
-                    <p className="text-caption">
-                      {t(`catalog.${s.department}`)} · {t('catalog.category')}: {s.category_name} ·{' '}
-                      {t(`catalog.${s.item_type}`)} · {t('inventory.min')}: {s.min_quantity}
-                    </p>
-                  </div>
-                  <span
-                    className={cn('text-money', low ? 'text-destructive' : 'text-foreground-muted')}
-                    aria-label={low ? t('inventory.low') : undefined}
-                  >
-                    {s.quantity}
-                  </span>
-                  {low ? (
-                    <Badge variant="warning" size="sm" dot>
-                      {t('inventory.low')}
-                    </Badge>
-                  ) : null}
-                  <Button variant="outline" size="sm" onClick={() => setAdjusting(s)}>
-                    <SlidersHorizontal size={16} aria-hidden />
-                    {t('inventory.adjust')}
-                  </Button>
-                </div>
-              )
-            })}
+            <StockRows rows={stock} onAdjust={setAdjusting} />
           </div>
         </Card>
       )}
@@ -118,25 +180,7 @@ export default function InventoryPage() {
           <EmptyState title={t('inventory.noMovements')} />
         ) : (
           <div className="flex flex-col divide-y divide-border-subtle">
-            {movements.map((m) => (
-              <div key={m.id} className="flex flex-wrap items-center gap-3 py-2">
-                <div className="min-w-40 flex-1">
-                  <p className="text-body">{m.product_name}</p>
-                  <p className="min-w-0 text-caption">
-                    <DisplayDateTime value={m.created_at} separator="" />
-                    {m.note ? ` · ${t([`inventory.note.${m.note}`, m.note])}` : ''}
-                  </p>
-                </div>
-                <Badge variant={m.change > 0 ? 'success' : 'danger'} size="sm" dot>
-                  {t(`inventory.reason.${m.reason}`)}
-                </Badge>
-                <span
-                  className={cn('text-money', m.change > 0 ? 'text-success' : 'text-destructive')}
-                >
-                  {m.change > 0 ? `+${m.change}` : m.change}
-                </span>
-              </div>
-            ))}
+            <MovementRows rows={movements} />
           </div>
         )}
       </Card>
