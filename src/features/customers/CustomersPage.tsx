@@ -15,6 +15,7 @@
  * value was ever sent to that browser.
  */
 import { useMemo, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import { Button, Card, ConfirmDialog, ProgressBar, TableSkeleton, useToast } from '@/components/ui'
@@ -40,6 +41,93 @@ const NO_RANGE = { from: '', to: '' }
  * financial record, so no click may ever remove one.
  */
 type PendingDelete = { customer: CustomerRow } | null
+
+/**
+ * The customer list in its four states: failed, loading, empty, and the table
+ * itself. Extracted so the page reads as filters, KPIs and list, and the state
+ * precedence is stated once.
+ */
+function CustomerListSection({
+  t,
+  error,
+  initialLoading,
+  refreshing,
+  customers,
+  financialVisible,
+  canDelete,
+  searching,
+  onRetry,
+  onReset,
+  onCreate,
+  onOpenDetails,
+  onEdit,
+  onDelete,
+}: {
+  t: TFunction
+  error: string | null
+  initialLoading: boolean
+  refreshing: boolean
+  customers: CustomerRow[]
+  financialVisible: boolean
+  canDelete: boolean
+  searching: boolean
+  onRetry: () => void
+  onReset: () => void
+  onCreate: () => void
+  onOpenDetails: (customer: CustomerRow) => void
+  onEdit: (customer: CustomerRow) => void
+  onDelete: (customer: CustomerRow) => void
+}) {
+  if (error) {
+    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  }
+
+  if (initialLoading) {
+    return <TableSkeleton rows={6} columns={financialVisible ? 8 : 4} />
+  }
+
+  if (customers.length === 0) {
+    return (
+      <EmptyState
+        title={searching ? t('customers.states.noResults') : t('customers.states.noData')}
+        action={
+          searching ? (
+            <Button variant="outline" onClick={onReset}>
+              {t('customers.filters.reset')}
+            </Button>
+          ) : (
+            <Button onClick={onCreate}>
+              <UserPlus size={16} aria-hidden />
+              {t('customers.form.createTitle')}
+            </Button>
+          )
+        }
+      />
+    )
+  }
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+        <p className="text-caption tabular-nums" aria-live="polite">
+          {t('customers.states.count', { count: customers.length })}
+        </p>
+        {/* A refresh keeps the rows on screen and marks the list busy, so
+            typing in the search field never blanks the page. */}
+        {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+      </div>
+      <CustomerTable
+        customers={customers}
+        financialVisible={financialVisible}
+        canDelete={canDelete}
+        onOpenDetails={onOpenDetails}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        busy={refreshing}
+      />
+    </Card>
+  )
+}
 
 export default function CustomersPage() {
   const { t } = useTranslation()
@@ -165,47 +253,22 @@ export default function CustomersPage() {
       ) : null}
 
       {/* Four distinct situations, four distinct presentations. */}
-      {list.error ? (
-        <ErrorState message={list.error} onRetry={list.reload} retryLabel={t('app.retry')} />
-      ) : list.initialLoading ? (
-        <TableSkeleton rows={6} columns={financialVisible ? 8 : 4} />
-      ) : customers.length === 0 ? (
-        <EmptyState
-          title={searching ? t('customers.states.noResults') : t('customers.states.noData')}
-          action={
-            searching ? (
-              <Button variant="outline" onClick={resetFilters}>
-                {t('customers.filters.reset')}
-              </Button>
-            ) : (
-              <Button onClick={() => setDialog({ kind: 'create' })}>
-                <UserPlus size={16} aria-hidden />
-                {t('customers.form.createTitle')}
-              </Button>
-            )
-          }
-        />
-      ) : (
-        <Card className="overflow-hidden p-0">
-          <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
-            <p className="text-caption tabular-nums" aria-live="polite">
-              {t('customers.states.count', { count: customers.length })}
-            </p>
-            {/* A refresh keeps the rows on screen and marks the list busy, so
-                typing in the search field never blanks the page. */}
-            {list.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-          </div>
-          <CustomerTable
-            customers={customers}
-            financialVisible={financialVisible}
-            canDelete={canDelete}
-            onOpenDetails={openDetails}
-            onEdit={(customer) => setDialog({ kind: 'edit', customer })}
-            onDelete={deleteCustomer}
-            busy={list.refreshing}
-          />
-        </Card>
-      )}
+      <CustomerListSection
+        t={t}
+        error={list.error}
+        initialLoading={list.initialLoading}
+        refreshing={list.refreshing}
+        customers={customers}
+        financialVisible={financialVisible}
+        canDelete={canDelete}
+        searching={searching}
+        onRetry={list.reload}
+        onReset={resetFilters}
+        onCreate={() => setDialog({ kind: 'create' })}
+        onOpenDetails={openDetails}
+        onEdit={(customer) => setDialog({ kind: 'edit', customer })}
+        onDelete={deleteCustomer}
+      />
 
       <CustomerDialog
         mode={dialog}
