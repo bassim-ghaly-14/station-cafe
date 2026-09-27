@@ -330,38 +330,51 @@ function parsePayload(raw: string | null): Record<string, unknown> | null {
   }
 }
 /** Render one declared value, or `null` when it must not be shown. */
+/** One formatter per presentation kind, so the dispatch below is a lookup. */
+const VALUE_FORMATTERS: {
+  readonly [K in FieldPresentation['kind']]: (
+    t: AuditTranslate,
+    presentation: FieldPresentation,
+    value: unknown,
+  ) => string | null
+} = {
+  text: (_t, _presentation, value) => {
+    if (typeof value !== 'string' && typeof value !== 'number') return null
+    const text = String(value).trim()
+    return text === '' ? null : text
+  },
+  money: (_t, _presentation, value) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null
+    return formatMinorMoney(value)
+  },
+  count: (_t, _presentation, value) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null
+    return new Intl.NumberFormat('en-US').format(value)
+  },
+  date: (_t, _presentation, value) => {
+    if (typeof value !== 'string' || value.trim() === '') return null
+    return formatDate(value)
+  },
+  flag: (t, _presentation, value) => {
+    if (typeof value !== 'boolean') return null
+    return value ? t('app.enabled') : t('app.disabled')
+  },
+  code: (t, presentation, value) => {
+    if (typeof value !== 'string' || value.trim() === '') return null
+    return codeLabel(
+      t,
+      presentation.kind === 'code' ? (presentation.codePrefixes ?? []) : [],
+      value,
+    )
+  },
+}
+
 function formatValue(
   t: AuditTranslate,
   presentation: FieldPresentation,
   value: unknown,
 ): string | null {
-  switch (presentation.kind) {
-    case 'text': {
-      if (typeof value !== 'string' && typeof value !== 'number') return null
-      const text = String(value).trim()
-      return text === '' ? null : text
-    }
-    case 'money': {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return null
-      return formatMinorMoney(value)
-    }
-    case 'count': {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return null
-      return new Intl.NumberFormat('en-US').format(value)
-    }
-    case 'date': {
-      if (typeof value !== 'string' || value.trim() === '') return null
-      return formatDate(value)
-    }
-    case 'flag': {
-      if (typeof value !== 'boolean') return null
-      return value ? t('app.enabled') : t('app.disabled')
-    }
-    case 'code': {
-      if (typeof value !== 'string' || value.trim() === '') return null
-      return codeLabel(t, presentation.codePrefixes ?? [], value)
-    }
-  }
+  return VALUE_FORMATTERS[presentation.kind](t, presentation, value)
 }
 
 /**
