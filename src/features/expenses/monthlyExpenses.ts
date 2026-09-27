@@ -20,7 +20,7 @@ import type {
   MonthlyComparisonDatum,
   MonthlySeriesConfig,
 } from '@/components/charts/monthlyComparison'
-import { CHART_BAR_TOKENS, chartBarColorAt } from '@/lib/chart-colors'
+import { chartBarColorAt } from '@/lib/chart-colors'
 import { formatMonthKey } from '@/lib/date'
 import { formatMinorMoney } from '@/lib/money'
 import type { ExpenseMonthlyReport } from '@/services/opsApi'
@@ -35,7 +35,7 @@ import type { ExpenseMonthlyReport } from '@/services/opsApi'
  * light and dark stay the theme's decision, and every value is editable in
  * Dev Settings.
  */
-export const MONTHLY_EXPENSE_TONES = CHART_BAR_TOKENS
+export { CHART_BAR_TOKENS as MONTHLY_EXPENSE_TONES } from '@/lib/chart-colors'
 
 /** Compact money for axes, tooltips and the legend, like the other charts. */
 export function formatCompact(value: number): string {

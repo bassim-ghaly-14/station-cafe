@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Button } from './button'
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
@@ -31,4 +30,4 @@ export function CardHeader({
   )
 }
 
-export { Button }
+export { Button } from './button'
