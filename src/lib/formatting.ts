@@ -1,6 +1,6 @@
 /**
- * Central formatting preferences — the single source of truth for all
- * screen display formatting (money + date/time).
+ * Central display preferences — the single source of truth for all
+ * screen display formatting (money + date/time) AND for the chart bar colours.
  *
  * - Only plain serializable values are persisted (never Intl instances).
  * - Persistence goes through this module only (one localStorage key).
@@ -8,9 +8,20 @@
  *   so Dev Settings changes re-render every subscriber immediately.
  * - Money/date formatters read this store; components never pass settings
  *   around manually.
+ * - The chart colours are published the same way, except that they are also
+ *   written onto the DOCUMENT (the `--chart-bar-*` custom properties) because
+ *   every chart already paints through them. That is why one Dev Settings save
+ *   repaints every chart without a single chart re-rendering or knowing about
+ *   settings; see `lib/chart-colors.ts`.
  */
 
 import { useSyncExternalStore } from 'react'
+import {
+  DEFAULT_CHART_COLORS,
+  applyChartColorOverrides,
+  sanitizeChartColors,
+} from '@/lib/chart-colors'
+import type { ChartColorSettings } from '@/lib/chart-colors-types'
 
 export type CurrencyPosition = 'after' | 'before'
 
@@ -38,6 +49,8 @@ export interface DateFormatSettings {
 export interface FormattingPreferences {
   money: MoneyFormatSettings
   date: DateFormatSettings
+  /** The centralized chart bar colours, edited in the same Dev Settings page. */
+  charts: ChartColorSettings
 }
 
 export const FORMATTING_STORAGE_KEY = 'station.formatting.preferences.v1'
@@ -57,6 +70,7 @@ export const DEFAULT_FORMATTING: FormattingPreferences = {
     timeFormat: '24h',
     showSeconds: false,
   },
+  charts: DEFAULT_CHART_COLORS,
 }
 
 export const DATE_FORMAT_OPTIONS: DateFormatId[] = [
@@ -110,6 +124,9 @@ export function sanitizePreferences(raw: unknown): FormattingPreferences {
       timeFormat: date.timeFormat === '12h' ? '12h' : '24h',
       showSeconds: date.showSeconds === true,
     },
+    // Chart colours are sanitized by their own module — one validator for one
+    // configuration, wherever it is written.
+    charts: sanitizeChartColors(r.charts),
   }
 }
 
@@ -135,8 +152,17 @@ function persist() {
 }
 
 function notify() {
+  // Publishing a preference is also applying it. The chart colours are the one
+  // setting the application reads from the DOCUMENT rather than from a
+  // formatter, so they are written here — once, by the store — instead of by
+  // each chart.
+  applyChartColorOverrides(current.charts)
   for (const fn of listeners) fn()
 }
+
+// The saved colours are already in effect at startup, before the first render,
+// exactly like the money and date formats that read `current` at call time.
+applyChartColorOverrides(current.charts)
 
 export function getFormattingPreferences(): FormattingPreferences {
   return current
@@ -148,6 +174,10 @@ export function getMoneySettings(): MoneyFormatSettings {
 
 export function getDateSettings(): DateFormatSettings {
   return current.date
+}
+
+export function getChartColorSettings(): ChartColorSettings {
+  return current.charts
 }
 
 export function subscribeFormatting(fn: () => void): () => void {
@@ -178,6 +208,25 @@ export function updateDateSettings(patch: Partial<DateFormatSettings>): void {
   setFormattingPreferences({ date: patch })
 }
 
+/**
+ * Replace ONLY the chart colours.
+ *
+ * A dedicated writer, not a whole-preferences write, so the Dev Settings colour
+ * card can never carry a stale money/date draft back over those settings (and
+ * vice versa). The sanitizing, persisting and DOM publishing all still happen
+ * through this one store.
+ */
+export function setChartColorSettings(next: ChartColorSettings): void {
+  current = sanitizePreferences({ ...current, charts: next })
+  persist()
+  notify()
+}
+
+/** Reset ONLY the chart colours to the theme's own values. */
+export function resetChartColorSettings(): void {
+  setChartColorSettings(structuredClone(DEFAULT_CHART_COLORS))
+}
+
 /** Reset ONLY formatting preferences (never unrelated settings). */
 export function resetFormattingPreferences(): void {
   current = structuredClone(DEFAULT_FORMATTING)
@@ -202,14 +251,25 @@ export function cloneFormattingPreferences(source?: FormattingPreferences): Form
   return structuredClone(source ?? current)
 }
 
-/** Replace the whole saved configuration in one write (Dev Settings "Save"). */
+/**
+ * Replace the whole saved configuration in one write (Dev Settings "Save").
+ *
+ * The chart colours are deliberately NOT taken from `next`: they are written
+ * only through `setChartColorSettings`, so saving a money/date draft can never
+ * roll a colour the user changed in another card back to an older value.
+ */
 export function replaceFormattingPreferences(next: FormattingPreferences): void {
-  current = sanitizePreferences(next)
+  current = sanitizePreferences({ ...next, charts: current.charts })
   persist()
   notify()
 }
 
-/** Deep value equality — drives the Dev Settings dirty state. */
+/**
+ * Deep value equality — drives the Dev Settings dirty state.
+ *
+ * Money and date only: the chart colours are a setting of their own with their
+ * own card, their own dirty state and their own writer.
+ */
 export function formattingPreferencesEqual(
   a: FormattingPreferences,
   b: FormattingPreferences,

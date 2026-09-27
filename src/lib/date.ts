@@ -282,6 +282,39 @@ export function formatMonthTitle(year: number, month: number, locale: string): s
   return formatter(locale, MONTH_LONG).format(new Date(Date.UTC(year, month - 1, 1, 12)))
 }
 
+const MONTH_KEY = /^(\d{4})-(\d{2})$/
+
+const MONTH_SHORT: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  numberingSystem: 'latn',
+  timeZone: 'UTC',
+}
+
+/**
+ * A `YYYY-MM` month key rendered for a chart axis or a report table.
+ *
+ * The key is the stable identity of a month across years; the label is
+ * presentation only. `short` drops the year for a dense axis (the tooltip and
+ * the export always carry the full form, so a multi-year series stays
+ * unambiguous there), and an unrecognised key is returned untouched rather than
+ * rendered as "Invalid Date".
+ */
+export function formatMonthKey(
+  monthKey: string,
+  locale: string,
+  { short = false }: { short?: boolean } = {},
+): string {
+  const parts = MONTH_KEY.exec(monthKey.trim())
+  if (!parts) return monthKey
+  const year = Number(parts[1])
+  const month = Number(parts[2])
+  if (month < 1 || month > 12) return monthKey
+  if (short) {
+    return formatter(locale, MONTH_SHORT).format(new Date(Date.UTC(year, month - 1, 1, 12)))
+  }
+  return formatMonthTitle(year, month, locale)
+}
+
 /** Short weekday names in grid order, starting on the locale's first day. */
 export function weekdayLabels(locale: string, weekStart: number): string[] {
   const f = formatter(locale, WEEKDAY_SHORT)

@@ -92,6 +92,11 @@
   --role-staff-badge-bg: #e0edf8;
   --role-staff-badge-border: #9cc9e9;
   --role-staff-badge-fg: #1e4f78;
+  --role-wash-bg: #dcecfb;
+  --role-wash-fg: #0b4a6f;
+  --role-wash-badge-bg: #d7eafb;
+  --role-wash-badge-border: #8fc0e6;
+  --role-wash-badge-fg: #0b4a6f;
   --role-fallback-bg: #eee7dd;
   --role-fallback-fg: #5e3f25;
   --role-fallback-badge-bg: #faf6f0;
@@ -205,6 +210,25 @@
   --state-disabled: #96673a;
   --state-selected: #f3ead9;
 
+  /* Switch (on/off control) track + thumb.
+
+     A switch states a CONDITION, so it never borrows a brand or "new item"
+     identity. ON reuses the semantic success green (`--success-solid` and its
+     foreground) rather than introducing a second green, which is what makes
+     "enabled" unmistakable and keeps the two states unmistakable from each
+     other. OFF is a soft, very light NEUTRAL instead of a surface tone: the
+     warm beige surfaces and the tan `--border-strong` made the resting track
+     read brown, and a control that looks broken is not a control that reads
+     "off". The neutral border keeps the empty track defined against the panel
+     behind it, and the mid-grey thumb stays visible on the near-white track
+     without needing a shadow. */
+  --switch-on-track: var(--success-solid);
+  --switch-on-track-border: var(--success-solid-hover);
+  --switch-on-thumb: var(--success-solid-foreground);
+  --switch-off-track: #eceae4;
+  --switch-off-track-border: #d2cec4;
+  --switch-off-thumb: #9a968c;
+
   /* Closing identities. Shift closing and day closing are one closing system
      with two deliberately different meanings, so each gets its own semantic
      accent family instead of borrowing an unrelated state color:
@@ -237,6 +261,28 @@
   --chart-grid: #f0e4d1; /* gridlines */
   --chart-motif: #f3ead9; /* decorative, non-data-bearing fills */
   --chart-motif-strong: #e6d5b8; /* decorative accents with more presence */
+
+  /* DATA MARK colours — the single source of truth for every chart BAR in the
+     application. Each role points at an existing semantic token rather than
+     repeating its hex, so a rebrand of that token moves the bars with it, and
+     light and dark stay in step for free.
+
+     These are ROLES, not chart names: a new chart picks a role, it never adds
+     one. Their live values are overridable from Dev Settings (the store writes
+     the same custom properties onto the document element), which is why a bar
+     must always be painted through `var(--chart-bar-*)` and never through the
+     token it happens to point at today. */
+  --chart-bar-primary: var(--primary);
+  --chart-bar-secondary: var(--info);
+  --chart-bar-tertiary: var(--warning);
+  --chart-bar-quaternary: var(--success);
+  --chart-bar-sales: var(--success);
+  --chart-bar-expenses: var(--destructive);
+  /* A day carrying MORE THAN ONE expense. A companion role rather than a status
+     colour: many expenses in a day is ordinary, so it must not read as an error.
+     It points at the Station brown — related, calm, and unmistakably not the
+     expenses red — and stays overridable from Dev Settings like every role. */
+  --chart-bar-expenses-multiple: var(--primary);
 
   /* Category identity palette. Deliberately a FOURTH identity system, kept
      separate from the employee role colors (violet/teal/blue), the customer
@@ -277,6 +323,9 @@
   --new-soft: #fbe6f4;
   --new-soft-hover: #f6d3e8;
   --new-border: #eaa8d0;
+  /* Text ON a solid --new fill (the NEW card ribbon). Solid --new is a mid
+     magenta in light and a pale pink in dark, so the readable text flips. */
+  --new-inverse: #ffffff;
   --badge-new-bg: #fbe6f4;
   --badge-new-border: #eaa8d0;
   --badge-new-fg: #8f1f6c;
@@ -379,6 +428,11 @@
   --role-staff-badge-bg: #1b3852;
   --role-staff-badge-border: #4c7191;
   --role-staff-badge-fg: #d7eaff;
+  --role-wash-bg: #123a54;
+  --role-wash-fg: #cbe9ff;
+  --role-wash-badge-bg: #123650;
+  --role-wash-badge-border: #3d6f92;
+  --role-wash-badge-fg: #cbe9ff;
   --role-fallback-bg: #2b2824;
   --role-fallback-fg: #d8d2c9;
   --role-fallback-badge-bg: #25231f;
@@ -475,6 +529,17 @@
   --state-disabled: #77736d;
   --state-selected: #3a2d21;
 
+  /* Switch (dark): the same two meanings re-tuned for dark surfaces. ON keeps
+     the shared success green (a filled action darkens, it does not lighten);
+     OFF is a soft neutral a step above the panel so the track stays defined
+     against --surface-dialog without going beige. */
+  --switch-on-track: var(--success-solid);
+  --switch-on-track-border: var(--success-solid-hover);
+  --switch-on-thumb: var(--success-solid-foreground);
+  --switch-off-track: #2e2c28;
+  --switch-off-track-border: #4a463f;
+  --switch-off-thumb: #b8b1a5;
+
   /* Closing identities (dark): same two meanings, re-tuned for dark surfaces.
      The solid fills brighten while their foreground stays light so the action
      contrast is preserved. */
@@ -502,6 +567,12 @@
   --chart-grid: #2c2a26;
   --chart-motif: #25231f;
   --chart-motif-strong: #33302b;
+
+  /* The chart bar ROLES are NOT repeated here, and that is deliberate: a role
+     is a theme-independent name that resolves through `--primary` / `--info` /
+     …, and those tokens are already re-pointed for dark mode above. One
+     definition therefore serves both themes, and a Dev Settings value written
+     once drives both — which is the whole point of a role. */
 
   --badge-neutral-bg: #25231f;
   --badge-neutral-border: #45413b;
@@ -551,6 +622,7 @@
   --new-soft: #3a1b2e;
   --new-soft-hover: #4a2339;
   --new-border: #7a3b60;
+  --new-inverse: #2b1d12;
   --badge-new-bg: #3a1b2e;
   --badge-new-border: #7a3b60;
   --badge-new-fg: #f2aede;
@@ -679,6 +751,7 @@
   --color-new-soft: var(--new-soft);
   --color-new-soft-hover: var(--new-soft-hover);
   --color-new-border: var(--new-border);
+  --color-new-inverse: var(--new-inverse);
 
   --color-category-1-bg: var(--category-1-bg);
   --color-category-1-border: var(--category-1-border);
@@ -754,11 +827,29 @@
   --color-chart-motif: var(--chart-motif);
   --color-chart-motif-strong: var(--chart-motif-strong);
 
+  /* Chart bar roles, so a non-recharts bar (the proportion lists) can be
+     painted with the SAME centralized value the recharts charts use. */
+  --color-chart-bar-primary: var(--chart-bar-primary);
+  --color-chart-bar-secondary: var(--chart-bar-secondary);
+  --color-chart-bar-tertiary: var(--chart-bar-tertiary);
+  --color-chart-bar-quaternary: var(--chart-bar-quaternary);
+  --color-chart-bar-sales: var(--chart-bar-sales);
+  --color-chart-bar-expenses: var(--chart-bar-expenses);
+  --color-chart-bar-expenses-multiple: var(--chart-bar-expenses-multiple);
+
   --color-state-active: var(--state-active);
   --color-state-inactive: var(--state-inactive);
   --color-state-pending: var(--state-pending);
   --color-state-disabled: var(--state-disabled);
   --color-state-selected: var(--state-selected);
+
+  /* Switch track/thumb, so a switch consumes semantic tokens only. */
+  --color-switch-on-track: var(--switch-on-track);
+  --color-switch-on-track-border: var(--switch-on-track-border);
+  --color-switch-on-thumb: var(--switch-on-thumb);
+  --color-switch-off-track: var(--switch-off-track);
+  --color-switch-off-track-border: var(--switch-off-track-border);
+  --color-switch-off-thumb: var(--switch-off-thumb);
 
   --color-closing-shift: var(--closing-shift);
   --color-closing-shift-foreground: var(--closing-shift-foreground);
