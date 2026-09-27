@@ -4,7 +4,10 @@ use super::common::authorized;
 use crate::error::AppResult;
 use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome, PrintPreview};
 use crate::repositories::analytics::AnalyticsCharts;
-use crate::repositories::ops::{Expense, MovementRow, StockRow};
+use crate::repositories::expenses::{
+    Expense, ExpenseCategory, ExpenseMonthlyWindow, ExpenseOverview,
+};
+use crate::repositories::ops::{MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
 use crate::services::reports::{self, AuditEntry, TodaySummary};
 use crate::AppState;
@@ -56,6 +59,62 @@ pub fn set_stock_minimum(
 
 // ---- expenses --------------------------------------------------------------
 
+/// Categories come from the backend table, so the UI can never offer a
+/// category the database does not accept.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_expense_categories(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<ExpenseCategory>> {
+    authorized(&state, &token, "STAFF", |conn, _| {
+        ops_svc::list_categories(conn)
+    })
+}
+
+/// MANAGER+ creation of an expense category. The Arabic name is all the user
+/// supplies; the service owns the code, the validation and the audit entry, so
+/// the same guarantee holds for every caller and not only for this command.
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_expense_category(
+    state: State<'_, AppState>,
+    token: String,
+    name: String,
+) -> AppResult<String> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::create_category(conn, actor, &name)
+    })
+}
+
+/// MANAGER+ rename of an expense category — a normal edit, not a privileged one.
+#[tauri::command(rename_all = "snake_case")]
+pub fn rename_expense_category(
+    state: State<'_, AppState>,
+    token: String,
+    code: String,
+    name: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::rename_category(conn, actor, &code, &name)
+    })
+}
+
+/// ADMIN-only delete of an expense category — narrower than renaming it, exactly
+/// as deleting a product is narrower than editing one.
+///
+/// The command requires ADMIN at the boundary AND the service re-checks the role
+/// and the category's own rules, so a MANAGER that bypasses this UI entirely —
+/// invoking the command directly — still cannot remove a category.
+#[tauri::command(rename_all = "snake_case")]
+pub fn delete_expense_category(
+    state: State<'_, AppState>,
+    token: String,
+    code: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        ops_svc::delete_category(conn, actor, &code)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_expenses(
     state: State<'_, AppState>,
@@ -69,14 +128,55 @@ pub fn list_expenses(
     })
 }
 
+/// The period's expense analytics — KPIs, daily trend and category ranking in
+/// ONE read, so the whole workspace describes a single window.
+#[tauri::command(rename_all = "snake_case")]
+pub fn expenses_overview(
+    state: State<'_, AppState>,
+    token: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> AppResult<ExpenseOverview> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        ops_svc::expenses_overview(conn, from, to)
+    })
+}
+
+/// The monthly expenses comparison, over the window configured in Dev Settings.
+///
+/// It takes NO `from`/`to`: the window is the persisted monthly-period setting,
+/// exactly like the sales monthly report, so the Expenses page's own date range
+/// can never re-shape these bars.
+#[tauri::command(rename_all = "snake_case")]
+pub fn expenses_monthly(
+    state: State<'_, AppState>,
+    token: String,
+    months: Option<i64>,
+) -> AppResult<ExpenseMonthlyWindow> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::expenses_monthly(conn, actor, months)
+    })
+}
+
+/// Record an expense. STAFF is the floor: a cashier may book a spend against
+/// their own open shift. The service decides which shift it belongs to and
+/// refuses a cashier with no open shift, so this command adds no rule of its own.
 #[tauri::command(rename_all = "snake_case")]
 pub fn create_expense(
     state: State<'_, AppState>,
     token: String,
     input: NewExpense,
 ) -> AppResult<i64> {
-    authorized(&state, &token, "MANAGER", move |conn, actor| {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
         ops_svc::create_expense(conn, actor, &input)
+    })
+}
+
+/// The caller's own open-shift expenses.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_shift_expenses(state: State<'_, AppState>, token: String) -> AppResult<Vec<Expense>> {
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        ops_svc::shift_expenses(conn, actor)
     })
 }
 

@@ -1,4 +1,4 @@
-//! Inventory & expense repositories (foundation for Phase 3 analytics).
+//! Inventory repositories (stock levels and movements).
 
 use crate::error::AppResult;
 use crate::repositories::Db;
@@ -22,6 +22,7 @@ pub fn list_stock(conn: &Db) -> AppResult<Vec<StockRow>> {
          FROM inventory_items i JOIN products p ON p.id = i.product_id
          JOIN categories c ON c.id = p.category_id
          WHERE p.track_inventory = 1
+           AND p.deleted_at IS NULL
          ORDER BY (i.quantity <= i.min_quantity) DESC, p.name",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -118,98 +119,8 @@ pub fn tracked_lines_of_invoice(conn: &Db, invoice_id: i64) -> AppResult<Vec<(i6
 }
 
 // ---- EXPENSES --------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Expense {
-    pub id: i64,
-    pub category: String,
-    pub amount: i64,
-    pub description: Option<String>,
-    pub expense_date: String,
-    pub is_recurring: bool,
-    pub recurrence: Option<String>,
-    pub user_name: Option<String>,
-    pub user_role: Option<String>,
-    pub created_at: String,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn insert_expense(
-    conn: &Db,
-    category: &str,
-    amount: i64,
-    description: Option<&str>,
-    expense_date: &str,
-    is_recurring: bool,
-    recurrence: Option<&str>,
-    business_day_id: Option<i64>,
-    user_id: i64,
-) -> AppResult<i64> {
-    conn.execute(
-        "INSERT INTO expenses (category, amount, description, expense_date, is_recurring,
-            recurrence, business_day_id, user_id)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-        params![
-            category,
-            amount,
-            description,
-            expense_date,
-            is_recurring as i64,
-            recurrence,
-            business_day_id,
-            user_id
-        ],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn list_expenses(
-    conn: &Db,
-    from: Option<&str>,
-    to: Option<&str>,
-    recurring_only: bool,
-) -> AppResult<Vec<Expense>> {
-    let mut sql = String::from(
-        "SELECT e.id, e.category, e.amount, e.description, e.expense_date, e.is_recurring,
-                e.recurrence, u.name, u.role, e.created_at
-         FROM expenses e LEFT JOIN users u ON u.id = e.user_id WHERE 1=1",
-    );
-    let mut args: Vec<String> = Vec::new();
-    if let Some(f) = from {
-        args.push(f.to_string());
-        sql.push_str(&format!(" AND e.expense_date >= ?{}", args.len()));
-    }
-    if let Some(t) = to {
-        args.push(t.to_string());
-        sql.push_str(&format!(" AND e.expense_date <= ?{}", args.len()));
-    }
-    if recurring_only {
-        sql.push_str(" AND e.is_recurring = 1");
-    }
-    sql.push_str(" ORDER BY e.expense_date DESC, e.id DESC LIMIT 500");
-    let mut stmt = conn.prepare(&sql)?;
-    let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-    let rows = stmt.query_map(refs.as_slice(), |r| {
-        Ok(Expense {
-            id: r.get(0)?,
-            category: r.get(1)?,
-            amount: r.get(2)?,
-            description: r.get(3)?,
-            expense_date: r.get(4)?,
-            is_recurring: r.get::<_, i64>(5)? != 0,
-            recurrence: r.get(6)?,
-            user_name: r.get(7)?,
-            user_role: r.get(8)?,
-            created_at: r.get(9)?,
-        })
-    })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
-pub fn total_expenses(conn: &Db, from: &str, to: &str) -> AppResult<i64> {
-    Ok(conn.query_row(
-        "SELECT COALESCE(SUM(amount),0) FROM expenses WHERE expense_date BETWEEN ?1 AND ?2",
-        params![from, to],
-        |r| r.get(0),
-    )?)
-}
+//
+// Expense persistence moved to `repositories::expenses`: expenses are now tied
+// to a shift and its cash drawer, and they carry a dynamic category rather than
+// a hardcoded enum. Nothing is re-implemented here, so there is exactly one
+// expense read path in the application.

@@ -3,11 +3,12 @@
 use super::common::authorized;
 use crate::error::AppResult;
 use crate::repositories::shifts::{
-    ClosedBusinessDayReport, DayClosingRecord, DayTotals, SettlementPreview, ShiftRow,
+    ClosedBusinessDayReport, DayClosingRecord, SettlementPreview, ShiftRow,
 };
-use crate::services::reports::{self, DayReport, ShiftReport};
+use crate::services::reconciliation::{DayReconciliation, ShiftReconciliation};
 use crate::services::shifts::{
-    self as shift_svc, DayShiftState, ShiftClosing, ShiftClosingPreview,
+    self as shift_svc, DayClosePreview, DayCloseResult, DayShiftState, ShiftClosing,
+    ShiftClosingPreview,
 };
 use crate::AppState;
 use tauri::State;
@@ -82,8 +83,18 @@ pub fn day_settlement_history(
     })
 }
 
+/// The manager's day-closing preview: the exact totals the closing will record,
+/// plus the open shifts that will be EXCLUDED. The UI renders its open-shift
+/// warning from this, so the warning can never disagree with the closing.
 #[tauri::command(rename_all = "snake_case")]
-pub fn close_business_day(state: State<'_, AppState>, token: String) -> AppResult<DayTotals> {
+pub fn preview_day_close(state: State<'_, AppState>, token: String) -> AppResult<DayClosePreview> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        shift_svc::day_close_preview(conn, actor)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn close_business_day(state: State<'_, AppState>, token: String) -> AppResult<DayCloseResult> {
     authorized(&state, &token, "MANAGER", |conn, actor| {
         shift_svc::close_day(conn, actor)
     })
@@ -128,15 +139,19 @@ pub fn shift_report(
     state: State<'_, AppState>,
     token: String,
     shift_id: i64,
-) -> AppResult<ShiftReport> {
+) -> AppResult<ShiftReconciliation> {
     authorized(&state, &token, "STAFF", move |conn, _| {
-        reports::shift_report(conn, shift_id)
+        crate::services::reconciliation::shift_report(conn, shift_id)
     })
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn day_report(state: State<'_, AppState>, token: String, day_id: i64) -> AppResult<DayReport> {
+pub fn day_report(
+    state: State<'_, AppState>,
+    token: String,
+    day_id: i64,
+) -> AppResult<DayReconciliation> {
     authorized(&state, &token, "MANAGER", move |conn, _| {
-        reports::day_report(conn, day_id)
+        crate::services::reports::day_report(conn, day_id)
     })
 }

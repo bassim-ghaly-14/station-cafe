@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import {
   AmountAutoFill,
   Badge,
@@ -17,10 +18,24 @@ import { ErrorState } from '@/components/states'
 import { parseMajor } from '@/lib/utils'
 import { formatMinorMoney } from '@/lib/money'
 import { normalizeToUtcIso } from '@/lib/date'
-import { shiftApi, type ShiftClosingPreview, type ShiftRow } from '@/services/shiftApi'
+import {
+  shiftApi,
+  type CashStatus,
+  type ShiftClosingPreview,
+  type ShiftRow,
+} from '@/services/shiftApi'
 import { api } from '@/services/posApi'
+import { opsApi, type Expense } from '@/services/opsApi'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
 import { ClosingCard, ClosingMetric } from './ClosingCard'
+import { AddExpenseButton, ShiftExpenseDialog, ShiftExpenseList } from './ShiftExpenses'
+import {
+  ExpensesSection,
+  ExpectedCashSection,
+  SalesSection,
+  ServicesSection,
+} from './ReconciliationSections'
+import { statusLabelKey, statusTone } from './reconciliationStatus'
 
 function errorText(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
   return t([`errors.${(error as { message: string }).message}`, 'errors.internal_error'])
@@ -56,9 +71,17 @@ function SummaryRow({
 export function CurrentShiftPanel({
   shift,
   onClosed,
+  onRefresh,
 }: {
   shift: ShiftRow
   onClosed: () => Promise<void>
+  /**
+   * Invalidation hook for a mutation that changes the shift's own figures (a
+   * booked expense changes the expected drawer). The card reads `shift` from the
+   * POS screen, so without this the screen would keep showing the pre-expense
+   * totals until some unrelated refresh happened.
+   */
+  onRefresh?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -70,11 +93,25 @@ export function CurrentShiftPanel({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [expenseOpen, setExpenseOpen] = useState(false)
+  const [shiftExpenses, setShiftExpenses] = useState<Expense[] | null>(null)
 
-  const totalSales = shift.cash_sales + shift.card_sales + shift.credit_sales
   const elapsed = elapsedMinutes(shift.opened_at, now)
   const parsedCash = useMemo(() => parseMajor(actualCash), [actualCash])
-  const variance = preview && parsedCash !== null ? parsedCash - preview.expected_cash : null
+  /**
+   * A live preview of the verdict the user is about to create.
+   *
+   * This is NOT a financial rule: `expected_cash` is the backend's figure and
+   * only the pending, un-submitted input is compared against it. The submitted
+   * difference and status always come back from the backend, so this label can
+   * never contradict the persisted result. It reuses the same status vocabulary
+   * and colors as the closing document so the two always agree.
+   */
+  const pendingStatus = useMemo<CashStatus | null>(() => {
+    if (!preview || parsedCash === null) return null
+    if (parsedCash === preview.expected_cash) return 'BALANCED'
+    return parsedCash < preview.expected_cash ? 'SHORTAGE' : 'SURPLUS'
+  }, [preview, parsedCash])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -107,6 +144,24 @@ export function CurrentShiftPanel({
     setDialogOpen(true)
     void loadPreview()
   }
+
+  function openExpense() {
+    setExpenseOpen(true)
+  }
+
+  // The shift's own expense rows. Booking one changes the expected drawer, so
+  // the live card and the closing dialog are both re-read from the backend.
+  const loadExpenses = useCallback(async () => {
+    try {
+      setShiftExpenses(await opsApi.shiftExpenses())
+    } catch {
+      setShiftExpenses([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadExpenses()
+  }, [loadExpenses])
 
   async function close() {
     if (busy || !preview) return
@@ -171,7 +226,7 @@ export function CurrentShiftPanel({
           </>
         }
         primaryLabel={t('shift.sales')}
-        primaryAmount={totalSales}
+        primaryAmount={shift.total_sales}
         primaryNote={
           <p>
             {t('shift.invoiceCount')}:{' '}
@@ -198,16 +253,19 @@ export function CurrentShiftPanel({
           </span>
         }
         action={
-          <Button
-            variant="outline"
-            onClick={openDialog}
-            loading={busy}
-            disabled={busy}
-            className="border-closing-shift-border text-closing-shift-foreground hover:bg-closing-shift-soft"
-          >
-            {!busy ? <Lock size={16} aria-hidden /> : null}
-            {t('shift.close')}
-          </Button>
+          <>
+            <AddExpenseButton onClick={openExpense} />
+            <Button
+              variant="outline"
+              onClick={openDialog}
+              loading={busy}
+              disabled={busy}
+              className="border-closing-shift-border text-closing-shift-foreground hover:bg-closing-shift-soft"
+            >
+              {!busy ? <Lock size={16} aria-hidden /> : null}
+              {t('shift.close')}
+            </Button>
+          </>
         }
       />
       {dialogOpen ? (
@@ -256,33 +314,36 @@ export function CurrentShiftPanel({
                 )}
               </div>
             </div>
+            {preview ? (
+              /* The SAME reconciliation document the printer will produce,
+                 rendered from the backend report. No figure here is computed
+                 by this component. */
+              <div className="space-y-3">
+                <SalesSection data={preview.report} />
+                <ServicesSection
+                  serviceCharges={preview.report.service_charges}
+                  discounts={preview.report.discounts}
+                />
+                <ExpensesSection
+                  total={preview.report.expenses}
+                  cashExpenses={preview.report.cash_expenses}
+                  breakdown={preview.report.expense_breakdown}
+                />
+                {/* Before a handover is entered there is nothing to compare, so
+                    only the expected figures are shown. */}
+                <ExpectedCashSection cash={preview.report.cash} />
+              </div>
+            ) : (
+              <div role="status" aria-label={t('app.loading')}>
+                <ListRowsSkeleton rows={6} />
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <section className="rounded-md border border-border-subtle p-3">
                 <h3 className="mb-1 font-bold text-foreground-strong">
-                  {t('shift.financialSummary')}
+                  {t('shift.shiftExpenses')}
                 </h3>
-                {preview ? (
-                  <>
-                    <div className="flex justify-between py-1.5 text-foreground-muted">
-                      <span>{t('shift.invoiceCount')}</span>
-                      <span className="font-bold tabular-nums">{preview.invoices_count}</span>
-                    </div>
-                    <SummaryRow label={t('shift.cashSales')} amount={preview.cash_sales} />
-                    <SummaryRow label={t('shift.cardSales')} amount={preview.card_sales} />
-                    <SummaryRow label={t('shift.creditSales')} amount={preview.credit_sales} />
-                    <div className="mt-1 border-t border-border-subtle pt-1.5">
-                      <SummaryRow
-                        label={t('shift.expectedCash')}
-                        amount={preview.expected_cash}
-                        strong
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div role="status" aria-label={t('app.loading')}>
-                    <ListRowsSkeleton rows={4} />
-                  </div>
-                )}
+                <ShiftExpenseList rows={shiftExpenses} />
               </section>
               <section>
                 <Field
@@ -333,18 +394,22 @@ export function CurrentShiftPanel({
                     }}
                   />
                 ) : null}
-                {variance !== null ? (
+                {pendingStatus !== null ? (
                   <div
-                    className={`mt-3 flex items-center justify-between gap-3 rounded-md border p-3 ${variance === 0 ? 'border-success-border bg-success-soft text-success-foreground' : variance < 0 ? 'border-destructive-border bg-destructive-soft text-destructive-soft-foreground' : 'border-warning-border bg-warning-soft text-warning-foreground'}`}
+                    className={cn(
+                      'mt-3 flex items-center justify-between gap-3 rounded-md border p-3',
+                      statusTone(pendingStatus),
+                    )}
                   >
-                    <span className="font-bold">
-                      {variance === 0
-                        ? t('shift.cashBalanced')
-                        : variance < 0
-                          ? t('shift.cashShort')
-                          : t('shift.cashOver')}
-                    </span>
-                    <MoneyDisplay amount={Math.abs(variance)} className="font-bold" />
+                    <span className="font-bold">{t(statusLabelKey(pendingStatus))}</span>
+                    <MoneyDisplay
+                      amount={
+                        parsedCash === null
+                          ? 0
+                          : Math.abs(parsedCash - (preview?.expected_cash ?? 0))
+                      }
+                      className="font-bold"
+                    />
                   </div>
                 ) : null}
                 <p className="mt-3 text-caption">{t('shift.countHint')}</p>
@@ -395,6 +460,19 @@ export function CurrentShiftPanel({
       {printPreview ? (
         <PrintPreviewDialog target={printPreview} onClose={() => setPrintPreview(null)} />
       ) : null}
+      <ShiftExpenseDialog
+        open={expenseOpen}
+        onClose={() => setExpenseOpen(false)}
+        onCreated={async () => {
+          await loadExpenses()
+          // A new expense changes the expected drawer, so the closing figures
+          // must be re-read from the backend rather than adjusted here.
+          if (dialogOpen) await loadPreview()
+          // ...and the card's own totals come from the screen's state, so they
+          // must be invalidated too — otherwise the drawer on screen stays stale.
+          await onRefresh?.()
+        }}
+      />
     </>
   )
 }
