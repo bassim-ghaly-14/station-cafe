@@ -367,21 +367,16 @@
 /* ---------------------------------------------------------------------------
  * 3. Semantic tokens — DARK theme. Same meanings, adjusted values only.
  * ------------------------------------------------------------------------- */
-:root {
-  color-scheme: light;
-}
-
+:root,
 :root[data-theme='light'] {
   color-scheme: light;
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
 }
 
 /* Explicit dark theme. The startup initializer sets data-theme from the
    persisted choice, or from the system preference when no choice exists. */
 :root[data-theme='dark'] {
+  color-scheme: dark;
+
   /* Warm-neutral dark palette: surfaces are intentionally independent from
      the Station brown brand ramp so cards, overlays, and controls stay legible. */
   --background: #151412;
