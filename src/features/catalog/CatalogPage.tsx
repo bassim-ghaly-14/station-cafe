@@ -38,14 +38,15 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState, ErrorState } from '@/components/states'
-import { Button, CardGridSkeleton, Dialog } from '@/components/ui'
+import { Button, CardGridSkeleton, ConfirmDialog, Dialog } from '@/components/ui'
 import { Field, Input, Label, Switch } from '@/components/ui/input'
-import { Check, Coffee, Droplets, Package, Plus, Save, Search } from '@/components/ui/icon'
+import { Check, Coffee, Droplets, Package, Plus, Save, Search, Trash2 } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 
 import { useErrText } from '@/lib/err'
 import { formatMinorMoneyInput } from '@/lib/money'
 import { parseMajor } from '@/lib/utils'
+import { resolveVisibleCategories, useCategoryVisibility } from '@/lib/category-visibility'
 
 import { catalogApi, type Category, type NewProductInput } from '@/services/catalogApi'
 import type { Product } from '@/services/posApi'
@@ -53,7 +54,12 @@ import type { Product } from '@/services/posApi'
 import { useSession } from '@/features/auth/useSession'
 
 import { CatalogCard } from './CatalogCard'
-import { CatalogCategoryFilter, type CatalogCategoryOption } from './CatalogCategoryFilter'
+import {
+  CatalogCategoryFilter,
+  CatalogHiddenCategoriesNote,
+  type CatalogCategoryOption,
+} from './CatalogCategoryFilter'
+import { CatalogCategoryManagerDrawer } from './CatalogCategoryManagerDrawer'
 
 const DEPARTMENTS = ['CAFE', 'WASH'] as const
 const TYPES = ['PRODUCT', 'SERVICE'] as const
@@ -134,11 +140,24 @@ export default function CatalogPage() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [categoryCreateOpen, setCategoryCreateOpen] = useState(false)
+  /** The category being renamed; `null` when no rename dialog is open. */
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  /** The category awaiting delete confirmation. */
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null)
+  const [categoryDeleting, setCategoryDeleting] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [editing, setEditing] = useState<Product | null>(null)
   const [confirming, setConfirming] = useState<Product | null>(null)
+  const [deleting, setDeleting] = useState<Product | null>(null)
 
   const canManageCatalog = user?.role === 'MANAGER' || user?.role === 'ADMIN'
+  /**
+   * Delete is narrower than manage: only an ADMIN may remove an item from the
+   * catalog. This hides the affordance; the REAL boundary is the backend
+   * command + service, which reject a MANAGER/STAFF call with an
+   * authorization error even if the button were somehow triggered.
+   */
+  const canDeleteCatalog = user?.role === 'ADMIN'
 
   const load = useCallback(() => {
     setLoadError(null)
@@ -204,6 +223,55 @@ export default function CatalogPage() {
   const selectedCategoryIsEmpty =
     categoryId !== null && categoryOptions.some((c) => c.id === categoryId && c.count === 0)
   const effectiveCategoryId = selectedCategoryIsEmpty ? null : categoryId
+
+  /* ========================================================================== */
+  /* Category bar visibility                                                     */
+  /* ========================================================================== */
+
+  /**
+   * Which categories the primary bar shows. The preference is persisted (see
+   * `lib/category-visibility.ts`), so it survives navigation, a refresh and an
+   * application restart; until the cashier customizes it, the default keeps the
+   * catalog's own order capped to the primary categories.
+   */
+  const categoryVisibility = useCategoryVisibility()
+
+  /**
+   * COMPACT (the default) shows only the pinned categories; EXPANDED shows them
+   * all. Expansion is deliberately per-visit state: it is a temporary way to
+   * reach a category, not a configuration the cashier chose to keep.
+   */
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false)
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false)
+
+  const pinnedCategories = useMemo(
+    () => resolveVisibleCategories(categoryOptions, categoryVisibility),
+    [categoryOptions, categoryVisibility],
+  )
+
+  const hiddenCategoryCount = categoryOptions.length - pinnedCategories.length
+
+  const shownCategories = categoriesExpanded ? categoryOptions : pinnedCategories
+
+  /**
+   * A selected category must always be VISIBLE in the bar: the filter is
+   * applied to the grid, so a chip the cashier cannot see would be a filter they
+   * cannot see or undo. When the selection is not pinned, the compact bar
+   * renders it anyway rather than hiding the active state.
+   */
+  const selectedButHidden =
+    effectiveCategoryId !== null &&
+    !shownCategories.some((category) => category.id === effectiveCategoryId)
+
+  const selectedHiddenCategory =
+    effectiveCategoryId === null
+      ? undefined
+      : categoryOptions.find((category) => category.id === effectiveCategoryId)
+
+  const barCategories =
+    selectedButHidden && selectedHiddenCategory
+      ? [...shownCategories, selectedHiddenCategory]
+      : shownCategories
 
   const counts = useMemo(() => {
     const source = items ?? []
@@ -272,6 +340,59 @@ export default function CatalogPage() {
       load()
     } catch (error) {
       toast(errText(error), 'error')
+    }
+  }
+
+  /**
+   * The backend archives the item instead of removing its row, so historical
+   * invoices, reports and stock movements keep showing the original name and
+   * price. The confirmation states exactly that, so the ADMIN is never afraid
+   * of destroying history.
+   */
+  async function deleteProduct(product: Product) {
+    if (!canDeleteCatalog) {
+      return
+    }
+
+    try {
+      await catalogApi.remove(product.id)
+
+      toast(t('catalog.deleted', { name: product.name }), 'success')
+
+      setDeleting(null)
+      load()
+    } catch (error) {
+      toast(errText(error), 'error')
+    }
+  }
+
+  /**
+   * Deleting a category is a real deletion, not the archive a product goes
+   * through, so the domain rule lives in the backend: a category that still
+   * holds products — or the built-in system category — is refused there, and
+   * that Arabic business error is what the ADMIN reads here. The dialog only
+   * records the intent; the service is the boundary.
+   */
+  async function deleteCategory(category: Category) {
+    if (!canDeleteCatalog) {
+      return
+    }
+
+    setCategoryDeleting(true)
+    try {
+      await catalogApi.removeCategory(category.id)
+
+      toast(t('catalog.categoryDeleted', { name: category.name }), 'success')
+
+      setDeletingCategory(null)
+      // The category list feeds the selectors, the bar and the card badges, so
+      // both reads are refreshed to keep the page self-consistent.
+      loadCategories()
+      load()
+    } catch (error) {
+      toast(errText(error), 'error')
+    } finally {
+      setCategoryDeleting(false)
     }
   }
 
@@ -413,15 +534,25 @@ export default function CatalogPage() {
             the relationship between "this category" and "these cards" is
             obvious, and it is one tap away from the search box. */}
         <div className="border-t border-border-subtle px-3 py-3">
-          <p className="text-caption mb-2 font-bold">{t('catalog.category')}</p>
-
           <CatalogCategoryFilter
-            categories={categoryOptions}
+            categories={barCategories}
             selectedId={effectiveCategoryId}
             onSelect={setCategoryId}
             allLabel={t('catalog.allCategories')}
             totalCount={counts.total}
+            hiddenCount={hiddenCategoryCount}
+            expanded={categoriesExpanded}
+            onToggleExpanded={() => setCategoriesExpanded((current) => !current)}
+            onOpenManager={() => setCategoryManagerOpen(true)}
           />
+
+          {/* Compact mode states the hidden count in words, so the cashier knows
+              the missing categories are a choice and not missing data. */}
+          {!categoriesExpanded ? (
+            <div className="mt-2">
+              <CatalogHiddenCategoriesNote count={hiddenCategoryCount} />
+            </div>
+          ) : null}
         </div>
 
         {hasFilters ? (
@@ -465,8 +596,10 @@ export default function CatalogPage() {
               key={product.id}
               product={product}
               canManage={canManageCatalog}
+              canDelete={canDeleteCatalog}
               onEdit={() => setEditing(product)}
               onToggle={() => setConfirming(product)}
+              onDelete={() => setDeleting(product)}
             />
           ))}
         </div>
@@ -476,15 +609,69 @@ export default function CatalogPage() {
       {/* Dialogs                                                             */}
       {/* ================================================================== */}
 
-      {canManageCatalog && categoryCreateOpen ? (
-        <CreateCategoryDialog
+      {/* Every role may arrange the catalog bar: it changes presentation only,
+          never what can be filtered or sold, so it is not a manager action. The
+          per-row category actions are passed ONLY to the roles that may perform
+          them, so a MANAGER sees rename without delete and a STAFF sees neither. */}
+      <CatalogCategoryManagerDrawer
+        open={categoryManagerOpen}
+        onClose={() => setCategoryManagerOpen(false)}
+        categories={categoryOptions}
+        onEditCategory={canManageCatalog ? (category) => setEditingCategory(category) : undefined}
+        onDeleteCategory={
+          canDeleteCatalog ? (category) => setDeletingCategory(category) : undefined
+        }
+      />
+
+      {canManageCatalog && (categoryCreateOpen || editingCategory) ? (
+        <CategoryDialog
           existingCategories={categories}
-          onClose={() => setCategoryCreateOpen(false)}
-          onCreated={(name) => {
+          category={editingCategory}
+          onClose={() => {
             setCategoryCreateOpen(false)
-            toast(t('catalog.categoryCreated', { name }), 'success')
-            loadCategories()
+            setEditingCategory(null)
           }}
+          onSaved={(name) => {
+            const wasEditing = editingCategory
+            setCategoryCreateOpen(false)
+            setEditingCategory(null)
+            toast(
+              t(wasEditing ? 'catalog.categoryUpdated' : 'catalog.categoryCreated', { name }),
+              'success',
+            )
+            // The bar, the selectors and the card badges all read categories, so
+            // both lists are refreshed; the grid is too, because a rename changes
+            // the category name every card shows.
+            loadCategories()
+            if (wasEditing) {
+              load()
+            }
+          }}
+        />
+      ) : null}
+
+      {/*
+        The confirmation for the one irreversible category action. It is mounted
+        only for a role that may have the delete, and it is an interaction
+        affordance rather than the boundary: a caller that invokes
+        `delete_category` directly bypasses it entirely and is refused by the
+        service anyway.
+      */}
+      {canDeleteCatalog ? (
+        <ConfirmDialog
+          open={deletingCategory !== null}
+          onClose={() => setDeletingCategory(null)}
+          onConfirm={() => {
+            if (deletingCategory) {
+              void deleteCategory(deletingCategory)
+            }
+          }}
+          title={t('catalog.deleteCategoryTitle')}
+          body={t('catalog.deleteCategoryConfirm', { name: deletingCategory?.name ?? '' })}
+          detail={t('catalog.deleteCategoryHint')}
+          confirmLabel={t('catalog.delete')}
+          destructive
+          busy={categoryDeleting}
         />
       ) : null}
 
@@ -507,7 +694,7 @@ export default function CatalogPage() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null)
-            toast(t('staff.saved'), 'success')
+            toast(t('catalog.saved'), 'success')
             load()
           }}
         />
@@ -541,6 +728,38 @@ export default function CatalogPage() {
             >
               <Check size={16} aria-hidden />
               {t('app.confirm')}
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
+
+      {canDeleteCatalog ? (
+        <Dialog
+          open={deleting !== null}
+          onClose={() => setDeleting(null)}
+          title={t('catalog.deleteTitle')}
+        >
+          <p className="text-body mb-4">
+            {t('catalog.deleteConfirm', { name: deleting?.name ?? '' })}
+          </p>
+
+          <p className="text-caption mb-4">{t('catalog.deleteHistoryHint')}</p>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleting(null)}>
+              {t('app.cancel')}
+            </Button>
+
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleting) {
+                  deleteProduct(deleting)
+                }
+              }}
+            >
+              <Trash2 size={16} aria-hidden />
+              {t('catalog.delete')}
             </Button>
           </div>
         </Dialog>
@@ -684,19 +903,32 @@ function CatalogSelect({
   )
 }
 
-function CreateCategoryDialog({
+/**
+ * The ONE category form, used for both adding and renaming.
+ *
+ * A rename is the same decision as a create — one name field, the same
+ * emptiness and uniqueness rules, the same save/cancel footer and the same busy
+ * and error handling — so it is the SAME component with a different title, the
+ * field pre-filled with the category being edited, and the duplicate check
+ * ignoring that category's own current name. A second form would be a copy that
+ * drifts.
+ */
+function CategoryDialog({
   existingCategories,
+  category,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   existingCategories: Category[]
+  /** The category being renamed; `null` means "add a new category". */
+  category: Category | null
   onClose: () => void
-  onCreated: (name: string) => void
+  onSaved: (name: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
   const errText = useErrText(t)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(category?.name ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -708,7 +940,9 @@ function CreateCategoryDialog({
     }
     if (
       existingCategories.some(
-        (category) => category.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
+        (existing) =>
+          existing.id !== category?.id &&
+          existing.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
       )
     ) {
       setError(t('catalog.categoryNameTaken'))
@@ -717,8 +951,12 @@ function CreateCategoryDialog({
 
     setBusy(true)
     try {
-      await catalogApi.createCategory(trimmed)
-      onCreated(trimmed)
+      if (category) {
+        await catalogApi.updateCategory(category.id, trimmed)
+      } else {
+        await catalogApi.createCategory(trimmed)
+      }
+      onSaved(trimmed)
     } catch (cause) {
       setError(errText(cause))
       toast(errText(cause), 'error')
@@ -728,7 +966,11 @@ function CreateCategoryDialog({
   }
 
   return (
-    <Dialog open onClose={onClose} title={t('catalog.addCategory')}>
+    <Dialog
+      open
+      onClose={onClose}
+      title={category ? t('catalog.editCategory') : t('catalog.addCategory')}
+    >
       <div className="flex flex-col gap-5">
         <Field label={t('catalog.categoryName')} error={error}>
           <Input
@@ -792,11 +1034,17 @@ function NewItemSwitch({
         <p className="text-caption mt-0.5">{t('catalog.newItemHint')}</p>
       </div>
 
+      {/* Explicitly the NEW accent, not the default: this is the dialog field
+          that MARKS an item as new, so its ON state must keep matching the
+          magenta NEW card frame, edge, and ribbon this switch produces. The
+          category manager's visibility switch is a plain condition and uses
+          tone="state" instead — the two are deliberately different meanings. */}
       <Switch
         id="catalog-is-new"
         checked={checked}
         onCheckedChange={onChange}
         label={t('catalog.newItem')}
+        tone="new"
       />
     </div>
   )

@@ -28,6 +28,14 @@ export const catalogApi = {
     }),
   listCategories: () => call<Category[]>('list_categories'),
   createCategory: (name: string) => call<number>('create_category', { name }),
+  /** MANAGER+ rename; the same name rules as creation apply. */
+  updateCategory: (category_id: number, name: string) =>
+    call<void>('update_category', { category_id, name }),
+  /**
+   * ADMIN-only delete. The backend refuses a category that still holds products
+   * or is the system one, so the business error is what the UI must surface.
+   */
+  removeCategory: (category_id: number) => call<void>('delete_category', { category_id }),
   create: (input: NewProductInput) => call<number>('create_product', { input }),
   update: (product_id: number, input: NewProductInput) =>
     call<void>('update_product', { product_id, input }),
@@ -36,4 +44,6 @@ export const catalogApi = {
     call<void>('set_product_price', { product_id, price_minor }),
   setActive: (product_id: number, active: boolean) =>
     call<void>('set_product_active', { product_id, active }),
+  /** ADMIN-only archive of a product/service; history is preserved. */
+  remove: (product_id: number) => call<void>('delete_product', { product_id }),
 }

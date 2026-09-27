@@ -74,6 +74,89 @@ pub fn set_service_charge(conn: &Db, actor: &User, cfg: &ServiceChargeConfig) ->
     )
 }
 
+/// How many CALENDAR MONTHS the monthly sales comparison chart covers.
+///
+/// This is cafe configuration, so it lives in `app_settings` next to every other
+/// Station setting and is read through the same typed accessor. It is a REPORTING
+/// window, never a business rule: the repository, the SQL and the chart are all
+/// period-agnostic, and this value only says how many month buckets the caller
+/// asks for.
+///
+/// The allowed values are a CLOSED SET rather than a free number, because a
+/// month count is a presentation choice, not an input: 6 / 12 / 18 / 24 cover a
+/// quarter, a trading year, a year and a half and two years, and every one of
+/// them keeps a grouped bar chart readable. A free number would only invite `0`,
+/// negatives and four-digit values that no screen can render, so the same set
+/// validates the saved value AND the value a caller passes at read time.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MonthlySalesPeriodConfig {
+    /// Number of calendar-month buckets, INCLUDING the current month.
+    pub months: i64,
+}
+
+/// The supported windows, in ascending order. The default is the middle one: a
+/// full trading year, the smallest window in which a month-over-month reading
+/// still means something.
+pub const MONTHLY_SALES_PERIOD_MONTHS: [i64; 4] = [6, 12, 18, 24];
+
+impl Default for MonthlySalesPeriodConfig {
+    fn default() -> Self {
+        Self { months: 12 }
+    }
+}
+
+impl MonthlySalesPeriodConfig {
+    /// The one validation rule, shared by the setter and the reader: the value
+    /// must be one of the supported windows.
+    pub fn validate(&self) -> AppResult<()> {
+        if !MONTHLY_SALES_PERIOD_MONTHS.contains(&self.months) {
+            return Err(AppError::validation(
+                "settings.invalid_monthly_sales_period",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// MANAGER+ reads the configured window. An unset setting reads as the default,
+/// so an installation that never configured it behaves exactly as it always has.
+pub fn get_monthly_sales_period(conn: &Db) -> AppResult<MonthlySalesPeriodConfig> {
+    let config = read_json(
+        conn,
+        "monthly_sales_period",
+        MonthlySalesPeriodConfig::default(),
+    )?;
+    // A stored value from an older build that is no longer supported falls back
+    // to the default instead of failing the whole report.
+    if config.validate().is_ok() {
+        Ok(config)
+    } else {
+        Ok(MonthlySalesPeriodConfig::default())
+    }
+}
+
+/// MANAGER+ configures how many months the monthly sales comparison shows.
+pub fn set_monthly_sales_period(
+    conn: &Db,
+    actor: &User,
+    config: &MonthlySalesPeriodConfig,
+) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "MANAGER")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
+    config.validate()?;
+    write_json(conn, "monthly_sales_period", config)?;
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "settings.monthly_sales_period_changed",
+        "settings",
+        Some("monthly_sales_period"),
+        None,
+        Some(&serde_json::to_value(config).unwrap_or_default()),
+    )
+}
+
 /// Credit authorization config: mode LIST = only listed customers (default,
 /// safest); mode ALL = every customer allowed. Final rules are pending —
 /// both modes are configurable (DECISIONS.md #3).
@@ -188,11 +271,7 @@ pub fn validate_discount_pin(pin: &str) -> AppResult<()> {
 /// There is no per-user target and no second credential: this is cafe-wide
 /// configuration, hashed with the project's existing Argon2id implementation,
 /// never returned to the frontend, and never written to the audit trail.
-pub fn set_discount_authorization_pin(
-    conn: &Db,
-    actor: &User,
-    pin: &str,
-) -> AppResult<()> {
+pub fn set_discount_authorization_pin(conn: &Db, actor: &User, pin: &str) -> AppResult<()> {
     crate::services::auth::require_role(actor, "MANAGER")
         .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     validate_discount_pin(pin)?;

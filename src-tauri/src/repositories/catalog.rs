@@ -25,6 +25,12 @@ pub struct Product {
 const COLS: &str =
     "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), p.is_seed, p.is_new";
 
+/// An archived item is excluded from EVERY catalog read: POS, product
+/// management, selectors, category counts and by-id lookups. Its row is kept
+/// (not deleted) so history, stock movements and audit stay referentially
+/// intact — `order_lines`/`invoice_lines` are snapshots and never need it.
+const NOT_ARCHIVED: &str = "p.deleted_at IS NULL";
+
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
     Ok(Product {
         id: row.get(0)?,
@@ -43,8 +49,9 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
 }
 
 /// Staff-facing list: active items only. Manager list: everything.
+/// Archived (ADMIN-deleted) items are never returned in either mode.
 pub fn list(conn: &Db, department: Option<&str>, active_only: bool) -> AppResult<Vec<Product>> {
-    let mut sql = format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE 1=1");
+    let mut sql = format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE {NOT_ARCHIVED}");
     if active_only {
         sql.push_str(" AND p.is_active = 1");
     }
@@ -63,7 +70,7 @@ pub fn list(conn: &Db, department: Option<&str>, active_only: bool) -> AppResult
 }
 
 pub fn get(conn: &Db, id: i64) -> AppResult<Option<Product>> {
-    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE p.id = ?1"))?;
+    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM products p JOIN categories c ON c.id = p.category_id LEFT JOIN inventory_items i ON i.product_id = p.id WHERE {NOT_ARCHIVED} AND p.id = ?1"))?;
     let mut rows = stmt.query(params![id])?;
     match rows.next()? {
         Some(r) => Ok(Some(row(r)?)),
@@ -106,6 +113,79 @@ pub fn ensure_category(conn: &Db, name: &str) -> AppResult<i64> {
         return Ok(id);
     }
     insert_category(conn, name)
+}
+
+/// The stored row behind a category, including the SYSTEM flag.
+///
+/// `is_system` marks the built-in category every pre-migration product was
+/// moved onto. It is deliberately NOT part of the [`Category`] shape the UI
+/// reads: what a category is called and whether it may be removed are two
+/// different questions, and only the second one needs the flag.
+pub struct StoredCategory {
+    pub id: i64,
+    pub name: String,
+    pub is_system: bool,
+}
+
+/// One category by id, or `None` for an id that does not exist.
+pub fn get_category(conn: &Db, id: i64) -> AppResult<Option<StoredCategory>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, name, is_system FROM categories WHERE id = ?1",
+            [id],
+            |row| {
+                Ok(StoredCategory {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    is_system: row.get::<_, i64>(2)? != 0,
+                })
+            },
+        )
+        .optional()?)
+}
+
+/// Uniqueness is the DATABASE's guarantee (`name ... COLLATE NOCASE UNIQUE`).
+/// This is the readable pre-check the service uses, and it must IGNORE the row
+/// being saved: otherwise re-submitting a category's own unchanged name would be
+/// rejected as a duplicate of itself.
+pub fn category_name_exists_except(conn: &Db, name: &str, except_id: i64) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM categories WHERE name = ?1 AND id != ?2)",
+        params![name, except_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// Rename a category. Returns `false` for an id that is not there, so the
+/// service can answer "not found" instead of reporting a silent success.
+pub fn update_category(conn: &Db, id: i64, name: &str) -> AppResult<bool> {
+    let changed = conn.execute(
+        "UPDATE categories SET name = ?2, updated_at = station_now() WHERE id = ?1",
+        params![id, name],
+    )?;
+    Ok(changed > 0)
+}
+
+/// Every product still pointing at the category, ARCHIVED ones INCLUDED.
+///
+/// The count is deliberately taken over the whole `products` table and not over
+/// the live catalog: an archived item keeps its row and its `category_id`, so it
+/// is a live foreign key exactly like an active one. Counting only active items
+/// would let the service delete a category the database would then refuse, which
+/// is the kind of disagreement the service is here to prevent.
+pub fn category_product_count(conn: &Db, id: i64) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM products WHERE category_id = ?1",
+        [id],
+        |r| r.get(0),
+    )?)
+}
+
+/// Remove an empty category. The caller is responsible for proving the category
+/// is empty and not the system one — see `services::catalog::delete_category`.
+pub fn delete_category(conn: &Db, id: i64) -> AppResult<bool> {
+    let deleted = conn.execute("DELETE FROM categories WHERE id = ?1", [id])?;
+    Ok(deleted > 0)
 }
 
 pub struct NewProduct<'a> {
@@ -158,14 +238,15 @@ pub fn insert(conn: &Db, p: &NewProduct<'_>) -> AppResult<i64> {
 }
 
 /// Returns the previous row state (name/price/active) for audit purposes.
+/// Archived items are immutable: an edit can never revive a deleted row.
 pub fn update_price(conn: &Db, id: i64, price_minor: i64) -> AppResult<i64> {
     let old: i64 = conn.query_row(
-        "SELECT price_minor FROM products WHERE id = ?1",
+        "SELECT price_minor FROM products WHERE id = ?1 AND deleted_at IS NULL",
         [id],
         |r| r.get(0),
     )?;
     conn.execute(
-        "UPDATE products SET price_minor = ?2, updated_at = station_now() WHERE id = ?1",
+        "UPDATE products SET price_minor = ?2, updated_at = station_now() WHERE id = ?1 AND deleted_at IS NULL",
         params![id, price_minor],
     )?;
     Ok(old)
@@ -185,7 +266,8 @@ pub fn update(
     let tx = conn.unchecked_transaction()?;
     let changed = tx.execute(
         "UPDATE products SET name = ?2, category_id = ?3, price_minor = ?4,
-             track_inventory = ?5, is_new = ?6, updated_at = station_now() WHERE id = ?1",
+             track_inventory = ?5, is_new = ?6, updated_at = station_now()
+         WHERE id = ?1 AND deleted_at IS NULL",
         params![
             id,
             name,
@@ -256,9 +338,12 @@ pub fn list_categories(conn: &Db) -> AppResult<Vec<Category>> {
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
+/// Toggle operational availability. An archived (deleted) item can never be
+/// re-activated: `deleted_at` is the terminal state, `is_active` is not.
 pub fn set_active(conn: &Db, id: i64, active: bool) -> AppResult<()> {
     conn.execute(
-        "UPDATE products SET is_active = ?2, updated_at = station_now() WHERE id = ?1",
+        "UPDATE products SET is_active = ?2, updated_at = station_now()
+         WHERE id = ?1 AND deleted_at IS NULL",
         params![id, active as i64],
     )?;
     Ok(())
@@ -266,10 +351,33 @@ pub fn set_active(conn: &Db, id: i64, active: bool) -> AppResult<()> {
 
 pub fn rename(conn: &Db, id: i64, name: &str) -> AppResult<()> {
     conn.execute(
-        "UPDATE products SET name = ?2, updated_at = station_now() WHERE id = ?1",
+        "UPDATE products SET name = ?2, updated_at = station_now()
+         WHERE id = ?1 AND deleted_at IS NULL",
         params![id, name],
     )?;
     Ok(())
+}
+
+/// Soft delete: archive the item instead of removing the row.
+///
+/// The row (and its original name, price, type, department, category and
+/// stock) is RETAINED, so `order_lines.product_id`, `inventory_items` and
+/// `stock_movements` keep resolving and every historical document still
+/// describes the item exactly as it was sold. `is_active` is cleared at the
+/// same time so the archived item also disappears from POS immediately.
+///
+/// Returns `false` when the id is unknown OR was already archived, which is
+/// what the service turns into a not-found result.
+pub fn archive(conn: &Db, id: i64) -> AppResult<bool> {
+    let changed = conn.execute(
+        "UPDATE products
+         SET deleted_at = station_now(),
+             is_active = 0,
+             updated_at = station_now()
+         WHERE id = ?1 AND deleted_at IS NULL",
+        [id],
+    )?;
+    Ok(changed > 0)
 }
 
 #[cfg(test)]

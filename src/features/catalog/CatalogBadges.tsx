@@ -13,12 +13,17 @@
  * "nothing to see here", and the cashier must be able to tell at a glance that
  * an item is unavailable. The meaning never rests on color alone — each badge
  * carries its own word (متاح / موقوف / جديد) and, where useful, an icon.
+ *
+ * "New" is stated EXACTLY ONCE per card, by the corner ribbon. The old second
+ * copy in the badge row under the price was pure duplication and has been
+ * removed rather than hidden, so there is no dead badge logic left behind.
  */
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Check, CircleSlash, Sparkles } from '@/components/ui/icon'
 import { categoryTone } from '@/lib/category-visual'
+import { NEW_RIBBON } from '@/lib/new-item-visual'
 import { cn } from '@/lib/utils'
 
 /**
@@ -41,16 +46,33 @@ export function CatalogStatusBadge({ isActive }: { isActive: boolean }) {
 }
 
 /**
- * The "new item" badge. A separate concept from availability, so it renders
- * independently: a product can be New + Available, New + Disabled, or neither.
- * The word "جديد" is always present, so the state never depends on the color.
+ * The NEW corner ribbon — the ONE and only "new" signal on a card.
+ *
+ * It sits in the card's top inline-end corner (the LEFT edge in Arabic, since
+ * the app is RTL) above the name, the price and the badges, where it can never
+ * collide with any of them, and it is the only place the word "جديد" appears.
+ * There is deliberately no second copy in the badge row under the price: the
+ * state used to be rendered twice (this ribbon plus a `Badge` in the badge row)
+ * and the duplication was noise, not emphasis. ONE component, ONE signal.
+ *
+ * Because it is the only copy, it is NOT `aria-hidden`: the word is what tells a
+ * screen reader the item is new, and hiding it would leave the state announced
+ * nowhere.
  */
-export function CatalogNewBadge() {
+export function CatalogNewRibbon() {
   const { t } = useTranslation()
   return (
-    <Badge variant="new" size="sm" icon={Sparkles} data-testid="catalog-new-badge">
+    <span
+      data-testid="catalog-new-badge"
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-1',
+        'text-xs leading-none font-black whitespace-nowrap',
+        NEW_RIBBON,
+      )}
+    >
+      <Sparkles size={12} strokeWidth={2.4} />
       {t('catalog.new')}
-    </Badge>
+    </span>
   )
 }
 

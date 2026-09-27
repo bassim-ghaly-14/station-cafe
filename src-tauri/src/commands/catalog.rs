@@ -3,7 +3,9 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::catalog::{self, Category, Product};
-use crate::services::settings::{DiscountOptionsConfig, ServiceChargeConfig};
+use crate::services::settings::{
+    DiscountOptionsConfig, MonthlySalesPeriodConfig, ServiceChargeConfig,
+};
 use crate::AppState;
 use serde::Deserialize;
 use tauri::State;
@@ -124,6 +126,40 @@ pub fn create_category(state: State<'_, AppState>, token: String, name: String) 
     })
 }
 
+/// MANAGER+ rename of a category.
+///
+/// The service owns the rule (non-empty trimmed name, unique across categories,
+/// audited), so the same guarantee holds for every caller and not only for this
+/// command.
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_category(
+    state: State<'_, AppState>,
+    token: String,
+    category_id: i64,
+    name: String,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        crate::services::catalog::rename_category(conn, actor, category_id, &name)
+    })
+}
+
+/// ADMIN-only delete of a category — narrower than renaming, as deleting a
+/// product is narrower than editing one.
+///
+/// The command requires ADMIN at the boundary AND the service re-checks the role
+/// and the category's own rules, so a MANAGER that bypasses this UI entirely
+/// still cannot remove a category.
+#[tauri::command(rename_all = "snake_case")]
+pub fn delete_category(
+    state: State<'_, AppState>,
+    token: String,
+    category_id: i64,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        crate::services::catalog::delete_category(conn, actor, category_id)
+    })
+}
+
 /// Categories available for mandatory product/service assignment.
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_categories(state: State<'_, AppState>, token: String) -> AppResult<Vec<Category>> {
@@ -233,6 +269,23 @@ pub fn set_product_active(
     })
 }
 
+/// ADMIN-only delete of a product or service.
+///
+/// Deactivation (above) is the reversible, MANAGER-level "stop selling this".
+/// Deletion is the terminal archive an ADMIN performs when the item leaves the
+/// catalog for good: the row is retained so every historical invoice, order
+/// line, stock movement and audit entry keeps resolving its original name and
+/// price, while the item disappears from every active catalog query.
+///
+/// The command requires ADMIN at the boundary AND the service re-checks the
+/// role, so a bypassed frontend still cannot delete anything.
+#[tauri::command(rename_all = "snake_case")]
+pub fn delete_product(state: State<'_, AppState>, token: String, product_id: i64) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        crate::services::catalog::delete_product(conn, actor, product_id)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn rename_product(
     state: State<'_, AppState>,
@@ -323,6 +376,32 @@ pub fn set_service_charge(
 ) -> AppResult<()> {
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         crate::services::settings::set_service_charge(conn, actor, &config)
+    })
+}
+
+/// MANAGER+ reads how many calendar months the monthly sales comparison shows.
+/// An unset setting reads as the default (12), so nothing changes for an
+/// installation that never configured it.
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_monthly_sales_period(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<MonthlySalesPeriodConfig> {
+    authorized(&state, &token, "MANAGER", |conn, _| {
+        crate::services::settings::get_monthly_sales_period(conn)
+    })
+}
+
+/// MANAGER+ configures the monthly sales comparison window. The value is
+/// validated server-side against the supported set, so the UI is never trusted.
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_monthly_sales_period(
+    state: State<'_, AppState>,
+    token: String,
+    config: MonthlySalesPeriodConfig,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        crate::services::settings::set_monthly_sales_period(conn, actor, &config)
     })
 }
 
