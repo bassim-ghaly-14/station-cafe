@@ -22,6 +22,7 @@
  * profit figure would be a fabrication, so none is offered.
  */
 import { useCallback, useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import { ChartEmptyState } from '@/features/reports/charts/ChartEmptyState'
@@ -39,13 +40,14 @@ import {
   ProgressBar,
 } from '@/components/ui'
 import { Field, Input, Switch, Textarea } from '@/components/ui/input'
+import type { DateRange } from '@/components/ui/date-range-picker'
 import { Plus, Receipt, Save } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
 import { formatDate, todayIso } from '@/lib/date'
 import { parseMajor } from '@/lib/utils'
 import { atLeast, useOptionalSession } from '@/features/auth/useSession'
-import { opsApi, type Expense, type ExpenseCategory } from '@/services/opsApi'
+import { opsApi, type Expense, type ExpenseCategory, type ExpenseOverview } from '@/services/opsApi'
 import { ExpensesCategoryCard, ExpensesKpiBand } from './ExpensesKpiBand'
 import { ExpenseCategoriesDialog } from './ExpenseCategoriesDialog'
 import { ExpensesDailyChart } from './ExpensesDailyChart'
@@ -74,6 +76,93 @@ function initialRange(): { from: string; to: string } {
     /* fall back to the current month */
   }
   return { from: monthStart, to: today }
+}
+
+/**
+ * The body below the period control: the loading, failure, empty and loaded
+ * presentations, in that order. Extracted so the chain is stated once and the
+ * page reads as header + filters + body.
+ */
+function ExpensesBody({
+  t,
+  initialLoading,
+  error,
+  empty,
+  overview,
+  refreshing,
+  rows,
+  range,
+  period,
+  onRetry,
+  onAdd,
+}: {
+  t: TFunction
+  initialLoading: boolean
+  error: string | null
+  empty: boolean
+  overview: ExpenseOverview | null
+  refreshing: boolean
+  rows: Expense[]
+  range: DateRange
+  period: string
+  onRetry: () => void
+  onAdd: () => void
+}) {
+  if (initialLoading) {
+    return <ListRowsSkeleton rows={5} />
+  }
+
+  if (error && !overview) {
+    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  }
+
+  if (empty) {
+    /* A period with no spending is a real, calm answer — not an error, and
+       not a chart drawn around an empty dataset. */
+    return (
+      <ChartEmptyState
+        title={t('expenses.states.noExpensesTitle')}
+        body={t('expenses.states.noExpensesBody')}
+        hint={t('expenses.states.noExpensesHint')}
+        scope={t('expenses.states.scope', { from: range.from, to: range.to })}
+        action={
+          <Button onClick={onAdd}>
+            <Plus size={16} aria-hidden />
+            {t('expenses.add')}
+          </Button>
+        }
+      />
+    )
+  }
+
+  return (
+    <>
+      <ExpensesKpiBand overview={overview} loading={refreshing} />
+
+      {/* A re-fetch keeps the previous numbers on screen and marks the
+          surfaces busy, so changing the period is not a full-page flash. */}
+      {refreshing ? <ProgressBar label={t('app.loading')} /> : null}
+
+      {overview ? (
+        <>
+          <ExpensesDailyChart overview={overview} period={period} />
+          <ExpensesCategoryCard overview={overview} />
+        </>
+      ) : null}
+
+      {/* The evidence behind the numbers, always reachable. */}
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+          <div>
+            <h2 className="text-section text-foreground-strong">{t('expenses.list.title')}</h2>
+            <p className="mt-0.5 text-caption text-foreground-subtle">{t('expenses.list.hint')}</p>
+          </div>
+          {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+        </div>
+        <ExpenseList rows={rows} />
+      </Card>
+    </>
+  )
 }
 
 export default function ExpensesPage() {
@@ -151,55 +240,19 @@ export default function ExpensesPage() {
         {data.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
       </div>
 
-      {data.initialLoading ? (
-        <ListRowsSkeleton rows={5} />
-      ) : data.error && !overview ? (
-        <ErrorState message={data.error} onRetry={refresh} retryLabel={t('app.retry')} />
-      ) : empty ? (
-        /* A period with no spending is a real, calm answer — not an error, and
-           not a chart drawn around an empty dataset. */
-        <ChartEmptyState
-          title={t('expenses.states.noExpensesTitle')}
-          body={t('expenses.states.noExpensesBody')}
-          hint={t('expenses.states.noExpensesHint')}
-          scope={t('expenses.states.scope', { from: range.from, to: range.to })}
-          action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus size={16} aria-hidden />
-              {t('expenses.add')}
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <ExpensesKpiBand overview={overview} loading={data.refreshing} />
-
-          {/* A re-fetch keeps the previous numbers on screen and marks the
-              surfaces busy, so changing the period is not a full-page flash. */}
-          {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
-
-          {overview ? (
-            <>
-              <ExpensesDailyChart overview={overview} period={period} />
-              <ExpensesCategoryCard overview={overview} />
-            </>
-          ) : null}
-
-          {/* The evidence behind the numbers, always reachable. */}
-          <Card className="overflow-hidden p-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div>
-                <h2 className="text-section text-foreground-strong">{t('expenses.list.title')}</h2>
-                <p className="mt-0.5 text-caption text-foreground-subtle">
-                  {t('expenses.list.hint')}
-                </p>
-              </div>
-              {data.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-            </div>
-            <ExpenseList rows={data.rows} />
-          </Card>
-        </>
-      )}
+      <ExpensesBody
+        t={t}
+        initialLoading={data.initialLoading}
+        error={data.error}
+        empty={empty}
+        overview={overview}
+        refreshing={data.refreshing}
+        rows={data.rows}
+        range={range}
+        period={period}
+        onRetry={refresh}
+        onAdd={() => setCreateOpen(true)}
+      />
 
       {createOpen ? (
         <CreateExpenseDialog
