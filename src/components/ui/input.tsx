@@ -83,6 +83,33 @@ export function PasswordInput({
 }
 
 /**
+ * Track/thumb colors per switch tone. Every entry is a SEMANTIC token class —
+ * no hex — so a switch never hardcodes a color and never borrows an identity
+ * that does not describe it.
+ *
+ * - `new`  — the "new item" accent. It stays the default because the catalog's
+ *   NEW toggle deliberately matches the magenta card frame/ribbon it sits next
+ *   to; turning a switch green there would break that pairing.
+ * - `state` — the plain on/off reading: a green track when ON and a soft
+ *   neutral when OFF. Used by switches that report a CONDITION (is this
+ *   category visible?) rather than an item identity.
+ */
+const SWITCH_TONES = {
+  new: {
+    on: 'border-new-border bg-new-soft',
+    off: 'border-border-strong bg-surface-muted',
+    onThumb: 'bg-new',
+    offThumb: 'bg-foreground-muted',
+  },
+  state: {
+    on: 'border-switch-on-track-border bg-switch-on-track',
+    off: 'border-switch-off-track-border bg-switch-off-track',
+    onThumb: 'bg-switch-on-thumb',
+    offThumb: 'bg-switch-off-thumb',
+  },
+} as const
+
+/**
  * Accessible on/off switch.
  *
  * A real `<button role="switch" aria-checked>` rather than a styled checkbox,
@@ -90,6 +117,10 @@ export function PasswordInput({
  * announce its state, and expose a visible focus ring in both themes. The label
  * is a visible sibling text, so no `aria-label` is needed here; callers that
  * render an icon-only switch pass `label`.
+ *
+ * The color identity is a per-caller `tone` rather than a fixed one, because
+ * the two jobs are genuinely different: `new` matches the NEW item accent, and
+ * `state` is the conventional green-on / neutral-off switch.
  *
  * RTL-safe: the knob travels with logical inset properties, so the switch
  * reads "on to the right" in Arabic exactly as it does "on to the left" in LTR.
@@ -100,6 +131,7 @@ export function Switch({
   label,
   id,
   disabled,
+  tone = 'new',
   className,
 }: {
   checked: boolean
@@ -108,8 +140,15 @@ export function Switch({
   label?: string
   id?: string
   disabled?: boolean
+  /**
+   * Which semantic identity paints the track and thumb. Defaults to `new` so
+   * existing callers keep their current appearance; pass `state` for a switch
+   * that reports a condition rather than an item's "new" identity.
+   */
+  tone?: keyof typeof SWITCH_TONES
   className?: string
 }) {
+  const palette = SWITCH_TONES[tone]
   return (
     <button
       type="button"
@@ -123,7 +162,7 @@ export function Switch({
         'relative h-6 w-11 shrink-0 cursor-pointer rounded-full border transition-colors',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
         'disabled:cursor-not-allowed disabled:opacity-70',
-        checked ? 'border-new-border bg-new-soft' : 'border-border-strong bg-surface-muted',
+        checked ? palette.on : palette.off,
         className,
       )}
     >
@@ -132,7 +171,9 @@ export function Switch({
         className={cn(
           'absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition-[inset-inline-start]',
           'motion-reduce:transition-none',
-          checked ? 'start-[calc(100%-1.375rem)] bg-new' : 'start-1.5 bg-foreground-muted',
+          checked
+            ? `inset-s-[calc(100%-1.375rem)] ${palette.onThumb}`
+            : `inset-s-1.5 ${palette.offThumb}`,
         )}
       />
     </button>

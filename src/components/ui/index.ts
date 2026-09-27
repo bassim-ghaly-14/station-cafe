@@ -2,6 +2,13 @@ export { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 
 /** Barrel for the curated UI primitive set (add only what is actually used). */
 export { Button, type ButtonProps, buttonVariants } from './button'
+export {
+  TableActionGroup,
+  TableActionDivider,
+  TableActionButton,
+  type TableActionTone,
+  type TableActionButtonProps,
+} from './table-action-button'
 export { Select } from './select'
 export { ProgressBar } from './progress-bar'
 export { DataTable, DataTableRow, DataTableCell, type DataTableColumn } from './data-table'
@@ -26,6 +33,7 @@ export {
   TableSkeleton,
   CardGridSkeleton,
   ChartGridSkeleton,
+  ChartCardSkeleton,
 } from './loading-skeletons'
 export type { BadgeVariant } from '@/lib/status-badge'
 export {
@@ -34,6 +42,7 @@ export {
   type EmployeeAvatarSize,
 } from './employee-avatar'
 export { Dialog } from './dialog'
+export { ConfirmDialog } from './confirm-dialog'
 export { Drawer } from './drawer'
 export { AmountAutoFill } from './amount-auto-fill'
 export { ThemeToggle } from './theme-toggle'

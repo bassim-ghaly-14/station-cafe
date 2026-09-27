@@ -1,10 +1,12 @@
 import { render, screen } from '@testing-library/react'
+import { vi } from 'vitest'
 import { Check } from './icon'
 import { Badge } from './badge'
 import { EmployeeAvatar } from './employee-avatar'
 import { getRoleVisual } from '@/lib/roles'
 import { Loader } from './loader'
 import { Skeleton } from './skeleton'
+import { Switch } from './input'
 import { invoiceBadgeVariant, printJobBadgeVariant, tableBadgeVariant } from '@/lib/status-badge'
 
 describe('Badge', () => {
@@ -27,6 +29,83 @@ describe('Badge', () => {
     expect(badge).toHaveClass('text-xs', 'custom-badge')
     expect(badge?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
     expect(badge?.querySelector('[aria-hidden="true"]')).toBeInTheDocument()
+  })
+})
+
+describe('Switch', () => {
+  /** The switch is a real role="switch" button, not a styled checkbox. */
+  function renderSwitch(props: Partial<Parameters<typeof Switch>[0]> = {}) {
+    const onCheckedChange = vi.fn()
+    const { container, rerender } = render(
+      <Switch checked onCheckedChange={onCheckedChange} label="إظهار التصنيف" {...props} />,
+    )
+    const control = screen.getByRole('switch', { name: 'إظهار التصنيف' })
+    return {
+      control,
+      thumb: () => container.querySelector('[aria-hidden="true"]'),
+      onCheckedChange,
+      rerender: (next: Partial<Parameters<typeof Switch>[0]>) =>
+        rerender(
+          <Switch checked onCheckedChange={onCheckedChange} label="إظهار التصنيف" {...next} />,
+        ),
+    }
+  }
+
+  it('keeps the accessible name, ON/OFF state, and keyboard affordance', () => {
+    const { control, rerender } = renderSwitch()
+
+    expect(control).toHaveAttribute('aria-checked', 'true')
+    // Not a native checkbox, so activation is the button's own click (Enter/Space).
+    expect(control.tagName).toBe('BUTTON')
+    expect(control).toHaveAttribute('type', 'button')
+    expect(control.className).toContain('focus-visible:outline-focus')
+    // The thumb is decorative: the state is announced once, by aria-checked.
+    expect(control.querySelector('[aria-hidden="true"]')).toBeInTheDocument()
+
+    rerender({ checked: false })
+    expect(control).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('paints the state tone green when on and soft neutral when off', () => {
+    const { control, thumb, rerender } = renderSwitch({ tone: 'state' })
+
+    // ON: the shared success green, not a new hardcoded one.
+    expect(control).toHaveClass('bg-switch-on-track', 'border-switch-on-track-border')
+    expect(thumb()).toHaveClass('bg-switch-on-thumb')
+    // No magenta/brown identity leaks into the state tone.
+    expect(control.className).not.toMatch(/new|surface-muted|foreground-muted/)
+
+    rerender({ checked: false, tone: 'state' })
+    expect(control).toHaveClass('bg-switch-off-track', 'border-switch-off-track-border')
+    expect(thumb()).toHaveClass('bg-switch-off-thumb')
+    expect(control.className).not.toMatch(/new|surface-muted|foreground-muted/)
+  })
+
+  it('keeps the NEW accent as the default so unrelated switches are unchanged', () => {
+    // The catalog's "new item" toggle relies on this default to match the NEW
+    // card frame; it must not silently turn green.
+    const { control, thumb } = renderSwitch()
+
+    expect(control).toHaveClass('bg-new-soft', 'border-new-border')
+    expect(thumb()).toHaveClass('bg-new')
+  })
+
+  it('keeps the thumb travelling on the logical inline-start edge in RTL', () => {
+    const { thumb, rerender } = renderSwitch({ tone: 'state' })
+
+    // Asserted on the resolved logical class, not on the source spelling:
+    // tailwind-merge rewrites `start-[…]` to its `inset-s-[…]` alias. What
+    // matters for Arabic is that the offset is LOGICAL and never a physical
+    // left/right, and that ON parks the knob at the far edge while OFF rests
+    // it at the near one.
+    const classOf = () => thumb()?.className ?? ''
+    expect(classOf()).toMatch(/inset-s-\[calc\(100%-1\.375rem\)\]/)
+    expect(classOf()).not.toMatch(/(^|[\s:])(left|right|ml|mr)-/)
+
+    // …and the OFF position is the resting edge.
+    rerender({ checked: false, tone: 'state' })
+    expect(classOf()).toMatch(/inset-s-1\.5/)
+    expect(classOf()).not.toMatch(/(^|[\s:])(left|right|ml|mr)-/)
   })
 })
 

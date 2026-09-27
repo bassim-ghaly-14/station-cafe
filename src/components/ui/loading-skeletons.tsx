@@ -1,5 +1,6 @@
 import { Card } from './card'
 import { Skeleton } from './skeleton'
+import { cn } from '@/lib/utils'
 
 export function ListRowsSkeleton({ rows = 5, className }: { rows?: number; className?: string }) {
   return (
@@ -106,6 +107,42 @@ export function ChartGridSkeleton({
       </div>
       <span className="sr-only">جارٍ تحميل الرسوم البيانية</span>
     </div>
+  )
+}
+
+/**
+ * Single-chart loading placeholder.
+ *
+ * The grid variant above is shaped for a three-card report; a page that owns ONE
+ * chart needs the same card silhouette (header, plot, legend rows) without the
+ * surrounding grid, so the surface does not jump when the data resolves.
+ */
+export function ChartCardSkeleton({ className }: { className?: string }) {
+  return (
+    <Card
+      className={cn('min-h-88 space-y-5 p-5', className)}
+      role="status"
+      aria-busy="true"
+      aria-label="جارٍ تحميل الرسم البياني"
+    >
+      <div className="flex items-center gap-3">
+        <Skeleton variant="rect" className="size-10" accessibilityLabel="" />
+        <div className="flex-1 space-y-2">
+          <Skeleton variant="text" className="w-3/5" accessibilityLabel="" />
+          <Skeleton variant="text" className="h-3 w-2/5" accessibilityLabel="" />
+        </div>
+      </div>
+      <Skeleton variant="rect" className="h-72 w-full" accessibilityLabel="" />
+      <div className="space-y-2.5 border-t border-border-subtle pt-3">
+        {Array.from({ length: 2 }, (_, index) => (
+          <div key={index} className="flex items-center justify-between gap-3">
+            <Skeleton variant="text" className="h-3 w-1/3" accessibilityLabel="" />
+            <Skeleton variant="text" className="h-3 w-1/4" accessibilityLabel="" />
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">جارٍ تحميل الرسم البياني</span>
+    </Card>
   )
 }
 
