@@ -50,7 +50,7 @@ function hashId(id: number): number {
   let value = 0x811c9dc5
   const text = String(id)
   for (let index = 0; index < text.length; index += 1) {
-    value ^= text.charCodeAt(index)
+    value ^= text.codePointAt(index) as number
     value = Math.imul(value, 0x01000193)
   }
   return value >>> 0

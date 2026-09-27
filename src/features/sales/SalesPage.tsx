@@ -155,7 +155,7 @@ export default function SalesPage() {
               surfaces busy, so changing the period is not a full-page flash. */}
           {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
 
-          {summary && summary.invoices_count === 0 ? (
+          {summary?.invoices_count === 0 ? (
             <Card className="p-4">
               <EmptyState
                 title={narrowed ? t('sales.states.noResults') : t('sales.states.noSales')}

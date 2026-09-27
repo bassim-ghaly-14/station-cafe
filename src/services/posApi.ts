@@ -162,6 +162,9 @@ export interface PrintOutcome {
   duplicate_suppressed: boolean
 }
 
+/** Horizontal alignment of a printed preview line (ESC/POS ESC a n). */
+export type PreviewTextAlign = 'left' | 'center' | 'right'
+
 /**
  * Print preview IR — the drawing operations of the document that goes to the
  * printer, in printer order. It is produced by the same Rust template run that
@@ -171,7 +174,7 @@ export interface PrintOutcome {
 export interface PreviewTextOp {
   kind: 'text'
   text: string
-  align: 'left' | 'center' | 'right'
+  align: PreviewTextAlign
   bold: boolean
   /** Character-width multiplier (ESC/POS GS ! n). */
   width: number

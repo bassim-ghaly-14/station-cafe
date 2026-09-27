@@ -11,7 +11,7 @@ import { CATEGORY_LABEL_PREFIX, type AnalyticsChart } from './analyticsCharts'
  * or it would silently be drawn as an invalid value.
  */
 export function resolveThemeColor(color: string): string {
-  const token = color.match(/^var\((--[^)]+)\)$/)?.[1]
+  const token = /^var\((--[^)]+)\)$/.exec(color)?.[1]
   if (!token) return color
   return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || color
 }

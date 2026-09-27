@@ -138,11 +138,11 @@ export function monthOverMonth(
   if (data.length === 0) {
     return { trend: 'unavailable', percent: null, currentTotal: 0, previousTotal: null }
   }
-  const currentTotal = monthTotal(data[data.length - 1], series)
+  const currentTotal = monthTotal(data.at(-1) as MonthlyComparisonDatum, series)
   if (data.length < 2) {
     return { trend: 'unavailable', percent: null, currentTotal, previousTotal: null }
   }
-  const previousTotal = monthTotal(data[data.length - 2], series)
+  const previousTotal = monthTotal(data.at(-2) as MonthlyComparisonDatum, series)
   if (previousTotal === 0) {
     return { trend: 'unavailable', percent: null, currentTotal, previousTotal }
   }

@@ -510,7 +510,7 @@ export function DayClosingPanel({
                     ))}
                   </ul>
                 )}
-                {history.filter((item) => !item.final_snapshot).length > 0 ? (
+                {history.some((item) => !item.final_snapshot) ? (
                   <div className="mt-3">
                     <p className="mb-1 text-caption">{t('settlement.previousSettlements')}</p>
                     <ul className="divide-y divide-border-subtle rounded-md border border-border-subtle px-3">

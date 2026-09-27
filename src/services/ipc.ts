@@ -26,7 +26,7 @@ export class ApiError extends Error {
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const token = sessionToken()
   try {
-    return await invoke<T>(cmd, { token, ...(args ?? {}) })
+    return await invoke<T>(cmd, { token, ...args })
   } catch (raw) {
     throw toApiError(raw)
   }

@@ -162,7 +162,7 @@ function toHex(value: string): string | null {
  * cannot be resolved degrades to the role's own default rather than to black.
  */
 export function resolveChartColor(value: string, role?: ChartColorRole): string {
-  const token = value.trim().match(/^var\((--[^)]+)\)$/)?.[1]
+  const token = /^var\((--[^)]+)\)$/.exec(value.trim())?.[1]
   if (!token) return toHex(value) ?? DEFAULT_HEX_FALLBACK
   if (typeof document === 'undefined') return DEFAULT_HEX_FALLBACK
   const resolved = getComputedStyle(document.documentElement).getPropertyValue(token).trim()

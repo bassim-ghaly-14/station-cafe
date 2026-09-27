@@ -122,7 +122,7 @@ export function MonthlyComparisonBarChart({
   // The reading is a pure function of the data: it is recomputed only when the
   // data or the series change, never on an unrelated re-render.
   const change = useMemo(() => monthOverMonth(data, series), [data, series])
-  const format = formatValue ?? ((value: number) => String(value))
+  const format = formatValue ?? String
   const chartConfig = useMemo(
     () =>
       Object.fromEntries(
@@ -130,7 +130,7 @@ export function MonthlyComparisonBarChart({
       ),
     [series],
   )
-  const latest = data.length > 0 ? data[data.length - 1] : null
+  const latest = data.at(-1) ?? null
   // A stack always states its total; a group states it only when its caller says
   // the series compose one. The default therefore follows the layout.
   const totalVisible = showTotal ?? stacked

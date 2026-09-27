@@ -230,5 +230,5 @@ export function PinInput({
 
 /** Whether a string is a well-formed shared discount PIN (4 ASCII digits). */
 export function isValidDiscountPin(value: string): boolean {
-  return new RegExp(`^\\d{${DISCOUNT_PIN_LENGTH}}$`).test(value)
+  return new RegExp(String.raw`^\d{${DISCOUNT_PIN_LENGTH}}$`).test(value)
 }
