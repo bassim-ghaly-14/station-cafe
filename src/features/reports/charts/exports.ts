@@ -3,7 +3,27 @@ import { createStationReportSheet, downloadStationWorkbook, type ReportColumn } 
 import i18n from '@/lib/i18n'
 import { CATEGORY_LABEL_PREFIX, type AnalyticsChart } from './analyticsCharts'
 
-function download(blob: Blob, filename: string) {
+/**
+ * Resolve a `var(--token)` series color against the LIVE theme.
+ *
+ * Shared with the monthly comparison exporter: a canvas cannot read a CSS
+ * variable, so every chart color has to be read out of the theme at export time
+ * or it would silently be drawn as an invalid value.
+ */
+export function resolveThemeColor(color: string): string {
+  const token = color.match(/^var\((--[^)]+)\)$/)?.[1]
+  if (!token) return color
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || color
+}
+
+/**
+ * The one way a report file leaves the app.
+ *
+ * Shared by every exporter (the analytics PNG, the analytics workbook, and the
+ * monthly comparison chart) so there is a single object-URL lifecycle and a
+ * single revocation, instead of a copy per chart.
+ */
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -51,10 +71,7 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
   context.font = '24px Cairo, sans-serif'
   context.fillText(chartDescription(chart), 1120, 135)
   context.fillText(`الفترة: ${period}`, 1120, 180)
-  const segmentColors = chart.categories.map((category) => {
-    const token = category.color.match(/^var\((--[^)]+)\)$/)?.[1]
-    return token ? css.getPropertyValue(token).trim() : category.color
-  })
+  const segmentColors = chart.categories.map((category) => resolveThemeColor(category.color))
   const total = chart.total || 1
   let start = -Math.PI / 2
   const cx = 600
@@ -99,7 +116,7 @@ export async function exportAnalyticsPng(chart: AnalyticsChart, period: string) 
     canvas.toBlob(
       (blob) =>
         blob
-          ? (download(blob, `${chart.exportFilename}.png`), resolve())
+          ? (downloadBlob(blob, `${chart.exportFilename}.png`), resolve())
           : reject(new Error('PNG export failed')),
       'image/png',
     ),

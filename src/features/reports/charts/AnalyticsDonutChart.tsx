@@ -1,15 +1,7 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LabelList, Pie, PieChart, type LabelProps } from 'recharts'
-import {
-  Button,
-  Card,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  Dialog,
-} from '@/components/ui'
-import { FileDown, Maximize2, MoreHorizontal } from '@/components/ui/icon'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui'
+import { ChartShell, type ChartPresentation } from '@/components/charts/ChartShell'
 import { useToast } from '@/components/ui/toast'
 import { formatMinorMoney } from '@/lib/money'
 import { formatDate } from '@/lib/date'
@@ -38,9 +30,6 @@ export function AnalyticsDonutChart({
   const title = t(`reports.charts.${chart.titleKey}`)
   const description = t(`reports.charts.${chart.descriptionKey}`)
   const categoryLabel = (key: string) => t(`${CATEGORY_LABEL_PREFIX}${key}`)
-  const [open, setOpen] = useState(false)
-  const [fullscreenOpen, setFullscreenOpen] = useState(false)
-  const fullscreen = presentation === 'fullscreen'
   // The period label is a presentation value: subscribe so Dev Settings changes
   // re-render it, and format each bound with the central date formatter.
   useFormattingPreferences()
@@ -57,6 +46,25 @@ export function AnalyticsDonutChart({
     ...Object.fromEntries(
       segments.map((segment) => [segment.id, { label: segment.label, color: segment.color }]),
     ),
+  }
+
+  // The exports, the toast and the focus restoration are the SHARED shell's
+  // machinery; this chart only says WHAT to export.
+  const downloadPng = async () => {
+    try {
+      await exportAnalyticsPng(chart, period)
+      toast(t('reports.charts.exportedPng'), 'success')
+    } catch {
+      toast(t('reports.charts.exportError'), 'error')
+    }
+  }
+  const downloadExcel = async () => {
+    try {
+      exportAnalyticsExcel(chart, period)
+      toast(t('reports.charts.exportedExcel'), 'success')
+    } catch {
+      toast(t('reports.charts.exportError'), 'error')
+    }
   }
 
   const renderSegmentLabel = (props: LabelProps) => {
@@ -111,207 +119,129 @@ export function AnalyticsDonutChart({
     )
   }
 
-  const closeFullscreen = () => {
-    setFullscreenOpen(false)
-    requestAnimationFrame(() => document.getElementById(`fullscreen-trigger-${chart.id}`)?.focus())
-  }
-
-  const downloadPng = async () => {
-    setOpen(false)
-    try {
-      await exportAnalyticsPng(chart, period)
-      toast(t('reports.charts.exportedPng'), 'success')
-    } catch {
-      toast(t('reports.charts.exportError'), 'error')
-    }
-  }
-  const downloadExcel = async () => {
-    setOpen(false)
-    try {
-      await exportAnalyticsExcel(chart, period)
-      toast(t('reports.charts.exportedExcel'), 'success')
-    } catch {
-      toast(t('reports.charts.exportError'), 'error')
-    }
-  }
+  const body = (mode: ChartPresentation) => (
+    <>
+      <div
+        className={cn(
+          'relative mx-auto flex min-h-56 w-full flex-col items-center justify-center',
+          mode === 'fullscreen' ? 'mt-4 h-[min(48dvh,27rem)] shrink-0' : 'mt-5 h-72',
+        )}
+        dir="ltr"
+      >
+        <ChartContainer
+          id={chart.id}
+          config={chartConfig}
+          className="mx-auto aspect-square h-auto min-h-0 w-full max-w-72 flex-1 [&_.recharts-text]:fill-foreground"
+        >
+          <PieChart>
+            <ChartTooltip
+              content={
+                <ChartTooltipContent
+                  formatter={(value) =>
+                    `${formatMinorMoney(Number(value))} · ${Math.round(
+                      (Number(value) / total) * 100,
+                    )}%`
+                  }
+                />
+              }
+            />
+            <Pie
+              data={segments}
+              dataKey="value"
+              nameKey="label"
+              innerRadius="57%"
+              outerRadius="88%"
+              paddingAngle={segments.length > 1 ? 2 : 0}
+              cornerRadius={3}
+              stroke="none"
+              activeShape={false}
+              isAnimationActive={false}
+            >
+              {segments.length <= 5 ? (
+                <LabelList
+                  dataKey="label"
+                  position="inside"
+                  content={renderSegmentLabel}
+                  stroke="none"
+                />
+              ) : null}
+            </Pie>
+          </PieChart>
+        </ChartContainer>
+        <div
+          className="mt-2 flex flex-col items-center justify-center text-center"
+          dir="rtl"
+          aria-live="polite"
+        >
+          <span className="text-2xl font-extrabold tabular-nums text-foreground-strong">
+            {formatMinorMoney(chart.total, { compact: true })}
+          </span>
+          <span className="mt-1 text-xs text-foreground-subtle">{t('reports.charts.total')}</span>
+        </div>
+        <span
+          className="sr-only"
+          role="img"
+          aria-label={`${title}: ${formatMinorMoney(chart.total)}`}
+        />
+      </div>
+      <div
+        className={cn(
+          'grid gap-2 border-t border-border-subtle pt-3',
+          // A wrapping responsive grid, never a scroll region: one column with no
+          // room, two on a small screen, three and then four as width allows, and
+          // as many rows as the segments need. Every segment — with its own amount
+          // and share, kept together in one cell — stays visible at once.
+          mode === 'fullscreen'
+            ? 'mt-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
+            : 'mt-5',
+        )}
+        dir="rtl"
+        data-testid="donut-chart-legend"
+      >
+        {segments.map((segment) => (
+          <div
+            key={segment.id}
+            className="flex items-baseline justify-between gap-x-3 gap-y-0.5 rounded-md px-2 py-1 text-sm odd:bg-surface-muted/40"
+          >
+            <span className="flex min-w-0 items-center gap-2 font-medium">
+              <span
+                className="size-2.5 shrink-0 self-center rounded-full"
+                style={{ background: segment.color }}
+              />
+              <span className="min-w-0 wrap-break-word">{segment.label}</span>
+            </span>
+            <span className="flex items-center gap-3 tabular-nums text-foreground-muted">
+              <span>{formatMinorMoney(segment.value, { compact: true })}</span>
+              <strong className="min-w-10 text-end text-foreground">
+                {Math.round(segment.percent)}%
+              </strong>
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
 
   return (
-    <>
-      <Card
-        className={cn(
-          'relative flex flex-col p-5 shadow-none',
-          fullscreen
-            ? 'h-[min(68dvh,38rem)] min-h-120 overflow-visible'
-            : 'min-h-88 overflow-visible',
-        )}
-        data-testid={`${fullscreen ? 'fullscreen-' : ''}chart-${chart.id}`}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center bg-accent text-primary">
-              <Icon size={19} aria-hidden />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-section text-start">{title}</h2>
-              <p className="mt-0.5 text-caption">{description}</p>
-              {fullscreen ? (
-                <p className="mt-1 text-sm text-foreground-muted">
-                  {t('reports.charts.period', { period })}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {!fullscreen ? (
-              <Button
-                id={`fullscreen-trigger-${chart.id}`}
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`${t('reports.charts.fullscreen')}: ${title}`}
-                title={t('reports.charts.fullscreen')}
-                onClick={() => setFullscreenOpen(true)}
-              >
-                <Maximize2 size={17} aria-hidden />
-              </Button>
-            ) : null}
-            <div className="relative">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('reports.charts.actions')}
-                title={t('reports.charts.actions')}
-                aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}
-              >
-                <MoreHorizontal size={18} aria-hidden />
-              </Button>
-              {open ? (
-                <div
-                  role="menu"
-                  className="absolute inset-e-0 top-11 z-10 w-44 rounded-md border border-border-strong bg-surface-popover p-1 shadow-lg"
-                >
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => void downloadPng()}
-                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-start text-sm hover:bg-surface-hover"
-                  >
-                    <FileDown size={16} aria-hidden />
-                    {t('reports.charts.png')}
-                  </button>
-                  <button
-                    role="menuitem"
-                    type="button"
-                    onClick={() => void downloadExcel()}
-                    className="flex w-full items-center gap-2 rounded px-3 py-2 text-start text-sm hover:bg-surface-hover"
-                  >
-                    <FileDown size={16} aria-hidden />
-                    {t('reports.charts.excel')}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={cn(
-            'relative mx-auto flex min-h-56 w-full flex-col items-center justify-center',
-            fullscreen ? 'mt-4 h-[min(48dvh,27rem)] flex-1' : 'mt-5 h-72',
-          )}
-          dir="ltr"
-        >
-          <ChartContainer
-            id={chart.id}
-            config={chartConfig}
-            className="mx-auto aspect-square h-auto min-h-0 w-full max-w-72 flex-1 [&_.recharts-text]:fill-foreground"
-          >
-            <PieChart>
-              <ChartTooltip
-                content={
-                  <ChartTooltipContent
-                    formatter={(value) =>
-                      `${formatMinorMoney(Number(value))} · ${Math.round(
-                        (Number(value) / total) * 100,
-                      )}%`
-                    }
-                  />
-                }
-              />
-              <Pie
-                data={segments}
-                dataKey="value"
-                nameKey="label"
-                innerRadius="57%"
-                outerRadius="88%"
-                paddingAngle={segments.length > 1 ? 2 : 0}
-                cornerRadius={3}
-                stroke="none"
-                activeShape={false}
-                isAnimationActive={false}
-              >
-                {segments.length <= 5 ? (
-                  <LabelList
-                    dataKey="label"
-                    position="inside"
-                    content={renderSegmentLabel}
-                    stroke="none"
-                  />
-                ) : null}
-              </Pie>
-            </PieChart>
-          </ChartContainer>
-          <div
-            className="mt-2 flex flex-col items-center justify-center text-center"
-            dir="rtl"
-            aria-live="polite"
-          >
-            <span className="text-2xl font-extrabold tabular-nums text-foreground-strong">
-              {formatMinorMoney(chart.total, { compact: true })}
-            </span>
-            <span className="mt-1 text-xs text-foreground-subtle">{t('reports.charts.total')}</span>
-          </div>
-          <span
-            className="sr-only"
-            role="img"
-            aria-label={`${title}: ${formatMinorMoney(chart.total)}`}
-          />
-        </div>
-        <div
-          className={cn(
-            'grid gap-2 border-t border-border-subtle pt-3',
-            fullscreen ? 'mt-4 sm:grid-cols-2 sm:gap-x-8' : 'mt-5',
-          )}
-          dir="rtl"
-        >
-          {segments.map((segment) => (
-            <div key={segment.id} className="flex items-center justify-between gap-3 text-sm">
-              <span className="flex items-center gap-2 font-medium">
-                <span className="size-2.5 rounded-full" style={{ background: segment.color }} />
-                {segment.label}
-              </span>
-              <span className="flex items-center gap-3 tabular-nums text-foreground-muted">
-                <span>{formatMinorMoney(segment.value, { compact: true })}</span>
-                <strong className="min-w-10 text-end text-foreground">
-                  {Math.round(segment.percent)}%
-                </strong>
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
-      {!fullscreen ? (
-        <Dialog
-          open={fullscreenOpen}
-          onClose={closeFullscreen}
-          title={t('reports.charts.fullscreen')}
-          className="w-[calc(100vw-1rem)] max-w-none max-h-[calc(100dvh-1rem)] p-3 sm:p-5"
-        >
-          <AnalyticsDonutChart chart={chart} from={from} to={to} presentation="fullscreen" />
-        </Dialog>
-      ) : null}
-    </>
+    <ChartShell
+      id={chart.id}
+      title={title}
+      description={description}
+      // The reports page has its own period picker above the grid, so the inline
+      // card does not repeat the window; the fullscreen dialog has no such
+      // context, so it states it there.
+      period={t('reports.charts.period', { period })}
+      periodVisibility="fullscreen"
+      icon={<Icon size={19} aria-hidden />}
+      onExportPng={downloadPng}
+      onExportExcel={downloadExcel}
+      presentation={presentation}
+      // A donut segment's badge can reach the card's edge; the inline card must
+      // not clip it, while fullscreen keeps the dialog's own bounds.
+      inlineCardClassName="overflow-visible"
+      testId={`chart-${chart.id}`}
+    >
+      {body}
+    </ChartShell>
   )
 }

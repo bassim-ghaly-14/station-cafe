@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LucideIcon } from '@/components/ui/icon'
 import { BarChart3, Droplets, Wallet } from '@/components/ui/icon'
+import { chartBarColor } from '@/lib/chart-colors'
 import { opsApi, type AnalyticsCharts } from '@/services/opsApi'
 
 export type AnalyticsCategory = {
@@ -69,16 +70,19 @@ export const CHARTS_PRESENTATION: Record<
 
 /**
  * Category labels and segment colors, keyed by the ids the report returns.
- * Colors are existing Station semantic tokens (never a raw palette), so light
- * and dark mode stay driven by the centralized theme.
+ *
+ * The colors are CENTRALIZED chart bar ROLES (`lib/chart-colors.ts`), never a
+ * raw palette: a donut segment is a data mark in exactly the same sense as a
+ * bar, so it is controlled from the same place, and light and dark mode stay
+ * driven by the centralized theme.
  */
 export const CATEGORY_PRESENTATION: Record<string, { labelKey: string; color: string }> = {
-  laundry: { labelKey: 'laundry', color: 'var(--primary)' },
-  cafe: { labelKey: 'cafe', color: 'var(--info)' },
-  cash: { labelKey: 'cash', color: 'var(--success)' },
-  visa: { labelKey: 'visa', color: 'var(--info)' },
-  sales: { labelKey: 'sales', color: 'var(--success)' },
-  expenses: { labelKey: 'expenses', color: 'var(--destructive)' },
+  laundry: { labelKey: 'laundry', color: chartBarColor('primary') },
+  cafe: { labelKey: 'cafe', color: chartBarColor('secondary') },
+  cash: { labelKey: 'cash', color: chartBarColor('quaternary') },
+  visa: { labelKey: 'visa', color: chartBarColor('secondary') },
+  sales: { labelKey: 'sales', color: chartBarColor('sales') },
+  expenses: { labelKey: 'expenses', color: chartBarColor('expenses') },
 }
 
 /** Translation-key prefix for category labels inside the reports catalogue. */
@@ -98,7 +102,7 @@ export function toAnalyticsCharts(response: AnalyticsCharts): AnalyticsChart[] {
       id: category.id,
       value: category.value,
       labelKey: CATEGORY_PRESENTATION[category.id]?.labelKey ?? category.id,
-      color: CATEGORY_PRESENTATION[category.id]?.color ?? 'var(--info)',
+      color: CATEGORY_PRESENTATION[category.id]?.color ?? chartBarColor('secondary'),
     }))
     return [
       { ...presentation, categories, total: chart.total, hasData: chart.has_data },

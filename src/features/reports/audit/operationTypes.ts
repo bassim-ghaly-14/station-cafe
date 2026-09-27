@@ -4,6 +4,7 @@ import {
   Clock,
   Lock,
   Package,
+  Percent,
   Receipt,
   ScrollText,
   Settings,
@@ -38,11 +39,13 @@ import {
 export type OperationGroupId =
   | 'auth'
   | 'user'
+  | 'staff'
   | 'catalog'
   | 'customer'
   | 'tables'
   | 'invoices'
   | 'credit'
+  | 'discount'
   | 'inventory'
   | 'expenses'
   | 'operations'
@@ -56,6 +59,10 @@ export type OperationGroupId =
 const NAMESPACE_GROUP: Record<string, OperationGroupId> = {
   auth: 'auth',
   user: 'user',
+  employee: 'staff',
+  attendance: 'staff',
+  advance: 'staff',
+  payroll: 'staff',
   catalog: 'catalog',
   customer: 'customer',
   car: 'customer',
@@ -63,6 +70,7 @@ const NAMESPACE_GROUP: Record<string, OperationGroupId> = {
   order: 'tables',
   invoice: 'invoices',
   credit: 'credit',
+  discount: 'discount',
   inventory: 'inventory',
   expense: 'expenses',
   shift: 'operations',
@@ -91,6 +99,36 @@ export function isKnownEntity(entityType: string): boolean {
   return KNOWN_ENTITIES.has(entityType)
 }
 
+/** Minimal translator shape, satisfied by i18next's `t`. */
+type LabelTranslator = (key: string) => string
+
+/**
+ * Localised label for a recorded entity type, degrading to a neutral noun.
+ *
+ * The entity type is a table name (`business_day`, `credit_account`), so an
+ * unmapped one must NOT be echoed: it degrades to a generic Arabic noun and the
+ * raw code stays in the ADMIN-only technical section.
+ */
+export function entityLabel(t: LabelTranslator, entityType: string): string {
+  if (!entityType) return t('audit.entityFallback')
+  return isKnownEntity(entityType) ? t(entityLabelKey(entityType)) : t('audit.entityFallback')
+}
+
+/**
+ * Localised label for a recorded action, degrading to a generic noun.
+ *
+ * This is the central operation-name mapping: every surface (table, filter,
+ * search, details, summary) names an operation through this function, so a
+ * technical code such as `invoice.created` can never be rendered directly.
+ */
+export function actionLabel(t: LabelTranslator, action: string): string {
+  const key = `audit.actions.${action}`
+  const label = t(key)
+  // i18next echoes the key back when a translation is missing, so that echo is
+  // exactly the signal that the catalogue has no Arabic name for this action.
+  return label === key ? t('audit.actionFallback') : label
+}
+
 /**
  * Entity types the backend records, mirrored from the audit call sites. Kept
  * as a set so an unrecognised entity degrades to a neutral label instead of
@@ -110,6 +148,10 @@ export const KNOWN_ENTITIES = new Set([
   'customer',
   'car',
   'user',
+  'employee',
+  'employee_advance',
+  'payroll_run',
+  'attendance_day',
   'settings',
 ])
 
@@ -126,11 +168,13 @@ export const OPERATION_GROUPS: Record<OperationGroupId, { icon: LucideIcon; tone
   {
     auth: { icon: Lock, tone: 'neutral' },
     user: { icon: Users, tone: 'neutral' },
+    staff: { icon: Users, tone: 'neutral' },
     catalog: { icon: Package, tone: 'neutral' },
     customer: { icon: User, tone: 'neutral' },
     tables: { icon: Store, tone: 'info' },
     invoices: { icon: Receipt, tone: 'brand' },
     credit: { icon: Wallet, tone: 'info' },
+    discount: { icon: Percent, tone: 'neutral' },
     inventory: { icon: Boxes, tone: 'neutral' },
     expenses: { icon: ScrollText, tone: 'neutral' },
     operations: { icon: Clock, tone: 'info' },
@@ -151,12 +195,14 @@ export function presentGroups(actions: readonly string[]): OperationGroupId[] {
 const GROUP_ORDER: readonly OperationGroupId[] = [
   'invoices',
   'credit',
+  'discount',
   'operations',
   'tables',
   'catalog',
   'inventory',
   'expenses',
   'customer',
+  'staff',
   'user',
   'auth',
   'settings',

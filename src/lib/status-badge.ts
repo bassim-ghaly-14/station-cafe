@@ -25,7 +25,6 @@ export function badgeVariantForStatus(status?: string | null): BadgeVariant {
   return fallback[status ?? ''] ?? 'neutral'
 }
 
-export const staffBadgeVariant = (status?: string | null) => badgeVariantForStatus(status)
 export const dayBadgeVariant = (status?: string | null) => badgeVariantForStatus(status)
 export const invoiceBadgeVariant = (status?: string | null) => badgeVariantForStatus(status)
 export const printJobBadgeVariant = (status?: string | null) => badgeVariantForStatus(status)

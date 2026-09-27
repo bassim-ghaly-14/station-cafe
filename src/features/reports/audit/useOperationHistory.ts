@@ -2,12 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { opsApi, type AuditEntry } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
-import {
-  entityLabelKey,
-  isKnownEntity,
-  operationGroupOf,
-  type OperationGroupId,
-} from './operationTypes'
+import { actionLabel, entityLabel, operationGroupOf, type OperationGroupId } from './operationTypes'
+import { businessDetails, type AuditTranslate } from './operationPresentation'
 
 /**
  * How many records the log query asks for. The backend clamps `limit` to
@@ -96,16 +92,20 @@ export function hasActiveFilters(filters: OperationFilters): boolean {
 
 /**
  * The searchable text of one row: the translated operation name, the operation
- * type, the actor and the entity. Built from the SAME catalogue the table
- * renders, so search can never match something the user cannot see.
+ * group, the business values of the details view, the actor and the entity.
+ *
+ * Built from the SAME catalogue the table renders, so search can never match
+ * something the user cannot see. The stored `entity_id` is intentionally absent
+ * from the index: a manager cannot read an internal id, so they cannot search by
+ * one either.
  */
-function searchIndex(entry: AuditEntry, t: (key: string) => string): string {
+function searchIndex(entry: AuditEntry, t: AuditTranslate): string {
   return [
-    t(`audit.actions.${entry.action}`),
+    actionLabel(t, entry.action),
     t(`audit.groups.${operationGroupOf(entry.action)}`),
-    t(`audit.entities.${entry.entity_type}`),
+    entityLabel(t, entry.entity_type),
     entry.actor_name ?? '',
-    entry.entity_id ?? '',
+    ...businessDetails(t, entry).map((detail) => `${detail.label} ${detail.value}`),
   ]
     .join(' ')
     .toLowerCase()
@@ -115,7 +115,7 @@ function searchIndex(entry: AuditEntry, t: (key: string) => string): string {
 export function filterOperations(
   rows: readonly AuditEntry[],
   filters: OperationFilters,
-  t: (key: string) => string,
+  t: AuditTranslate,
 ): AuditEntry[] {
   const needle = filters.search.trim().toLowerCase()
   return rows.filter((entry) => {
@@ -140,16 +140,4 @@ export function presentActors(rows: readonly AuditEntry[]): { id: string; name: 
 }
 
 /** Localised label for a recorded entity type, degrading to a neutral noun. */
-export function entityLabel(t: (key: string) => string, entityType: string): string {
-  if (!entityType) return t('audit.entityFallback')
-  return isKnownEntity(entityType) ? t(entityLabelKey(entityType)) : t('audit.entityFallback')
-}
-
-/** Localised label for a recorded action, degrading to a generic noun. */
-export function actionLabel(t: (key: string) => string, action: string): string {
-  const key = `audit.actions.${action}`
-  const label = t(key)
-  // i18next echoes the key back when a translation is missing, so that echo is
-  // exactly the signal that the catalogue has no Arabic name for this action.
-  return label === key ? t('audit.actionFallback') : label
-}
+export { actionLabel, entityLabel } from './operationTypes'

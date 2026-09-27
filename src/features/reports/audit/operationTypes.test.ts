@@ -35,6 +35,10 @@ describe('operation type registry', () => {
     const namespaces = [
       'auth',
       'user',
+      'employee',
+      'attendance',
+      'advance',
+      'payroll',
       'catalog',
       'customer',
       'car',
@@ -42,6 +46,7 @@ describe('operation type registry', () => {
       'order',
       'invoice',
       'credit',
+      'discount',
       'inventory',
       'expense',
       'shift',
@@ -58,9 +63,15 @@ describe('operation type registry', () => {
   it('groups related namespaces together and falls back safely', () => {
     expect(operationGroupOf('invoice.created')).toBe('invoices')
     expect(operationGroupOf('credit.settled')).toBe('credit')
+    expect(operationGroupOf('discount.authorized')).toBe('discount')
     expect(operationGroupOf('day.closed')).toBe('operations')
     expect(operationGroupOf('shift.opened')).toBe('operations')
     expect(operationGroupOf('car.created')).toBe('customer')
+    // The employees domain has its own area, separate from the logins.
+    expect(operationGroupOf('employee.created')).toBe('staff')
+    expect(operationGroupOf('attendance.check_in')).toBe('staff')
+    expect(operationGroupOf('payroll.finalized')).toBe('staff')
+    expect(operationGroupOf('user.password_changed')).toBe('user')
     // An unknown code must still resolve, never throw.
     expect(operationGroupOf('loyalty.points_redeemed')).toBe('other')
     expect(operationGroupOf('')).toBe('other')
@@ -77,12 +88,7 @@ describe('operation type registry', () => {
   })
 
   it('lists present groups in a stable, de-duplicated order', () => {
-    const groups = presentGroups([
-      'shift.opened',
-      'invoice.created',
-      'invoice.cancelled',
-      'day.closed',
-    ])
+    const groups = presentGroups(['shift.opened', 'invoice.created', 'day.closed'])
     expect(groups).toEqual(['invoices', 'operations'])
     expect(presentGroups([])).toEqual([])
   })
@@ -90,8 +96,76 @@ describe('operation type registry', () => {
   it('recognises the recorded entity types and rejects unknown ones', () => {
     expect(isKnownEntity('business_day')).toBe(true)
     expect(isKnownEntity('day_closing')).toBe(true)
+    expect(isKnownEntity('employee_advance')).toBe(true)
+    expect(isKnownEntity('payroll_run')).toBe(true)
+    expect(isKnownEntity('attendance_day')).toBe(true)
     expect(isKnownEntity('loyalty_account')).toBe(false)
     expect(entityLabelKey('invoice')).toBe('audit.entities.invoice')
+  })
+
+  it('translates every action the backend records today', () => {
+    // The complete set of `action` strings passed to `services::audit::record`.
+    // An unmapped one would silently degrade to the generic fallback, which is
+    // exactly what this test exists to prevent.
+    const actions = [
+      'auth.login',
+      'user.password_changed',
+      'catalog.product_created',
+      'catalog.product_updated',
+      'catalog.product_renamed',
+      'catalog.price_changed',
+      'catalog.product_activation_changed',
+      'catalog.product_deleted',
+      'catalog.category_created',
+      'customer.created',
+      'customer.updated',
+      'customer.deleted',
+      'car.created',
+      'table.opened',
+      'table.closed_empty',
+      'table.count_changed',
+      'order.discarded',
+      'invoice.created',
+      'invoice.wash_employee_assigned',
+      'credit.settled',
+      'discount.authorized',
+      'inventory.adjusted',
+      'inventory.min_changed',
+      'expense.created',
+      'shift.opened',
+      'shift.closed',
+      'day.opened',
+      'day.settled',
+      'day.closed',
+      'employee.created',
+      'employee.updated',
+      'employee.deleted',
+      'employee.salary_changed',
+      'employee.activated',
+      'employee.deactivated',
+      'attendance.check_in',
+      'attendance.check_out',
+      'attendance.absent',
+      'attendance.leave',
+      'attendance.corrected',
+      'attendance.override',
+      'advance.created',
+      'advance.reversed',
+      'payroll.created',
+      'payroll.finalized',
+      'settings.service_charge_changed',
+      'settings.discount_authorization_changed',
+      'settings.discount_options_changed',
+      'settings.monthly_sales_period_changed',
+      'settings.printer_changed',
+      'settings.credit_rules_changed',
+    ]
+    for (const action of actions) {
+      const label = actionLabel(t, action)
+      expect(label, action).not.toBe('عملية غير معروفة')
+      expect(label, action).not.toContain('.')
+      expect(label.length, action).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -104,7 +178,8 @@ describe('operation labels', () => {
   })
 
   it('never leaks an unmapped code, in Arabic or in English', () => {
-    expect(actionLabel(t, 'loyalty.points_redeemed')).toBe('عملية مسجّلة')
+    expect(actionLabel(t, 'loyalty.points_redeemed')).toBe('عملية غير معروفة')
+    expect(actionLabel(t, '')).toBe('عملية غير معروفة')
     expect(entityLabel(t, 'loyalty_account')).toBe('سجل')
     expect(entityLabel(t, '')).toBe('سجل')
   })

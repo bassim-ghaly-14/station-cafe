@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import { ToastProvider } from '@/components/ui'
+import { SessionProvider } from '@/features/auth/useSession'
 import type { AuditEntry } from '@/services/opsApi'
 import ReportsPage from '../ReportsPage'
 
@@ -18,7 +19,19 @@ const mocks = vi.hoisted(() => ({
   printJobs: vi.fn(),
   printConfig: vi.fn(),
   printTest: vi.fn(),
+  me: vi.fn(),
 }))
+
+vi.mock('@/services/ipc', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/ipc')>()
+  return {
+    ...actual,
+    // Only the session probe is intercepted: `me` decides the viewer's role,
+    // everything else keeps the real implementation.
+    call: (cmd: string, args?: Record<string, unknown>) =>
+      cmd === 'me' ? mocks.me(args) : actual.call(cmd, args),
+  }
+})
 
 vi.mock('@/services/opsApi', async () => {
   const actual = await vi.importActual<typeof import('@/services/opsApi')>('@/services/opsApi')
@@ -44,7 +57,9 @@ const entries: AuditEntry[] = [
     action: 'invoice.created',
     entity_type: 'invoice',
     entity_id: '1042',
-    after_json: '{"total":15000,"status":"PAID"}',
+    // Shaped exactly like the `invoice.created` snapshot the backend writes.
+    after_json:
+      '{"invoice_no":"1042","method":"CARD","total":15000,"discount":0,"service_charge":0,"order_type":"TABLE","takeaway_no":null}',
     created_at: '2026-09-25 14:30:00Z',
   },
   {
@@ -85,6 +100,25 @@ function renderAuditTab() {
   return utils
 }
 
+/**
+ * The same tab, seen by a signed-in ADMIN.
+ *
+ * A session token plus a resolved `me` are what make the viewer an admin, so this
+ * exercises the real role plumbing rather than a prop.
+ */
+function renderAuditTabAs(role: 'ADMIN' | 'MANAGER') {
+  localStorage.setItem('station.session.token', 'test-token')
+  const utils = render(
+    <ToastProvider>
+      <SessionProvider>
+        <ReportsPage />
+      </SessionProvider>
+    </ToastProvider>,
+  )
+  fireEvent.click(screen.getByRole('tab', { name: 'سجل العمليات' }))
+  return { ...utils, role }
+}
+
 describe('Operations history', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -99,6 +133,15 @@ describe('Operations history', () => {
       duplicate_window_secs: 60,
     })
     mocks.printTest.mockReset()
+    mocks.me.mockReset().mockResolvedValue({
+      id: 9,
+      name: 'مالك',
+      phone: null,
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      created_at: '2026-01-01 00:00:00Z',
+      updated_at: '2026-01-01 00:00:00Z',
+    })
   })
 
   afterEach(async () => {
@@ -112,7 +155,9 @@ describe('Operations history', () => {
 
     expect(await screen.findByRole('table')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'العملية' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'النوع' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'التفاصيل' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'القسم' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'المستخدم' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'التاريخ والوقت' })).toBeInTheDocument()
 
     expect(screen.getByText('إنشاء فاتورة')).toBeInTheDocument()
@@ -123,6 +168,18 @@ describe('Operations history', () => {
     expect(container.textContent).not.toContain('invoice.created')
     expect(container.textContent).not.toContain('after_json')
     expect(container.textContent).not.toContain('"total"')
+  })
+
+  it('shows a manager business summary of the operation, not a developer log', async () => {
+    renderAuditTab()
+    await screen.findByText('إنشاء فاتورة')
+
+    const table = within(screen.getByRole('table'))
+    // Invoice number + total, straight from the stored snapshot.
+    expect(table.getByText('1042 · 150.00 ج.م')).toBeInTheDocument()
+    // The internal element reference is an ADMIN capability, never a manager one.
+    expect(screen.queryByRole('columnheader', { name: 'العنصر' })).not.toBeInTheDocument()
+    expect(table.queryByText('#1042')).not.toBeInTheDocument()
   })
 
   it('gives each operation type an icon tile instead of a filled pill', async () => {
@@ -148,7 +205,7 @@ describe('Operations history', () => {
 
     expect(await screen.findByText('لا توجد نتائج مطابقة للفلاتر الحالية')).toBeInTheDocument()
     expect(screen.getByText(/يوجد في السجل 3 عملية/)).toBeInTheDocument()
-    expect(screen.queryByText('لا توجد عمليات حتى الآن')).not.toBeInTheDocument()
+    expect(screen.queryByText('لا توجد عمليات مسجّلة بعد')).not.toBeInTheDocument()
   })
 
   it('offers a direct reset from the no-results state', async () => {
@@ -179,11 +236,11 @@ describe('Operations history', () => {
     expect(mocks.audit).toHaveBeenCalledTimes(1)
   })
 
-  it('filters by operation type and by operator', async () => {
+  it('filters by operation area and by operator', async () => {
     renderAuditTab()
     await screen.findByText('إنشاء فاتورة')
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'نوع العملية' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'القسم' }), {
       target: { value: 'operations' },
     })
     await waitFor(() => expect(screen.queryByText('إنشاء فاتورة')).not.toBeInTheDocument())
@@ -200,7 +257,7 @@ describe('Operations history', () => {
     mocks.audit.mockResolvedValue([])
     renderAuditTab()
 
-    expect(await screen.findByText('لا توجد عمليات حتى الآن')).toBeInTheDocument()
+    expect(await screen.findByText('لا توجد عمليات مسجّلة بعد')).toBeInTheDocument()
     expect(screen.queryByText('لا توجد نتائج مطابقة للفلاتر الحالية')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /مسح الفلاتر/ })).not.toBeInTheDocument()
   })
@@ -210,32 +267,79 @@ describe('Operations history', () => {
     renderAuditTab()
 
     expect(await screen.findByText('حدث خطأ غير متوقع، حاول مرة أخرى')).toBeInTheDocument()
-    expect(screen.queryByText('لا توجد عمليات حتى الآن')).not.toBeInTheDocument()
+    expect(screen.queryByText('لا توجد عمليات مسجّلة بعد')).not.toBeInTheDocument()
 
     mocks.audit.mockResolvedValue(entries)
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
     expect(await screen.findByText('إنشاء فاتورة')).toBeInTheDocument()
   })
 
-  it('opens a details dialog showing only fields the record actually has', async () => {
+  it('gives a manager a human-readable details dialog and no technical payload', async () => {
     renderAuditTab()
     await screen.findByText('إنشاء فاتورة')
 
     fireEvent.click(screen.getByRole('button', { name: /عرض تفاصيل العملية: إنشاء فاتورة/ }))
     const dialog = await screen.findByRole('dialog', { name: 'تفاصيل العملية' })
 
-    expect(within(dialog).getByText('إنشاء فاتورة')).toBeInTheDocument()
+    // 1 — a plain Arabic summary of what happened.
+    expect(within(dialog).getByText('ملخص العملية')).toBeInTheDocument()
+    expect(within(dialog).getByText('تم إنشاء فاتورة.')).toBeInTheDocument()
+
+    // 2 — the business facts, in the manager's own terms.
+    expect(within(dialog).getByText('التفاصيل')).toBeInTheDocument()
     expect(within(dialog).getByText('محمود')).toBeInTheDocument()
     expect(within(dialog).getByText('مدير')).toBeInTheDocument()
+    expect(within(dialog).getByText('القسم')).toBeInTheDocument()
+    // The area is named twice on purpose: the summary badge and the field.
+    expect(within(dialog).getAllByText('الفواتير والمدفوعات')).toHaveLength(2)
+    expect(within(dialog).getByText('العنصر المتأثر')).toBeInTheDocument()
     expect(within(dialog).getByText('فاتورة')).toBeInTheDocument()
-    expect(within(dialog).getByText(/المرجع #1042/)).toBeInTheDocument()
-    // The recorded payload is shown, pretty-printed, as stored data.
-    expect(within(dialog).getByText(/"total": 15000/)).toBeInTheDocument()
+    expect(within(dialog).getByText('رقم الفاتورة')).toBeInTheDocument()
+    expect(within(dialog).getByText('1042')).toBeInTheDocument()
+    expect(within(dialog).getByText('الإجمالي')).toBeInTheDocument()
+    expect(within(dialog).getByText('150.00 ج.م')).toBeInTheDocument()
+    expect(within(dialog).getByText('طريقة الدفع')).toBeInTheDocument()
+    expect(within(dialog).getByText('بطاقة')).toBeInTheDocument()
+
+    // 3 — never for a manager: the technical section, the stored codes, the
+    // internal ids, or anything that smells of a raw payload.
+    expect(within(dialog).queryByText('المعلومات التقنية')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('invoice.created')).not.toBeInTheDocument()
+    expect(dialog.textContent).not.toContain('#1042')
+    expect(dialog.textContent).not.toContain('"total"')
+    expect(dialog.textContent).not.toContain('after_json')
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق' }))
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'تفاصيل العملية' })).not.toBeInTheDocument(),
     )
+  })
+
+  it('gives an admin the same summary plus the full technical audit detail', async () => {
+    renderAuditTabAs('ADMIN')
+    await screen.findByText('إنشاء فاتورة')
+
+    const table = within(screen.getByRole('table'))
+    // ADMIN keeps the affected element and its stored reference.
+    expect(screen.getByRole('columnheader', { name: 'العنصر' })).toBeInTheDocument()
+    expect(table.getByText('#1042')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /عرض تفاصيل العملية: إنشاء فاتورة/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'تفاصيل العملية' })
+
+    // The human summary is still first…
+    expect(within(dialog).getByText('تم إنشاء فاتورة.')).toBeInTheDocument()
+    expect(within(dialog).getByText('رقم الفاتورة')).toBeInTheDocument()
+
+    // …and the technical block keeps every existing audit value available.
+    expect(within(dialog).getByText('المعلومات التقنية')).toBeInTheDocument()
+    expect(within(dialog).getByText('رمز العملية')).toBeInTheDocument()
+    expect(within(dialog).getByText('invoice.created')).toBeInTheDocument()
+    expect(within(dialog).getByText('نوع السجل')).toBeInTheDocument()
+    expect(within(dialog).getByText('المرجع')).toBeInTheDocument()
+    expect(within(dialog).getByText('#1042')).toBeInTheDocument()
+    expect(within(dialog).getByText('رقم السجل')).toBeInTheDocument()
+    expect(within(dialog).getByText(/"total": 15000/)).toBeInTheDocument()
   })
 
   it('says so when an operation carries no extra recorded data', async () => {
@@ -245,7 +349,12 @@ describe('Operations history', () => {
     fireEvent.click(screen.getByRole('button', { name: /عرض تفاصيل العملية: فتح وردية/ }))
     const dialog = await screen.findByRole('dialog', { name: 'تفاصيل العملية' })
 
-    expect(within(dialog).getByText('لم تُسجَّل بيانات إضافية لهذه العملية.')).toBeInTheDocument()
+    // A safe sentence, never a dump of nothing.
+    expect(within(dialog).getByText('تم فتح وردية.')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('لا تتوفر تفاصيل إضافية يمكن عرضها لهذه العملية.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).queryByText('المعلومات التقنية')).not.toBeInTheDocument()
   })
 
   it('labels an unmapped action in Arabic rather than leaking its code', async () => {
@@ -258,17 +367,26 @@ describe('Operations history', () => {
         action: 'loyalty.points_redeemed',
         entity_type: 'loyalty_account',
         entity_id: '4',
-        after_json: null,
+        after_json: '{"points": 40}',
         created_at: '2026-09-25 12:00:00Z',
       },
     ])
     const { container } = renderAuditTab()
 
-    expect(await screen.findByText('عملية مسجّلة')).toBeInTheDocument()
+    expect(await screen.findByText('عملية غير معروفة')).toBeInTheDocument()
     const table = within(screen.getByRole('table'))
     expect(table.getByText('عمليات أخرى')).toBeInTheDocument()
-    expect(table.getByText('سجل')).toBeInTheDocument()
     expect(container.textContent).not.toContain('loyalty')
+    // The payload of an undeclared action is never rendered, not even partially.
+    expect(container.textContent).not.toContain('40')
+
+    fireEvent.click(screen.getByRole('button', { name: /عرض تفاصيل العملية/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'تفاصيل العملية' })
+    // The unmapped element degrades to a neutral Arabic noun, and the stored
+    // action code is still not shown to a manager.
+    expect(within(dialog).getByText('سجل')).toBeInTheDocument()
+    expect(dialog.textContent).not.toContain('loyalty.points_redeemed')
+    expect(within(dialog).queryByText('المعلومات التقنية')).not.toBeInTheDocument()
   })
 
   it('requests the log once per load, with a bounded window', async () => {

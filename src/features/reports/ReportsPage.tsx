@@ -31,6 +31,7 @@ import { useErrText } from '@/lib/err'
 import { useAnalyticsCharts, type AnalyticsChart } from './charts/analyticsCharts'
 import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
 import { ChartEmptyReasons, ChartEmptyState } from './charts/ChartEmptyState'
+import { MonthlyComparisonSection } from './charts/MonthlyComparisonSection'
 import { OperationHistoryPanel } from './audit/OperationHistoryPanel'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
@@ -178,6 +179,7 @@ function ChartsReport({
               report.refreshing && 'opacity-60 transition-opacity',
             )}
             aria-busy={report.refreshing || undefined}
+            data-testid="analytics-charts-grid"
           >
             {report.data.map((chart) =>
               chart.hasData ? (
@@ -205,6 +207,14 @@ function ChartsReport({
           </div>
         </div>
       )}
+
+      {/* The CALENDAR comparisons live in their own section BELOW the
+          period-scoped charts, and deliberately outside the branch above: they
+          state their own trailing window through their own commands, so the
+          period picker here never re-reads or re-shapes them — and they keep
+          their own loading/empty/error states rather than borrowing the
+          analytics report's. */}
+      <MonthlyComparisonSection />
     </div>
   )
 }

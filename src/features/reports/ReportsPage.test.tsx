@@ -68,6 +68,11 @@ const mocks = vi.hoisted(() => ({
   closedBusinessDays: vi.fn(),
   printPreviewShift: vi.fn(),
   printPreviewDay: vi.fn(),
+  // The monthly comparison section: two CALENDAR charts that live on this tab
+  // now, each with its own command and its own window.
+  monthly: vi.fn(),
+  expensesMonthly: vi.fn(),
+  monthlySalesPeriod: vi.fn(),
 }))
 
 vi.mock('@/services/opsApi', () => ({
@@ -79,10 +84,17 @@ vi.mock('@/services/opsApi', () => ({
     printTest: mocks.printTest,
     closedShifts: mocks.closedShifts,
     closedBusinessDays: mocks.closedBusinessDays,
+    expensesMonthly: mocks.expensesMonthly,
   },
 }))
 
-vi.mock('@/services/posApi', () => ({
+vi.mock('@/services/salesApi', () => ({
+  salesApi: { monthly: mocks.monthly },
+}))
+
+// The window both monthly charts read is a SETTING, not a filter of this page.
+vi.mock('@/services/posApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/posApi')>()),
   api: {
     printPreviewShift: mocks.printPreviewShift,
     printPreviewDay: mocks.printPreviewDay,
@@ -93,10 +105,57 @@ vi.mock('@/services/posApi', () => ({
     printPreviewInvoice: vi.fn(),
     printPreviewTicket: vi.fn(),
   },
+  settingsApi: { monthlySalesPeriod: mocks.monthlySalesPeriod },
 }))
 
 const today = todayIso()
 const weekAgo = addDays(today, -6)
+
+/** The trailing calendar report the sales monthly chart would receive. */
+const MONTHLY_SALES = {
+  from: '2026-01-01',
+  to: '2026-09-26',
+  months: [
+    {
+      month: '2026-08',
+      invoices_count: 2,
+      total_sales: 20_000,
+      cafe_sales: 12_000,
+      wash_sales: 8_000,
+    },
+    {
+      month: '2026-09',
+      invoices_count: 2,
+      total_sales: 25_000,
+      cafe_sales: 15_000,
+      wash_sales: 10_000,
+    },
+  ],
+}
+
+/** The trailing calendar report the expenses monthly chart would receive. */
+const MONTHLY_EXPENSES = {
+  from: '2026-01-01',
+  to: '2026-03-31',
+  report: {
+    categories: [
+      { code: 'SALARY', name_ar: 'رواتب', total: 30_000 },
+      { code: 'SUPPLIES', name_ar: 'مشتريات', total: 10_000 },
+    ],
+    months: [
+      { month: '2026-01', category: 'SALARY', category_name: 'رواتب', count: 1, amount: 10_000 },
+      { month: '2026-02', category: 'SALARY', category_name: 'رواتب', count: 1, amount: 20_000 },
+      {
+        month: '2026-03',
+        category: 'SUPPLIES',
+        category_name: 'مشتريات',
+        count: 1,
+        amount: 10_000,
+      },
+    ],
+  },
+}
+
 // The picker opens on the month of the applied `from`, so pick inside that month.
 const viewMonth = parseIsoDate(weekAgo) ?? { year: 2026, month: 1, day: 1 }
 const firstDay = isoDate(viewMonth.year, viewMonth.month, 1)
@@ -147,6 +206,11 @@ describe('ReportsPage period filter', () => {
     mocks.closedBusinessDays.mockReset().mockResolvedValue([])
     mocks.printPreviewShift.mockReset()
     mocks.printPreviewDay.mockReset()
+    // Defaulted so the period-filter tests are not coupled to the monthly
+    // charts' data; their own behaviour is asserted in the section below.
+    mocks.monthly.mockReset().mockResolvedValue(MONTHLY_SALES)
+    mocks.expensesMonthly.mockReset().mockResolvedValue(MONTHLY_EXPENSES)
+    mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
   })
 
   afterEach(async () => {
@@ -328,8 +392,12 @@ describe('ReportsPage period filter', () => {
     await waitFor(() => expect(screen.getAllByText('لا توجد حركة في هذه الفترة')).toHaveLength(3))
     expect(screen.getByRole('heading', { name: 'كاش مقابل فيزا' })).toBeInTheDocument()
     expect(screen.getAllByText(/لم يُسجَّل أي مبلغ لهذا المؤشر/)).toHaveLength(3)
-    // No chart pretends to hold data: nothing to expand or export.
-    expect(screen.queryByRole('button', { name: /تكبير الرسم البياني:/ })).not.toBeInTheDocument()
+    // No chart pretends to hold data: nothing to expand or export. Scoped to the
+    // analytics grid — the monthly section below states its own period.
+    const grid = screen.getByTestId('analytics-charts-grid')
+    expect(
+      within(grid).queryByRole('button', { name: /تكبير الرسم البياني:/ }),
+    ).not.toBeInTheDocument()
   })
 
   it('surfaces analytics report failures instead of fabricating values', async () => {
@@ -376,26 +444,30 @@ describe('ReportsPage period filter', () => {
     // Categories carry a translation KEY, never a display string, so the copy
     // lives in the catalogue rather than in the view model.
     expect(mapped[0].categories).toEqual([
-      { id: 'laundry', labelKey: 'laundry', value: 20_000, color: 'var(--primary)' },
-      { id: 'cafe', labelKey: 'cafe', value: 10_000, color: 'var(--info)' },
+      { id: 'laundry', labelKey: 'laundry', value: 20_000, color: 'var(--chart-bar-primary)' },
+      { id: 'cafe', labelKey: 'cafe', value: 10_000, color: 'var(--chart-bar-secondary)' },
     ])
     expect(mapped.flatMap((chart) => chart.categories.map((category) => category.value))).toEqual([
       20_000, 10_000, 4_000, 1_000, 6_000, 3_000,
     ])
   })
 
-  it('uses only existing Station semantic tokens for chart segments', () => {
+  it('paints every segment with a centralized chart bar role', () => {
     const colors = Object.values(CATEGORY_PRESENTATION).map((category) => category.color)
 
+    // A donut segment is a data mark like a bar, so it is drawn through the same
+    // centralized roles — and therefore through the same Dev Settings.
     expect(colors).toEqual([
-      'var(--primary)',
-      'var(--info)',
-      'var(--success)',
-      'var(--info)',
-      'var(--success)',
-      'var(--destructive)',
+      'var(--chart-bar-primary)',
+      'var(--chart-bar-secondary)',
+      'var(--chart-bar-quaternary)',
+      'var(--chart-bar-secondary)',
+      'var(--chart-bar-sales)',
+      'var(--chart-bar-expenses)',
     ])
-    expect(colors.some((color) => color.includes(['--', 'chart-'].join('')))).toBe(false)
+    // No segment may name a raw palette token again: that is what used to make a
+    // chart unreachable from a single settings screen.
+    expect(colors.every((color) => color.startsWith('var(--chart-bar-'))).toBe(true)
   })
 
   it('opens only the selected chart in fullscreen and closes it again', async () => {
@@ -403,7 +475,10 @@ describe('ReportsPage period filter', () => {
     await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
 
-    const fullscreenButtons = await screen.findAllByRole('button', {
+    // Scoped to the analytics grid: the monthly section below it brings its own
+    // fullscreen affordances, and this assertion is about the three donuts.
+    const grid = await screen.findByTestId('analytics-charts-grid')
+    const fullscreenButtons = within(grid).queryAllByRole('button', {
       name: /تكبير الرسم البياني:/,
     })
     expect(fullscreenButtons).toHaveLength(3)
@@ -465,5 +540,130 @@ describe('ReportsPage period filter', () => {
     expect(screen.getByText('لم يتم إعداد الطابعة بعد')).toBeInTheDocument()
     expect(container.textContent).not.toContain('TAKEAWAY_INVOICE')
     expect(container.textContent).not.toContain('printer.not_configured')
+  })
+})
+
+/**
+ * The monthly comparison section — the two CALENDAR charts that moved here from
+ * the Sales and Expenses pages. They are asserted here exactly as they were
+ * asserted there: same commands, same Dev-Settings window, same states, and
+ * still untouched by a date-range picker (this page's included).
+ */
+describe('ReportsPage monthly comparison section', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    mocks.analyticsCharts.mockReset().mockResolvedValue(chartsReport)
+    mocks.audit.mockReset().mockResolvedValue([])
+    mocks.closedShifts.mockReset().mockResolvedValue([])
+    mocks.closedBusinessDays.mockReset().mockResolvedValue([])
+    mocks.monthly.mockReset().mockResolvedValue(MONTHLY_SALES)
+    mocks.expensesMonthly.mockReset().mockResolvedValue(MONTHLY_EXPENSES)
+    mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      await i18n.changeLanguage(DEFAULT_LOCALE)
+    })
+  })
+
+  /** Opens the Charts tab, where the section lives. */
+  async function openCharts() {
+    renderPage()
+    await waitFor(() => expect(mocks.audit).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('tab', { name: 'الرسوم البيانية' }))
+    await waitFor(() => expect(mocks.analyticsCharts).toHaveBeenCalled())
+  }
+
+  it('renders both moved charts in their own section below the existing charts', async () => {
+    await openCharts()
+
+    expect(
+      await screen.findByRole('heading', { name: 'المبيعات والمصروفات الشهرية' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'الإيرادات الشهرية: الكافيه مقابل المغسلة' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'المصروفات الشهرية حسب النوع' })).toBeInTheDocument()
+
+    // The section comes AFTER the analytics charts, not beside them.
+    const section = screen.getByTestId('monthly-comparison-section')
+    const firstAnalytics = screen.getByRole('heading', { name: 'المغسلة مقابل الكافيه' })
+    // eslint-disable-next-line no-bitwise
+    expect(
+      firstAnalytics.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // Sales stays its own series, expenses stays its own categories.
+    expect(screen.getAllByText('كافيه').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('مغسلة').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('رواتب').length).toBeGreaterThan(0)
+  })
+
+  it('takes both windows from the one Dev Settings period', async () => {
+    await openCharts()
+
+    await waitFor(() => expect(mocks.monthly).toHaveBeenCalledTimes(1))
+    expect(mocks.expensesMonthly).toHaveBeenCalledTimes(1)
+    // The same setting drives both charts — the only argument either read takes.
+    expect(mocks.monthlySalesPeriod).toHaveBeenCalled()
+    expect(mocks.monthly).toHaveBeenCalledWith(12)
+    expect(mocks.expensesMonthly).toHaveBeenCalledWith(12)
+  })
+
+  it('respects a different configured window', async () => {
+    mocks.monthlySalesPeriod.mockResolvedValue({ months: 6 })
+    await openCharts()
+
+    await waitFor(() => expect(mocks.monthly).toHaveBeenCalledWith(6))
+    expect(mocks.expensesMonthly).toHaveBeenCalledWith(6)
+  })
+
+  it('falls back to the backend default when the setting cannot be read', async () => {
+    mocks.monthlySalesPeriod.mockRejectedValue({ message: 'db.error' })
+    await openCharts()
+
+    // No argument at all: the backend applies its own stored default.
+    await waitFor(() => expect(mocks.monthly).toHaveBeenCalledWith())
+    expect(mocks.expensesMonthly).toHaveBeenCalledWith()
+  })
+
+  it('keeps the monthly charts out of the reports period filter', async () => {
+    await openCharts()
+    await waitFor(() => expect(mocks.analyticsCharts).toHaveBeenCalledTimes(1))
+
+    applyPeriod(weekAgo, firstDay, tenthDay)
+
+    await waitFor(() => expect(mocks.analyticsCharts).toHaveBeenLastCalledWith(firstDay, tenthDay))
+    // The analytics report follows the picker; the calendar comparisons do not.
+    expect(mocks.monthly).toHaveBeenCalledTimes(1)
+    expect(mocks.expensesMonthly).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the expenses indicator from the TOTAL spend, not one category', async () => {
+    await openCharts()
+
+    // The month's TOTALS are 20,000 then 10,000 — a 50% FALL in total spend.
+    // Reading any single category, or the leading one alone, would answer a
+    // different question, so the badge reports the sum of every category.
+    expect(await screen.findByText('-50.0%')).toBeInTheDocument()
+    // Both monthly charts state the same reading; the label is shared, not unique.
+    expect(screen.getAllByText('مقارنة بالشهر السابق')).toHaveLength(2)
+  })
+
+  it('shows a real empty state when the configured window holds no months', async () => {
+    mocks.monthly.mockResolvedValue({ from: '2026-01-01', to: '2026-09-26', months: [] })
+    await openCharts()
+
+    expect(
+      await screen.findByRole('heading', { name: 'لا توجد شهور لتحليلها بعد' }),
+    ).toBeInTheDocument()
+  })
+
+  it('reports a monthly read failure with the shared error state', async () => {
+    mocks.expensesMonthly.mockRejectedValue(new Error('internal_error'))
+    await openCharts()
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
   })
 })

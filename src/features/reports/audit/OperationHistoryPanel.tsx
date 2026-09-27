@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/states'
 import { Card, ProgressBar, Skeleton } from '@/components/ui'
+import { useOptionalSession } from '@/features/auth/useSession'
 import type { AuditEntry } from '@/services/opsApi'
 import { OperationDetails } from './OperationDetails'
 import { OperationEmptyState } from './OperationEmptyState'
 import { OperationHistoryFilters } from './OperationHistoryFilters'
 import { OperationHistoryTable } from './OperationHistoryTable'
+import { canViewTechnicalDetails } from './operationPresentation'
 import {
   AUDIT_WINDOW,
   filterOperations,
@@ -38,6 +40,13 @@ export function OperationHistoryPanel() {
   const { rows, initialLoading, refreshing, error, reload } = useOperationHistory()
   const [filters, setFilters] = useState<OperationFilters>(NO_FILTERS)
   const [selected, setSelected] = useState<AuditEntry | null>(null)
+
+  // The role decides the PRESENTATION only. `list_audit` stays MANAGER-level on
+  // the backend, and the technical section is ADMIN-only here — resolved through
+  // the optional session so an unresolved session renders the safe (manager)
+  // form instead of flashing technical data.
+  const session = useOptionalSession()
+  const canViewTechnical = canViewTechnicalDetails(session?.user?.role)
 
   const visible = useMemo(() => filterOperations(rows, filters, t), [rows, filters, t])
 
@@ -82,11 +91,22 @@ export function OperationHistoryPanel() {
             </p>
             {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
           </div>
-          <OperationHistoryTable rows={visible} onOpen={setSelected} busy={refreshing} />
+          <OperationHistoryTable
+            rows={visible}
+            onOpen={setSelected}
+            busy={refreshing}
+            canViewTechnical={canViewTechnical}
+          />
         </Card>
       )}
 
-      {selected ? <OperationDetails entry={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <OperationDetails
+          entry={selected}
+          onClose={() => setSelected(null)}
+          canViewTechnical={canViewTechnical}
+        />
+      ) : null}
     </section>
   )
 }
