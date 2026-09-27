@@ -23,9 +23,9 @@ export function InvoiceEmptyState({
   onReset,
   className,
 }: {
-  variant: 'no-data' | 'no-results'
-  onReset?: () => void
-  className?: string
+  readonly variant: 'no-data' | 'no-results'
+  readonly onReset?: () => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const noResults = variant === 'no-results'

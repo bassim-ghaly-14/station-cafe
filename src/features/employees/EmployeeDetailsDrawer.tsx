@@ -86,10 +86,10 @@ export function EmployeeDetailsDrawer({
   onClose,
   onOverridden,
 }: {
-  employeeId: number | null
+  readonly employeeId: number | null
   /** The name is only for the panel's accessible title before the load lands. */
-  employeeName: string
-  period: EmployeePeriod
+  readonly employeeName: string
+  readonly period: EmployeePeriod
   /**
    * Whether this session may ADMINISTRATIVELY override a day.
    *
@@ -98,10 +98,10 @@ export function EmployeeDetailsDrawer({
    * rather than being inherited by accident. Hiding the button is an affordance:
    * the service refuses a STAFF session regardless of what is rendered.
    */
-  canOverride: boolean
-  onClose: () => void
+  readonly canOverride: boolean
+  readonly onClose: () => void
   /** Called after an override is accepted, so the page's own queries refresh. */
-  onOverridden: () => void
+  readonly onOverridden: () => void
 }) {
   const { t } = useTranslation()
   const errText = useErrText(t)

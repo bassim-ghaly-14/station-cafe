@@ -35,10 +35,10 @@ function StatTile({
   hint,
   children,
 }: {
-  icon: LucideIcon
-  label: string
-  hint?: string
-  children: React.ReactNode
+  readonly icon: LucideIcon
+  readonly label: string
+  readonly hint?: string
+  readonly children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border-subtle bg-surface-card p-3">
@@ -61,9 +61,9 @@ export function ExpensesKpiBand({
   loading,
   className,
 }: {
-  overview: ExpenseOverview | null
-  loading: boolean
-  className?: string
+  readonly overview: ExpenseOverview | null
+  readonly loading: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 
@@ -188,8 +188,8 @@ export function ExpensesCategoryCard({
   overview,
   className,
 }: {
-  overview: ExpenseOverview
-  className?: string
+  readonly overview: ExpenseOverview
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   // Station chart bar roles only — the tone is a reading aid, never the signal.

@@ -357,9 +357,9 @@ function MonthOverMonthBadge({
   label,
   unavailableLabel,
 }: {
-  change: MonthOverMonth
-  label?: string
-  unavailableLabel?: string
+  readonly change: MonthOverMonth
+  readonly label?: string
+  readonly unavailableLabel?: string
 }) {
   if (change.trend === 'unavailable') {
     return <span className="text-caption text-foreground-subtle">{unavailableLabel ?? '—'}</span>

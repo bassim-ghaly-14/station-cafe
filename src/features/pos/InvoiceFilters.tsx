@@ -29,11 +29,11 @@ export function InvoiceFilters({
   onReset,
   className,
 }: {
-  query: InvoiceListQuery
-  onChange: (next: InvoiceListQuery) => void
+  readonly query: InvoiceListQuery
+  readonly onChange: (next: InvoiceListQuery) => void
   /** Clears every narrowing control at once. */
-  onReset: () => void
-  className?: string
+  readonly onReset: () => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const active = query.search.trim() !== '' || query.status !== '' || query.method !== ''

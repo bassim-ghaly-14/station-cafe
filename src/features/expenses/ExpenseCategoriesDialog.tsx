@@ -40,11 +40,11 @@ export function ExpenseCategoriesDialog({
    */
   canDelete,
 }: {
-  open: boolean
-  onClose: () => void
+  readonly open: boolean
+  readonly onClose: () => void
   /** Called after any accepted change, so the page can refresh its own reads. */
-  onChanged: () => void
-  canDelete: boolean
+  readonly onChanged: () => void
+  readonly canDelete: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()

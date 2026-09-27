@@ -53,19 +53,19 @@ export function CatalogCategoryFilter({
   onOpenManager,
   className,
 }: {
-  categories: CatalogCategoryOption[]
+  readonly categories: CatalogCategoryOption[]
   /** `null` means "all categories". */
-  selectedId: number | null
-  onSelect: (id: number | null) => void
-  allLabel: string
-  totalCount: number
+  readonly selectedId: number | null
+  readonly onSelect: (id: number | null) => void
+  readonly allLabel: string
+  readonly totalCount: number
   /** Categories NOT shown in compact mode; they are one "show all" tap away. */
-  hiddenCount?: number
+  readonly hiddenCount?: number
   /** Compact by default: only the cashier's pinned categories are listed. */
-  expanded?: boolean
-  onToggleExpanded?: () => void
-  onOpenManager?: () => void
-  className?: string
+  readonly expanded?: boolean
+  readonly onToggleExpanded?: () => void
+  readonly onOpenManager?: () => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const activeRef = useRef<HTMLButtonElement>(null)
@@ -161,13 +161,13 @@ function CategoryChip({
   icon = false,
   ref,
 }: {
-  selected: boolean
-  onClick: () => void
-  label: string
-  count: number
-  tone?: ReturnType<typeof categoryTone>
-  icon?: boolean
-  ref?: React.Ref<HTMLButtonElement>
+  readonly selected: boolean
+  readonly onClick: () => void
+  readonly label: string
+  readonly count: number
+  readonly tone?: ReturnType<typeof categoryTone>
+  readonly icon?: boolean
+  readonly ref?: React.Ref<HTMLButtonElement>
 }) {
   const { t } = useTranslation()
   return (

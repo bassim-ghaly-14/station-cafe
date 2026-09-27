@@ -50,13 +50,13 @@ export function CatalogCard({
   onToggle,
   onDelete,
 }: {
-  product: Product
-  canManage: boolean
+  readonly product: Product
+  readonly canManage: boolean
   /** ADMIN only: the backend rejects the delete for any other role. */
-  canDelete: boolean
-  onEdit: () => void
-  onToggle: () => void
-  onDelete: () => void
+  readonly canDelete: boolean
+  readonly onEdit: () => void
+  readonly onToggle: () => void
+  readonly onDelete: () => void
 }) {
   const { t } = useTranslation()
   const isCafe = product.department === 'CAFE'

@@ -32,10 +32,10 @@ export function ProductBrowser({
   onAdd,
 }: {
   /** The whole active catalog; grouping happens here, not in the API. */
-  products: Product[]
-  qty: number
-  onQtyChange: (quantity: number) => void
-  onAdd: (product: Product) => void
+  readonly products: Product[]
+  readonly qty: number
+  readonly onQtyChange: (quantity: number) => void
+  readonly onAdd: (product: Product) => void
 }) {
   const { t } = useTranslation()
   const [department, setDepartment] = useState<Department | null>(null)

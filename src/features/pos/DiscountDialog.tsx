@@ -25,14 +25,14 @@ export function DiscountDialog({
   onClose,
   onApply,
 }: {
-  initial: DiscountSel
-  orderId: number
+  readonly initial: DiscountSel
+  readonly orderId: number
   /** Authoritative order subtotal, in minor units. */
-  subtotal: number
+  readonly subtotal: number
   /** Admin-configured quick-pick amounts, in minor units. */
-  amounts: number[]
-  onClose: () => void
-  onApply: (d: DiscountSel, refreshed?: PosOrder) => void
+  readonly amounts: number[]
+  readonly onClose: () => void
+  readonly onApply: (d: DiscountSel, refreshed?: PosOrder) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

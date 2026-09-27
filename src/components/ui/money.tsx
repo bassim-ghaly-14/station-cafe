@@ -9,16 +9,16 @@ export function MoneyDisplay({
   compact = false,
   variant,
 }: {
-  amount: number
-  className?: string
+  readonly amount: number
+  readonly className?: string
   /** Legacy compact flag — forces compact. Prefer `variant` in new code. */
-  compact?: boolean
+  readonly compact?: boolean
   /**
    * Semantic variant. Default `full` (exact — POS/invoices/day-closing).
    * Summaries (KPIs/charts) should pass `variant="auto"` so the global
    * Dev Settings switch controls compact presentation.
    */
-  variant?: MoneyVariant
+  readonly variant?: MoneyVariant
 }) {
   // Subscribe so global Dev Settings changes re-render immediately.
   useFormattingPreferences()

@@ -49,8 +49,8 @@ export function TableActionGroup({
   className,
   children,
 }: {
-  className?: string
-  children: React.ReactNode
+  readonly className?: string
+  readonly children: React.ReactNode
 }) {
   return (
     <div className={cn('flex items-center justify-end gap-1 [&_svg]:size-6', className)}>

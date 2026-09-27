@@ -16,11 +16,11 @@ export function AnalyticsDonutChart({
   to,
   presentation = 'card',
 }: {
-  chart: AnalyticsChart
+  readonly chart: AnalyticsChart
   /** Business-date range; rendered through the central date formatter. */
-  from: string
-  to: string
-  presentation?: 'card' | 'fullscreen'
+  readonly from: string
+  readonly to: string
+  readonly presentation?: 'card' | 'fullscreen'
 }) {
   const { t } = useTranslation()
   const toast = useToast()

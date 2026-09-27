@@ -42,14 +42,14 @@ function OverrideField({
   required,
   autoFocus,
 }: {
-  id: string
-  label: string
+  readonly id: string
+  readonly label: string
   /** The stored EFFECTIVE instant, shown verbatim before anything is edited. */
-  current: string | null
-  value: string
-  onChange: (value: string) => void
-  required?: boolean
-  autoFocus?: boolean
+  readonly current: string | null
+  readonly value: string
+  readonly onChange: (value: string) => void
+  readonly required?: boolean
+  readonly autoFocus?: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -91,10 +91,10 @@ export function AttendanceOverrideDialog({
    * day is selected, so the draft is seeded once, from that day, and can never
    * drift when a different one is opened.
    */
-  day: AttendanceDay
-  onClose: () => void
+  readonly day: AttendanceDay
+  readonly onClose: () => void
   /** Called after the service accepted the correction, so the caller refreshes. */
-  onSaved: () => void
+  readonly onSaved: () => void
 }) {
   const { t } = useTranslation()
   const errText = useErrText(t)

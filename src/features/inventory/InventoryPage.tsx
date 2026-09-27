@@ -161,9 +161,9 @@ function AdjustStockDialog({
   onClose,
   onDone,
 }: {
-  item: StockRow
-  onClose: () => void
-  onDone: () => void
+  readonly item: StockRow
+  readonly onClose: () => void
+  readonly onDone: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

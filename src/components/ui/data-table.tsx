@@ -44,12 +44,12 @@ export function DataTable({
   className,
   busy = false,
 }: {
-  caption: string
-  columns: DataTableColumn[]
-  children: React.ReactNode
-  className?: string
+  readonly caption: string
+  readonly columns: DataTableColumn[]
+  readonly children: React.ReactNode
+  readonly className?: string
   /** Marks the body as updating without hiding the rows already on screen. */
-  busy?: boolean
+  readonly busy?: boolean
 }) {
   return (
     <div className={cn('overflow-x-auto', className)}>
@@ -86,9 +86,9 @@ export function DataTableRow({
   className,
   children,
 }: {
-  onClick?: () => void
-  className?: string
-  children: React.ReactNode
+  readonly onClick?: () => void
+  readonly className?: string
+  readonly children: React.ReactNode
 }) {
   return (
     <tr
@@ -109,8 +109,8 @@ export function DataTableCell({
   className,
   children,
 }: {
-  className?: string
-  children: React.ReactNode
+  readonly className?: string
+  readonly children: React.ReactNode
 }) {
   return <td className={cn('px-3 py-2.5 align-middle', className)}>{children}</td>
 }

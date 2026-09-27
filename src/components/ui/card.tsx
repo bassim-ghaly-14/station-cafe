@@ -25,9 +25,9 @@ export function CardHeader({
   subtitle,
   actions,
 }: {
-  title: ReactNode
-  subtitle?: ReactNode
-  actions?: ReactNode
+  readonly title: ReactNode
+  readonly subtitle?: ReactNode
+  readonly actions?: ReactNode
 }) {
   return (
     <div className="mb-3 flex items-start justify-between gap-2">

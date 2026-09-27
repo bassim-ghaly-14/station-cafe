@@ -40,19 +40,19 @@ export function ConfirmDialog({
   destructive = false,
   busy = false,
 }: {
-  open: boolean
-  onClose: () => void
+  readonly open: boolean
+  readonly onClose: () => void
   /** Runs only on an explicit confirm. The caller owns the request and the toast. */
-  onConfirm: () => void
-  title: string
+  readonly onConfirm: () => void
+  readonly title: string
   /** The question itself — it must name the person and the action. */
-  body: string
+  readonly body: string
   /** An optional second sentence stating a consequence worth knowing first. */
-  detail?: string
-  confirmLabel?: string
-  cancelLabel?: string
-  destructive?: boolean
-  busy?: boolean
+  readonly detail?: string
+  readonly confirmLabel?: string
+  readonly cancelLabel?: string
+  readonly destructive?: boolean
+  readonly busy?: boolean
 }) {
   const { t } = useTranslation()
   return (

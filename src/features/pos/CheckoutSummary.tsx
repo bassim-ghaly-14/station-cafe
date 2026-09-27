@@ -22,27 +22,27 @@ export function CheckoutSummary({
   onPrintPreview,
   onTicketPreview,
 }: {
-  order: PosOrder
-  shown: OrderPreview | null
-  customer: OrderCustomer | null
-  discountLabel: string | null
-  serviceCharge: number
-  serviceChargeOptions: number[]
-  onServiceCharge: (amount: number) => void
-  onDiscount: () => void
-  onCustomer: () => void
-  onDetachCustomer: () => void
-  detaching: boolean
-  onTicket: (() => void) | null
-  onReviewPay: () => void
+  readonly order: PosOrder
+  readonly shown: OrderPreview | null
+  readonly customer: OrderCustomer | null
+  readonly discountLabel: string | null
+  readonly serviceCharge: number
+  readonly serviceChargeOptions: number[]
+  readonly onServiceCharge: (amount: number) => void
+  readonly onDiscount: () => void
+  readonly onCustomer: () => void
+  readonly onDetachCustomer: () => void
+  readonly detaching: boolean
+  readonly onTicket: (() => void) | null
+  readonly onReviewPay: () => void
   /** Print preview of the order's printable invoice document; null when none exists yet. */
-  onPrintPreview: (() => void) | null
+  readonly onPrintPreview: (() => void) | null
   /**
    * Print preview of an ISSUED wash ticket, when one exists. Rendered as a
    * compact trigger and opening the same shared preview dialog as the invoice —
    * only the button differs.
    */
-  onTicketPreview?: (() => void) | null
+  readonly onTicketPreview?: (() => void) | null
 }) {
   const { t } = useTranslation()
   const subtotal = shown?.subtotal ?? order.lines.reduce((a, l) => a + l.line_total, 0)

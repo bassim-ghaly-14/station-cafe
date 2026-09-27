@@ -16,9 +16,9 @@ export function Logo({
   withWordmark = false,
   className,
 }: {
-  size?: number
-  withWordmark?: boolean
-  className?: string
+  readonly size?: number
+  readonly withWordmark?: boolean
+  readonly className?: string
 }) {
   const [failed, setFailed] = useState(false)
 

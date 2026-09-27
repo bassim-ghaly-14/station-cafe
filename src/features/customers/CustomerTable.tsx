@@ -46,20 +46,20 @@ export function CustomerTable({
   busy,
   className,
 }: {
-  customers: CustomerRow[]
+  readonly customers: CustomerRow[]
   /** From the backend payload — the same flag gates the KPI band and drawer. */
-  financialVisible: boolean
+  readonly financialVisible: boolean
   /**
    * ADMIN only. The backend service re-checks the role on `delete_customer` and
    * refuses a MANAGER or CASHIER regardless of what this button offers.
    */
-  canDelete?: boolean
-  onOpenDetails: (customer: CustomerRow) => void
-  onEdit: (customer: CustomerRow) => void
+  readonly canDelete?: boolean
+  readonly onOpenDetails: (customer: CustomerRow) => void
+  readonly onEdit: (customer: CustomerRow) => void
   /** Record the delete INTENT only. The page confirms, requests and toasts. */
-  onDelete: (customer: CustomerRow) => void
-  busy?: boolean
-  className?: string
+  readonly onDelete: (customer: CustomerRow) => void
+  readonly busy?: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 

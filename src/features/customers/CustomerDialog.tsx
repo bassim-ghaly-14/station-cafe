@@ -25,9 +25,9 @@ export function CustomerDialog({
   onClose,
   onSaved,
 }: {
-  mode: CustomerDialogMode | null
-  onClose: () => void
-  onSaved: () => void
+  readonly mode: CustomerDialogMode | null
+  readonly onClose: () => void
+  readonly onSaved: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

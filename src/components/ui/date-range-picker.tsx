@@ -52,14 +52,14 @@ export function DateRangePicker({
   className,
   disabled = false,
 }: {
-  from: string
-  to: string
+  readonly from: string
+  readonly to: string
   /** Applied only when the user presses Apply or clears the range. */
-  onChange: (range: DateRange) => void
+  readonly onChange: (range: DateRange) => void
   /** Accessible name of the control; defaults to the shared "date range" label. */
-  label?: string
-  className?: string
-  disabled?: boolean
+  readonly label?: string
+  readonly className?: string
+  readonly disabled?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language

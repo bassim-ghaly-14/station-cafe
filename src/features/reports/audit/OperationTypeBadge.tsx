@@ -18,9 +18,9 @@ export function OperationTypeBadge({
   className,
 }: {
   /** The raw recorded action code, e.g. `invoice.created`. Never rendered. */
-  action: string
-  size?: 'sm' | 'md'
-  className?: string
+  readonly action: string
+  readonly size?: 'sm' | 'md'
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const group = operationGroupOf(action)

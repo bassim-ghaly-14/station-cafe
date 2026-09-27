@@ -41,8 +41,8 @@ export function SalesBreakdown({
   summary,
   className,
 }: {
-  summary: SalesSummary
-  className?: string
+  readonly summary: SalesSummary
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const settled = summary.cash + summary.card + summary.credit

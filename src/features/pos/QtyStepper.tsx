@@ -8,10 +8,10 @@ export function QtyStepper({
   onChange,
   big,
 }: {
-  qty: number
-  min?: number
-  onChange: (q: number) => void
-  big?: boolean
+  readonly qty: number
+  readonly min?: number
+  readonly onChange: (q: number) => void
+  readonly big?: boolean
 }) {
   const { t } = useTranslation()
   const size = big ? 'icon-lg' : 'icon-sm'

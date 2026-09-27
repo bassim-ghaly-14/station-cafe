@@ -45,9 +45,9 @@ export function ErrorState({
   onRetry,
   retryLabel,
 }: {
-  message: string
-  onRetry?: () => void
-  retryLabel?: string
+  readonly message: string
+  readonly onRetry?: () => void
+  readonly retryLabel?: string
 }) {
   const { t } = useTranslation()
   return (

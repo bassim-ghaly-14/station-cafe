@@ -37,18 +37,18 @@ export function OrderPanel({
   onDiscard,
   discarding,
 }: {
-  order: PosOrder
-  preview: OrderPreview | null
-  discount: DiscountSel
-  serviceCharge: number
-  serviceChargeOptions: number[]
-  onServiceChargeChange: (amount: number) => void
-  onDiscountChange: (d: DiscountSel) => void
-  onChange: (o: PosOrder) => void
-  onRefreshTables: () => void
-  onPay: () => void
-  onDiscard?: () => void
-  discarding?: boolean
+  readonly order: PosOrder
+  readonly preview: OrderPreview | null
+  readonly discount: DiscountSel
+  readonly serviceCharge: number
+  readonly serviceChargeOptions: number[]
+  readonly onServiceChargeChange: (amount: number) => void
+  readonly onDiscountChange: (d: DiscountSel) => void
+  readonly onChange: (o: PosOrder) => void
+  readonly onRefreshTables: () => void
+  readonly onPay: () => void
+  readonly onDiscard?: () => void
+  readonly discarding?: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -262,9 +262,9 @@ function LineList({
   onChange,
   onRefreshTables,
 }: {
-  order: PosOrder
-  onChange: (o: PosOrder) => void
-  onRefreshTables: () => void
+  readonly order: PosOrder
+  readonly onChange: (o: PosOrder) => void
+  readonly onRefreshTables: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

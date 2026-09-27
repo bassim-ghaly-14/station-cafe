@@ -32,17 +32,17 @@ export function EmployeeFilters({
   actions,
   className,
 }: {
-  query: string
-  onQueryChange: (value: string) => void
-  range: DateRange
-  onRangeChange: (range: DateRange) => void
+  readonly query: string
+  readonly onQueryChange: (value: string) => void
+  readonly range: DateRange
+  readonly onRangeChange: (range: DateRange) => void
   /** Deactivation is reversible, so inactive staff stay reachable. */
-  includeInactive: boolean
-  onIncludeInactiveChange: (value: boolean) => void
-  onReset: () => void
+  readonly includeInactive: boolean
+  readonly onIncludeInactiveChange: (value: boolean) => void
+  readonly onReset: () => void
   /** Primary action rendered at the inline end of the search row. */
-  actions?: ReactNode
-  className?: string
+  readonly actions?: ReactNode
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const filtered = query.trim() !== ''

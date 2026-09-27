@@ -74,8 +74,8 @@ export function PrintPreviewDialog({
   target,
   onClose,
 }: {
-  target: PrintPreviewTarget
-  onClose: () => void
+  readonly target: PrintPreviewTarget
+  readonly onClose: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

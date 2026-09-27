@@ -31,25 +31,25 @@ export function ChartEmptyState({
   compact = false,
   headingLevel: Heading = 'h2',
 }: {
-  className?: string
+  readonly className?: string
   /** Overrides the shared headline; used by the per-chart variant. */
-  title?: string
+  readonly title?: string
   /** Overrides the shared explanation; used by the per-chart variant. */
-  body?: string
+  readonly body?: string
   /** Rendered as a restrained "why this can happen" note. */
-  hint?: string
+  readonly hint?: string
   /** Only pass a real, working control — never a decorative button. */
-  action?: ReactNode
+  readonly action?: ReactNode
   /** Context line describing the scope that came back empty (e.g. the period). */
-  scope?: string
+  readonly scope?: string
   /** The in-card variant: smaller frame, no reason list. */
-  compact?: boolean
+  readonly compact?: boolean
   /**
    * Heading element for the state title. The in-card variant sits inside a card
    * that already owns an `h2`, so it must step down to keep the document
    * outline correct for screen readers.
    */
-  headingLevel?: 'h2' | 'h3'
+  readonly headingLevel?: 'h2' | 'h3'
 }) {
   const { t } = useTranslation()
 

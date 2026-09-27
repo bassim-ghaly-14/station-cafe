@@ -26,9 +26,9 @@ export function OperationHistoryFilters({
   className,
 }: {
   rows: readonly AuditEntry[]
-  filters: OperationFilters
-  onChange: (next: OperationFilters) => void
-  className?: string
+  readonly filters: OperationFilters
+  readonly onChange: (next: OperationFilters) => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const groups = presentGroups(rows.map((entry) => entry.action))

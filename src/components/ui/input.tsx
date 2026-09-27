@@ -24,12 +24,12 @@ export function Field({
   children,
   htmlFor,
 }: {
-  label: string
-  error?: string | null
+  readonly label: string
+  readonly error?: string | null
   /** Non-validating explanatory text shown under the control. */
-  hint?: string
-  children: React.ReactNode
-  htmlFor?: string
+  readonly hint?: string
+  readonly children: React.ReactNode
+  readonly htmlFor?: string
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -134,19 +134,19 @@ export function Switch({
   tone = 'new',
   className,
 }: {
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
+  readonly checked: boolean
+  readonly onCheckedChange: (checked: boolean) => void
   /** Accessible name; required when no visible label element is associated. */
-  label?: string
-  id?: string
-  disabled?: boolean
+  readonly label?: string
+  readonly id?: string
+  readonly disabled?: boolean
   /**
    * Which semantic identity paints the track and thumb. Defaults to `new` so
    * existing callers keep their current appearance; pass `state` for a switch
    * that reports a condition rather than an item's "new" identity.
    */
-  tone?: keyof typeof SWITCH_TONES
-  className?: string
+  readonly tone?: keyof typeof SWITCH_TONES
+  readonly className?: string
 }) {
   const palette = SWITCH_TONES[tone]
   return (

@@ -26,11 +26,11 @@ export function OperationEmptyState({
   onReset,
   className,
 }: {
-  variant: 'no-data' | 'no-results'
+  readonly variant: 'no-data' | 'no-results'
   /** Size of the unfiltered log, used to make the "no results" copy concrete. */
-  total?: number
-  onReset?: () => void
-  className?: string
+  readonly total?: number
+  readonly onReset?: () => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const noResults = variant === 'no-results'

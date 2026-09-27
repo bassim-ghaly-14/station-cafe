@@ -19,8 +19,8 @@ export function CustomerVehicleBadge({
   carsCount,
   className,
 }: {
-  carsCount: number
-  className?: string
+  readonly carsCount: number
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const hasCars = carsCount > 0

@@ -46,10 +46,10 @@ export function OperationHistoryTable({
 }: {
   rows: readonly AuditEntry[]
   /** Opens the details dialog for a row. */
-  onOpen: (entry: AuditEntry) => void
-  busy?: boolean
+  readonly onOpen: (entry: AuditEntry) => void
+  readonly busy?: boolean
   /** ADMIN only: adds the affected-element column and its internal reference. */
-  canViewTechnical?: boolean
+  readonly canViewTechnical?: boolean
 }) {
   const { t } = useTranslation()
   const tr: AuditTranslate = (key, options) => (options ? t(key, options) : t(key))

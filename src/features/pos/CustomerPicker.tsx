@@ -19,9 +19,9 @@ export function CustomerPicker({
   onClose,
   onAttached,
 }: {
-  orderId: number
-  onClose: () => void
-  onAttached: (o: PosOrder) => void
+  readonly orderId: number
+  readonly onClose: () => void
+  readonly onAttached: (o: PosOrder) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

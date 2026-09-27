@@ -35,11 +35,11 @@ export function SalesInvoiceTable({
   busy,
   className,
 }: {
-  invoices: SalesInvoiceRow[]
-  onOpen: (invoice: SalesInvoiceRow) => void
+  readonly invoices: SalesInvoiceRow[]
+  readonly onOpen: (invoice: SalesInvoiceRow) => void
   /** A refresh is running over rows that are already on screen. */
-  busy?: boolean
-  className?: string
+  readonly busy?: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 

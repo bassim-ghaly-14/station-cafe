@@ -81,12 +81,12 @@ export function ProportionCard({
   footnote,
   className,
 }: {
-  title: string
-  hint: string
-  slices: ProportionSlice[]
+  readonly title: string
+  readonly hint: string
+  readonly slices: ProportionSlice[]
   /** A single honest note under the list, e.g. "these two do not add up". */
-  footnote?: ReactNode
-  className?: string
+  readonly footnote?: ReactNode
+  readonly className?: string
 }) {
   return (
     <Card className={className}>

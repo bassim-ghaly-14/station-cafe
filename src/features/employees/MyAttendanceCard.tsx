@@ -67,12 +67,12 @@ export function MyAttendanceCard({
   onRetry,
   onRecorded,
 }: {
-  mine: MyAttendance | null
-  loading: boolean
-  error: string | null
-  onRetry: () => void
+  readonly mine: MyAttendance | null
+  readonly loading: boolean
+  readonly error: string | null
+  readonly onRetry: () => void
   /** Called after a successful punch, so the page can refresh the roster. */
-  onRecorded: () => void
+  readonly onRecorded: () => void
 }) {
   const { t } = useTranslation()
   const errText = useErrText(t)

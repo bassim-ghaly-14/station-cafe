@@ -100,25 +100,25 @@ export function EmployeeTable({
   busy,
   className,
 }: {
-  employees: EmployeeRow[]
+  readonly employees: EmployeeRow[]
   /** From the backend payload — the same flag gates the KPI band and drawer. */
-  managementVisible: boolean
+  readonly managementVisible: boolean
   /**
    * ADMIN only. Hiding the affordance is NOT the boundary — the service
    * re-checks the role on `delete_employee` and refuses a MANAGER or CASHIER
    * even if this button were triggered directly.
    */
-  canDelete?: boolean
-  onOpenDetails: (employee: EmployeeRow) => void
-  onEdit: (employee: EmployeeRow) => void
+  readonly canDelete?: boolean
+  readonly onOpenDetails: (employee: EmployeeRow) => void
+  readonly onEdit: (employee: EmployeeRow) => void
   /** Dispatch one attendance action; the page owns the request and the toast. */
-  onRecord: (employee: EmployeeRow, action: AttendanceAction) => void
+  readonly onRecord: (employee: EmployeeRow, action: AttendanceAction) => void
   /** Activate/deactivate. The page owns the request, the toast and the reload. */
-  onToggleStatus: (employee: EmployeeRow) => void
+  readonly onToggleStatus: (employee: EmployeeRow) => void
   /** Record the delete INTENT only. The page confirms, requests and toasts. */
-  onDelete: (employee: EmployeeRow) => void
-  busy?: boolean
-  className?: string
+  readonly onDelete: (employee: EmployeeRow) => void
+  readonly busy?: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 
@@ -393,15 +393,15 @@ function EmployeeActions({
   managementVisible,
   canDelete,
 }: {
-  employee: EmployeeRow
-  onRecord: (employee: EmployeeRow, action: AttendanceAction) => void
-  onOpenDetails: (employee: EmployeeRow) => void
-  onEdit: (employee: EmployeeRow) => void
-  onToggleStatus: (employee: EmployeeRow) => void
-  onDelete: (employee: EmployeeRow) => void
-  managementVisible: boolean
+  readonly employee: EmployeeRow
+  readonly onRecord: (employee: EmployeeRow, action: AttendanceAction) => void
+  readonly onOpenDetails: (employee: EmployeeRow) => void
+  readonly onEdit: (employee: EmployeeRow) => void
+  readonly onToggleStatus: (employee: EmployeeRow) => void
+  readonly onDelete: (employee: EmployeeRow) => void
+  readonly managementVisible: boolean
   /** ADMIN only; the service enforces the same rule independently. */
-  canDelete: boolean
+  readonly canDelete: boolean
 }) {
   const { t } = useTranslation()
   // Every authenticated role may operate attendance, so the buttons are offered

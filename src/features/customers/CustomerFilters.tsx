@@ -35,16 +35,16 @@ export function CustomerFilters({
   actions,
   className,
 }: {
-  query: string
-  onQueryChange: (value: string) => void
-  range: DateRange
-  onRangeChange: (range: DateRange) => void
+  readonly query: string
+  readonly onQueryChange: (value: string) => void
+  readonly range: DateRange
+  readonly onRangeChange: (range: DateRange) => void
   /** Whether this role receives the period analytics at all. */
-  showPeriod: boolean
-  onReset: () => void
+  readonly showPeriod: boolean
+  readonly onReset: () => void
   /** Primary action rendered at the inline end of the search row. */
-  actions?: ReactNode
-  className?: string
+  readonly actions?: ReactNode
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const filtered = query.trim() !== ''

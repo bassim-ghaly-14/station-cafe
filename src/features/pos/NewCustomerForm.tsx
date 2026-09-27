@@ -11,9 +11,9 @@ export function NewCustomerForm({
   onClose,
   onCreated,
 }: {
-  query: string
-  onClose: () => void
-  onCreated: (id: number) => void
+  readonly query: string
+  readonly onClose: () => void
+  readonly onCreated: (id: number) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

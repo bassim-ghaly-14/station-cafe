@@ -35,12 +35,12 @@ export function Dialog({
   className,
   wide,
 }: {
-  open: boolean
-  onClose: () => void
-  title: ReactNode
-  children: ReactNode
-  className?: string
-  wide?: boolean
+  readonly open: boolean
+  readonly onClose: () => void
+  readonly title: ReactNode
+  readonly children: ReactNode
+  readonly className?: string
+  readonly wide?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)

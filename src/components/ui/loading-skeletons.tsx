@@ -28,9 +28,9 @@ export function TableSkeleton({
   columns = 4,
   className,
 }: {
-  rows?: number
-  columns?: number
-  className?: string
+  readonly rows?: number
+  readonly columns?: number
+  readonly className?: string
 }) {
   return (
     <div className={className} aria-label="جارٍ تحميل الجدول">
@@ -69,8 +69,8 @@ export function ChartGridSkeleton({
   charts = 3,
   className,
 }: {
-  charts?: number
-  className?: string
+  readonly charts?: number
+  readonly className?: string
 }) {
   return (
     <output

@@ -100,10 +100,10 @@ export function DisplayDateTimeRange({
   className,
   options,
 }: {
-  from: string | Date | number | null | undefined
-  to: string | Date | number | null | undefined
-  className?: string
-  options?: DisplayFormatOptions
+  readonly from: string | Date | number | null | undefined
+  readonly to: string | Date | number | null | undefined
+  readonly className?: string
+  readonly options?: DisplayFormatOptions
 }) {
   return (
     <span

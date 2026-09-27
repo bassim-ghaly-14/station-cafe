@@ -55,10 +55,10 @@ export function ClosingMetric({
   strong = false,
   emphasis = false,
 }: {
-  label: string
-  amount: number
-  strong?: boolean
-  emphasis?: boolean
+  readonly label: string
+  readonly amount: number
+  readonly strong?: boolean
+  readonly emphasis?: boolean
 }) {
   return (
     <div className={cn('flex items-center justify-between gap-4 py-1.5', strong && 'font-bold')}>
@@ -83,28 +83,28 @@ export function ClosingCard({
   headerAction,
   action,
 }: {
-  accent: ClosingAccent
-  title: string
+  readonly accent: ClosingAccent
+  readonly title: string
   /** Identity mark for the closing kind (shift clock / day calendar). */
-  icon: ReactNode
+  readonly icon: ReactNode
   /** Status chip rendered beside the title. */
-  status: ReactNode
+  readonly status: ReactNode
   /** Secondary identity line under the title (who / when / which period). */
-  meta: ReactNode
-  primaryLabel: string
-  primaryAmount: number
+  readonly meta: ReactNode
+  readonly primaryLabel: string
+  readonly primaryAmount: number
   /** Optional supporting line inside the primary metric block. */
-  primaryNote?: ReactNode
+  readonly primaryNote?: ReactNode
   /** Two-column metric grid. */
-  metrics: ReactNode
+  readonly metrics: ReactNode
   /** Full-width emphasized metric rendered under the grid. */
-  highlight: ReactNode
+  readonly highlight: ReactNode
   /** Footer hint beside the action. */
-  footerNote: ReactNode
+  readonly footerNote: ReactNode
   /** Optional control in the header row (e.g. refresh). */
-  headerAction?: ReactNode
+  readonly headerAction?: ReactNode
   /** The single primary action of the card. */
-  action: ReactNode
+  readonly action: ReactNode
 }) {
   const tone = ACCENT[accent]
   return (

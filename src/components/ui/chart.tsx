@@ -103,10 +103,10 @@ export function ChartContainer({
   config,
   ...props
 }: {
-  id?: string
-  className?: string
-  children: ReactNode
-  config: ChartConfig
+  readonly id?: string
+  readonly className?: string
+  readonly children: ReactNode
+  readonly config: ChartConfig
 } & Omit<HTMLAttributes<HTMLDivElement>, 'children'>) {
   const chartStyle = Object.fromEntries(
     Object.entries(config)

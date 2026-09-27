@@ -54,21 +54,21 @@ export function CatalogCategoryManagerDrawer({
   onEditCategory,
   onDeleteCategory,
 }: {
-  open: boolean
-  onClose: () => void
+  readonly open: boolean
+  readonly onClose: () => void
   /** Every category, in the catalog's own order. */
-  categories: CatalogCategoryOption[]
+  readonly categories: CatalogCategoryOption[]
   /**
    * MANAGER+ rename. Omitted for roles without category management, which is
    * what keeps the row free of an action they could not perform.
    */
-  onEditCategory?: (category: CatalogCategoryOption) => void
+  readonly onEditCategory?: (category: CatalogCategoryOption) => void
   /**
    * ADMIN-only delete, offered as a separate affordance from the reversible
    * rename and never sharing the visibility switch. Omitted for every other
    * role; the backend refuses them regardless.
    */
-  onDeleteCategory?: (category: CatalogCategoryOption) => void
+  readonly onDeleteCategory?: (category: CatalogCategoryOption) => void
 }) {
   const { t } = useTranslation()
   const preference = useCategoryVisibility()

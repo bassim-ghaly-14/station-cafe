@@ -73,9 +73,9 @@ export function EmployeeDialog({
   onClose,
   onSaved,
 }: {
-  mode: EmployeeDialogMode
-  onClose: () => void
-  onSaved: () => void
+  readonly mode: EmployeeDialogMode
+  readonly onClose: () => void
+  readonly onSaved: () => void
 }) {
   const { t } = useTranslation()
   const { user } = useSession()

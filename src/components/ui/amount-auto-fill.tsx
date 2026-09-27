@@ -34,14 +34,14 @@ export function AmountAutoFill({
   onFill,
   className,
 }: {
-  amount: number
-  label: string
-  hint?: string
+  readonly amount: number
+  readonly label: string
+  readonly hint?: string
   /** The field already holds this amount. */
-  active?: boolean
-  disabled?: boolean
-  onFill: () => void
-  className?: string
+  readonly active?: boolean
+  readonly disabled?: boolean
+  readonly onFill: () => void
+  readonly className?: string
 }) {
   return (
     <div className={cn('flex flex-col items-start gap-0.5', className)}>

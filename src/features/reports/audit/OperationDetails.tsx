@@ -41,10 +41,10 @@ export function OperationDetails({
   onClose,
   canViewTechnical = false,
 }: {
-  entry: AuditEntry
-  onClose: () => void
+  readonly entry: AuditEntry
+  readonly onClose: () => void
   /** ADMIN only: adds the technical section with the raw payload. */
-  canViewTechnical?: boolean
+  readonly canViewTechnical?: boolean
 }) {
   const { t } = useTranslation()
   const tr: AuditTranslate = (key, options) => (options ? t(key, options) : t(key))

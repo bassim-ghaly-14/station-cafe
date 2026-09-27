@@ -779,11 +779,11 @@ function CatalogOverview({
   onClick,
   t,
 }: {
-  type: 'TOTAL' | Department
-  count: number
-  active: boolean
-  onClick: () => void
-  t: (key: string) => string
+  readonly type: 'TOTAL' | Department
+  readonly count: number
+  readonly active: boolean
+  readonly onClick: () => void
+  readonly t: (key: string) => string
 }) {
   const isTotal = type === 'TOTAL'
   const department = isTotal ? null : type
@@ -882,9 +882,9 @@ function CatalogSelect({
   children,
   ...props
 }: {
-  value: string
-  onChange: (value: string) => void
-  children: ReactNode
+  readonly value: string
+  readonly onChange: (value: string) => void
+  readonly children: ReactNode
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, 'value' | 'onChange'>) {
   return (
     <select
@@ -919,11 +919,11 @@ function CategoryDialog({
   onClose,
   onSaved,
 }: {
-  existingCategories: Category[]
+  readonly existingCategories: Category[]
   /** The category being renamed; `null` means "add a new category". */
-  category: Category | null
-  onClose: () => void
-  onSaved: (name: string) => void
+  readonly category: Category | null
+  readonly onClose: () => void
+  readonly onSaved: (name: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -1017,8 +1017,8 @@ function NewItemSwitch({
   checked,
   onChange,
 }: {
-  checked: boolean
-  onChange: (value: boolean) => void
+  readonly checked: boolean
+  readonly onChange: (value: boolean) => void
 }) {
   const { t } = useTranslation()
 
@@ -1059,9 +1059,9 @@ function CreateProductDialog({
   onClose,
   onCreated,
 }: {
-  categories: Category[]
-  onClose: () => void
-  onCreated: (name: string) => void
+  readonly categories: Category[]
+  readonly onClose: () => void
+  readonly onCreated: (name: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -1305,10 +1305,10 @@ function EditProductDialog({
   onClose,
   onSaved,
 }: {
-  product: Product
-  categories: Category[]
-  onClose: () => void
-  onSaved: () => void
+  readonly product: Product
+  readonly categories: Category[]
+  readonly onClose: () => void
+  readonly onSaved: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

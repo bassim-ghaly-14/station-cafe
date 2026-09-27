@@ -21,9 +21,9 @@ export function ShiftExpenseDialog({
   onClose,
   onCreated,
 }: {
-  open: boolean
-  onClose: () => void
-  onCreated: () => void | Promise<void>
+  readonly open: boolean
+  readonly onClose: () => void
+  readonly onCreated: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()

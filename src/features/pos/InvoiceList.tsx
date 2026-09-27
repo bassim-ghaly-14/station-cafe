@@ -60,10 +60,10 @@ export function InvoiceList({
   busy = false,
 }: {
   rows: readonly InvoiceRow[]
-  onPreview: (invoice: InvoiceRow) => void
-  onPrint: (invoice: InvoiceRow) => void
+  readonly onPreview: (invoice: InvoiceRow) => void
+  readonly onPrint: (invoice: InvoiceRow) => void
   /** A reload is running over rows that are already on screen. */
-  busy?: boolean
+  readonly busy?: boolean
 }) {
   const { t } = useTranslation()
 
@@ -230,9 +230,9 @@ function InvoiceActions({
   onPreview,
   onPrint,
 }: {
-  invoice: InvoiceRow
-  onPreview: (invoice: InvoiceRow) => void
-  onPrint: (invoice: InvoiceRow) => void
+  readonly invoice: InvoiceRow
+  readonly onPreview: (invoice: InvoiceRow) => void
+  readonly onPrint: (invoice: InvoiceRow) => void
 }) {
   const { t } = useTranslation()
   return (

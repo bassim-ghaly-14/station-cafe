@@ -30,12 +30,12 @@ export function PaymentDialog({
   onClose,
   onDone,
 }: {
-  orderId: number
-  discount: DiscountSel
-  serviceCharge: number
-  order?: { order_type?: string; takeaway_no?: number | null } | null
-  onClose: () => void
-  onDone: (invoiceId: number, outcome: PrintOutcome | null) => void
+  readonly orderId: number
+  readonly discount: DiscountSel
+  readonly serviceCharge: number
+  readonly order?: { order_type?: string; takeaway_no?: number | null } | null
+  readonly onClose: () => void
+  readonly onDone: (invoiceId: number, outcome: PrintOutcome | null) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

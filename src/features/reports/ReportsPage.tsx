@@ -143,10 +143,10 @@ function ChartsReport({
   setFrom,
   setTo,
 }: {
-  from: string
-  to: string
-  setFrom: (v: string) => void
-  setTo: (v: string) => void
+  readonly from: string
+  readonly to: string
+  readonly setFrom: (v: string) => void
+  readonly setTo: (v: string) => void
 }) {
   const report = useAnalyticsCharts(from, to)
   const { t } = useTranslation()
@@ -250,10 +250,10 @@ function RangePicker({
   setFrom,
   setTo,
 }: {
-  from: string
-  to: string
-  setFrom: (v: string) => void
-  setTo: (v: string) => void
+  readonly from: string
+  readonly to: string
+  readonly setFrom: (v: string) => void
+  readonly setTo: (v: string) => void
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -276,11 +276,11 @@ function ClosingReports({
   setFrom,
   setTo,
 }: {
-  kind: 'shift' | 'day'
-  from: string
-  to: string
-  setFrom: (v: string) => void
-  setTo: (v: string) => void
+  readonly kind: 'shift' | 'day'
+  readonly from: string
+  readonly to: string
+  readonly setFrom: (v: string) => void
+  readonly setTo: (v: string) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

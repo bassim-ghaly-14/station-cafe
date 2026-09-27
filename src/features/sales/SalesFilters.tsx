@@ -38,13 +38,13 @@ export function SalesFilters({
   onReset,
   className,
 }: {
-  filter: SalesFilter
-  onChange: (next: SalesFilter) => void
-  cashiers: SalesCashier[]
-  refreshing?: boolean
-  onRefresh: () => void
-  onReset: () => void
-  className?: string
+  readonly filter: SalesFilter
+  readonly onChange: (next: SalesFilter) => void
+  readonly cashiers: SalesCashier[]
+  readonly refreshing?: boolean
+  readonly onRefresh: () => void
+  readonly onReset: () => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)

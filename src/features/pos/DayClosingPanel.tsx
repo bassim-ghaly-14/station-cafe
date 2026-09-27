@@ -47,10 +47,10 @@ function SummaryRow({
   strong = false,
   tone,
 }: {
-  label: string
-  amount: number
-  strong?: boolean
-  tone?: 'danger' | 'warning'
+  readonly label: string
+  readonly amount: number
+  readonly strong?: boolean
+  readonly tone?: 'danger' | 'warning'
 }) {
   return (
     <div className={`flex items-center justify-between gap-4 py-1.5 ${strong ? 'font-bold' : ''}`}>
@@ -99,7 +99,7 @@ export function DayClosingPanel({
   revision,
   onDone,
 }: {
-  dayId: number
+  readonly dayId: number
   /**
    * POS data revision. The POS page owns the single invalidation signal for
    * the screen and bumps it whenever it reloads POS state (a completed sale,
@@ -107,8 +107,8 @@ export function DayClosingPanel({
    * from that signal, so it can never be a second, stale copy of the data —
    * without polling and without any duplicated global state.
    */
-  revision: number
-  onDone: () => Promise<void>
+  readonly revision: number
+  readonly onDone: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()

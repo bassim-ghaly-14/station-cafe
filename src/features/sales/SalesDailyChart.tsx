@@ -108,10 +108,10 @@ export function SalesDailyChart({
   className,
 }: {
   /** The page's own `sales_overview` days — already grouped by day in SQL. */
-  trend: SalesDayRow[]
+  readonly trend: SalesDayRow[]
   /** The page's selected period, stated on the card and in the export. */
-  period: string
-  className?: string
+  readonly period: string
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const toast = useToast()

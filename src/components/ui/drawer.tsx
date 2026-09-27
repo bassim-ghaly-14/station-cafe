@@ -44,23 +44,23 @@ export function Drawer({
   width = 'md',
   className,
 }: {
-  open: boolean
-  onClose: () => void
-  title: ReactNode
+  readonly open: boolean
+  readonly onClose: () => void
+  readonly title: ReactNode
   /** Optional second line under the title, rendered by the caller. */
-  subtitle?: ReactNode
-  children: ReactNode
+  readonly subtitle?: ReactNode
+  readonly children: ReactNode
   /** Pinned action row; the body scrolls, the footer never leaves the panel. */
-  footer?: ReactNode
+  readonly footer?: ReactNode
   /**
    * Replaces the default title block in the header while the panel keeps
    * `title` as its accessible name. A caller with a richer header (an avatar,
    * badges) opts in here instead of forking the whole primitive.
    */
-  header?: ReactNode
+  readonly header?: ReactNode
   /** Preset widths. All are `w-full` first, so narrow screens stay intact. */
-  width?: 'sm' | 'md' | 'lg'
-  className?: string
+  readonly width?: 'sm' | 'md' | 'lg'
+  readonly className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)

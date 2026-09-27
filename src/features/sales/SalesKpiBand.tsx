@@ -43,10 +43,10 @@ function StatTile({
   hint,
   children,
 }: {
-  icon: LucideIcon
-  label: string
-  hint?: string
-  children: React.ReactNode
+  readonly icon: LucideIcon
+  readonly label: string
+  readonly hint?: string
+  readonly children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-border-subtle bg-surface-card p-3">
@@ -69,9 +69,9 @@ export function SalesKpiBand({
   loading,
   className,
 }: {
-  summary: SalesSummary | null
-  loading: boolean
-  className?: string
+  readonly summary: SalesSummary | null
+  readonly loading: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 

@@ -143,10 +143,10 @@ export function ExpensesDailyChart({
   period,
   className,
 }: {
-  overview: ExpenseOverview
+  readonly overview: ExpenseOverview
   /** The page's selected period, stated on the card and in the export. */
-  period: string
-  className?: string
+  readonly period: string
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const toast = useToast()

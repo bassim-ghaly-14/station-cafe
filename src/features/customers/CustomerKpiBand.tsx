@@ -47,12 +47,12 @@ function KpiTile({
   hint,
   className,
 }: {
-  icon: LucideIcon
-  label: string
-  children: React.ReactNode
+  readonly icon: LucideIcon
+  readonly label: string
+  readonly children: React.ReactNode
   /** Optional second line: a count, a name, or an amount. */
-  hint?: React.ReactNode
-  className?: string
+  readonly hint?: React.ReactNode
+  readonly className?: string
 }) {
   return (
     <Card
@@ -89,9 +89,9 @@ export function CustomerKpiBand({
   loading,
   className,
 }: {
-  overview: CustomerOverview | null
-  loading: boolean
-  className?: string
+  readonly overview: CustomerOverview | null
+  readonly loading: boolean
+  readonly className?: string
 }) {
   const { t } = useTranslation()
 

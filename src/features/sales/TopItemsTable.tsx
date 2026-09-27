@@ -30,9 +30,9 @@ function SortToggle({
   label,
   onClick,
 }: {
-  active: boolean
-  label: string
-  onClick: () => void
+  readonly active: boolean
+  readonly label: string
+  readonly onClick: () => void
 }) {
   return (
     <Button
@@ -54,10 +54,10 @@ export function TopItemsTable({
   onSortChange,
   className,
 }: {
-  items: SalesItemRow[]
-  sort: SalesItemSort
-  onSortChange: (sort: SalesItemSort) => void
-  className?: string
+  readonly items: SalesItemRow[]
+  readonly sort: SalesItemSort
+  readonly onSortChange: (sort: SalesItemSort) => void
+  readonly className?: string
 }) {
   const { t } = useTranslation()
   const topShare = items[0]?.share_percent ?? 0

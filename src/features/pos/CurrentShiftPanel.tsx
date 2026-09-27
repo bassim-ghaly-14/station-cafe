@@ -56,9 +56,9 @@ function SummaryRow({
   amount,
   strong = false,
 }: {
-  label: string
-  amount: number
-  strong?: boolean
+  readonly label: string
+  readonly amount: number
+  readonly strong?: boolean
 }) {
   return (
     <div className={`flex items-center justify-between gap-4 py-1.5 ${strong ? 'font-bold' : ''}`}>
@@ -73,15 +73,15 @@ export function CurrentShiftPanel({
   onClosed,
   onRefresh,
 }: {
-  shift: ShiftRow
-  onClosed: () => Promise<void>
+  readonly shift: ShiftRow
+  readonly onClosed: () => Promise<void>
   /**
    * Invalidation hook for a mutation that changes the shift's own figures (a
    * booked expense changes the expected drawer). The card reads `shift` from the
    * POS screen, so without this the screen would keep showing the pre-expense
    * totals until some unrelated refresh happened.
    */
-  onRefresh?: () => void | Promise<void>
+  readonly onRefresh?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()

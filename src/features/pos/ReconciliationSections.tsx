@@ -23,11 +23,11 @@ function AmountRow({
   emphasis = false,
   tone,
 }: {
-  label: ReactNode
-  amount: number
-  strong?: boolean
-  emphasis?: boolean
-  tone?: string
+  readonly label: ReactNode
+  readonly amount: number
+  readonly strong?: boolean
+  readonly emphasis?: boolean
+  readonly tone?: string
 }) {
   return (
     <div className={cn('flex items-center justify-between gap-4 py-1.5', strong && 'font-bold')}>
@@ -101,8 +101,8 @@ export function ServicesSection({
   serviceCharges,
   discounts,
 }: {
-  serviceCharges: number
-  discounts: number
+  readonly serviceCharges: number
+  readonly discounts: number
 }) {
   const { t } = useTranslation()
   return (
@@ -119,9 +119,9 @@ export function ExpensesSection({
   cashExpenses,
   breakdown,
 }: {
-  total: number
-  cashExpenses: number
-  breakdown: ExpenseBreakdownRow[]
+  readonly total: number
+  readonly cashExpenses: number
+  readonly breakdown: ExpenseBreakdownRow[]
 }) {
   const { t } = useTranslation()
   return (

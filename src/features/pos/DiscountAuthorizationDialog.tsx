@@ -29,11 +29,11 @@ export function DiscountAuthorizationDialog({
   onCancel,
 }: {
   /** The exact amount this authorization covers, in minor units. */
-  amount: number
-  busy: boolean
-  error: string | null
-  onSubmit: (pin: string) => void
-  onCancel: () => void
+  readonly amount: number
+  readonly busy: boolean
+  readonly error: string | null
+  readonly onSubmit: (pin: string) => void
+  readonly onCancel: () => void
 }) {
   const { t } = useTranslation()
   const [pin, setPin] = useState('')

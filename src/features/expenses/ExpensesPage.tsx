@@ -278,8 +278,8 @@ function CreateExpenseDialog({
   onClose,
   onCreated,
 }: {
-  onClose: () => void
-  onCreated: () => void
+  readonly onClose: () => void
+  readonly onCreated: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()

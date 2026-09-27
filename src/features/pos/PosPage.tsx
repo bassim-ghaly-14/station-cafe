@@ -640,9 +640,9 @@ export function OpenTakeaways({
   activeOrderId,
   onOpen,
 }: {
-  items: TakeawayView[]
-  activeOrderId: number | null
-  onOpen: (orderId: number) => void
+  readonly items: TakeawayView[]
+  readonly activeOrderId: number | null
+  readonly onOpen: (orderId: number) => void
 }) {
   const { t } = useTranslation()
 
@@ -738,15 +738,15 @@ export function TableCard({
   onOpenOrder,
   onCloseEmpty,
 }: {
-  tv: TableView
-  selected: boolean
-  active: boolean
-  busy: string | null
-  onSelect: () => void
-  onOpen: () => void
-  onStartOrder: () => void
-  onOpenOrder: () => void
-  onCloseEmpty: () => void
+  readonly tv: TableView
+  readonly selected: boolean
+  readonly active: boolean
+  readonly busy: string | null
+  readonly onSelect: () => void
+  readonly onOpen: () => void
+  readonly onStartOrder: () => void
+  readonly onOpenOrder: () => void
+  readonly onCloseEmpty: () => void
 }) {
   const { t } = useTranslation()
 
@@ -935,12 +935,12 @@ function SelectedTableActions({
   onOpenOrder,
   onCloseEmpty,
 }: {
-  tv: TableView
-  busy: string | null
-  onOpen: () => void
-  onStartOrder: () => void
-  onOpenOrder: () => void
-  onCloseEmpty: () => void
+  readonly tv: TableView
+  readonly busy: string | null
+  readonly onOpen: () => void
+  readonly onStartOrder: () => void
+  readonly onOpenOrder: () => void
+  readonly onCloseEmpty: () => void
 }) {
   const { t } = useTranslation()
 

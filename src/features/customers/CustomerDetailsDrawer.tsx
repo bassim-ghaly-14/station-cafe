@@ -53,10 +53,10 @@ function StatBlock({
   tone = 'default',
   className,
 }: {
-  label: string
-  children: React.ReactNode
-  tone?: 'default' | 'warning'
-  className?: string
+  readonly label: string
+  readonly children: React.ReactNode
+  readonly tone?: 'default' | 'warning'
+  readonly className?: string
 }) {
   return (
     <div
@@ -118,13 +118,13 @@ function BreakdownRow({
   amount,
   share,
 }: {
-  icon: LucideIcon
-  label: string
-  orders: number
+  readonly icon: LucideIcon
+  readonly label: string
+  readonly orders: number
   /** Department rows carry a value; order-type rows do not. */
-  amount?: number
+  readonly amount?: number
   /** 0–1, derived from the real values by the caller. */
-  share: number
+  readonly share: number
 }) {
   const { t } = useTranslation()
   return (
@@ -157,11 +157,11 @@ export function CustomerDetailsDrawer({
   period,
   onClose,
 }: {
-  customerId: number | null
+  readonly customerId: number | null
   /** Shown in the header while the real record is still loading. */
-  customerName: string
-  period: CustomerPeriod
-  onClose: () => void
+  readonly customerName: string
+  readonly period: CustomerPeriod
+  readonly onClose: () => void
 }) {
   const { t } = useTranslation()
   const errText = useErrText(t)
@@ -502,15 +502,15 @@ function ProfileHeader({
   lastAt,
 }: {
   /** The real customer ID, so the avatar tone matches the table's row exactly. */
-  id: number
-  name: string
-  phone: string | null
-  notes: string | null
+  readonly id: number
+  readonly name: string
+  readonly phone: string | null
+  readonly notes: string | null
   /** `null` while the record is still loading — the badge waits rather than
       claiming "no cars" before the cars have been read. */
-  carsCount: number | null
-  createdAt: string | null
-  lastAt: string | null
+  readonly carsCount: number | null
+  readonly createdAt: string | null
+  readonly lastAt: string | null
 }) {
   const { t } = useTranslation()
   return (

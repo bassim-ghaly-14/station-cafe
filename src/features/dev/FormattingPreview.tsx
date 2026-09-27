@@ -36,10 +36,10 @@ function Row({
   note,
   testId,
 }: {
-  label: string
-  children: ReactNode
-  note?: string
-  testId?: string
+  readonly label: string
+  readonly children: ReactNode
+  readonly note?: string
+  readonly testId?: string
 }) {
   return (
     <div
