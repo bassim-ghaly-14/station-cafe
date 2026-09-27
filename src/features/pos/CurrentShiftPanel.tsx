@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+import { cn, parseMajor } from '@/lib/utils'
 import {
   AmountAutoFill,
   Badge,
@@ -15,7 +15,6 @@ import { Clock, Eye, Lock } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { ListRowsSkeleton, Skeleton } from '@/components/ui'
 import { ErrorState } from '@/components/states'
-import { parseMajor } from '@/lib/utils'
 import { formatMinorMoney } from '@/lib/money'
 import { normalizeToUtcIso } from '@/lib/date'
 import {

@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui'
+import { Button, useToast } from '@/components/ui'
 import { Save } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
-import { useToast } from '@/components/ui'
 import { api } from '@/services/posApi'
 
 export function NewCustomerForm({

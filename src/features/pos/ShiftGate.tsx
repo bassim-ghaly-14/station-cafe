@@ -1,10 +1,9 @@
 /** Shift/day gate: guide staff to open them instead of blocking silently. */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, CardHeader } from '@/components/ui'
+import { Button, Card, CardHeader, useToast } from '@/components/ui'
 import { Power } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
-import { useToast } from '@/components/ui'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { parseMajor } from '@/lib/utils'
 

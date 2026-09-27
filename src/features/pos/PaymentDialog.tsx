@@ -1,10 +1,9 @@
 /** Payment dialog: method + live totals, cash tendered/change, print. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AmountAutoFill, Button, Dialog, Loader, MoneyDisplay } from '@/components/ui'
+import { AmountAutoFill, Button, Dialog, Loader, MoneyDisplay, useToast } from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
-import { useToast } from '@/components/ui'
 import { api, type DiscountSel, type OrderPreview, type PrintOutcome } from '@/services/posApi'
 import { TotalsBlock } from './CheckoutSummary'
 import { parseMajor } from '@/lib/utils'

@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/Logo'
-import { Badge, Button, EmployeeAvatar, ThemeToggle } from '@/components/ui'
+import { Badge, Button, EmployeeAvatar, ThemeToggle, Dialog } from '@/components/ui'
 import {
   BarChart3,
   Boxes,
@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/icon'
 import { useRouter, type View } from './router'
 import { atLeast, useSession } from '@/features/auth/useSession'
-import { Dialog } from '@/components/ui'
 
 interface NavItem {
   view: View

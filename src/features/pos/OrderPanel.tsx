@@ -1,10 +1,9 @@
 /** Live order panel: lines, product pad, discount, customer/car, wash ticket. */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, CardHeader, MoneyDisplay } from '@/components/ui'
+import { Button, Card, CardHeader, MoneyDisplay, useToast } from '@/components/ui'
 import { Trash2 } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
-import { useToast } from '@/components/ui'
 import {
   api,
   settingsApi,
