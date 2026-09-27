@@ -38,7 +38,7 @@ export function parseMajor(input: string): Money | null {
   const normalized = input.trim().replace(',', '.')
   const [maj, min = ''] = normalized.split('.')
   const minor = min.padEnd(2, '0').slice(0, 2)
-  return (parseInt(maj, 10) * MINOR_PER_MAJOR + parseInt(minor, 10)) as Money
+  return (Number.parseInt(maj, 10) * MINOR_PER_MAJOR + Number.parseInt(minor, 10)) as Money
 }
 
 /** Sum any list of amounts. */
