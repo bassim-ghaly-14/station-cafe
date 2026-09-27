@@ -13,6 +13,7 @@
  * estimate: a partial number must never be mistaken for a settled one.
  */
 import { useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import {
   Badge,
@@ -60,6 +61,38 @@ function Divider() {
   return <span aria-hidden className="hidden w-px self-stretch bg-border-subtle sm:block" />
 }
 
+/**
+ * The two states that stand in for the card while there is no record to show:
+ * a failed load and a load in progress. Both are only reachable when `mine` is
+ * absent, so the caller decides that and this component just picks the state.
+ */
+function AttendancePlaceholder({
+  t,
+  error,
+  loading,
+  onRetry,
+}: {
+  t: TFunction
+  error: string | null
+  loading: boolean
+  onRetry: () => void
+}) {
+  if (error) {
+    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  }
+
+  if (loading) {
+    return (
+      <Card aria-busy="true" className="flex flex-col gap-3 p-4">
+        <Skeleton variant="text" className="h-4 w-1/3" accessibilityLabel="" />
+        <Skeleton variant="rect" className="h-9 w-40" accessibilityLabel="" />
+      </Card>
+    )
+  }
+
+  return null
+}
+
 export function MyAttendanceCard({
   mine,
   loading,
@@ -84,17 +117,11 @@ export function MyAttendanceCard({
   // changes from a single click.
   const [pending, setPending] = useState<'CHECK_IN' | 'CHECK_OUT' | null>(null)
 
-  if (error && !mine) {
-    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
-  }
-
-  if (loading && !mine) {
-    return (
-      <Card aria-busy="true" className="flex flex-col gap-3 p-4">
-        <Skeleton variant="text" className="h-4 w-1/3" accessibilityLabel="" />
-        <Skeleton variant="rect" className="h-9 w-40" accessibilityLabel="" />
-      </Card>
-    )
+  // Nothing to show yet: the load failed, it is still running, or there is no
+  // record at all. The guards are unchanged, so a record that is already on
+  // screen is never replaced by a placeholder.
+  if (!mine && (error || loading)) {
+    return <AttendancePlaceholder t={t} error={error} loading={loading} onRetry={onRetry} />
   }
 
   if (!mine) return null
