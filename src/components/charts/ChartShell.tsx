@@ -25,6 +25,7 @@
  * is inside it.
  */
 import { useState, type ReactNode } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, Dialog } from '@/components/ui'
 import { FileDown, Maximize2, MoreHorizontal } from '@/components/ui/icon'
@@ -74,6 +75,149 @@ export type ChartShellProps = {
   children: (presentation: ChartPresentation) => ReactNode
 }
 
+/**
+ * The chart header: identity on the start side, actions on the end side. Split
+ * out of `ChartShell` so each part reads on its own; the rendered output is
+ * exactly what the shell used to build inline.
+ */
+function ChartHeader({
+  t,
+  title,
+  description,
+  period,
+  showPeriod,
+  icon,
+  fullscreen,
+  id,
+  hasExports,
+  menuOpen,
+  setMenuOpen,
+  toolbarExtra,
+  onExportPng,
+  onExportExcel,
+  setFullscreenOpen,
+}: {
+  t: TFunction
+  title: string
+  description?: string
+  period?: string
+  showPeriod: boolean
+  icon?: ReactNode
+  fullscreen: boolean
+  id: string
+  hasExports: boolean
+  menuOpen: boolean
+  setMenuOpen: (open: boolean) => void
+  toolbarExtra?: ReactNode
+  onExportPng?: () => void | Promise<void>
+  onExportExcel?: () => void | Promise<void>
+  setFullscreenOpen: (open: boolean) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        {icon ? (
+          <span className="flex size-10 shrink-0 items-center justify-center bg-accent text-primary">
+            {icon}
+          </span>
+        ) : null}
+        <div className="min-w-0">
+          <h2 className="text-section text-start text-foreground-strong">{title}</h2>
+          {description ? (
+            <p className="mt-0.5 text-caption text-foreground-subtle">{description}</p>
+          ) : null}
+          {period && showPeriod ? (
+            <p className="mt-1 text-caption text-foreground-muted">{period}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {toolbarExtra}
+        {!fullscreen ? (
+          <Button
+            id={`fullscreen-trigger-${id}`}
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${t('reports.charts.fullscreen')}: ${title}`}
+            title={t('reports.charts.fullscreen')}
+            onClick={() => setFullscreenOpen(true)}
+          >
+            <Maximize2 size={17} aria-hidden />
+          </Button>
+        ) : null}
+        {hasExports ? (
+          <ExportMenu
+            t={t}
+            menuOpen={menuOpen}
+            setMenuOpen={setMenuOpen}
+            onExportPng={onExportPng}
+            onExportExcel={onExportExcel}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** The export menu: one button plus the items the caller actually provided. */
+function ExportMenu({
+  t,
+  menuOpen,
+  setMenuOpen,
+  onExportPng,
+  onExportExcel,
+}: {
+  t: TFunction
+  menuOpen: boolean
+  setMenuOpen: (open: boolean) => void
+  onExportPng?: () => void | Promise<void>
+  onExportExcel?: () => void | Promise<void>
+}) {
+  return (
+    <div className="relative">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('reports.charts.actions')}
+        title={t('reports.charts.actions')}
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen(!menuOpen)}
+      >
+        <MoreHorizontal size={18} aria-hidden />
+      </Button>
+      {menuOpen ? (
+        <div
+          role="menu"
+          className="absolute inset-e-0 top-11 z-10 w-44 rounded-md border border-border-strong bg-surface-popover p-1 shadow-lg"
+        >
+          {onExportPng ? (
+            <ExportMenuItem
+              onClick={() => {
+                setMenuOpen(false)
+                void onExportPng()
+              }}
+            >
+              {t('reports.charts.png')}
+            </ExportMenuItem>
+          ) : null}
+          {onExportExcel ? (
+            <ExportMenuItem
+              onClick={() => {
+                setMenuOpen(false)
+                void onExportExcel()
+              }}
+            >
+              {t('reports.charts.excel')}
+            </ExportMenuItem>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function ChartShell({
   id,
   title,
@@ -117,82 +261,23 @@ export function ChartShell({
         )}
         data-testid={`${fullscreen ? 'fullscreen-' : ''}${testId}`}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            {icon ? (
-              <span className="flex size-10 shrink-0 items-center justify-center bg-accent text-primary">
-                {icon}
-              </span>
-            ) : null}
-            <div className="min-w-0">
-              <h2 className="text-section text-start text-foreground-strong">{title}</h2>
-              {description ? (
-                <p className="mt-0.5 text-caption text-foreground-subtle">{description}</p>
-              ) : null}
-              {period && showPeriod ? (
-                <p className="mt-1 text-caption text-foreground-muted">{period}</p>
-              ) : null}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {toolbarExtra}
-            {!fullscreen ? (
-              <Button
-                id={`fullscreen-trigger-${id}`}
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`${t('reports.charts.fullscreen')}: ${title}`}
-                title={t('reports.charts.fullscreen')}
-                onClick={() => setFullscreenOpen(true)}
-              >
-                <Maximize2 size={17} aria-hidden />
-              </Button>
-            ) : null}
-            {hasExports ? (
-              <div className="relative">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('reports.charts.actions')}
-                  title={t('reports.charts.actions')}
-                  aria-expanded={menuOpen}
-                  onClick={() => setMenuOpen((open) => !open)}
-                >
-                  <MoreHorizontal size={18} aria-hidden />
-                </Button>
-                {menuOpen ? (
-                  <div
-                    role="menu"
-                    className="absolute inset-e-0 top-11 z-10 w-44 rounded-md border border-border-strong bg-surface-popover p-1 shadow-lg"
-                  >
-                    {onExportPng ? (
-                      <ExportMenuItem
-                        onClick={() => {
-                          setMenuOpen(false)
-                          void onExportPng()
-                        }}
-                      >
-                        {t('reports.charts.png')}
-                      </ExportMenuItem>
-                    ) : null}
-                    {onExportExcel ? (
-                      <ExportMenuItem
-                        onClick={() => {
-                          setMenuOpen(false)
-                          void onExportExcel()
-                        }}
-                      >
-                        {t('reports.charts.excel')}
-                      </ExportMenuItem>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <ChartHeader
+          t={t}
+          title={title}
+          description={description}
+          period={period}
+          showPeriod={showPeriod}
+          icon={icon}
+          fullscreen={fullscreen}
+          id={id}
+          hasExports={hasExports}
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
+          toolbarExtra={toolbarExtra}
+          onExportPng={onExportPng}
+          onExportExcel={onExportExcel}
+          setFullscreenOpen={setFullscreenOpen}
+        />
 
         {children(presentation)}
       </Card>
