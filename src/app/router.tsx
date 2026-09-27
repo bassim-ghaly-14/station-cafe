@@ -9,8 +9,8 @@ import type { ReactNode } from 'react'
 export type View =
   | 'pos'
   | 'today-invoices'
-  | 'staff'
   | 'customers'
+  | 'employees'
   | 'catalog'
   | 'inventory'
   | 'expenses'
@@ -29,8 +29,8 @@ const Ctx = createContext<RouterCtx | null>(null)
 const VIEW_PATHS: Record<View, string> = {
   pos: '/pos',
   'today-invoices': '/pos/invoices',
-  staff: '/staff',
   customers: '/customers',
+  employees: '/employees',
   catalog: '/catalog',
   inventory: '/inventory',
   expenses: '/expenses',

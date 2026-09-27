@@ -17,8 +17,8 @@ import { SessionProvider, useSession } from '@/features/auth/useSession'
 import LoginPage from '@/features/auth/LoginPage'
 import AppShell from '@/app/AppShell'
 import { RouterProvider, useRouter } from '@/app/router'
-import StaffPage from '@/features/staff/StaffPage'
 import CustomersPage from '@/features/customers/CustomersPage'
+import EmployeesPage from '@/features/employees/EmployeesPage'
 import PosPage from '@/features/pos/PosPage'
 import CatalogPage from '@/features/catalog/CatalogPage'
 import ExpensesPage from '@/features/expenses/ExpensesPage'
@@ -36,10 +36,10 @@ interface DbStatus {
 function RoutedViews() {
   const { view } = useRouter()
   switch (view) {
-    case 'staff':
-      return <StaffPage />
     case 'customers':
       return <CustomersPage />
+    case 'employees':
+      return <EmployeesPage />
     case 'catalog':
       return <CatalogPage />
     case 'expenses':

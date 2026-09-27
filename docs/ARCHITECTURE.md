@@ -83,4 +83,8 @@ Main PC hosts the app + SQLite. A local HTTP API (Phase 2, same Tauri/Rust proce
 
 ## 7. Security & roles
 
-Three roles: `ADMIN` (developer-only, hidden from normal business UI), `MANAGER` (full business management), `STAFF` (cashier operations only). Passwords hashed (Argon2 in Phase 1). Authorization checked server-side (Rust) on every sensitive command; audit log records sensitive actions with actor, before/after.
+Three auth roles: `ADMIN` (developer-only, hidden from normal business UI), `MANAGER` (full business management), `STAFF` (cashier operations only). Passwords hashed (Argon2 in Phase 1). Authorization checked server-side (Rust) on every sensitive command; audit log records sensitive actions with actor, before/after.
+
+An **employee** is not a fourth role. The `employees` table is the HR record; `users.role` is the authority. Every login is a `CASHIER` employee, and a `WASH_WORKER` is a person with **no login at all** (enforced by a database CHECK, not by the UI). The employees table therefore presents the `users.role` of the linked login, and `WASH_WORKER` only when there is none — the employee _type_ is never used as a role label. One surface (`/employees`) owns the roster, the account and the activation state; a stopped employee keeps their record and history and has their login suspended in the same transaction, never deleted.
+
+**Wash revenue is department-level.** Washing is a shared department, so its money is reported for the WASH department as a whole (sales analytics) and is never attributed to an individual worker. A wash worker is managed through name, avatar, phone, status, attendance, salary and advances — never a personal revenue figure or ranking. `invoices.wash_employee_id` remains an operational record of who took the job, and deliberately feeds no money aggregate.

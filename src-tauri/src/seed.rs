@@ -1,7 +1,7 @@
 //! Deterministic seed infrastructure.
 //!
 //! - Runs the full starter seed only on a fresh database.
-//! - Catalog v3 is synchronized once for existing installations.
+//! - Catalog v4 is synchronized once for existing installations.
 //! - Seed catalog entries are flagged (`is_seed = 1`).
 //! - Historical transaction data is never deleted.
 //! - Old catalog rows that are referenced by history are deactivated;
@@ -11,376 +11,352 @@
 
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::repositories::{catalog, users};
+use crate::repositories::{catalog, employees, users};
 use crate::services::auth;
 
 /// Marker written into `app_settings` after the initial seed completes.
 const SEED_MARKER: &str = "seed.completed_at";
 
 /// Marker for the current starter catalog version.
-const CATALOG_SEED_MARKER: &str = "seed.catalog.v3.completed_at";
+const CATALOG_SEED_MARKER: &str = "seed.catalog.v4.completed_at";
 
 /// Default starter accounts.
-const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
+///
+/// Public so the developer-reset test can assert the re-seeded account count
+/// against the real list instead of a hardcoded number that silently rots the
+/// next time a starter account is added.
+pub const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
     ("admin", None, "ADMIN", "admin123"),
     ("manager", None, "MANAGER", "manager123"),
     ("amira", None, "MANAGER", "20192"),
     ("cashier", None, "STAFF", "cashier123"),
+    ("momo", None, "STAFF", "11111"),
+    ("foly", None, "STAFF", "22222"),
 ];
 
 /// Current Station starter catalog.
 ///
 /// Tuple: (name, item_type, department, price in EGP, category, opening stock).
-/// Category names intentionally match the group comments above each record.
+/// The catalog below is AUTHORITATIVE source data supplied by the business:
+/// every entry is inserted exactly as written — names, item types,
+/// departments, prices, categories and opening stock are never normalized,
+/// translated, merged or deduplicated. Duplicate names are intentional and
+/// are preserved, because the source catalog contains them.
+// The catalog is DATA, not code: `rustfmt::skip` keeps every entry on the exact
+// single line the business supplied it on, instead of reflowing long tuples.
+#[rustfmt::skip]
 const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     // ============================================================
-    // BREAKFAST
+    // HOT DRINKS (مشروبات ساخنة)
     // ============================================================
-    ("كرواسون رومي", "PRODUCT", "CAFE", 74, "الإفطار", None),
-    ("كرواسون تركي", "PRODUCT", "CAFE", 98, "الإفطار", None),
-    ("كرواسون لحم بقري", "PRODUCT", "CAFE", 108, "الإفطار", None),
-    ("سلطة يونانية", "PRODUCT", "CAFE", 59, "الإفطار", None),
-    // ============================================================
-    // CLASSIC & COFFEE
-    // ============================================================
-    ("شاي كلاسيك", "PRODUCT", "CAFE", 25, "كلاسيك وقهوة", None),
-    ("شاي نكهات", "PRODUCT", "CAFE", 28, "كلاسيك وقهوة", None),
-    ("أعشاب", "PRODUCT", "CAFE", 32, "كلاسيك وقهوة", None),
-    ("قهوة تركي صغير", "PRODUCT", "CAFE", 39, "كلاسيك وقهوة", None),
-    ("قهوة تركي دبل", "PRODUCT", "CAFE", 44, "كلاسيك وقهوة", None),
-    (
-        "قهوة تركي وسط صغير",
-        "PRODUCT",
-        "CAFE",
-        49,
-        "كلاسيك وقهوة",
-        None,
-    ),
-    (
-        "قهوة تركي وسط دبل",
-        "PRODUCT",
-        "CAFE",
-        54,
-        "كلاسيك وقهوة",
-        None,
-    ),
-    ("قهوة فرنسية", "PRODUCT", "CAFE", 54, "كلاسيك وقهوة", None),
-    ("قهوة بالبندق", "PRODUCT", "CAFE", 59, "كلاسيك وقهوة", None),
-    // ============================================================
-    // HOT DRINK
-    // ============================================================
-    ("إسبريسو", "PRODUCT", "CAFE", 52, "مشروبات ساخنة", None),
-    ("موكا بوت", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
-    ("أمريكانو", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
-    ("ماكياتو", "PRODUCT", "CAFE", 54, "مشروبات ساخنة", None),
-    ("كورتادو", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
-    ("كابتشينو", "PRODUCT", "CAFE", 74, "مشروبات ساخنة", None),
-    ("لاتيه", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
+    ("كابتشينو", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
+    ("لاتيه", "PRODUCT", "CAFE", 92, "مشروبات ساخنة", None),
+    ("هوت شوكليت", "PRODUCT", "CAFE", 74, "مشروبات ساخنة", None),
+    ("هوت شوكليت أوريو", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
+    ("هوت شوكليت مارشميلو", "PRODUCT", "CAFE", 84, "مشروبات ساخنة", None),
+    ("قهوة تركي دبل", "PRODUCT", "CAFE", 50, "مشروبات ساخنة", None),
+    ("قهوة تركي سينجل", "PRODUCT", "CAFE", 39, "مشروبات ساخنة", None),
+    ("إسبريسو دبل", "PRODUCT", "CAFE", 65, "مشروبات ساخنة", None),
+    ("إسبريسو سينجل", "PRODUCT", "CAFE", 56, "مشروبات ساخنة", None),
+    ("سحلب كراميل", "PRODUCT", "CAFE", 75, "مشروبات ساخنة", None),
+    ("قهوة فرنساوي", "PRODUCT", "CAFE", 54, "مشروبات ساخنة", None),
+    ("قهوة بندق", "PRODUCT", "CAFE", 59, "مشروبات ساخنة", None),
+    ("نسكافيه لارج", "PRODUCT", "CAFE", 60, "مشروبات ساخنة", None),
+    ("سحلب", "PRODUCT", "CAFE", 75, "مشروبات ساخنة", None),
+    ("شاي", "PRODUCT", "CAFE", 25, "مشروبات ساخنة", None),
+    ("شاي فليفر", "PRODUCT", "CAFE", 28, "مشروبات ساخنة", None),
+    ("أعشاب", "PRODUCT", "CAFE", 32, "مشروبات ساخنة", None),
+    ("هوت سيدر", "PRODUCT", "CAFE", 75, "مشروبات ساخنة", None),
+    ("موكا", "PRODUCT", "CAFE", 79, "مشروبات ساخنة", None),
+    ("هوت كراميل", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("شاي اسطف", "PRODUCT", "CAFE", 10, "مشروبات ساخنة", Some(0)),
+    ("قهوة اسطف", "PRODUCT", "CAFE", 20, "مشروبات ساخنة", None),
+    ("براد شاي", "PRODUCT", "CAFE", 35, "مشروبات ساخنة", None),
+    ("شاي بناء المور", "PRODUCT", "CAFE", 10, "مشروبات ساخنة", Some(0)),
+    ("قهوة محوج سينجل", "PRODUCT", "CAFE", 40, "مشروبات ساخنة", None),
+    ("قهوة محوج دبل", "PRODUCT", "CAFE", 50, "مشروبات ساخنة", None),
+    ("قرفة حليب", "PRODUCT", "CAFE", 45, "مشروبات ساخنة", None),
     ("فلات وايت", "PRODUCT", "CAFE", 84, "مشروبات ساخنة", None),
-    ("موكا", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
-    (
-        "كراميل ماكياتو",
-        "PRODUCT",
-        "CAFE",
-        89,
-        "مشروبات ساخنة",
-        None,
-    ),
-    (
-        "كريمة ماكياتو بالملح",
-        "PRODUCT",
-        "CAFE",
-        99,
-        "مشروبات ساخنة",
-        None,
-    ),
-    (
-        "شوكولاتة كلاسيك",
-        "PRODUCT",
-        "CAFE",
-        74,
-        "مشروبات ساخنة",
-        None,
-    ),
-    (
-        "شوكولاتة أوريو",
-        "PRODUCT",
-        "CAFE",
-        79,
-        "مشروبات ساخنة",
-        None,
-    ),
-    (
-        "شوكولاتة بالكريمة",
-        "PRODUCT",
-        "CAFE",
-        89,
-        "مشروبات ساخنة",
-        None,
-    ),
-    (
-        "شوكولاتة مارشميلو",
-        "PRODUCT",
-        "CAFE",
-        84,
-        "مشروبات ساخنة",
-        None,
-    ),
-    ("كراميل ساخن", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
-    ("سيدر ساخن", "PRODUCT", "CAFE", 75, "مشروبات ساخنة", None),
+    ("شاي بلس", "PRODUCT", "CAFE", 45, "مشروبات ساخنة", None),
+    ("شاي أخضر", "PRODUCT", "CAFE", 25, "مشروبات ساخنة", None),
+    ("قرفة جنزبيل", "PRODUCT", "CAFE", 30, "مشروبات ساخنة", None),
+    ("إسبريسو 3", "PRODUCT", "CAFE", 60, "مشروبات ساخنة", None),
+    ("أمريكان كوفي", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("فرانسيسبو كراميل", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
+    ("فرانسيسبو موكا", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
+    ("فرانسيسبو فانيليا", "PRODUCT", "CAFE", 85, "مشروبات ساخنة", None),
+    ("فرانسيسبو بستاشيو", "PRODUCT", "CAFE", 99, "مشروبات ساخنة", None),
+    ("آيس لاتيه", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
+    ("آيس كابتشينو", "PRODUCT", "CAFE", 70, "مشروبات ساخنة", None),
+    ("ميكاتو سينجل", "PRODUCT", "CAFE", 65, "مشروبات ساخنة", None),
+    ("ميكاتو دبل", "PRODUCT", "CAFE", 85, "مشروبات ساخنة", None),
+    ("شاي أحمد تي", "PRODUCT", "CAFE", 25, "مشروبات ساخنة", None),
+    ("نسكافيه إم", "PRODUCT", "CAFE", 45, "مشروبات ساخنة", None),
+    ("آيس موكا", "PRODUCT", "CAFE", 93, "مشروبات ساخنة", None),
+    ("كورنو كوفي", "PRODUCT", "CAFE", 69, "مشروبات ساخنة", None),
+    ("جلسة", "PRODUCT", "CAFE", 50, "مشروبات ساخنة", None),
+    ("بلبلة", "PRODUCT", "CAFE", 65, "مشروبات ساخنة", None),
+    ("لبن", "PRODUCT", "CAFE", 30, "مشروبات ساخنة", Some(0)),
+    ("هوت أوريو", "PRODUCT", "CAFE", 55, "مشروبات ساخنة", None),
+    ("صدلية", "PRODUCT", "CAFE", 35, "مشروبات ساخنة", None),
+    ("ليمون دافئ", "PRODUCT", "CAFE", 30, "مشروبات ساخنة", None),
+    ("آيس كوفي", "PRODUCT", "CAFE", 80, "مشروبات ساخنة", None),
+    ("آيس كراميل ميكاتو", "PRODUCT", "CAFE", 93, "مشروبات ساخنة", None),
+    ("نسكافيه بلاك", "PRODUCT", "CAFE", 35, "مشروبات ساخنة", None),
+    ("سبانيش لاتيه", "PRODUCT", "CAFE", 99, "مشروبات ساخنة", None),
+    ("بندق دبل", "PRODUCT", "CAFE", 65, "مشروبات ساخنة", None),
+    ("كراميل ميكاتو", "PRODUCT", "CAFE", 89, "مشروبات ساخنة", None),
+    ("ميكاتو كريمي مملح", "PRODUCT", "CAFE", 99, "مشروبات ساخنة", None),
+    ("كراميل مملح مثلج", "PRODUCT", "CAFE", 123, "مشروبات ساخنة", None),
+    ("آيس أمريكانو", "PRODUCT", "CAFE", 87, "مشروبات ساخنة", None),
+    ("آيس وايت موكا", "PRODUCT", "CAFE", 96, "مشروبات ساخنة", None),
+    ("لاتيه لارج", "PRODUCT", "CAFE", 98, "مشروبات ساخنة", None),
+
     // ============================================================
-    // FRESH JUICE
+    // DESSERT (ديزارت)
     // ============================================================
-    ("برتقال", "PRODUCT", "CAFE", 85, "عصائر طازجة", None),
-    ("ليمون", "PRODUCT", "CAFE", 69, "عصائر طازجة", None),
-    ("مانجو", "PRODUCT", "CAFE", 89, "عصائر طازجة", None),
-    ("تمر", "PRODUCT", "CAFE", 87, "عصائر طازجة", None),
-    ("جوافة", "PRODUCT", "CAFE", 79, "عصائر طازجة", None),
-    ("فراولة", "PRODUCT", "CAFE", 87, "عصائر طازجة", None),
-    ("بطيخ", "PRODUCT", "CAFE", 85, "عصائر طازجة", None),
+    ("مولتن كيك", "PRODUCT", "CAFE", 94, "ديزارت", None),
+    ("تشيز كيك", "PRODUCT", "CAFE", 89, "ديزارت", None),
+    ("براونيز", "PRODUCT", "CAFE", 65, "ديزارت", None),
+    ("ريد فيلفت", "PRODUCT", "CAFE", 85, "ديزارت", None),
+    ("شوكليت كيك", "PRODUCT", "CAFE", 85, "ديزارت", None),
+    ("لوتس كيك", "PRODUCT", "CAFE", 89, "ديزارت", None),
+    ("سينابون", "PRODUCT", "CAFE", 120, "ديزارت", None),
+    ("كوب لوتس", "PRODUCT", "CAFE", 75, "ديزارت", None),
+    ("كوب بستاشيو", "PRODUCT", "CAFE", 80, "ديزارت", None),
+    ("ميني تورتة روشيه", "PRODUCT", "CAFE", 80, "ديزارت", None),
+    ("ديزرت مع نسكافيه", "PRODUCT", "CAFE", 100, "ديزارت", None),
+    ("ديزرت مع كاتر", "PRODUCT", "CAFE", 100, "ديزارت", None),
+    ("كاب ريد فيلفت", "PRODUCT", "CAFE", 75, "ديزارت", None),
+    ("كاب نوتيلا", "PRODUCT", "CAFE", 80, "ديزارت", None),
+
     // ============================================================
-    // DESSERT
+    // FRESH JUICES (عصائر فريشات)
     // ============================================================
-    ("مولتن", "PRODUCT", "CAFE", 94, "حلويات", None),
-    ("شوكولاتة", "PRODUCT", "CAFE", 85, "حلويات", None),
-    ("لوتس", "PRODUCT", "CAFE", 89, "حلويات", None),
-    ("ريد فيلفت", "PRODUCT", "CAFE", 85, "حلويات", None),
-    ("تشيز كيك", "PRODUCT", "CAFE", 89, "حلويات", None),
-    ("سينابون", "PRODUCT", "CAFE", 120, "حلويات", None),
-    ("دونات", "PRODUCT", "CAFE", 70, "حلويات", None),
-    ("وافل", "PRODUCT", "CAFE", 90, "حلويات", None),
-    ("بان كيك", "PRODUCT", "CAFE", 99, "حلويات", None),
+    ("جوافة نعناع", "PRODUCT", "CAFE", 87, "عصائر فريشات", None),
+    ("بطيخ", "PRODUCT", "CAFE", 85, "عصائر فريشات", None),
+    ("جوافة", "PRODUCT", "CAFE", 85, "عصائر فريشات", None),
+    ("عصير فراولة", "PRODUCT", "CAFE", 87, "عصائر فريشات", None),
+    ("جوافة حليب", "PRODUCT", "CAFE", 89, "عصائر فريشات", None),
+    ("موز حليب", "PRODUCT", "CAFE", 75, "عصائر فريشات", None),
+    ("بلح حليب", "PRODUCT", "CAFE", 87, "عصائر فريشات", None),
+    ("عصير برتقال", "PRODUCT", "CAFE", 85, "عصائر فريشات", None),
+    ("ليمون", "PRODUCT", "CAFE", 69, "عصائر فريشات", None),
+    ("ليمون نعناع", "PRODUCT", "CAFE", 85, "عصائر فريشات", None),
+    ("مانجو", "PRODUCT", "CAFE", 89, "عصائر فريشات", None),
+    ("كيوي", "PRODUCT", "CAFE", 50, "عصائر فريشات", None),
+    ("تين شوكي", "PRODUCT", "CAFE", 75, "عصائر فريشات", None),
+    ("فريش ميكس", "PRODUCT", "CAFE", 110, "عصائر فريشات", None),
+    ("ليمون (عرض)", "PRODUCT", "CAFE", 20, "عصائر فريشات", Some(0)),
+    ("بطيخ (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("تفاح أخضر (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("أناناس (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("جوافة بالنعناع (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("سمورى بطيخ (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("سمورى تفاح أخضر (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("سمورى أناناس (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("سمورى جوافة نعناع (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("سمورى بلوبيري (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
+    ("عصير رمان", "PRODUCT", "CAFE", 50, "عصائر فريشات", None),
+    ("فلوريدا", "PRODUCT", "CAFE", 75, "عصائر فريشات", None),
+    ("مانجا باشون فروت", "PRODUCT", "CAFE", 120, "عصائر فريشات", None),
+
     // ============================================================
-    // SOFT DRINK
+    // SMOOTHIE (اسموري)
     // ============================================================
-    ("فيروز", "PRODUCT", "CAFE", 40, "مشروبات غازية", Some(0)),
-    ("بيبسي", "PRODUCT", "CAFE", 30, "مشروبات غازية", Some(0)),
-    ("ريد بول", "PRODUCT", "CAFE", 80, "مشروبات غازية", Some(0)),
-    ("مياه", "PRODUCT", "CAFE", 10, "مشروبات غازية", Some(0)),
+    ("اسموري جوافة نعناع", "PRODUCT", "CAFE", 65, "اسموري", None),
+    ("اسموري تفاح أخضر", "PRODUCT", "CAFE", 79, "اسموري", None),
+    ("اسموري توت", "PRODUCT", "CAFE", 65, "اسموري", None),
+    ("اسموري خوخ", "PRODUCT", "CAFE", 65, "اسموري", None),
+    ("اسموري جوافة", "PRODUCT", "CAFE", 60, "اسموري", None),
+    ("اسموري رمان", "PRODUCT", "CAFE", 50, "اسموري", None),
+    ("اسموري باشون فروت", "PRODUCT", "CAFE", 99, "اسموري", None),
+    ("اسموري فراولة نعناع", "PRODUCT", "CAFE", 50, "اسموري", None),
+    ("اسموري بطيخ", "PRODUCT", "CAFE", 90, "اسموري", None),
+    ("اسموري مانجو", "PRODUCT", "CAFE", 90, "اسموري", None),
+    ("اسموري بطيخ نعناع", "PRODUCT", "CAFE", 70, "اسموري", None),
+    ("اسموري كيوي", "PRODUCT", "CAFE", 50, "اسموري", None),
+    ("اسموري ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموري", None),
+    ("سبانيش لاتيه (اسموري)", "PRODUCT", "CAFE", 60, "اسموري", None),
+    ("اسموري ميكس", "PRODUCT", "CAFE", 90, "اسموري", None),
+    ("موهيتو بلوبيري", "PRODUCT", "CAFE", 87, "موهيتو", None),
+    ("بلوبيري", "PRODUCT", "CAFE", 88, "موهيتو", None),
+    ("سموري ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموري", None),
+    ("مانجا باشون", "PRODUCT", "CAFE", 120, "موهيتو", None),
+    ("سموري فراولة", "PRODUCT", "CAFE", 87, "اسموري", None),
+    ("اسموري بلوبيري", "PRODUCT", "CAFE", 88, "اسموري", None),
+    ("اسموري مور باللبن", "PRODUCT", "CAFE", 90, "اسموري", None),
+
     // ============================================================
-    // EXTRAS
+    // ICE CREAM (آيس كريم)
     // ============================================================
-    ("لبن", "PRODUCT", "CAFE", 19, "إضافات", Some(0)),
-    ("آيس كريم", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
-    ("نوتيلا", "PRODUCT", "CAFE", 24, "إضافات", Some(0)),
-    ("صوص", "PRODUCT", "CAFE", 20, "إضافات", Some(0)),
-    ("بوريه", "PRODUCT", "CAFE", 24, "إضافات", Some(0)),
-    ("فستق", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
-    ("بندق", "PRODUCT", "CAFE", 15, "إضافات", Some(0)),
-    ("شوت", "PRODUCT", "CAFE", 30, "إضافات", Some(0)),
+    ("ميكس شوكليت", "PRODUCT", "CAFE", 65, "آيس كريم", None),
+    ("آيس كريم كلاسيك", "PRODUCT", "CAFE", 50, "آيس كريم", None),
+    ("آيس كريم فروت سلاط", "PRODUCT", "CAFE", 70, "آيس كريم", None),
+    ("آيس كريم أوريو مدبنس", "PRODUCT", "CAFE", 70, "آيس كريم", None),
+    ("آيس كريم ميكس مدبنس", "PRODUCT", "CAFE", 70, "آيس كريم", None),
+    ("آيس كريم شوكولاتة (1 بولة) (عرض)", "PRODUCT", "CAFE", 15, "آيس كريم", Some(0)),
+    ("آيس كريم فراولة (2 بولة) (عرض)", "PRODUCT", "CAFE", 25, "آيس كريم", Some(0)),
+    ("آيس كريم فانيليا (2 بولة) (عرض)", "PRODUCT", "CAFE", 25, "آيس كريم", Some(0)),
+    ("آيس كريم فانيليا (1 بولة) (عرض)", "PRODUCT", "CAFE", 15, "آيس كريم", Some(0)),
+    ("آيس كريم شوكولاتة (2 بولة) (عرض)", "PRODUCT", "CAFE", 15, "آيس كريم", Some(0)),
+    ("آيس كريم بسكوت مكرمل بالقرفة (2 بولة) (عرض)", "PRODUCT", "CAFE", 25, "آيس كريم", Some(0)),
+    ("آيس كريم مانجا (2 بولة) (عرض)", "PRODUCT", "CAFE", 25, "آيس كريم", Some(0)),
+    ("آيس كريم مانجا (1 بولة) (عرض)", "PRODUCT", "CAFE", 15, "آيس كريم", Some(0)),
+    ("آيس كريم بسكوت مكرمل بالقرفة بولة (عرض)", "PRODUCT", "CAFE", 20, "آيس كريم", Some(0)),
+    ("آيس كريم شوكولاتة (2 بولة) (عرض)", "PRODUCT", "CAFE", 13, "آيس كريم", Some(0)),
+    ("آيس كريم (عرض) 3 بولة", "PRODUCT", "CAFE", 35, "آيس كريم", Some(0)),
+    ("بولة 2", "PRODUCT", "CAFE", 30, "آيس كريم", None),
+    ("إكسترا بستاشيو", "PRODUCT", "CAFE", 30, "آيس كريم", None),
+    ("آيس كريمر كلاسيك", "PRODUCT", "CAFE", 80, "آيس كريم", None),
+
     // ============================================================
-    // ICED COFFEE
-    // ============================================================
-    ("آيس أمريكانو", "PRODUCT", "CAFE", 87, "قهوة مثلجة", None),
-    ("آيس لاتيه", "PRODUCT", "CAFE", 89, "قهوة مثلجة", None),
-    ("آيس موكا", "PRODUCT", "CAFE", 93, "قهوة مثلجة", None),
-    ("آيس وايت موكا", "PRODUCT", "CAFE", 96, "قهوة مثلجة", None),
-    (
-        "آيس كراميل ماكياتو",
-        "PRODUCT",
-        "CAFE",
-        93,
-        "قهوة مثلجة",
-        None,
-    ),
-    ("سبانيش لاتيه", "PRODUCT", "CAFE", 99, "قهوة مثلجة", None),
-    (
-        "آيس كراميل مملح",
-        "PRODUCT",
-        "CAFE",
-        124,
-        "قهوة مثلجة",
-        None,
-    ),
-    // ============================================================
-    // FRAPPE
-    // ============================================================
-    ("فرابيه فانيليا", "PRODUCT", "CAFE", 85, "فرابيه", None),
-    ("فرابيه موكا", "PRODUCT", "CAFE", 89, "فرابيه", None),
-    ("فرابيه كراميل", "PRODUCT", "CAFE", 89, "فرابيه", None),
-    ("فرابيه فستق", "PRODUCT", "CAFE", 99, "فرابيه", None),
-    // ============================================================
-    // SMOOTHIE
-    // ============================================================
-    ("ليمون بالنعناع", "PRODUCT", "CAFE", 69, "سموذي", None),
-    ("بطيخ", "PRODUCT", "CAFE", 85, "سموذي", None),
-    ("توت أزرق", "PRODUCT", "CAFE", 88, "سموذي", None),
-    ("مانجو باشن", "PRODUCT", "CAFE", 99, "سموذي", None),
-    ("فراولة", "PRODUCT", "CAFE", 87, "سموذي", None),
-    ("تفاح أخضر", "PRODUCT", "CAFE", 79, "سموذي", None),
-    // ============================================================
-    // MILKSHAKE
+    // MILK SHAKE (ميلك شيك)
     // ============================================================
     ("ميلك شيك فانيليا", "PRODUCT", "CAFE", 87, "ميلك شيك", None),
-    ("ميلك شيك شوكولاتة", "PRODUCT", "CAFE", 89, "ميلك شيك", None),
-    ("ميلك شيك لوتس", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
+    ("ميلك شيك موكا", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
+    ("بانا سيلايت", "PRODUCT", "CAFE", 75, "ميلك شيك", None),
     ("ميلك شيك أوريو", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
-    ("ميلك شيك موكا", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
-    ("ميلك شيك توت أزرق", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
+    ("شوكليت موكنسيو", "PRODUCT", "CAFE", 65, "ميلك شيك", None),
+    ("ميلك شيك فراولة", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
+    ("ميلك شيك مانجا", "PRODUCT", "CAFE", 90, "ميلك شيك", None),
+    ("ميلك شيك", "PRODUCT", "CAFE", 75, "ميلك شيك", None),
+    ("ميلك شيك بلوبيري", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
+    ("ميلك شيك هوهور", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
+    ("ميلك شيك نسكافيه", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
+    ("ميلك شيك لوتس", "PRODUCT", "CAFE", 87, "ميلك شيك", None),
+    ("ميلك شيك بستاشيو", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
+
     // ============================================================
-    // MOCKTAIL
+    // FRIDGE & REFRESHMENTS (ثلاجة ومشروبات غازية)
     // ============================================================
-    ("بلو سكاي", "PRODUCT", "CAFE", 87, "موكتيل", None),
-    ("تفاح أخضر", "PRODUCT", "CAFE", 88, "موكتيل", None),
-    ("باشن فروت", "PRODUCT", "CAFE", 83, "موكتيل", None),
-    ("توت أزرق", "PRODUCT", "CAFE", 87, "موكتيل", None),
-    ("فراولة", "PRODUCT", "CAFE", 88, "موكتيل", None),
-    ("كاندي لافرز", "PRODUCT", "CAFE", 123, "موكتيل", None),
+    ("مياه", "PRODUCT", "CAFE", 10, "ثلاجة", Some(0)),
+    ("دبل دير", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("موس ديو", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("بريل", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("بربيكان", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("موسى", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("فيروز", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("سبايدر", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("ريد بول", "PRODUCT", "CAFE", 90, "ثلاجة", Some(0)),
+    ("سيبيح", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("شوببس", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("سيسي", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("كولا", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("ميرندا", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("كاتر مناسبات", "PRODUCT", "CAFE", 25, "ثلاجة", Some(0)),
+    ("امسنل", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("ميرندا تفاح", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("نوبست", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("فروتر", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("فيروز", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("سبرايت", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("فاينا", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("في سفن", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("ساسس", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
+    ("راني", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
+    ("فاينا برتقال", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("باور هورس مشروب طاقة", "PRODUCT", "CAFE", 60, "ثلاجة", Some(0)),
+    ("سفن أب", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
+    ("أسس كولا", "PRODUCT", "CAFE", 25, "ثلاجة", Some(0)),
+
     // ============================================================
-    // CAR WASH SERVICES
+    // MARKET & ACCESSORIES (ماركت)
     // ============================================================
-    (
-        "غسيل كامل سيدان",
-        "SERVICE",
-        "WASH",
-        175,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "غسيل خارجي سيدان",
-        "SERVICE",
-        "WASH",
-        85,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "غسيل كامل",
-        "SERVICE",
-        "WASH",
-        200,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "غسيل خارجي",
-        "SERVICE",
-        "WASH",
-        95,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "غسيل VIP",
-        "SERVICE",
-        "WASH",
-        250,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "صالون كيماوي جلد",
-        "SERVICE",
-        "WASH",
-        600,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "صالون كيماوي قماش",
-        "SERVICE",
-        "WASH",
-        750,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "سقف كيماوي",
-        "SERVICE",
-        "WASH",
-        350,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "جنط كيماوي",
-        "SERVICE",
-        "WASH",
-        80,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "أرضية كيماوي",
-        "SERVICE",
-        "WASH",
-        100,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "باب كيماوي",
-        "SERVICE",
-        "WASH",
-        60,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "مانور كيماوي",
-        "SERVICE",
-        "WASH",
-        100,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "كرسي كيماوي",
-        "SERVICE",
-        "WASH",
-        150,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "كنبة كيماوي",
-        "SERVICE",
-        "WASH",
-        300,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "شنطة كيماوي",
-        "SERVICE",
-        "WASH",
-        100,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "كار كير كامل",
-        "SERVICE",
-        "WASH",
-        1500,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "تلميع مرحلة واحدة",
-        "SERVICE",
-        "WASH",
-        1500,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "تلميع مرحلتين",
-        "SERVICE",
-        "WASH",
-        1800,
-        "خدمات غسيل السيارات",
-        None,
-    ),
-    (
-        "تلميع ثلاث مراحل",
-        "SERVICE",
-        "WASH",
-        2500,
-        "خدمات غسيل السيارات",
-        None,
-    ),
+    ("حافظة 2 في 3", "PRODUCT", "WASH", 55, "ماركت", None),
+    ("لحاف فيبر", "PRODUCT", "WASH", 50, "ماركت", None),
+    ("عرض غسلة", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("عرض غسلة مع قهوة فري", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("عرض غسلة عرض", "PRODUCT", "WASH", 120, "ماركت", None),
+    ("عرض غسلة", "PRODUCT", "WASH", 120, "ماركت", None),
+    ("تلميع باب", "PRODUCT", "WASH", 200, "ماركت", None),
+    ("راسبين ملاكي", "PRODUCT", "WASH", 110, "ماركت", None),
+    ("عرض 400", "PRODUCT", "WASH", 400, "ماركت", None),
+    ("كسوة طارة جلد", "PRODUCT", "WASH", 300, "ماركت", None),
+    ("ثلاثة إم طفاية", "PRODUCT", "WASH", 200, "ماركت", None),
+    ("وصلة صوت", "PRODUCT", "WASH", 220, "ماركت", None),
+    ("طفاية كربون", "PRODUCT", "WASH", 220, "ماركت", None),
+    ("وصلة إس إيه 45", "PRODUCT", "WASH", 175, "ماركت", None),
+    ("وصلة أول إس", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("رأس شاحن دبليو 105", "PRODUCT", "WASH", 450, "ماركت", None),
+    ("رأس شاحن دبليو 30", "PRODUCT", "WASH", 350, "ماركت", None),
+    ("وصلة لينو صوت", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("رأس شاحن 45", "PRODUCT", "WASH", 450, "ماركت", None),
+    ("كابل بطارية", "PRODUCT", "WASH", 450, "ماركت", None),
+    ("ريشة نظافة", "PRODUCT", "WASH", 250, "ماركت", None),
+    ("لمع تابلوه كبير", "PRODUCT", "WASH", 125, "ماركت", None),
+    ("لمع تابلوه صغير", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("معطر إيري بخاخ", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("معطر علبة باكت", "PRODUCT", "WASH", 275, "ماركت", None),
+    ("إيريون فواحات جديدة", "PRODUCT", "WASH", 75, "ماركت", None),
+    ("مبدلنا جلد جديدة", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("بارك بيج كود", "PRODUCT", "WASH", 120, "ماركت", None),
+    ("حامل موبايل", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("حامل موبايل بيتشحن", "PRODUCT", "WASH", 180, "ماركت", None),
+    ("بادة", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("فجوة باب", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("كسوة طارة في علبة", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("طعم ناره", "PRODUCT", "WASH", 15, "ماركت", None),
+    ("كسوة عربية 2 كرسي", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("فوطة", "PRODUCT", "WASH", 45, "ماركت", None),
+    ("فواحة 30", "PRODUCT", "WASH", 30, "ماركت", None),
+    ("كار كبر صالون قماش", "PRODUCT", "WASH", 750, "ماركت", None),
+    ("دواسات أكياس", "PRODUCT", "WASH", 20, "ماركت", None),
+    ("كود العربات", "PRODUCT", "WASH", 250, "ماركت", None),
+    ("طقم صالون شفاف", "PRODUCT", "WASH", 50, "ماركت", None),
+    ("طقم صالون قماش", "PRODUCT", "WASH", 100, "ماركت", None),
+    ("بادة عربية", "PRODUCT", "WASH", 150, "ماركت", None),
+    ("كابل صوت إم", "PRODUCT", "WASH", 220, "ماركت", None),
+    ("صالون كار كبر جلد", "PRODUCT", "WASH", 600, "ماركت", None),
+
+    // ============================================================
+    // CAR WASH & CARE SERVICES (خدمات غسيل السيارات)
+    // ============================================================
+    ("غسيل داخلي خارجي سيدان", "SERVICE", "WASH", 85, "خدمات غسيل السيارات", None),
+    ("تلميع مرحلة واحدة", "SERVICE", "WASH", 1200, "خدمات غسيل السيارات", None),
+    ("تلميع مرحلتين", "SERVICE", "WASH", 1800, "خدمات غسيل السيارات", None),
+    ("تلميع 3 مراحل", "SERVICE", "WASH", 2000, "خدمات غسيل السيارات", None),
+    ("كار كبر داخلي كامل", "SERVICE", "WASH", 1000, "خدمات غسيل السيارات", None),
+    ("كار كبر كامل مانور + شنطة + 4 حيوط", "SERVICE", "WASH", 1500, "خدمات غسيل السيارات", None),
+    ("حبط كار كبر", "SERVICE", "WASH", 80, "خدمات غسيل السيارات", None),
+    ("كرسي كار كبر", "SERVICE", "WASH", 150, "خدمات غسيل السيارات", None),
+    ("سقف كار كبر", "SERVICE", "WASH", 350, "خدمات غسيل السيارات", None),
+    ("باب كار كبر", "SERVICE", "WASH", 60, "خدمات غسيل السيارات", None),
+    ("شنطة كار كبر", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
+    ("أرضية كار كبر", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
+    ("مانور كيماوي", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
+    ("فواحة كبيرة", "SERVICE", "WASH", 45, "خدمات غسيل السيارات", None),
+    ("فواحة صغيرة", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
+    ("مليكة معطر خو", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
+    ("غسيل كامل نصف نقل", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
+    ("غسيل غطاء السيارة", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
+    ("دواسة 2", "SERVICE", "WASH", 10, "خدمات غسيل السيارات", None),
+    ("غسيل سكوتر", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
+    ("غسيل كامل (شركة)", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
+    ("تلميع فانوس", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
+    ("فوطة", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
+    ("كسوة كاملة كار كبر", "SERVICE", "WASH", 300, "خدمات غسيل السيارات", None),
+    ("غسيل موتوسيكل", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
+    ("غسيل كامل (S.U.V)", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
+    ("متر سجاد", "SERVICE", "WASH", 20, "خدمات غسيل السيارات", None),
+    ("غسيل كامل (V.I.P)", "SERVICE", "WASH", 250, "خدمات غسيل السيارات", None),
+    ("نانو تابلوه", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
+    ("فواحة رحاج", "SERVICE", "WASH", 60, "خدمات غسيل السيارات", None),
+    ("غسلة مجانية", "SERVICE", "WASH", 0, "خدمات غسيل السيارات", None),
+    ("ميدلنا معدن", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
+    ("سكانة", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
+    ("واكس خارجي", "SERVICE", "WASH", 150, "خدمات غسيل السيارات", None),
+    ("عرض غسيل خارجي في", "SERVICE", "WASH", 95, "خدمات غسيل السيارات", None),
+    ("غسيل كامل سيدان", "SERVICE", "WASH", 175, "خدمات غسيل السيارات", None),
+    ("فواحة ك 45", "SERVICE", "WASH", 45, "خدمات غسيل السيارات", None),
+    ("فواحة 25", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
+    ("فواحة 15", "SERVICE", "WASH", 15, "خدمات غسيل السيارات", None),
+    ("كوفر طارة", "SERVICE", "WASH", 20, "خدمات غسيل السيارات", None),
+    ("بطانية أطفال", "SERVICE", "WASH", 75, "خدمات غسيل السيارات", None),
+    ("تلميع شنطة", "SERVICE", "WASH", 300, "خدمات غسيل السيارات", None),
+    ("تلميع", "SERVICE", "WASH", 400, "خدمات غسيل السيارات", None),
+    ("تنظيف شنطة عادي", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
+    ("بطانية", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
 ];
 
 pub fn run_if_empty(conn: &Db) -> AppResult<()> {
@@ -434,7 +410,7 @@ fn seed_content(conn: &Db) -> AppResult<()> {
     for (name, phone, role, password) in DEFAULT_USERS {
         let hash = auth::hash_password(password)?;
 
-        users::insert(
+        let user_id = users::insert(
             conn,
             &users::NewUser {
                 name,
@@ -444,6 +420,25 @@ fn seed_content(conn: &Db) -> AppResult<()> {
                 is_seed: true,
             },
         )?;
+        // Every seeded login is a CASHIER employee. Migration 28 backfilled the
+        // employees of an existing installation, but a FRESH database runs the
+        // migration against an empty `users` table, so the starter seed creates
+        // the link itself. A cashier is never seeded without it: the database
+        // CHECK refuses a CASHIER with no login, so this is not optional.
+        if let Some(user_id) = user_id {
+            let created = employees::insert(
+                conn,
+                &employees::NewEmployee {
+                    name,
+                    phone: *phone,
+                    employee_type: "CASHIER",
+                    base_salary: 0,
+                    notes: None,
+                    user_id: Some(user_id),
+                },
+            )?;
+            log::debug!("seed: employee {created} linked to user {user_id}");
+        }
     }
 
     insert_default_products(conn)?;
@@ -499,7 +494,7 @@ fn sync_catalog_if_needed(conn: &Db) -> AppResult<()> {
 
             conn.execute_batch("COMMIT;")?;
 
-            log::info!("seed: catalog synchronized to v3");
+            log::info!("seed: catalog synchronized to v4");
             Ok(())
         }
         Err(e) => {
@@ -652,6 +647,175 @@ mod tests {
         assert_eq!(product_count, DEFAULT_PRODUCTS.len() as i64);
     }
 
+    /// The starter catalog is authoritative source data, so this compares the
+    /// DATABASE row-for-row against the tuple list instead of asserting a
+    /// handful of names: a wrong price, a swapped department, a renamed
+    /// category or a lost duplicate would all fail here.
+    #[test]
+    fn the_seeded_database_matches_the_authoritative_catalog_row_for_row() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT p.name, p.item_type, p.department, p.price_minor, c.name,
+                        p.track_inventory, COALESCE(i.quantity, 0)
+                 FROM products p
+                 JOIN categories c ON c.id = p.category_id
+                 LEFT JOIN inventory_items i ON i.product_id = p.id
+                 WHERE p.is_seed = 1
+                 ORDER BY p.id",
+            )
+            .unwrap();
+        let rows: Vec<(String, String, String, i64, String, i64, i64)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let expected: Vec<(String, String, String, i64, String, i64, i64)> = DEFAULT_PRODUCTS
+            .iter()
+            .map(|(name, item_type, department, price, category, stock)| {
+                (
+                    name.to_string(),
+                    item_type.to_string(),
+                    department.to_string(),
+                    price * 100,
+                    category.to_string(),
+                    i64::from(stock.is_some()),
+                    stock.unwrap_or(0),
+                )
+            })
+            .collect();
+
+        assert_eq!(rows.len(), expected.len(), "seeded row count");
+        for (actual, wanted) in rows.iter().zip(expected.iter()) {
+            assert_eq!(actual, wanted, "catalog entry mismatch");
+        }
+    }
+
+    /// Duplicates in the supplied catalog are intentional and must survive the
+    /// seed verbatim: "عرض غسلة", "فيروز" and "فوطة" each appear more than once
+    /// with different types, departments or prices.
+    #[test]
+    fn intentional_duplicate_names_are_preserved_not_deduplicated() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        for name in ["عرض غسلة", "فيروز", "فوطة"] {
+            let seeded = DEFAULT_PRODUCTS.iter().filter(|row| row.0 == name).count() as i64;
+            assert!(seeded > 1, "{name} is expected to appear more than once");
+            let stored: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM products WHERE name = ?1 AND is_seed = 1",
+                    [name],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(stored, seeded, "{name} must keep every source row");
+        }
+    }
+
+    /// Item types, departments and categories are seeded exactly as supplied:
+    /// no product leaks into WASH, no service into CAFE, and every category the
+    /// catalog names resolves to a real category row.
+    #[test]
+    fn catalog_types_departments_and_categories_are_seeded_exactly() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        for (item_type, department) in [("PRODUCT", "CAFE"), ("SERVICE", "WASH")] {
+            let stored: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM products
+                     WHERE is_seed = 1 AND item_type = ?1 AND department = ?2",
+                    [item_type, department],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let wanted = DEFAULT_PRODUCTS
+                .iter()
+                .filter(|row| row.1 == item_type && row.2 == department)
+                .count() as i64;
+            assert_eq!(stored, wanted, "{item_type}/{department} count");
+        }
+
+        let missing_category: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM products p
+                 LEFT JOIN categories c ON c.id = p.category_id
+                 WHERE p.is_seed = 1 AND c.id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(missing_category, 0);
+    }
+
+    /// `Some(0)` is an EXPLICIT opening stock of zero and stays distinct from
+    /// `None`, which means the item is not stock-managed at all.
+    #[test]
+    fn explicit_zero_opening_stock_is_distinct_from_no_opening_stock() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        let tracked: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM products WHERE is_seed = 1 AND track_inventory = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            tracked,
+            DEFAULT_PRODUCTS
+                .iter()
+                .filter(|row| row.5.is_some())
+                .count() as i64
+        );
+
+        // Explicit zero: tracked AND backed by a stored quantity row.
+        let zero_stock: (i64, i64) = conn
+            .query_row(
+                "SELECT p.track_inventory, i.quantity
+                 FROM products p
+                 JOIN inventory_items i ON i.product_id = p.id
+                 WHERE p.name = 'شاي اسطف' AND p.is_seed = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(zero_stock, (1, 0));
+
+        // No opening stock: untracked, with no quantity row at all.
+        let untracked_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM products p
+                 JOIN inventory_items i ON i.product_id = p.id
+                 WHERE p.name = 'كابتشينو' AND p.is_seed = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(untracked_rows, 0);
+    }
+
     #[test]
     fn fresh_seed_contains_expected_catalog() {
         let conn = Connection::open_in_memory().unwrap();
@@ -669,29 +833,32 @@ mod tests {
 
         assert_eq!(count, DEFAULT_PRODUCTS.len() as i64);
 
-        let croissant_price: i64 = conn
+        let cappuccino: (String, String, i64, i64) = conn
             .query_row(
-                "SELECT price_minor
+                "SELECT item_type, department, price_minor, is_active
                  FROM products
-                 WHERE name = 'كرواسون رومي'",
+                 WHERE name = 'كابتشينو'",
                 [],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
 
-        assert_eq!(croissant_price, 7400);
+        assert_eq!(
+            cappuccino,
+            ("PRODUCT".to_string(), "CAFE".to_string(), 8900, 1)
+        );
 
         let wash: (String, String, i64) = conn
             .query_row(
                 "SELECT item_type, department, price_minor
                  FROM products
-                 WHERE name = 'كار كير كامل'",
+                 WHERE name = 'كار كبر داخلي كامل'",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
 
-        assert_eq!(wash, ("SERVICE".to_string(), "WASH".to_string(), 150000));
+        assert_eq!(wash, ("SERVICE".to_string(), "WASH".to_string(), 100000));
     }
 
     #[test]
@@ -700,28 +867,28 @@ mod tests {
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
 
-        let breakfast_category: i64 = conn
+        let hot_drink_category: i64 = conn
             .query_row(
                 "SELECT category_id
                  FROM products
-                 WHERE name = 'كرواسون رومي'",
+                 WHERE name = 'هوت شوكليت'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
 
-        let breakfast_name: String = conn
+        let hot_drink_name: String = conn
             .query_row(
                 "SELECT c.name
                  FROM products p
                  JOIN categories c ON c.id = p.category_id
-                 WHERE p.name = 'كرواسون رومي'",
+                 WHERE p.name = 'هوت شوكليت'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
 
-        assert_eq!(breakfast_name, "الإفطار");
+        assert_eq!(hot_drink_name, "مشروبات ساخنة");
 
         let water: (i64, String, i64) = conn
             .query_row(
@@ -735,7 +902,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(water, (water.0, "مشروبات غازية".to_string(), 0));
+        assert_eq!(water, (water.0, "ثلاجة".to_string(), 0));
 
         let stock_visible: i64 = conn
             .query_row(
@@ -774,14 +941,14 @@ mod tests {
                 "SELECT c.name
                  FROM products p
                  JOIN categories c ON c.id = p.category_id
-                 WHERE p.name = 'كار كير كامل'",
+                 WHERE p.name = 'كار كبر داخلي كامل'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
 
         assert_eq!(category_name, "خدمات غسيل السيارات");
-        assert!(breakfast_category > 0);
+        assert!(hot_drink_category > 0);
     }
 
     #[test]
@@ -813,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_v3_replaces_old_unreferenced_seed_data() {
+    fn catalog_v4_replaces_old_unreferenced_seed_data() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
 

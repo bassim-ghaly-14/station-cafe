@@ -30,21 +30,37 @@ interface NavItem {
   icon: LucideIcon
 }
 
+/*
+ * The sidebar order, in one place. This array IS the navigation: it is rendered
+ * top-to-bottom as declared, and each entry is filtered by `minRole` only — the
+ * order below is therefore the order every role sees, minus what it cannot open.
+ *
+ * 1. نقطة البيع        2. الأصناف والخدمات   3. العملاء والسيارات
+ * 4. الموظفون          5. المصروفات         6. المبيعات
+ * 7. المخزون           8. التقارير          9. الإعدادات
+ */
 const NAV: NavItem[] = [
   { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store },
   { view: 'catalog', minRole: 'STAFF', labelKey: 'nav.catalog', icon: Package },
   // The customer workspace is operational: every role may list, search and
   // register customers. Its financial layer is gated by the backend, not here.
   { view: 'customers', minRole: 'STAFF', labelKey: 'nav.customers', icon: UserRound },
+  // The employees workspace is operational, not managerial: a cashier needs it
+  // to punch their own attendance and to mark the wash staff in. Its manager
+  // features (KPI band, salaries, payroll) are gated by the BACKEND, not here.
+  // The `Users` icon is the one the old staff screen used, kept so the merged
+  // page is the one employees entry rather than a second lookalike.
+  { view: 'employees', minRole: 'STAFF', labelKey: 'nav.employees', icon: Users },
   { view: 'expenses', minRole: 'MANAGER', labelKey: 'nav.expenses', icon: Receipt },
-  { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
   // The sales workspace is the manager's operational view of the business. It
   // replaced the two sales tabs that used to live inside Reports, so Reports
   // now holds only reporting (audit, printing, closings, charts).
   { view: 'sales', minRole: 'MANAGER', labelKey: 'nav.sales', icon: HandCoins },
+  { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3 },
-  { view: 'staff', minRole: 'MANAGER', labelKey: 'nav.staff', icon: Users },
-  { view: 'dev-settings', minRole: 'ADMIN', labelKey: 'nav.devSettings', icon: Settings },
+  // The single settings entry. It keeps the same view, route and ADMIN gate; only
+  // the label is the generic "الإعدادات" the navigation order calls for.
+  { view: 'dev-settings', minRole: 'ADMIN', labelKey: 'nav.settings', icon: Settings },
 ]
 
 const SIDEBAR_STORAGE_KEY = 'station.sidebar.pinned'

@@ -1,7 +1,6 @@
 import { getRoleVisual, isUserRole } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { User } from './icon'
-
 const sizeStyles = {
   sm: 'size-6 rounded-md',
   md: 'size-8 rounded-lg',
@@ -28,7 +27,9 @@ export function EmployeeAvatar({
   accessibilityLabel,
 }: EmployeeAvatarProps) {
   const roleVisual = getRoleVisual(role)
-  const identityRole = isUserRole(role) ? role : 'FALLBACK'
+  // A wash worker IS a role, not a missing role, so it keeps its own identity
+  // marker rather than falling into the generic FALLBACK treatment.
+  const identityRole = isUserRole(role) || role === 'WASH_WORKER' ? role : 'FALLBACK'
 
   return (
     <span

@@ -63,13 +63,11 @@ pub fn find_by_id(conn: &Db, id: i64) -> AppResult<Option<User>> {
     }
 }
 
-pub fn list(conn: &Db) -> AppResult<Vec<User>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {USER_COLS} FROM users ORDER BY role, name"
-    ))?;
-    let rows = stmt.query_map([], row_to_user)?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
+// NOTE: there is deliberately no `list()` here. The old staff screen had a
+// "list every login" read, which produced a SECOND roster of the same people
+// that disagreed with the employees one. The canonical roster now comes from
+// `repositories::employees::list`, which carries each person's role, status and
+// phone alongside their HR record, so one query serves the whole page.
 
 pub struct NewUser<'a> {
     pub name: &'a str,
@@ -127,4 +125,45 @@ pub fn update(conn: &Db, id: i64, name: &str, phone: Option<&str>) -> AppResult<
 
 pub fn count(conn: &Db) -> AppResult<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?)
+}
+
+/// Total number of rows anywhere in the database that reference this login.
+///
+/// A `users` row is the most-referenced record in Station: an invoice, a
+/// payment, an expense, a shift, an attendance correction and a finalized
+/// payroll run all name the person who did it. That makes a login a HISTORICAL
+/// record, not an owned child, so it is deleted only when this count is zero.
+pub fn reference_count(conn: &Db, id: i64) -> AppResult<i64> {
+    // One row of sub-selects, summed, so the count is a single consistent read
+    // and a new referencing table can only ever be added in ONE place.
+    conn.query_row(
+        "SELECT
+            (SELECT COUNT(*) FROM sessions           WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM orders             WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM invoices           WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM payments           WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM expenses           WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM credit_payments    WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM shifts             WHERE user_id = ?1)
+          + (SELECT COUNT(*) FROM business_days      WHERE opened_by = ?1)
+          + (SELECT COUNT(*) FROM business_days      WHERE closed_by = ?1)
+          + (SELECT COUNT(*) FROM day_closings       WHERE closed_by = ?1)
+          + (SELECT COUNT(*) FROM attendance_days    WHERE recorded_by_user_id = ?1)
+          + (SELECT COUNT(*) FROM attendance_days    WHERE voided_by_user_id = ?1)
+          + (SELECT COUNT(*) FROM employee_advances  WHERE created_by = ?1)
+          + (SELECT COUNT(*) FROM employee_advances  WHERE reversed_by = ?1)
+          + (SELECT COUNT(*) FROM payroll_runs       WHERE created_by = ?1)
+          + (SELECT COUNT(*) FROM payroll_runs       WHERE finalized_by = ?1)
+          + (SELECT COUNT(*) FROM employees          WHERE user_id = ?1)",
+        params![id],
+        |r| r.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Physically remove a login. Only reached when [`reference_count`] is zero, so
+/// it can never orphan a transaction. The caller owns the transaction.
+pub fn delete(conn: &Db, id: i64) -> AppResult<usize> {
+    conn.execute("DELETE FROM users WHERE id = ?1", params![id])
+        .map_err(Into::into)
 }

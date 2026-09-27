@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod common;
 pub mod customers;
 pub mod developer;
+pub mod employees;
 pub mod ops;
 pub mod pos;
 pub mod sales;

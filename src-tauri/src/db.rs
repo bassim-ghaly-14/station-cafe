@@ -25,18 +25,12 @@ pub type Db = Connection;
 /// one clock definition.
 pub fn register_clock(conn: &Db) -> AppResult<()> {
     // Both functions take zero arguments.
-    conn.create_scalar_function(
-        "station_now",
-        0,
-        FunctionFlags::SQLITE_UTF8,
-        |_ctx| Ok(crate::time::now_db_timestamp()),
-    )?;
-    conn.create_scalar_function(
-        "station_today",
-        0,
-        FunctionFlags::SQLITE_UTF8,
-        |_ctx| Ok(crate::time::today_business_date()),
-    )?;
+    conn.create_scalar_function("station_now", 0, FunctionFlags::SQLITE_UTF8, |_ctx| {
+        Ok(crate::time::now_db_timestamp())
+    })?;
+    conn.create_scalar_function("station_today", 0, FunctionFlags::SQLITE_UTF8, |_ctx| {
+        Ok(crate::time::today_business_date())
+    })?;
     Ok(())
 }
 
@@ -1107,6 +1101,513 @@ const MIGRATIONS: &[Migration] = &[
                 CHECK (is_new IN (0, 1));
         "#,
     },
+    Migration {
+        version: 25,
+        name: "shift-scoped cash expenses and closing reconciliation snapshot",
+        needs_fk_off: true,
+        sql: r#"
+            -- ===================================================================
+            -- CASHIER EXPENSES BECOME A SHIFT-LEVEL CONCEPT
+            -- ===================================================================
+            -- Expenses used to be day-level only, which made two things wrong:
+            -- a cashier could not book a spend against the drawer they were
+            -- responsible for, and shift closing could not deduct it from the
+            -- expected cash (`expected_cash` was `opening + cash_sales` only).
+            --
+            -- `shift_id` attributes an expense to the shift that was open when
+            -- it was recorded, so the drawer reconciliation can be exact. It is
+            -- NULLABLE: a manager may still record a general day-level expense
+            -- (rent, a supplier bill) that belongs to no single till.
+
+            -- Reusable expense categories. Station already had six hardcoded
+            -- enum values duplicated in Rust and in the UI; a real table makes
+            -- the breakdown data-driven and lets the Arabic label live with the
+            -- category instead of being hardcoded in a component.
+            CREATE TABLE expense_categories (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                code       TEXT NOT NULL UNIQUE
+                           CHECK (code = trim(code) AND length(code) > 0),
+                name_ar    TEXT NOT NULL CHECK (name_ar = trim(name_ar) AND length(name_ar) > 0),
+                is_system  INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
+                is_active  INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+                created_at TEXT NOT NULL DEFAULT (station_now())
+            );
+
+            -- Seeded from the EXACT enum the old CHECK enforced, so every
+            -- historical expense keeps a valid category with no data rewrite.
+            -- The Arabic labels are the domain names Station already used.
+            INSERT INTO expense_categories (code, name_ar, is_system) VALUES
+                ('MAINTENANCE', 'صيانة', 1),
+                ('SUPPLIES',    'مشتريات', 1),
+                ('UTILITY',     'كهرباء ومياه', 1),
+                ('SALARY',      'رواتب', 1),
+                ('EMERGENCY',   'طارئ', 1),
+                ('OTHER',       'أخرى', 1);
+
+            -- Rebuild `expenses`: the old CHECK limited `category` to a closed
+            -- enum, so it is now a plain FK-backed key into expense_categories
+            -- instead. `paid_from_cash` states whether the spend physically left
+            -- the drawer; only a CASH expense may reduce expected cash (a card
+            -- or credit expense never touched the till).
+            CREATE TABLE expenses_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                category        TEXT NOT NULL
+                                REFERENCES expense_categories(code),
+                amount          INTEGER NOT NULL CHECK (amount > 0),
+                description     TEXT,
+                expense_date    TEXT NOT NULL,
+                is_recurring    INTEGER NOT NULL DEFAULT 0 CHECK (is_recurring IN (0,1)),
+                recurrence      TEXT CHECK (recurrence IN ('WEEKLY','MONTHLY') OR is_recurring = 0),
+                business_day_id INTEGER REFERENCES business_days(id),
+                shift_id        INTEGER REFERENCES shifts(id),
+                paid_from_cash  INTEGER NOT NULL DEFAULT 1 CHECK (paid_from_cash IN (0,1)),
+                user_id         INTEGER NOT NULL REFERENCES users(id),
+                is_seed         INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT NOT NULL DEFAULT (station_now())
+            );
+            INSERT INTO expenses_new
+                (id, category, amount, description, expense_date, is_recurring,
+                 recurrence, business_day_id, shift_id, paid_from_cash, user_id,
+                 is_seed, created_at)
+            SELECT id, category, amount, description, expense_date, is_recurring,
+                 recurrence, business_day_id, NULL, 1, user_id, is_seed, created_at
+            FROM expenses;
+            DROP TABLE expenses;
+            ALTER TABLE expenses_new RENAME TO expenses;
+            CREATE INDEX idx_expenses_date ON expenses(expense_date);
+            CREATE INDEX idx_expenses_shift ON expenses(shift_id);
+            CREATE INDEX idx_expenses_day ON expenses(business_day_id);
+
+            -- ===================================================================
+            -- CLOSING SNAPSHOT — the immutable reconciliation record
+            -- ===================================================================
+            -- The aggregate columns on `shifts` are the CLOSING SNAPSHOT: they
+            -- are written exactly once, at close, and every historical shift
+            -- report is reproduced from them. They are therefore extended, not
+            -- recomputed, so a closed shift's figures can never move afterwards.
+            --
+            -- `cafe_invoices` / `wash_invoices` count invoices by the business
+            -- area they actually contain and `hybrid_invoices` counts the ones
+            -- containing BOTH, so the three are mutually exclusive and
+            -- `cafe + wash + hybrid = invoices_count` always holds. A hybrid
+            -- invoice's money still lands in BOTH `cafe_sales` and
+            -- `wash_sales`, because those are per-department line sums; only
+            -- the COUNT is exclusive, so the counts never double a document.
+            ALTER TABLE shifts ADD COLUMN cafe_invoices   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shifts ADD COLUMN wash_invoices   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shifts ADD COLUMN hybrid_invoices INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shifts ADD COLUMN total_sales     INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shifts ADD COLUMN subtotal        INTEGER NOT NULL DEFAULT 0;
+            -- Money of the cafe lines and of the wash lines. A hybrid invoice
+            -- contributes to BOTH, because these are sums of per-department line
+            -- totals, not counts. Only the invoice COUNTS above are exclusive.
+            ALTER TABLE shifts ADD COLUMN cafe_sales      INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE shifts ADD COLUMN wash_sales      INTEGER NOT NULL DEFAULT 0;
+            -- Cash that physically left this shift's drawer.
+            ALTER TABLE shifts ADD COLUMN cash_expenses   INTEGER NOT NULL DEFAULT 0;
+            -- Every expense booked to this shift, whatever the payment source.
+            ALTER TABLE shifts ADD COLUMN expenses        INTEGER NOT NULL DEFAULT 0;
+
+            -- The same snapshot columns on the immutable day closing, so a
+            -- closed business day reports exactly what its settled shifts
+            -- contributed and is never recalculated from live rows.
+            ALTER TABLE day_closings ADD COLUMN cafe_invoices   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN wash_invoices   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN hybrid_invoices INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN shift_count     INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN opening_cash    INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN cash_expenses   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN expected_cash   INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN actual_cash     INTEGER NOT NULL DEFAULT 0;
+            -- Shortage and surplus are stored as NON-NEGATIVE magnitudes on
+            -- opposite sides, so a settled day can never be both, and the
+            -- signed `difference` is always `actual - expected`.
+            ALTER TABLE day_closings ADD COLUMN shortage        INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE day_closings ADD COLUMN surplus         INTEGER NOT NULL DEFAULT 0;
+        "#,
+    },
+    Migration {
+        version: 26,
+        name: "immutable closing expense breakdown snapshot",
+        needs_fk_off: false,
+        sql: r#"
+            -- The per-category expense breakdown is part of the CLOSING DOCUMENT,
+            -- so it belongs to the closing snapshot exactly like the totals do.
+            -- It used to be rebuilt with a live query every time a closed shift or
+            -- a closed day was reported, which meant the printed total and the
+            -- printed breakdown could come from two different moments in time.
+            --
+            -- The column stores the resolved rows (code, Arabic label, count,
+            -- amount) as JSON, so a historical document keeps the category names
+            -- that were true at closing time even if a category is later renamed
+            -- or deactivated. A closing written before this migration has `'[]'`,
+            -- and `BreakdownRow` decoding treats that as "no expenses", which is
+            -- exactly what such a closing recorded.
+            ALTER TABLE shifts       ADD COLUMN expense_breakdown TEXT NOT NULL DEFAULT '[]';
+            ALTER TABLE day_closings ADD COLUMN expense_breakdown TEXT NOT NULL DEFAULT '[]';
+        "#,
+    },
+    Migration {
+        version: 27,
+        name: "catalog soft delete archive marker",
+        needs_fk_off: false,
+        sql: r#"
+            -- Deleting a catalog row must NEVER destroy or orphan history.
+            --
+            -- `order_lines.product_id`, `inventory_items.product_id` and
+            -- `stock_movements.product_id` are live foreign keys, and every
+            -- order/invoice line is an immutable SNAPSHOT (product_name,
+            -- unit_price, department frozen at the moment of sale). Deleting
+            -- the row would therefore break referential integrity for no
+            -- benefit, because history never reads the name or price back
+            -- from `products`.
+            --
+            -- `deleted_at` is the archive marker for an ADMIN-only delete. It is
+            -- deliberately SEPARATE from `is_active`, which is a reversible
+            -- operational switch a MANAGER may flip back: a deleted item must
+            -- never be reachable by "Activate" again, so the two states cannot
+            -- share one flag.
+            --
+            -- Fully additive and backward compatible: existing rows get NULL
+            -- (i.e. never deleted), so no installation changes behaviour on
+            -- upgrade and no historical row is touched.
+            ALTER TABLE products ADD COLUMN deleted_at TEXT;
+            CREATE INDEX IF NOT EXISTS idx_products_deleted_at ON products(deleted_at);
+        "#,
+    },
+    Migration {
+        version: 28,
+        name: "employees",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- EMPLOYEES — the HR record, deliberately NOT the login
+            -- ============================================================
+            -- Station's `users` table is an AUTHENTICATION record: it carries a
+            -- mandatory Argon2 hash and every row can open a session and open a
+            -- shift. A wash worker must do none of those things, yet is still an
+            -- employee with attendance, a salary and performance. So the two are
+            -- kept apart and linked:
+            --
+            --   employees  — the person as the business knows them.
+            --   users      — the login, present only for a CASHIER.
+            --
+            -- The three concepts the spec insists on separating are therefore
+            -- physically separated here:
+            --   * employee type   -> `employees.employee_type`
+            --   * auth role       -> `users.role` (ADMIN / MANAGER / STAFF)
+            --   * authorization   -> the service layer, never a column
+            --
+            -- The CHECK makes the linkage itself a database rule: a CASHIER
+            -- always has a login, a WASH_WORKER never can have one, so a wash
+            -- worker cannot become an authenticating user by any code path.
+            CREATE TABLE IF NOT EXISTS employees (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id       INTEGER REFERENCES users(id),
+                name          TEXT NOT NULL,
+                phone         TEXT,
+                employee_type TEXT NOT NULL
+                                CHECK (employee_type IN ('CASHIER','WASH_WORKER')),
+                status        TEXT NOT NULL DEFAULT 'ACTIVE'
+                                CHECK (status IN ('ACTIVE','INACTIVE')),
+                -- Money is ALWAYS minor units (piasters), exactly like every
+                -- other monetary column in Station. No floats, ever.
+                base_salary   INTEGER NOT NULL DEFAULT 0 CHECK (base_salary >= 0),
+                notes         TEXT,
+                created_at    TEXT NOT NULL DEFAULT (station_now()),
+                updated_at    TEXT NOT NULL DEFAULT (station_now()),
+                CHECK (
+                    (employee_type = 'CASHIER'     AND user_id IS NOT NULL)
+                 OR (employee_type = 'WASH_WORKER' AND user_id IS NULL)
+                )
+            );
+            -- One employee per login: the same account can never be two people.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_user
+                ON employees(user_id) WHERE user_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_employees_type_status
+                ON employees(employee_type, status);
+            CREATE INDEX IF NOT EXISTS idx_employees_name ON employees(name);
+
+            -- Every existing login IS a cashier: Station had a single employee
+            -- concept until this migration, and the authenticated `users` rows
+            -- are exactly the people who work the till. Backfilling them keeps
+            -- the historical link (shifts.user_id, invoices.user_id) reachable
+            -- from the employee record without rewriting a single existing row
+            -- of transactional history. A SUSPENDED login becomes an INACTIVE
+            -- employee — the two words describe the same operational reality.
+            INSERT INTO employees (user_id, name, phone, employee_type, status,
+                                   base_salary, created_at, updated_at)
+            SELECT id, name, phone, 'CASHIER',
+                   CASE WHEN status = 'ACTIVE' THEN 'ACTIVE' ELSE 'INACTIVE' END,
+                   0, created_at, updated_at
+            FROM users;
+        "#,
+    },
+    Migration {
+        version: 29,
+        name: "attendance days",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- ATTENDANCE — one immutable row per employee per business day
+            -- ============================================================
+            -- Attendance is a DAY record, not two nullable columns on the
+            -- employee: it has to answer "was this person here at all?", it has
+            -- to distinguish an EXPLICIT absence from a day nobody wrote down,
+            -- and it has to keep the person who pressed the button.
+            --
+            -- actual vs effective
+            -- ------------------
+            -- `*_actual_at` is the untouched instant, preserved for audit
+            -- forever. `*_effective_at` is the business-rounded instant every
+            -- calculation reads, so 09:13 and 09:14 both count as 09:10 and
+            -- 09:16 counts as 09:20. Both are canonical UTC instants, exactly
+            -- like every other timestamp in Station.
+            --
+            -- state
+            -- -----
+            -- A day is PRESENT (has a check-in), ABSENT, or LEAVE. Absence and
+            -- leave are EXPLICIT records: the absence of a row means "nobody
+            -- wrote anything down", which is NOT the same fact and is never
+            -- inferred as an absence anywhere in this application.
+            --
+            -- The CHECK constraint makes an impossible state unrepresentable:
+            -- you cannot store a PRESENT day without a check-in, an ABSENT or
+            -- LEAVE day carrying a punch pair, or a check-out whose effective
+            -- timestamp exists without its actual one.
+            CREATE TABLE IF NOT EXISTS attendance_days (
+                id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id            INTEGER NOT NULL REFERENCES employees(id),
+                business_date          TEXT NOT NULL,   -- YYYY-MM-DD, Africa/Cairo
+                state                  TEXT NOT NULL
+                                         CHECK (state IN ('PRESENT','ABSENT','LEAVE')),
+                check_in_actual_at     TEXT,
+                check_in_effective_at  TEXT,
+                check_out_actual_at    TEXT,
+                check_out_effective_at TEXT,
+                -- The shift the recorder was operating, for wash-worker events.
+                shift_id               INTEGER REFERENCES shifts(id),
+                -- ALWAYS the authenticated session user, resolved server-side.
+                -- A wash worker has no login, so without this column "who
+                -- recorded Mahmoud's check-in" would be unknowable.
+                recorded_by_user_id    INTEGER NOT NULL REFERENCES users(id),
+                note                   TEXT,
+                -- Corrections never mutate history: the superseded row is
+                -- voided (kept forever) and a replacement row is written. The
+                -- partial unique index below is what makes "one live record per
+                -- employee per day" a DATABASE rule rather than a service
+                -- convention, so two writers can never both win.
+                voided_at              TEXT,
+                voided_by_user_id      INTEGER REFERENCES users(id),
+                created_at             TEXT NOT NULL DEFAULT (station_now()),
+                updated_at             TEXT NOT NULL DEFAULT (station_now()),
+                CHECK (
+                    (state = 'PRESENT'
+                        AND check_in_actual_at IS NOT NULL
+                        AND check_in_effective_at IS NOT NULL
+                        AND (check_out_actual_at IS NULL) = (check_out_effective_at IS NULL))
+                 OR (state IN ('ABSENT','LEAVE')
+                        AND check_in_actual_at IS NULL
+                        AND check_in_effective_at IS NULL
+                        AND check_out_actual_at IS NULL
+                        AND check_out_effective_at IS NULL)
+                )
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_live
+                ON attendance_days(employee_id, business_date) WHERE voided_at IS NULL;
+            -- Range scans for the KPI band and the list aggregate.
+            CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_days(business_date);
+            CREATE INDEX IF NOT EXISTS idx_attendance_recorder ON attendance_days(recorded_by_user_id);
+            CREATE INDEX IF NOT EXISTS idx_attendance_shift ON attendance_days(shift_id);
+        "#,
+    },
+    Migration {
+        version: 30,
+        name: "employee advances and payroll snapshots",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- ADVANCES — an append-only money ledger
+            -- ============================================================
+            -- An advance is money that left the till to the employee, so it is a
+            -- financial transaction: never deleted, never edited in place. A
+            -- mistake is corrected by REVERSAL — a status transition on the
+            -- original row plus the audit trail, which is the same correction
+            -- model Station already uses for invoices and closings.
+            CREATE TABLE IF NOT EXISTS employee_advances (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id  INTEGER NOT NULL REFERENCES employees(id),
+                amount       INTEGER NOT NULL CHECK (amount > 0),  -- piasters
+                advance_date TEXT NOT NULL,                            -- YYYY-MM-DD
+                reason       TEXT NOT NULL,
+                status       TEXT NOT NULL DEFAULT 'RECORDED'
+                               CHECK (status IN ('RECORDED','REVERSED')),
+                reverses_id  INTEGER REFERENCES employee_advances(id),
+                created_by   INTEGER NOT NULL REFERENCES users(id),
+                created_at   TEXT NOT NULL DEFAULT (station_now()),
+                reversed_at  TEXT,
+                reversed_by  INTEGER REFERENCES users(id),
+                CHECK (
+                    (status = 'RECORDED' AND reversed_at IS NULL AND reversed_by IS NULL)
+                 OR (status = 'REVERSED' AND reversed_at IS NOT NULL
+                        AND reversed_by IS NOT NULL AND reverses_id IS NOT NULL)
+                )
+            );
+            CREATE INDEX IF NOT EXISTS idx_advances_employee_date
+                ON employee_advances(employee_id, advance_date);
+
+            -- ============================================================
+            -- PAYROLL — a monthly SNAPSHOT, never a live query
+            -- ============================================================
+            -- The point of this table is immutability. Everything a payslip
+            -- shows is copied onto the row at the moment the run is created:
+            -- the base salary as it was THAT month, the attendance counters,
+            -- the advances already given, and the resulting net. Changing the
+            -- employee's salary in October cannot move a finalized September
+            -- run, because September's row no longer reads `employees`.
+            --
+            -- `deductions` exists for a manager-entered figure only. Station
+            -- has NO documented attendance-based deduction rule, so the service
+            -- never derives one — absence and leave are REPORTED, not priced.
+            CREATE TABLE IF NOT EXISTS payroll_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id     INTEGER NOT NULL REFERENCES employees(id),
+                period          TEXT NOT NULL,        -- 'YYYY-MM'
+                base_salary     INTEGER NOT NULL CHECK (base_salary >= 0),
+                attendance_days INTEGER NOT NULL DEFAULT 0,
+                worked_minutes  INTEGER NOT NULL DEFAULT 0,
+                absence_days    INTEGER NOT NULL DEFAULT 0,
+                leave_days      INTEGER NOT NULL DEFAULT 0,
+                advances        INTEGER NOT NULL DEFAULT 0,
+                deductions      INTEGER NOT NULL DEFAULT 0,
+                net_salary      INTEGER NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'DRAFT'
+                                CHECK (status IN ('DRAFT','FINALIZED')),
+                created_by      INTEGER NOT NULL REFERENCES users(id),
+                created_at      TEXT NOT NULL DEFAULT (station_now()),
+                finalized_by    INTEGER REFERENCES users(id),
+                finalized_at    TEXT,
+                CHECK (
+                    (status = 'DRAFT'     AND finalized_at IS NULL)
+                 OR (status = 'FINALIZED' AND finalized_at IS NOT NULL
+                        AND finalized_by IS NOT NULL)
+                )
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_employee_period
+                ON payroll_runs(employee_id, period);
+        "#,
+    },
+    Migration {
+        version: 31,
+        name: "wash invoice employee attribution",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- WASH-WORKER ATTRIBUTION
+            -- ============================================================
+            -- Before this migration a wash invoice knew its CASHIER
+            -- (`invoices.user_id`) and nothing about who actually washed the
+            -- car, because a wash worker has no login to record. Performance
+            -- for a wash worker is therefore impossible to derive, and
+            -- inventing it in the UI would be a fabrication — so the smallest
+            -- clean extension is added here: an explicit, nullable
+            -- attribution column.
+            --
+            -- The order carries the ATTRIBUTION (the cashier picks the worker
+            -- while the job is in progress) and the invoice SNAPSHOTS it, which
+            -- is the same rule every other invoice field follows: a finalized
+            -- document never reads back from a mutable master.
+            --
+            -- NULL is meaningful and permanent: an invoice raised before this
+            -- migration, or one whose worker was never recorded, is simply
+            -- unattributed. It is never back-filled with a guess.
+            ALTER TABLE orders   ADD COLUMN wash_employee_id INTEGER REFERENCES employees(id);
+            ALTER TABLE invoices ADD COLUMN wash_employee_id INTEGER REFERENCES employees(id);
+            CREATE INDEX IF NOT EXISTS idx_orders_wash_employee   ON orders(wash_employee_id);
+            CREATE INDEX IF NOT EXISTS idx_invoices_wash_employee ON invoices(wash_employee_id);
+        "#,
+    },
+    Migration {
+        version: 32,
+        name: "invoice cancellation is not a Station business state",
+        needs_fk_off: true,
+        sql: r#"
+            -- ============================================================
+            -- INVOICE CANCELLATION IS NOT PART OF THE DOMAIN
+            -- ============================================================
+            -- Station does not support cancelling an invoice. The status and the
+            -- `cancelled_at` stamp existed only to serve a cancellation flow
+            -- that the application never exposed, so they are removed here
+            -- rather than left behind as a state the app can never reach.
+            --
+            -- WHY A FORWARD REBUILD AND NOT AN EDIT OF MIGRATION 1:
+            -- migration 1 has already been applied to every existing database,
+            -- so its CHECK constraint cannot be changed retroactively. SQLite
+            -- cannot alter a CHECK in place either, so the documented 12-step
+            -- table rebuild is used: the runner executes this migration with
+            -- foreign keys off and verifies integrity before committing
+            -- (see `apply_migrations`).
+            --
+            -- DATA SAFETY: every row keeps its `id`, so `invoice_lines`,
+            -- `payments`, `invoice_customers`, `wash_tickets` and the credit
+            -- ledger keep pointing at the same documents. Had this database
+            -- somehow held a `CANCELLED` invoice, the INSERT below would
+            -- violate the new CHECK and the whole migration would roll back
+            -- and report the error, rather than silently rewriting or
+            -- discarding a numbered financial document.
+            CREATE TABLE invoices_new (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_no        INTEGER NOT NULL UNIQUE,
+                order_id          INTEGER REFERENCES orders(id),
+                table_label       TEXT,
+                business_day_id   INTEGER REFERENCES business_days(id),
+                shift_id          INTEGER,
+                user_id           INTEGER NOT NULL REFERENCES users(id),
+                customer_id       INTEGER REFERENCES customers(id),
+                -- The real Station invoice lifecycle: raised, then settled in
+                -- full, in part, or on the customer's credit account. There is
+                -- no fourth outcome.
+                status            TEXT NOT NULL DEFAULT 'PENDING_PAYMENT'
+                                  CHECK (status IN ('PENDING_PAYMENT','PAID','PARTIALLY_PAID','CREDIT')),
+                subtotal          INTEGER NOT NULL CHECK (subtotal >= 0),
+                discount_minor    INTEGER NOT NULL DEFAULT 0 CHECK (discount_minor >= 0),
+                discount_mode     TEXT CHECK (discount_mode IN ('FIXED','PERCENT')),
+                discount_value    INTEGER,
+                service_charge    INTEGER NOT NULL DEFAULT 0 CHECK (service_charge >= 0),
+                total             INTEGER NOT NULL CHECK (total >= 0),
+                paid_amount       INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+                cafe_total        INTEGER NOT NULL DEFAULT 0,
+                wash_total        INTEGER NOT NULL DEFAULT 0,
+                created_at        TEXT NOT NULL DEFAULT (station_now()),
+                paid_at           TEXT,
+                order_type        TEXT NOT NULL DEFAULT 'TABLE',
+                takeaway_no       INTEGER,
+                wash_employee_id  INTEGER REFERENCES employees(id)
+            );
+
+            INSERT INTO invoices_new (id, invoice_no, order_id, table_label, business_day_id,
+                                      shift_id, user_id, customer_id, status, subtotal,
+                                      discount_minor, discount_mode, discount_value,
+                                      service_charge, total, paid_amount, cafe_total, wash_total,
+                                      created_at, paid_at, order_type, takeaway_no,
+                                      wash_employee_id)
+                SELECT id, invoice_no, order_id, table_label, business_day_id,
+                       shift_id, user_id, customer_id, status, subtotal,
+                       discount_minor, discount_mode, discount_value,
+                       service_charge, total, paid_amount, cafe_total, wash_total,
+                       created_at, paid_at, order_type, takeaway_no,
+                       wash_employee_id
+                FROM invoices;
+
+            DROP TABLE invoices;
+            ALTER TABLE invoices_new RENAME TO invoices;
+
+            CREATE INDEX IF NOT EXISTS idx_invoices_day       ON invoices(business_day_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_invoices_shift     ON invoices(shift_id);
+            CREATE INDEX IF NOT EXISTS idx_invoices_customer  ON invoices(customer_id);
+            CREATE INDEX IF NOT EXISTS idx_invoices_wash_employee ON invoices(wash_employee_id);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and
@@ -1273,6 +1774,115 @@ mod tests {
         conn
     }
 
+    /// The migration that retires invoice cancellation must PRESERVE every
+    /// historical document: it is a table rebuild, so it is the change most able
+    /// to silently lose a numbered financial record. It must keep the rows, keep
+    /// their ids (so lines, payments and snapshots still resolve), and keep every
+    /// non-status column byte-identical.
+    #[test]
+    fn the_cancellation_migration_preserves_every_invoice() {
+        let conn = memory_db();
+        // A database that predates the retirement, with real data in it.
+        apply_migrations(&conn, Some(31)).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (id, name, role, password_hash) VALUES (1,'cashier','STAFF','x');
+             INSERT INTO business_days (id, day_date) VALUES (1,'2026-09-10');
+             INSERT INTO invoices (id, invoice_no, business_day_id, user_id, status,
+                                   subtotal, service_charge, total, paid_amount,
+                                   cafe_total, wash_total)
+             VALUES (7, 101, 1, 1, 'CREDIT', 4_000, 500, 4_500, 0, 4_000, 0),
+                    (8, 102, 1, 1, 'PARTIALLY_PAID', 2_000, 0, 2_000, 1_000, 2_000, 0);
+             INSERT INTO invoice_lines (invoice_id, department, product_name, unit_price,
+                                        quantity, line_total)
+             VALUES (7,'CAFE','كابتشينو',4_000,1,4_000);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let rows: Vec<(i64, i64, String, i64, i64, i64, i64)> = conn
+            .prepare(
+                "SELECT id, invoice_no, status, subtotal, total, paid_amount, cafe_total
+                 FROM invoices ORDER BY id",
+            )
+            .unwrap()
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2, "every invoice is preserved");
+        assert_eq!(
+            rows[0].0, 7,
+            "ids are preserved, so references still resolve"
+        );
+        assert_eq!(rows[0].1, 101);
+        assert_eq!(rows[0].2, "CREDIT", "a supported status is untouched");
+        assert_eq!(
+            (rows[0].3, rows[0].4, rows[0].5, rows[0].6),
+            (4_000, 4_500, 0, 4_000)
+        );
+        assert_eq!(rows[1].2, "PARTIALLY_PAID");
+        assert_eq!(
+            (rows[1].3, rows[1].4, rows[1].5, rows[1].6),
+            (2_000, 2_000, 1_000, 2_000)
+        );
+
+        // The dependent rows still point at a real invoice.
+        let lines: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoice_lines WHERE invoice_id = 7",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lines, 1, "invoice lines survive the rebuild");
+    }
+
+    /// The retirement must be a DATABASE rule, not just a convention: after the
+    /// migration there is no way to write a cancelled invoice at all.
+    #[test]
+    fn the_cancellation_migration_makes_a_cancelled_invoice_impossible() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (id, name, role, password_hash) VALUES (1,'cashier','STAFF','x');
+             INSERT INTO business_days (id, day_date) VALUES (1,'2026-09-10');
+             INSERT INTO invoices (id, invoice_no, business_day_id, user_id, status,
+                                   subtotal, total, cafe_total)
+             VALUES (1, 1, 1, 1, 'PAID', 1_000, 1_000, 1_000);",
+        )
+        .unwrap();
+
+        assert!(
+            conn.execute("UPDATE invoices SET status = 'CANCELLED'", [])
+                .is_err(),
+            "the CHECK constraint must refuse a cancelled invoice"
+        );
+        // Every real status is still accepted, and `cancelled_at` is gone.
+        for status in ["PENDING_PAYMENT", "PAID", "PARTIALLY_PAID", "CREDIT"] {
+            conn.execute("UPDATE invoices SET status = ?1 WHERE id = 1", [status])
+                .unwrap_or_else(|e| panic!("{status} must remain a valid status: {e}"));
+        }
+        let cancelled_at: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('invoices') WHERE name = 'cancelled_at'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cancelled_at, 0, "the cancellation stamp column is removed");
+    }
+
     /// The corrective migration must not lose the shared credential: an
     /// installation that ran migration 22 (global hash copied into every user)
     /// ends up with exactly ONE global hash in app_settings and no per-user
@@ -1319,6 +1929,134 @@ mod tests {
             )
             .unwrap();
         assert_eq!(column, 0);
+    }
+
+    /// The shift-scoped expense migration must be DATA PRESERVING.
+    ///
+    /// `expenses` used to carry a hardcoded CHECK enum and no shift link. The
+    /// rebuild swaps the enum for a foreign key into `expense_categories` and
+    /// adds `shift_id` / `paid_from_cash`. Every pre-existing row must survive
+    /// with its category still valid, attributed to no shift (it predates shifts)
+    /// and explicitly paid from the drawer — never silently dropped or retyped.
+    #[test]
+    fn the_shift_scoped_expense_migration_preserves_every_historical_row() {
+        let conn = memory_db();
+        apply_migrations(&conn, Some(24)).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (name, role, password_hash) VALUES ('legacy', 'MANAGER', 'x');
+             INSERT INTO business_days (day_date, opened_at) VALUES ('2026-01-01', '2026-01-01 08:00:00Z');
+             INSERT INTO expenses (category, amount, description, expense_date, business_day_id, user_id) VALUES
+               ('SUPPLIES', 100, 'legacy supplies', '2026-01-01', 1, 1),
+               ('SALARY', 250, NULL, '2026-01-01', 1, 1),
+               ('UTILITY', 75, 'legacy power', '2026-01-01', NULL, 1);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        // No row is lost, and no amount is rewritten.
+        let rows: Vec<(String, i64, Option<String>, Option<i64>, i64)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT category, amount, description, business_day_id, paid_from_cash
+                     FROM expenses ORDER BY id",
+                )
+                .unwrap();
+            let mapped = stmt
+                .query_map([], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                })
+                .unwrap();
+            mapped.collect::<Result<Vec<_>, _>>().unwrap()
+        };
+        assert_eq!(rows.len(), 3, "every historical expense survives");
+        assert_eq!(rows[0].0, "SUPPLIES");
+        assert_eq!(rows[0].1, 100);
+        assert_eq!(rows[0].2.as_deref(), Some("legacy supplies"));
+        assert_eq!(rows[0].3, Some(1));
+        assert_eq!(rows[1].0, "SALARY");
+        assert_eq!(
+            rows[2].3, None,
+            "a row recorded without a business day keeps none"
+        );
+        assert!(
+            rows.iter().all(|r| r.4 == 1),
+            "an upgraded expense defaults to paid from the drawer"
+        );
+        // The category enum became a table with the SAME six codes, so every
+        // historical label is still resolvable.
+        let orphan: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM expenses e
+                 LEFT JOIN expense_categories c ON c.code = e.category
+                 WHERE c.code IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan, 0, "no historical expense lost its category");
+        // Historical expenses belong to no shift, which is what keeps them out of
+        // every drawer's reconciliation.
+        let attributed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM expenses WHERE shift_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(attributed, 0);
+    }
+
+    /// A category that is later deactivated (or renamed) must not corrupt or
+    /// rewrite history: the FK keeps the row, the code is the join key, and the
+    /// closing snapshot keeps the label that was true when it was issued.
+    #[test]
+    fn deactivating_a_category_keeps_history_readable() {
+        let conn = memory_db();
+        migrate(&conn).unwrap();
+        crate::seed::run_if_empty(&conn).unwrap();
+        let user: i64 = conn
+            .query_row(
+                "SELECT id FROM users WHERE role = 'MANAGER' LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO expenses (category, amount, expense_date, user_id)
+             VALUES ('SUPPLIES', 500, '2026-02-02', ?1)",
+            [user],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE expense_categories SET is_active = 0 WHERE code = 'SUPPLIES'",
+            [],
+        )
+        .unwrap();
+
+        // Still readable, still resolvable to its Arabic name…
+        let name: Option<String> = conn
+            .query_row(
+                "SELECT c.name_ar FROM expenses e
+                 LEFT JOIN expense_categories c ON c.code = e.category
+                 WHERE e.amount = 500",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(name.as_deref(), Some("مشتريات"));
+        // …but no longer offered as a choice for a NEW expense.
+        let offered: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM expense_categories WHERE is_active = 1 AND code = 'SUPPLIES'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(offered, 0);
+        // Deleting it is refused by the foreign key: history cannot be corrupted.
+        let delete = conn.execute("DELETE FROM expense_categories WHERE code = 'SUPPLIES'", []);
+        assert!(delete.is_err(), "a category in use must not be deletable");
     }
 
     /// A fresh database ends up with the correct global model too: no per-user
@@ -1484,11 +2222,9 @@ mod tests {
         conn.execute_batch(sql).unwrap();
 
         let stored: String = conn
-            .query_row(
-                "SELECT created_at FROM users WHERE name = 'a'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT created_at FROM users WHERE name = 'a'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         // The same instant, now explicitly UTC.
         assert_eq!(stored, "2026-09-25 14:30:00Z");

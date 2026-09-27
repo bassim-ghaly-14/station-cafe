@@ -13,15 +13,28 @@
 #[cfg(test)]
 mod analytics_test;
 #[cfg(test)]
-mod customer_analytics_test;
+mod attendance_override_test;
 mod commands;
+#[cfg(test)]
+mod customer_analytics_test;
 mod db;
+#[cfg(test)]
+mod deletion_test;
+#[cfg(test)]
+mod employees_test;
 mod error;
+#[cfg(test)]
+mod expense_categories_test;
+mod expenses_analytics_test;
 mod money;
 mod normalize;
 #[cfg(test)]
+mod offline_verify;
+#[cfg(test)]
 mod pos_rules_test;
 mod printing;
+#[cfg(test)]
+mod reconciliation_test;
 mod repositories;
 #[cfg(test)]
 mod sales_analytics_test;
@@ -79,18 +92,20 @@ pub fn run() {
             commands::auth::logout,
             commands::auth::me,
             commands::auth::change_password,
-            commands::auth::create_staff,
-            commands::auth::list_staff,
-            commands::auth::set_staff_status,
             commands::catalog::list_products,
             commands::catalog::list_categories,
             commands::catalog::create_category,
+            commands::catalog::update_category,
+            commands::catalog::delete_category,
             commands::catalog::create_product,
             commands::catalog::update_product,
             commands::catalog::set_product_price,
             commands::catalog::set_product_active,
+            commands::catalog::delete_product,
             commands::catalog::rename_product,
             commands::catalog::get_service_charge,
+            commands::catalog::get_monthly_sales_period,
+            commands::catalog::set_monthly_sales_period,
             commands::catalog::set_service_charge,
             commands::catalog::get_credit_config,
             commands::catalog::set_credit_config,
@@ -107,9 +122,11 @@ pub fn run() {
             commands::customers::create_customer,
             commands::customers::update_customer,
             commands::customers::create_car,
+            commands::customers::delete_customer,
             commands::sales::sales_overview,
             commands::sales::sales_invoices,
             commands::sales::sales_cashiers,
+            commands::sales::sales_monthly,
             commands::pos::list_tables,
             commands::pos::set_table_count,
             commands::pos::open_table,
@@ -132,7 +149,6 @@ pub fn run() {
             commands::pos::checkout_order,
             commands::pos::get_invoice,
             commands::pos::search_invoices,
-            commands::pos::cancel_invoice,
             commands::pos::list_credit_accounts,
             commands::pos::settle_credit,
             commands::shifts::day_shift_state,
@@ -146,6 +162,7 @@ pub fn run() {
             commands::shifts::list_closed_shifts,
             commands::shifts::list_closed_business_days,
             commands::shifts::close_business_day,
+            commands::shifts::preview_day_close,
             commands::shifts::list_shifts,
             commands::shifts::shift_report,
             commands::shifts::day_report,
@@ -154,7 +171,14 @@ pub fn run() {
             commands::ops::adjust_stock,
             commands::ops::set_stock_minimum,
             commands::ops::list_expenses,
+            commands::ops::expenses_overview,
+            commands::ops::expenses_monthly,
             commands::ops::create_expense,
+            commands::ops::list_expense_categories,
+            commands::ops::create_expense_category,
+            commands::ops::rename_expense_category,
+            commands::ops::delete_expense_category,
+            commands::ops::list_shift_expenses,
             commands::ops::today_summary,
             commands::ops::analytics_charts,
             commands::ops::list_audit,
@@ -173,6 +197,25 @@ pub fn run() {
             commands::ops::list_print_jobs,
             commands::developer::clear_database,
             commands::developer::load_official_data,
+            commands::employees::list_employees,
+            commands::employees::employee_overview,
+            commands::employees::my_attendance,
+            commands::employees::record_attendance,
+            commands::employees::correct_attendance,
+            commands::employees::override_employee_attendance,
+            commands::employees::employee_details,
+            commands::employees::create_employee,
+            commands::employees::update_employee,
+            commands::employees::set_employee_status,
+            commands::employees::delete_employee,
+            commands::employees::set_employee_base_salary,
+            commands::employees::create_employee_advance,
+            commands::employees::reverse_employee_advance,
+            commands::employees::payroll_preview,
+            commands::employees::create_payroll_run,
+            commands::employees::finalize_payroll_run,
+            commands::employees::list_wash_workers,
+            commands::employees::set_order_wash_employee,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

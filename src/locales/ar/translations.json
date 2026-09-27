@@ -10,6 +10,7 @@
     "dbReady": "قاعدة البيانات جاهزة",
     "cancel": "إلغاء",
     "save": "حفظ",
+    "done": "تم",
     "close": "إغلاق",
     "confirm": "تأكيد",
     "print": "طباعة",
@@ -66,10 +67,18 @@
     "description": "الأصناف والخدمات المتاحة للبيع",
     "add": "صنف جديد",
     "addCategory": "إضافة تصنيف جديد",
+    "editCategory": "تعديل التصنيف",
     "categoryName": "اسم التصنيف",
     "categoryNameRequired": "اسم التصنيف مطلوب",
     "categoryNameTaken": "التصنيف موجود بالفعل",
     "categoryCreated": "تم إنشاء التصنيف «{{name}}»",
+    "categoryUpdated": "تم تعديل التصنيف إلى «{{name}}»",
+    "categoryDeleted": "تم حذف التصنيف «{{name}}»",
+    "deleteCategoryTitle": "حذف التصنيف",
+    "deleteCategoryConfirm": "هل أنت متأكد من حذف التصنيف «{{name}}»؟",
+    "deleteCategoryHint": "لا يمكن حذف تصنيف يحتوي على أصناف — انقل الأصناف إلى تصنيف آخر أولاً. التصنيف «عام» ثابت ولا يمكن حذفه.",
+    "editCategoryAction": "تعديل التصنيف {{name}}",
+    "deleteCategoryAction": "حذف التصنيف {{name}}",
     "edit": "تعديل",
     "name": "الاسم",
     "search": "ابحث باسم الصنف…",
@@ -92,6 +101,11 @@
     "deactivated": "تم إيقاف الصنف",
     "confirmToggle": "تأكيد تغيير الحالة",
     "confirmToggleBody": "هل تريد تغيير حالة «{{name}}» إلى {{next}}؟",
+    "delete": "حذف",
+    "deleteTitle": "حذف الصنف",
+    "deleteConfirm": "هل أنت متأكد من حذف «{{name}}»؟",
+    "deleteHistoryHint": "لن يؤثر حذف الصنف على الفواتير أو السجلات التاريخية السابقة.",
+    "deleted": "تم حذف الصنف «{{name}}»",
     "created": "تم إنشاء الصنف «{{name}}»",
     "invalidPrice": "أدخل سعرًا صحيحًا",
     "invalidStock": "أدخل كمية مخزون صحيحة",
@@ -99,13 +113,26 @@
     "priceSnapshotHint": "تغيير السعر لا يمس الفواتير القديمة — الأسطر محفوظة بلحظتها.",
     "new": "جديد",
     "newItem": "صنف جديد في القائمة",
-    "newItemHint": "يظهر شارة «جديد» على الصنف لينتبه إليه الكاشير. لا يؤثر على التوفر.",
+    "newItemHint": "يبرز الصنف بالكامل بعلامة «جديد» لينتبه إليه الكاشير. لا يؤثر على التوفر.",
     "categoryNavLabel": "تصنيفات الأصناف",
     "categoryItems": "صنف",
     "allCategories": "كل التصنيفات",
+    "showAllCategories": "إظهار الكل",
+    "hideCategories": "إخفاء التصنيفات",
+    "manageCategories": "إدارة التصنيفات",
+    "manageCategoriesHint": "اختر التصنيفات التي تريد ظهورها في شريط التصنيفات، ورتّبها حسب استخدامك اليومي.",
+    "manageCategoriesDefault": "التصنيفات الظاهرة الآن هي الأولى في ترتيب القائمة. يمكنك تثبيت تصنيفات أخرى في أي وقت.",
+    "resetCategories": "استعادة الافتراضي",
+    "hiddenCategoriesHint": "يوجد {{count}} تصنيف مخفي — يظهر عبر «إظهار الكل».",
+    "categoryPinned": "ظاهر في الشريط",
+    "categoryHidden": "مخفي من الشريط",
+    "toggleCategoryVisible": "إظهار {{name}} في شريط التصنيفات",
+    "moveCategoryUp": "تحريك {{name}} للأعلى",
+    "moveCategoryDown": "تحريك {{name}} للأسفل",
     "resultsCount": "عدد النتائج",
     "noResultsInCategory": "لا توجد أصناف في هذا التصنيف",
-    "clearFilters": "مسح عوامل التصفية"
+    "clearFilters": "مسح عوامل التصفية",
+    "saved": "تم حفظ الصنف"
   },
   "inventory": {
     "stock": "المخزون الحالي",
@@ -174,9 +201,38 @@
     "confirmClose": "تأكيد تقفيل الوردية",
     "loadError": "تعذر تحميل بيانات تقفيل الوردية",
     "openShift": "فتح وردية جديدة",
-    "openingCash": "رصيد النقد عند الفتح",
+    "openingCash": "رصيد افتتاح الوردية",
     "someoneElseOpen": "توجد وردية مفتوحة",
-    "someoneElseOpenHint": "لا يمكن فتح وردية أخرى حتى يتم تقفيل الوردية الحالية"
+    "someoneElseOpenHint": "لا يمكن فتح وردية أخرى حتى يتم تقفيل الوردية الحالية",
+    "salesSection": "المبيعات",
+    "cafeInvoices": "فواتير الكافيه",
+    "washInvoices": "فواتير المغسلة",
+    "hybridInvoices": "الفواتير المختلطة",
+    "hybridInvoicesHint": "تُحتسب مرة واحدة فقط، ومبلغها موزّع على الكافيه والمغسلة",
+    "totalSales": "إجمالي المبيعات",
+    "servicesSection": "الخدمات والخصومات",
+    "serviceTotal": "إجمالي الخدمات",
+    "discountTotal": "إجمالي الخصومات",
+    "expensesSection": "المصروفات",
+    "expensesTotal": "إجمالي المصروفات",
+    "expensesCashPart": "منها نقدي من العهدة",
+    "expenseCount": "{{count}} مرة",
+    "expenseEmpty": "لا توجد مصروفات مسجلة في هذه الوردية",
+    "newExpense": "مصروف جديد",
+    "addExpense": "إضافة مصروف",
+    "expenseSaved": "تم تسجيل المصروف",
+    "paidFromCash": "تم الدفع من العهدة (نقدي)",
+    "shiftExpenses": "مصروفات الوردية",
+    "handoverSection": "التسليم / الإقفال",
+    "custodySection": "تسوية العهدة",
+    "cashInflows": "إجمالي النقدية الداخلة",
+    "cashOutflows": "إجمالي المصروفات النقدية",
+    "expectedClosingCash": "رصيد الإقفال المتوقع",
+    "actualHandover": "النقدية الفعلية المسلّمة",
+    "difference": "الفرق",
+    "statusBalanced": "متوازن",
+    "statusShortage": "عجز",
+    "statusSurplus": "زيادة"
   },
   "settlement": {
     "title": "تقفيل اليوم",
@@ -222,7 +278,17 @@
     "closeConsequenceHint": "لن يمكن فتح طلبات جديدة على هذا اليوم. لا يمكن التراجع عن الإغلاق بعد تأكيده.",
     "confirmSettlement": "تأكيد حفظ التسوية",
     "confirmClose": "تأكيد تقفيل اليوم",
-    "closedPrintWarning": "تم إغلاق يوم العمل بنجاح، لكن تعذرت طباعة التقرير. يمكنك إعادة المحاولة من المعاينة."
+    "closedPrintWarning": "تم إغلاق يوم العمل بنجاح، لكن تعذرت طباعة التقرير. يمكنك إعادة المحاولة من المعاينة.",
+    "expectedClosingCash": "رصيد الإقفال المتوقع",
+    "settledShiftsCount": "{{count}} وردية محتسبة",
+    "openShiftsExcluded": "ورديات مفتوحة (غير محتسبة)",
+    "openShiftsTitle": "يوجد ورديات مفتوحة لم تتم تسويتها",
+    "openShiftsBody": "تقفيلة اليوم ستشمل الورديات التي تمت تسويتها فقط، ولن يتم احتساب أي حركة من الورديات المفتوحة ضمن تقفيلة اليوم.",
+    "openShiftsQuestion": "هل تريد المتابعة؟",
+    "continueAnyway": "متابعة تقفيل اليوم",
+    "excludedMoney": "المبالغ غير المحتسبة",
+    "excludedMoneyHint": "لن تُحتسب في تقفيلة اليوم",
+    "openShiftsInReport": "عدد الورديات المحتسبة في التقفيلة"
   },
   "invoicesPage": {
     "summary": "{{count}} فاتورة في يوم العمل الحالي · {{credit}} فاتورة آجلة",
@@ -261,24 +327,110 @@
       "noResultsBody": "يوجد في يوم العمل هذا فواتير، لكنها لا تطابق البحث أو عوامل التصفية الحالية. جرّب كلمة أخرى أو امسح التصفية."
     }
   },
+  "documentPreview": {
+    "loading": "جارٍ تجهيز المعاينة",
+    "error": {
+      "title": "تعذر عرض المعاينة",
+      "body": "حدثت مشكلة أثناء تجهيز المعاينة. حاول مرة أخرى، وإذا استمرت المشكلة يمكنك المتابعة بدون المعاينة."
+    },
+    "empty": {
+      "invoice": {
+        "title": "لا توجد فاتورة للمعاينة",
+        "body": "لا تتوفر بيانات فاتورة يمكن عرضها حالياً."
+      },
+      "ticket": {
+        "title": "لا توجد تذكرة للمعاينة",
+        "body": "لا تتوفر بيانات تذكرة يمكن عرضها حالياً."
+      },
+      "report": {
+        "title": "لا يوجد تقرير للمعاينة",
+        "body": "لا تتوفر بيانات تقرير يمكن عرضها حالياً."
+      },
+      "document": {
+        "title": "لا يوجد مستند للمعاينة",
+        "body": "لا يتوفر مستند يمكن عرضه حالياً."
+      }
+    }
+  },
   "expenses": {
     "add": "مصروف جديد",
     "category": "الفئة",
+    "manageCategories": "إدارة فئات المصروف",
+    "manageCategoriesHint": "هذه الفئات هي التصنيفات التي تُسجَّل بها المصروفات. أضف فئة جديدة أو عدّل اسمها، وتظهر الفئة الجديدة مباشرةً عند تسجيل مصروف.",
+    "addCategory": "إضافة فئة مصروف",
+    "editCategory": "تعديل فئة المصروف",
+    "deleteCategory": "حذف فئة المصروف",
+    "categoryName": "اسم فئة المصروف",
+    "categoryNamePlaceholder": "مثال: صيانة المصعد",
+    "noCategories": "لا توجد فئات مصروف بعد",
+    "categoryCreated": "تم إضافة فئة المصروف «{{name}}»",
+    "categoryUpdated": "تم تعديل فئة المصروف إلى «{{name}}»",
+    "categoryDeleted": "تم حذف فئة المصروف «{{name}}»",
+    "editCategoryAction": "تعديل فئة المصروف {{name}}",
+    "deleteCategoryAction": "حذف فئة المصروف {{name}}",
+    "deleteCategoryConfirm": "هل تريد حذف فئة المصروف «{{name}}»؟",
+    "deleteCategoryHint": "لا يمكن حذف فئة مرتبطة بمصروفات مسجّلة — انقل المصروفات إلى فئة أخرى أولاً. أما الفئات الأساسية المدمجة فلا تُحذف.",
     "recurrence": "الدورية",
     "recurring": "مصروف دوري",
     "rec.WEEKLY": "أسبوعي",
     "rec.MONTHLY": "شهري",
-    "cat.MAINTENANCE": "صيانة",
-    "cat.SUPPLIES": "مستلزمات",
-    "cat.UTILITY": "مرافق",
-    "cat.SALARY": "مرتبات",
-    "cat.EMERGENCY": "طوارئ",
-    "cat.OTHER": "أخرى",
     "from": "من تاريخ",
     "to": "إلى تاريخ",
     "total": "إجمالي المصروفات",
     "created": "تم تسجيل المصروف",
-    "empty": "لا توجد مصروفات في هذه الفترة"
+    "empty": "لا توجد مصروفات في هذه الفترة",
+    "subtitle": "تحليل المصروفات خلال الفترة: الإجمالي، التغيّر اليومي، توزيع الفئات، والسجلات",
+    "states": {
+      "noExpensesTitle": "لا توجد مصروفات في هذه الفترة",
+      "noExpensesBody": "لم يُسجَّل أي مصروف بين {{from}} و{{to}}. هذه إجابة حقيقية وليست خطأ، وستظهر التحليلات فور تسجيل أول مصروف.",
+      "noExpensesHint": "جرّب توسيع الفترة من شريط التاريخ أعلاه، أو سجّل مصروفًا جديدًا للبدء.",
+      "scope": "الفترة: {{from}} — {{to}}"
+    },
+    "kpi": {
+      "loading": "جارٍ تحميل مؤشرات المصروفات…",
+      "total": "إجمالي المصروفات",
+      "totalHint": "مجموع كل المصروفات المسجّلة خلال الفترة المحددة",
+      "count": "عدد المصروفات",
+      "average": "متوسط المصروف",
+      "largest": "أكبر مصروف",
+      "cash": "من الدرج (كاش)",
+      "cashCount": "{{count}} مصروف مدفوع من الدرج",
+      "recurring": "مصروفات دورية",
+      "recurringCount": "{{count}} التزام متكرر",
+      "dailyAverage": "متوسط المصروف اليومي",
+      "categories": "عدد الفئات المستخدمة",
+      "slicesNote": "«من الدرج» و«مصروفات دورية» قراءتان مستقلتان: قد تكون المصروفاتة الواحدة من النوعين معًا، فلا تُجمعان على الإجمالي."
+    },
+    "trend": {
+      "title": "المصروفات عبر الأيام",
+      "hint": "إجمالي المصروفات وعدد المصروفات ومتوسط المصروف لكل يوم سُجّل فيه مصروف",
+      "empty": "لا توجد أيام سُجّل فيها مصروف خلال هذه الفترة",
+      "singleDay": "مصروف يوم {{date}}",
+      "dayColumn": "اليوم",
+      "expensesOn": "{{count}} مصروف مسجّل",
+      "dateLabel": "التاريخ",
+      "peakLabel": "أعلى يوم"
+    },
+    "categories": {
+      "title": "توزيع المصروفات على الفئات",
+      "hint": "ترتيب تنازلي حسب قيمة كل فئة داخل الفترة نفسها",
+      "count": "{{count}} قيد",
+      "footnote": "النسبة محسوبة من إجمالي الفترة نفسه، وقد لا تبلغ ١٠٠٪ بالضبط بسبب التقريب."
+    },
+    "monthly": {
+      "title": "المصروفات الشهرية حسب النوع",
+      "description": "عمود لكل فئة في كل شهر. عدد الشهور يُحدَّد من إعدادات المطوّر، وهذا الرسم لا يتأثر بفترة المصروفات المختارة أعلى الصفحة.",
+      "monthColumn": "الشهر",
+      "vsPrevious": "مقارنة بالشهر السابق",
+      "noComparison": "لا توجد مقارنة بالشهر السابق",
+      "emptyTitle": "لا توجد شهور لتحليلها بعد",
+      "emptyBody": "لم تُسجَّل أي مصروفات ضمن الشهور المشمولة، أو أن البيانات المحفوظة أقدم من هذه الفترة."
+    },
+    "list": {
+      "title": "سجل المصروفات",
+      "hint": "أحدث المصروفات في الفترة. الإجمالي أعلاه محسوب على كل السجلات، لا على المعروض منها.",
+      "empty": "لا توجد سجلات لعرضها في هذه الفترة"
+    }
   },
   "reports": {
     "subtitle": "سجل العمليات والطباعة وتقفيلات الورديات والأيام والرسوم البيانية",
@@ -309,6 +461,7 @@
       "actions": "إجراءات تصدير الرسوم البيانية",
       "empty": "لا توجد بيانات لهذه الفترة",
       "fullscreen": "تكبير الرسم البياني",
+      "tooltipTotal": "الإجمالي",
       "period": "الفترة: {{period}}",
       "png": "تصدير كصورة PNG",
       "excel": "تصدير Excel",
@@ -324,22 +477,24 @@
       "emptyChartBody": "لم يُسجَّل أي مبلغ لهذا المؤشر ضمن الفترة المختارة.",
       "emptyHint": "يمكن أن يحدث ذلك إذا لم تُسجَّل فواتير أو مصروفات أو ورديات خلال الفترة، أو إذا كانت الفترة المختارة خارج نطاق البيانات المحفوظة.",
       "emptyAction": "اختر فترة أوسع",
-      "emptyScope": "الفترة المختارة"
+      "emptyScope": "الفترة المختارة",
+      "monthlySectionTitle": "المبيعات والمصروفات الشهرية",
+      "monthlySectionDescription": "مقارنة شهرية بين إيرادات الكافيه والمغسلة ومصروفات التشغيل. عدد الشهور يُحدَّد من إعدادات المطوّر، ولا تتأثر هذه الرسوم بالفترة المختارة في تبويب الرسوم البيانية."
     }
   },
   "audit": {
     "title": "سجل العمليات",
-    "description": "تتبّع زمني لكل عملية حساسة نفّذها المستخدمون في النظام، مع من نفّذها ومتى والكيان المتأثر.",
+    "description": "سجل زمني لأهم ما يحدث في الكافيه: من نفّذ العملية، ومتى، وأي عنصر تأثرت بها.",
     "hint": "يعرض أحدث العمليات المسجّلة في النظام",
     "window": "أحدث {{count}} عملية",
     "search": {
       "label": "البحث في السجل",
-      "placeholder": "ابحث باسم العملية أو المستخدم أو الكيان…",
+      "placeholder": "ابحث باسم العملية أو المستخدم أو رقم الفاتورة…",
       "clear": "مسح البحث"
     },
     "filters": {
-      "type": "نوع العملية",
-      "typeAll": "كل الأنواع",
+      "type": "القسم",
+      "typeAll": "كل الأقسام",
       "actor": "المستخدم",
       "actorAll": "كل المستخدمين",
       "reset": "مسح الفلاتر",
@@ -347,11 +502,12 @@
     },
     "columns": {
       "operation": "العملية",
-      "type": "النوع",
-      "entity": "الكيان",
-      "actor": "بواسطة",
+      "details": "التفاصيل",
+      "type": "القسم",
+      "entity": "العنصر",
+      "actor": "المستخدم",
       "time": "التاريخ والوقت",
-      "actions": "تفاصيل"
+      "actions": "عرض"
     },
     "groups": {
       "auth": "الدخول والخروج",
@@ -365,7 +521,9 @@
       "expenses": "المصروفات",
       "operations": "الورديات وأيام العمل",
       "settings": "الإعدادات",
-      "other": "عمليات أخرى"
+      "other": "عمليات أخرى",
+      "staff": "الموظفون والرواتب",
+      "discount": "الخصومات"
     },
     "entities": {
       "product": "صنف",
@@ -381,39 +539,53 @@
       "customer": "عميل",
       "car": "سيارة",
       "user": "موظف",
-      "settings": "إعدادات"
+      "settings": "إعدادات",
+      "employee": "موظف",
+      "employee_advance": "سلفة",
+      "payroll_run": "مسير رواتب",
+      "attendance_day": "سجل حضور"
     },
-    "actionFallback": "عملية مسجّلة",
+    "actionFallback": "عملية غير معروفة",
     "entityFallback": "سجل",
     "states": {
-      "noDataTitle": "لا توجد عمليات حتى الآن",
-      "noDataBody": "لم يسجّل النظام أي عملية بعد. ستظهر هنا تلقائيًا كل فاتورة أو وردية أو تعديل الأصناف فور حدوثه.",
+      "noDataTitle": "لا توجد عمليات مسجّلة بعد",
+      "noDataBody": "لم تُسجَّل أي عملية حتى الآن. ستظهر هنا تلقائيًا كل فاتورة أو وردية أو تعديل على الأصناف فور حدوثه.",
       "noResultsTitle": "لا توجد نتائج مطابقة للفلاتر الحالية",
       "noResultsBody": "يوجد في السجل {{total}} عملية، لكنها لا تطابق البحث أو الفلاتر المحددة."
     },
     "details": {
       "title": "تفاصيل العملية",
-      "action": "العملية",
-      "type": "التصنيف",
       "actor": "نفّذها",
       "time": "التاريخ والوقت",
-      "entity": "الكيان المتأثر",
       "reference": "المرجع",
       "record": "رقم السجل",
       "snapshot": "البيانات المسجّلة",
-      "snapshotEmpty": "لم تُسجَّل بيانات إضافية لهذه العملية.",
-      "open": "عرض تفاصيل العملية"
+      "snapshotEmpty": "لم تُسجَّل بيانات تقنية لهذه العملية.",
+      "open": "عرض تفاصيل العملية",
+      "summary": "ملخص العملية",
+      "info": "التفاصيل",
+      "technical": "المعلومات التقنية",
+      "technicalHint": "محتوى هذا القسم مخصص للمراجعة الداخلية والتشخيص فقط.",
+      "summaryText": "تم {{action}}.",
+      "area": "القسم",
+      "item": "العنصر المتأثر",
+      "code": "رمز العملية",
+      "recordType": "نوع السجل",
+      "noBusinessData": "لا تتوفر تفاصيل إضافية يمكن عرضها لهذه العملية."
     },
     "actions.auth.login": "تسجيل دخول",
     "actions.user.created": "إنشاء مستخدم",
     "actions.user.password_changed": "تغيير كلمة مرور مستخدم",
     "actions.user.status_changed": "تغيير حالة مستخدم",
     "actions.catalog.category_created": "إنشاء تصنيف",
+    "actions.catalog.category_updated": "تعديل اسم تصنيف",
+    "actions.catalog.category_deleted": "حذف تصنيف",
     "actions.catalog.product_created": "إنشاء صنف",
     "actions.catalog.product_updated": "تعديل بيانات صنف",
     "actions.catalog.product_renamed": "تعديل اسم صنف",
     "actions.catalog.price_changed": "تغيير سعر",
     "actions.catalog.product_activation_changed": "تغيير حالة صنف",
+    "actions.catalog.product_deleted": "حذف صنف",
     "actions.customer.created": "إنشاء عميل",
     "actions.customer.updated": "تعديل بيانات عميل",
     "actions.car.created": "إضافة سيارة",
@@ -422,7 +594,6 @@
     "actions.table.count_changed": "تغيير عدد الطاولات",
     "actions.order.discarded": "إلغاء طلب",
     "actions.invoice.created": "إنشاء فاتورة",
-    "actions.invoice.cancelled": "إلغاء فاتورة",
     "actions.credit.settled": "تسوية مديونية آجلة",
     "actions.inventory.adjusted": "تسوية مخزون",
     "actions.inventory.min_changed": "تغيير حد أدنى",
@@ -435,18 +606,116 @@
     "actions.settings.service_charge_changed": "تغيير رسوم الخدمة",
     "actions.settings.discount_authorization_changed": "تغيير تفويض الخصم",
     "actions.settings.credit_rules_changed": "تغيير قواعد الدفع الآجل",
-    "actions.settings.printer_changed": "تغيير إعدادات الطابعة"
+    "actions.settings.printer_changed": "تغيير إعدادات الطابعة",
+    "actions.customer.deleted": "حذف عميل",
+    "actions.discount.authorized": "تفويض خصم",
+    "actions.invoice.wash_employee_assigned": "تعيين عامل المغسلة للطلب",
+    "actions.employee.created": "إضافة موظف",
+    "actions.employee.updated": "تعديل بيانات موظف",
+    "actions.employee.deleted": "حذف موظف",
+    "actions.employee.salary_changed": "تعديل الراتب الأساسي",
+    "actions.employee.activated": "تفعيل حساب موظف",
+    "actions.employee.deactivated": "إيقاف حساب موظف",
+    "actions.attendance.check_in": "تسجيل حضور موظف",
+    "actions.attendance.check_out": "تسجيل انصراف موظف",
+    "actions.attendance.absent": "تسجيل غياب موظف",
+    "actions.attendance.leave": "تسجيل إجازة موظف",
+    "actions.attendance.corrected": "تصحيح سجل حضور",
+    "actions.attendance.override": "تعديل سجل حضور",
+    "actions.advance.created": "تسجيل سلفة",
+    "actions.advance.reversed": "عكس سلفة",
+    "actions.payroll.created": "إنشاء مسير رواتب",
+    "actions.payroll.finalized": "اعتماد مسير رواتب",
+    "actions.settings.discount_options_changed": "تغيير خيارات الخصم",
+    "actions.settings.monthly_sales_period_changed": "تغيير الفترة الشهرية للمبيعات",
+    "fields": {
+      "name": "الاسم",
+      "phone": "التليفون",
+      "plate": "رقم السيارة",
+      "car_model": "نوع السيارة",
+      "price_minor": "السعر",
+      "department": "القسم",
+      "type": "النوع",
+      "is_active": "حالة التوفّر",
+      "stock_quantity": "الكمية",
+      "min_quantity": "الحد الأدنى",
+      "invoice_no": "رقم الفاتورة",
+      "total": "الإجمالي",
+      "method": "طريقة الدفع",
+      "discount": "الخصم",
+      "discount_minor": "قيمة الخصم",
+      "service_charge": "رسوم الخدمة",
+      "order_type": "نوع الطلب",
+      "takeaway_no": "رقم الطلب الخارجي",
+      "reason": "السبب",
+      "note": "ملاحظة",
+      "amount": "المبلغ",
+      "status": "الحالة",
+      "change": "الكمية",
+      "category": "فئة المصروف",
+      "date": "تاريخ المصروف",
+      "recurring": "مصروف دوري",
+      "paid_from_cash": "مدفوع من الدرج",
+      "opening_cash": "رصيد افتتاحي",
+      "expected_cash": "المبلغ المتوقع في الدرج",
+      "actual_cash": "المبلغ الفعلي في الدرج",
+      "difference": "الفرق",
+      "cash_expenses": "مصروفات الدرج",
+      "expenses": "المصروفات",
+      "invoices_count": "عدد الفواتير",
+      "total_sales": "إجمالي المبيعات",
+      "cash": "مبيعات نقدية",
+      "card": "مبيعات بالبطاقة",
+      "credit": "مبيعات آجلة",
+      "business_date": "تاريخ اليوم",
+      "action": "حركة الموظف",
+      "employee_type": "نوع الموظف",
+      "base_salary": "الراتب الأساسي",
+      "period": "الفترة",
+      "attendance_days": "أيام الحضور",
+      "absence_days": "أيام الغياب",
+      "leave_days": "أيام الإجازة",
+      "advances": "السلف",
+      "deductions": "الخصومات",
+      "net_salary": "صافي الراتب",
+      "active_count": "عدد الطاولات"
+    },
+    "values": {
+      "orderType": {
+        "TABLE": "طلب على طاولة",
+        "TAKEAWAY": "طلب خارجي"
+      },
+      "attendance": {
+        "check_in": "حضور",
+        "check_out": "انصراف",
+        "absent": "غياب",
+        "leave": "إجازة"
+      },
+      "status": {
+        "OPEN": "مفتوحة",
+        "CLOSED": "مغلقة",
+        "PAID": "مدفوعة",
+        "PARTIALLY_PAID": "مدفوعة جزئيًا",
+        "CANCELLED": "ملغاة",
+        "REVERSED": "معكوسة",
+        "FINALIZED": "معتمدة",
+        "AUTHORIZED": "مفوّضة",
+        "ACTIVE": "نشط",
+        "INACTIVE": "غير نشط",
+        "SUSPENDED": "موقوف"
+      }
+    }
   },
   "roles": {
     "title": "الدور",
     "ADMIN": "مدير النظام",
     "MANAGER": "مدير",
-    "STAFF": "كاشير"
+    "STAFF": "كاشير",
+    "WASH_WORKER": "عامل مغسلة"
   },
   "nav": {
     "pos": "نقطة البيع",
     "dashboard": "لوحة التحكم",
-    "staff": "الموظفون",
     "catalog": "الأصناف والخدمات",
     "customers": "العملاء والسيارات",
     "inventory": "المخزون",
@@ -455,20 +724,8 @@
     "audit": "سجل العمليات",
     "devSettings": "إعدادات المطوّر",
     "settings": "الإعدادات",
-    "sales": "المبيعات"
-  },
-  "staff": {
-    "subtitle": "إدارة حسابات الموظفين والأدوار",
-    "addStaff": "إضافة موظف",
-    "name": "الاسم",
-    "phone": "التليفون",
-    "active": "نشط",
-    "suspended": "موقوف",
-    "suspend": "إيقاف",
-    "activate": "تنشيط",
-    "created": "تم إنشاء الموظف",
-    "saved": "تم الحفظ",
-    "empty": "لا يوجد موظفون بعد"
+    "sales": "المبيعات",
+    "employees": "الموظفون"
   },
   "customers": {
     "subtitle": "إدارة بيانات العملاء وسياراتهم ونشاطهم على الكافيه والمغسلة",
@@ -499,7 +756,8 @@
     },
     "actions": {
       "details": "تفاصيل {{name}}",
-      "edit": "تعديل {{name}}"
+      "edit": "تعديل {{name}}",
+      "delete": "حذف {{name}} نهائيًا"
     },
     "kpi": {
       "loading": "جارٍ تحميل مؤشرات العملاء…",
@@ -582,6 +840,13 @@
       "model": "نوع السيارة (اختياري)",
       "created": "تم إضافة العميل",
       "updated": "تم تحديث بيانات العميل"
+    },
+    "confirm": {
+      "deleteTitle": "حذف العميل",
+      "deleteBody": "هل أنت متأكد من حذف «{{name}}» نهائيًا؟",
+      "deleteDetail": "لا يمكن التراجع عن هذا الإجراء. لن يبقى «{{name}}» متاحًا كعميل في السجل، وستُحذف سياراته المرتبطة به.",
+      "deleteConfirm": "حذف نهائي",
+      "deleted": "تم حذف العميل «{{name}}» نهائيًا"
     }
   },
   "pos": {
@@ -735,8 +1000,7 @@
       "PENDING_PAYMENT": "بانتظار الدفع",
       "PAID": "مدفوعة",
       "PARTIALLY_PAID": "مدفوعة جزئيًا",
-      "CREDIT": "آجل",
-      "CANCELLED": "ملغاة"
+      "CREDIT": "آجل"
     }
   },
   "print": {
@@ -823,6 +1087,11 @@
     "all": "كل العملاء ",
     "tables": "الطاولات",
     "tableCount": "عدد الطاولات",
+    "monthlySalesPeriod": "عدد شهور الرسم البياني للمبيعات",
+    "monthlySalesPeriodHelp": "يحدد عدد الشهور الظاهرة في الرسم البياني الشهري للكافيه والمغسلة. يبدأ العد من الشهر الحالي بما فيه، ولا تؤثر فترة المبيعات المختارة في صفحة المبيعات على هذا الرسم.",
+    "monthlySalesPeriodMonths": "عدد الشهور",
+    "monthsOption": "{{count}} شهور",
+    "monthlySalesPeriodSaved": "تم تحديث عدد شهور الرسم البياني للمبيعات.",
     "tableCountHelp": "من 1 إلى 99. تُنشأ الأسماء تلقائيًا.",
     "decrease": "إنقاص",
     "increase": "زيادة",
@@ -853,6 +1122,29 @@
     "resetChanges": "تراجع عن التغييرات",
     "unsavedChanges": "تغييرات غير محفوظة",
     "formattingSaved": "تم حفظ إعدادات التنسيق بنجاح.",
+    "chartColors": "ألوان أعمدة الرسوم البيانية",
+    "chartColorsDescription": "لون واحد مركزي يتحكم في أعمدة كل الرسوم البيانية في التطبيق: الاتجاه الزمني للمبيعات والمصروفات، والمقارنة الشهرية للكافيه والمغسلة، والمصروفات حسب الفئة، ورسوم التقارير، وأشرطة النسب في صفحتَي المبيعات والمصروفات.",
+    "chartColorsHowTo": "اختر اللون من المربع، أو اكتب قيمة مباشرة. اترك الحقل فارغًا ليعود اللون إلى لون النظام الذي يتبع الوضع الفاتح والداكن تلقائيًا، أو اكتب مرجعًا مثل var(--info) ليربطه بلون من الثيم. اللون المكتوب يدويًا يُطبَّق في الوضعين معًا.",
+    "chartColor_primary": "اللون الأساسي",
+    "chartColorHint_primary": "العمود الرئيسي في الرسوم الزمنية، وعمود المغسلة، وأول فئة في الرسوم متعددة الفئات.",
+    "chartColor_secondary": "اللون الثانوي",
+    "chartColorHint_secondary": "عمود المقه، وعمود الدفع بالبطاقة، وثاني فئة في الرسوم متعددة الفئات.",
+    "chartColor_tertiary": "اللون الثالث",
+    "chartColorHint_tertiary": "عمود الدفع الآجل، وثالث فئة في الرسوم متعددة الفئات.",
+    "chartColor_quaternary": "اللون الرابع",
+    "chartColorHint_quaternary": "عمود الدفع النقدي، ورابع فئة في الرسوم متعددة الفئات.",
+    "chartColor_sales": "لون المبيعات",
+    "chartColorHint_sales": "قطاع المبيعات في رسم مقارنة المبيعات بالمصروفات.",
+    "chartColor_expenses": "لون المصروفات",
+    "chartColorHint_expenses": "قطاع المصروفات في رسم مقارنة المبيعات بالمصروفات، وأعمدة المصروفات اليومية.",
+    "chartColor_expensesMultiple": "لون اليوم متعدد المصروفات",
+    "chartColorHint_expensesMultiple": "عمود اليوم الذي سُجّل فيه أكثر من مصروف واحد في اليوم اليومي للمصروفات.",
+    "chartColorInvalid": "قيمة اللون غير صحيحة. استخدم صيغة hex مثل #b07f47، أو مرجعًا مثل var(--info)، أو اترك الحقل فارغًا.",
+    "chartColorPicker": "مربع اختيار اللون: {{role}}",
+    "chartColorUseSystem": "العودة إلى لون النظام: {{role}}",
+    "chartColorsPreview": "معاينة الألوان",
+    "chartColorsPreviewNote": "تعكس هذه المعاينة تغييراتك غير المحفوظة فقط؛ ألوان الرسوم في التطبيق نفسه تتغير عند الضغط على «حفظ التغييرات».",
+    "chartColorsSaved": "تم حفظ ألوان الرسوم البيانية بنجاح.",
     "compactThresholdHelp": "يبدأ اختصار المبالغ من هذا الحد. غيّره لترى أي قيمة تتحول إلى مختصر في المعاينة.",
     "previewDescription": "تعكس هذه المعاينة تغييراتك غير المحفوظة فقط؛ لن تتغير بقية التطبيق قبل الضغط على «حفظ التغييرات».",
     "previewMoney": "المبالغ",
@@ -887,7 +1179,18 @@
     "clearDescription": "يحذف جميع بيانات التطبيق مع الاحتفاظ بحساب المطور ADMIN فقط.",
     "clearSuccess": "تم مسح جميع بيانات التطبيق بنجاح.",
     "clearConfirmationTitle": "تأكيد مسح قاعدة البيانات بالكامل",
-    "clearWarning": "هل أنت متأكد من مسح قاعدة البيانات بالكامل؟\n\nسيتم حذف جميع بيانات التطبيق نهائيًا:\nالمنتجات، المستخدمون، العملاء، السيارات، الطلبات،\nالفواتير، المصروفات، المخزون، الورديات وجميع السجلات الأخرى.\n\nسيتم الاحتفاظ بحساب المطور ADMIN فقط.\n\nهذا الإجراء لا يمكن التراجع عنه."
+    "clearWarning": "سيؤدي هذا الإجراء إلى حذف جميع بيانات التطبيق المحفوظة على هذا الجهاز نهائيًا:\nالمنتجات والتصنيفات، المستخدمون، العملاء والسيارات، الطلبات والفواتير،\nالمصروفات، المخزون، الورديات، التقفيلات وكل السجلات الأخرى.\n\nما الذي يبقى بعد المسح:\n• بنية قاعدة البيانات وترحيلها (Migrations) كما هي.\n• حساب المطور ADMIN فقط، باسم «Belly».\n• جداول التصنيفات النظامية للمصروفات.\n\nلن يتم الاحتفاظ بأي جلسة تسجيل دخول، لذا سيتم إنهاء جلستك الحالية.\nيمكنك تحميل البيانات الرسمية بعد المسح لاستعادة بيانات البداية.\n\nهذا الإجراء لا يمكن التراجع عنه.",
+    "dangerZone": "منطقة الخطر",
+    "dangerZoneDescription": "إجراءات تؤثر على البيانات المحفوظة على هذا الجهاز. استخدمها أثناء التطوير والاختبار فقط.",
+    "dangerZoneLoadTitle": "تحميل البيانات الرسمية",
+    "dangerZoneLoadDescription": "استعادة بيانات البداية الرسمية للمنتج والخدمات والطاولات. آمنة للتكرار ولا تُنشئ نسخًا مكررة.",
+    "dangerZoneClearTitle": "مسح قاعدة البيانات",
+    "dangerZoneClearDescription": "حذف جميع بيانات التطبيق مع الاحتفاظ بحساب المطور فقط. لا يمكن التراجع عنه.",
+    "dangerZoneConfirmLabel": "تأكيد المسح",
+    "dangerZoneCancelLabel": "إلغاء",
+    "clearScopeTitle": "ما الذي سيتم حذفه؟",
+    "clearScopeKeptTitle": "ما الذي سيبقى؟",
+    "clearNextStep": "بعد المسح: يمكنك الضغط على «تحميل البيانات الرسمية» مباشرة لاستعادة بيانات البداية المعتمدة."
   },
   "errors": {
     "internal_error": "حدث خطأ غير متوقع، حاول مرة أخرى",
@@ -903,7 +1206,6 @@
     "user.name_taken": "اسم المستخدم موجود بالفعل",
     "user.invalid_role": "الدور غير صحيح",
     "user.password_too_short": "كلمة المرور يجب ألا تقل عن 6 حروف",
-    "user.invalid_status": "الحالة غير صحيحة",
     "user.cannot_suspend_self": "لا يمكنك إيقاف حسابك بنفسك",
     "user.not_found": "الموظف غير موجود",
     "pos.no_business_day": "لا يوجد يوم عمل مفتوح — افتح يوم العمل أولًا",
@@ -937,6 +1239,8 @@
     "catalog.category_name_required": "اسم التصنيف مطلوب",
     "catalog.category_name_taken": "التصنيف موجود بالفعل",
     "catalog.category_not_found": "التصنيف المحدد غير موجود",
+    "catalog.category_in_use": "لا يمكن حذف التصنيف لوجود أصناف مرتبطة به. انقل الأصناف إلى تصنيف آخر أولاً.",
+    "catalog.category_is_system": "لا يمكن حذف التصنيف «عام» لأنه التصنيف الأساسي في القائمة",
     "catalog.invalid_stock": "كمية المخزون غير صحيحة",
     "inventory.not_tracked": "هذا الصنف لا يتتبع المخزون",
     "inventory.zero_change": "أدخل كمية مختلفة عن صفر",
@@ -946,6 +1250,7 @@
     "discount.invalid_pin": "رمز تفويض الخصم يجب أن يكون 4 أرقام بالضبط",
     "discount.percent_not_allowed": "نسبة الخصم غير متاحة — الخصم بمبلغ ثابت فقط",
     "settings.invalid_discount": "مبالغ الخصم يجب أن تكون موجبة وأرقامًا مختلفة",
+    "settings.invalid_monthly_sales_period": "عدد شهور الرسم البياني يجب أن يكون 6 أو 12 أو 18 أو 24",
     "payment.invalid_method": "طريقة الدفع غير صحيحة",
     "payment.received_required": "أدخل المبلغ المستلم",
     "payment.insufficient_cash": "المبلغ المستلم أقل من الإجمالي",
@@ -956,6 +1261,7 @@
     "credit.not_found": "لا يوجد حساب آجل لهذا العميل",
     "credit.overpay": "المبلغ أكبر من المديونية المستحقة",
     "db.error": "تعذر حفظ البيانات — حاول مرة أخرى",
+    "preview.malformed": "بيانات المعاينة غير صالحة — أعد المحاولة",
     "printer.not_configured": "الطابعة غير مهيأة — تم حفظ البيع بنجاح",
     "printer.unavailable": "الطابعة غير متاحة — تم حفظ البيع بنجاح",
     "printer.open_failed": "تعذر فتح الطابعة — تم حفظ البيع بنجاح",
@@ -992,16 +1298,56 @@
     "day.shifts_open": "توجد ورديات مفتوحة — أغلقها أولًا",
     "day.orders_open": "توجد طلبات مفتوحة — أغلقها أولًا",
     "day.closing_not_found": "تقفيل يوم العمل غير موجود",
+    "day.no_settled_shifts": "لا توجد أي وردية مغلقة لتقفيلها. يجب تقفيل الوردية المفتوحة أولًا.",
+    "expenses.category_name_required": "اسم فئة المصروف مطلوب",
+    "expenses.category_name_taken": "فئة المصروف بهذا الاسم موجودة بالفعل",
+    "expenses.category_not_found": "فئة المصروف المحددة غير موجودة",
+    "expenses.category_in_use": "لا يمكن حذف فئة المصروف لوجود مصروفات مسجّلة بها. انقل المصروفات إلى فئة أخرى أولاً.",
+    "expenses.category_is_system": "لا يمكن حذف هذه الفئة لأنها فئة أساسية مدمجة في النظام",
+    "expenses.no_open_shift": "لا توجد وردية مفتوحة. افتح وردية أولًا لتسجيل المصروف عليها.",
     "expenses.invalid_amount": "مبلغ المصروف غير صحيح",
     "expenses.invalid_category": "فئة المصروف غير صحيحة",
     "expenses.invalid_recurrence": "دورية المصروف غير صحيحة",
     "invoice.not_found": "الفاتورة غير موجودة",
-    "invoice.already_cancelled": "الفاتورة ملغاة بالفعل",
-    "invoice.cancel_reason_required": "سبب إلغاء الفاتورة مطلوب",
-    "invoice.cancel_day_closed": "لا يمكن إلغاء فاتورة من يوم عمل مغلق",
     "sales.invalid_period": "فترة المبيعات غير صحيحة",
     "sales.invalid_status": "حالة الفاتورة غير صحيحة",
-    "sales.invalid_cashier": "الكاشير غير صحيح"
+    "sales.invalid_cashier": "الكاشير غير صحيح",
+    "attendance.invalid_date": "التاريخ غير صحيح، استخدم الصيغة سنة-شهر-يوم",
+    "attendance.already_checked_in": "تم تسجيل الحضور اليوم بالفعل",
+    "attendance.already_checked_out": "تم تسجيل الانصراف اليوم بالفعل",
+    "attendance.no_check_in": "لا يوجد تسجيل حضور لهذا اليوم",
+    "attendance.day_not_found": "لا يوجد سجل حضور لهذا اليوم",
+    "attendance.day_already_recorded": "تم تسجيل هذا اليوم بالفعل",
+    "attendance.already_present": "اليوم مسجّل كحضور ولا يمكن تغييره إلى غياب أو إجازة",
+    "attendance.employee_inactive": "الموظف غير نشط ولا يمكن تسجيل حضوره",
+    "attendance.check_out_before_in": "وقت الانصراف لا يمكن أن يسبق وقت الحضور",
+    "attendance.invalid_time": "الوقت غير صحيح، استخدم الصيغة ساعة:دقيقة",
+    "attendance.override_requires_time": "حدد وقت الحضور أو وقت الانصراف المراد تعديله",
+    "attendance.override_requires_present": "لا يمكن تعديل أوقات يوم غير مسجّل كحضور",
+    "attendance.unknown_state": "حالة الحضور غير معروفة",
+    "employee.not_found": "الموظف غير موجود",
+    "employee.name_required": "اسم الموظف مطلوب",
+    "employee.invalid_type": "نوع الموظف غير صحيح",
+    "employee.invalid_salary": "الراتب غير صحيح",
+    "employee.invalid_status": "حالة الموظف غير صحيحة",
+    "employee.wash_worker_cannot_authenticate": "عامل المغسلة لا يمكن أن يسجّل الدخول",
+    "employee.login_already_linked": "هذا الحساب مرتبط بموظف بالفعل",
+    "employee.login_required": "الكاشير يحتاج إلى حساب تسجيل دخول وكلمة مرور",
+    "employee.type_is_immutable": "لا يمكن تغيير نوع الموظف بعد إنشائه",
+    "employee.has_history": "لا يمكن حذف الموظف لوجود سجلات حضور أو سلف أو رواتب مرتبطة به. يمكنك إيقافه بدلًا من حذفه للحفاظ على سجلاته.",
+    "employee.cannot_delete_self": "لا يمكنك حذف حسابك بنفسك",
+    "customers.has_history": "لا يمكن حذف العميل لوجود فواتير أو طلبات أو رصيد آجل مرتبط به، لأن حذفه يضر بسجلاته المالية.",
+    "advance.invalid_amount": "مبلغ السلفة غير صحيح",
+    "advance.reason_required": "سبب السلفة مطلوب",
+    "advance.not_found": "السلفة غير موجودة",
+    "advance.already_reversed": "تم عكس هذه السلفة بالفعل",
+    "advance.used_by_finalized_payroll": "تم اعتماد رواتب هذا الشهر، لا يمكن عكس السلفة",
+    "payroll.invalid_period": "فترة الرواتب غير صحيحة، استخدم الصيغة سنة-شهر",
+    "payroll.invalid_deductions": "مبلغ الخصم غير صحيح",
+    "payroll.not_found": "فترة الرواتب غير موجودة",
+    "payroll.already_finalized": "تم اعتماد هذه الفترة ولا يمكن تعديلها",
+    "employees.not_a_wash_worker": "الموظف المختار ليس عامل مغسلة",
+    "employees.order_already_settled": "الطلب مغلق بالفعل ولا يمكن تغيير نسبة العامل"
   },
   "sales": {
     "subtitle": "أداء المبيعات خلال الفترة: الإجمالي، طرق الدفع، الأصناف الأكثر مبيعًا، والفواتير",
@@ -1036,17 +1382,17 @@
       "card": "المدفوع بالبطاقة",
       "credit": "المبيعات الآجلة",
       "cafe": "مبيعات الكافيه",
-      "wash": "مبيعات المغسلة",
-      "exceptions": "استثناءات",
-      "cancelled": "{{count}} فاتورة ملغاة"
+      "wash": "مبيعات المغسلة"
     },
     "trend": {
       "title": "حركة المبيعات",
-      "hint": "أعمدة لإيراد كل يوم عمل، وخط يوضح عدد الفواتير في اليوم نفسه",
+      "hint": "إجمالي المبيعات وعدد الفواتير ومتوسط قيمة الفاتورة لكل يوم عمل",
       "empty": "لا توجد أيام عمل في هذه الفترة",
       "singleDay": "إجمالي يوم {{date}}",
+      "dayColumn": "اليوم",
       "invoicesOn": "{{count}} فاتورة",
-      "peak": "أعلى يوم: {{date}} · {{amount}}"
+      "dateLabel": "التاريخ",
+      "peakLabel": "أعلى يوم"
     },
     "breakdown": {
       "paymentTitle": "توزيع طرق الدفع",
@@ -1054,6 +1400,15 @@
       "businessTitle": "توزيع النشاط بين الكافيه والمغسلة",
       "businessHint": "قيمة كل قسم كما ورد في الفاتورة نفسها؛ الطلب الهجين يظهر في القسمين بقيمته في كل قسم.",
       "settledNote": "إجمالي المبالغ المسدَّدة في الفترة:"
+    },
+    "monthly": {
+      "title": "الإيرادات الشهرية: الكافيه مقابل المغسلة",
+      "description": "عمودان لكل شهر: إيراد الكافيه وإيراد المغسلة. عدد الشهور يُحدَّد من إعدادات المطوّر، وهذا الرسم لا يتأثر بفترة المبيعات المختارة أعلى الصفحة.",
+      "monthColumn": "الشهر",
+      "vsPrevious": "مقارنة بالشهر السابق",
+      "noComparison": "لا توجد مقارنة بالشهر السابق",
+      "emptyTitle": "لا توجد شهور لتحليلها بعد",
+      "emptyBody": "لم تُسجَّل أي فواتير ضمن الشهور المشمولة، أو أن البيانات المحفوظة أقدم من هذه الفترة."
     },
     "items": {
       "title": "الأصناف والخدمات الأكثر مبيعًا",
@@ -1092,6 +1447,193 @@
     "states": {
       "noSales": "لم تُسجَّل أي فواتير في الفترة المختارة",
       "noResults": "لا توجد فواتير مطابقة لعوامل التصفية الحالية"
+    }
+  },
+  "employees": {
+    "subtitle": "الحضور والانصراف وبيانات الموظفين",
+    "search": {
+      "label": "بحث عن موظف",
+      "placeholder": "ابحث بالاسم أو التليفون",
+      "clear": "مسح البحث",
+      "hint": "البحث يحدث تلقائيًا أثناء الكتابة"
+    },
+    "period": {
+      "label": "الفترة"
+    },
+    "filters": {
+      "reset": "مسح الفلاتر",
+      "includeInactive": "إظهار غير النشطين"
+    },
+    "states": {
+      "noData": "لا يوجد موظفون مسجلون بعد",
+      "noResults": "لا يوجد موظفون مطابقون للبحث",
+      "count": "{{count}} موظف"
+    },
+    "type": {
+      "CASHIER": "كاشير",
+      "WASH_WORKER": "عامل مغسلة",
+      "CASHIERHint": "يسجّل الدخول ويفتح الورديات، ويُقاس بأوردياته وإيراده من الكافيه",
+      "WASH_WORKERHint": "لا يسجّل الدخول؛ يُسجَّل حضوره بواسطة الكاشير الذي يعمل الوردية"
+    },
+    "status": {
+      "ACTIVE": "نشط",
+      "INACTIVE": "غير نشط",
+      "saved": {
+        "ACTIVE": "تم تنشيط الموظف",
+        "INACTIVE": "تم إيقاف الموظف"
+      },
+      "deleted": "تم حذف الموظف «{{name}}» نهائيًا"
+    },
+    "state": {
+      "PRESENT": "حاضر",
+      "ABSENT": "غياب",
+      "LEAVE": "إجازة"
+    },
+    "duration": {
+      "minutes": "{{minutes}}د",
+      "hoursMinutes": "{{hours}}س {{minutes}}د"
+    },
+    "columns": {
+      "employee": "الموظف",
+      "attendance": "أيام الحضور",
+      "today": "حضور اليوم",
+      "hours": "ساعات العمل",
+      "absence": "أيام الغياب",
+      "leave": "أيام الإجازة",
+      "performance": "الأداء",
+      "role": "الدور",
+      "phone": "التليفون",
+      "status": "الحالة"
+    },
+    "table": {
+      "caption": "جدول الموظفين"
+    },
+    "performance": {
+      "shifts": "{{count}} وردية",
+      "departmentRevenue": "إيراد القسم — لا يُنسب لفرد"
+    },
+    "actions": {
+      "checkIn": "حضور",
+      "checkOut": "انصراف",
+      "absent": "غياب",
+      "leave": "إجازة",
+      "checkInFor": "تسجيل حضور {{name}}",
+      "checkOutFor": "تسجيل انصراف {{name}}",
+      "absentFor": "تسجيل غياب {{name}}",
+      "leaveFor": "تسجيل إجازة {{name}}",
+      "details": "تفاصيل {{name}}",
+      "edit": "تعديل {{name}}",
+      "deactivate": "إيقاف {{name}}",
+      "activate": "تنشيط {{name}}",
+      "delete": "حذف {{name}} نهائيًا"
+    },
+    "attendance": {
+      "saved": "تم تسجيل الحضور بنجاح"
+    },
+    "override": {
+      "title": "تعديل حضور الموظف",
+      "actionLabel": "تعديل",
+      "action": "تعديل حضور {{name}} ليوم {{date}}",
+      "adminNote": "تعديل إداري على سجل الحضور — لا يشمل التقريب التلقائي بخلاف التسجيل العادي",
+      "current": "الحالي",
+      "new": "الجديد",
+      "checkIn": "الحضور",
+      "checkOut": "الانصراف",
+      "notCheckedIn": "لم يُسجَّل حضور",
+      "openDay": "لم يُسجَّل انصراف",
+      "reason": "سبب التعديل",
+      "reasonHint": "اختياري — يُحفظ مع سجل التعديل",
+      "unchanged": "لم يتغيّر الوقت",
+      "invalidPair": "وقت الانصراف يجب أن يكون بعد وقت الحضور",
+      "required": "حدد وقتًا واحدًا على الأقل",
+      "confirm": "تأكيد التعديل",
+      "saved": "تم تعديل الحضور"
+    },
+    "mine": {
+      "title": "حضوري اليوم",
+      "notRecorded": "لم يتم تسجيل حضورك اليوم",
+      "noEmployee": "لا يوجد سجل موظف مرتبط بهذا الحساب",
+      "checkedInAt": "حضور",
+      "checkedOutAt": "انصراف",
+      "saved": "تم تسجيل الحضور",
+      "duration": "ساعات العمل"
+    },
+    "form": {
+      "createTitle": "إضافة موظف",
+      "editTitle": "تعديل بيانات الموظف",
+      "type": "نوع الموظف",
+      "name": "الاسم",
+      "phone": "التليفون",
+      "baseSalary": "الراتب الأساسي الشهري",
+      "salaryHint": "بالجنيه المصري، دون كسور",
+      "nameRequired": "اسم الموظف مطلوب",
+      "notes": "ملاحظات",
+      "saved": "تم حفظ بيانات الموظف",
+      "noLoginHint": "عامل المغسلة لا يسجّل الدخول، لذلك لا يوجد له حساب",
+      "role": "الدور",
+      "roleFirstHint": "اختر الدور أولًا؛ نوع الموظف يظهر لكاشير فقط",
+      "password": "كلمة المرور",
+      "passwordHint": "تُستخدم لتسجيل دخول الموظف، ٦ حروف على الأقل"
+    },
+    "kpi": {
+      "loading": "جارٍ تحميل المؤشرات",
+      "none": "لا يوجد",
+      "total": "إجمالي الموظفين",
+      "totalHint": "{{cashiers}} كاشير · {{wash}} عامل مغسلة",
+      "topAttendance": "الأكثر حضورًا",
+      "topHours": "أعلى ساعات حضور",
+      "hoursValue": "{{hours}}س {{minutes}}د",
+      "topShifts": "أكثر ورديات",
+      "topCafeRevenue": "أعلى إيراد كافيه"
+    },
+    "advance": {
+      "reversed": "معكوس"
+    },
+    "payroll": {
+      "DRAFT": "مسودة",
+      "FINALIZED": "معتمد"
+    },
+    "drawer": {
+      "attendance": "أيام الحضور",
+      "hours": "ساعات العمل",
+      "absence": "أيام الغياب",
+      "leave": "أيام الإجازة",
+      "salary": "الراتب",
+      "baseSalary": "الراتب الأساسي",
+      "attendanceTimeline": "سجل الحضور",
+      "noAttendance": "لا يوجد سجل حضور في هذه الفترة",
+      "recordedBy": "سجّله {{name}}",
+      "openDay": "يوم مفتوح",
+      "advances": "السلف",
+      "noAdvances": "لا توجد سلف مسجلة",
+      "payroll": "الرواتب",
+      "noPayroll": "لا توجد فترات رواتب",
+      "deductions": "الخصومات",
+      "netSalary": "صافي الراتب",
+      "performance": "الأداء",
+      "shifts": "الأورديات",
+      "cafeRevenue": "إيراد الكافيه",
+      "departmentRevenueNote": "إيراد المغسلة يُحتسب على القسم ككل، ولا يُنسب لعامل بعينه"
+    },
+    "confirm": {
+      "title": "تأكيد الإجراء",
+      "checkIn": "هل تريد تسجيل حضور {{name}}؟",
+      "checkOut": "هل تريد تسجيل انصراف {{name}}؟",
+      "absent": "هل تريد تسجيل غياب {{name}} لهذا اليوم؟",
+      "leave": "هل تريد تسجيل إجازة {{name}} لهذا اليوم؟",
+      "absentDetail": "سيُسجَّل هذا اليوم غيابًا، ولا يمكن تغييره إلى حضور أو انصراف بعد التأكيد.",
+      "leaveDetail": "سيُسجَّل هذا اليوم إجازة، ولا يمكن تغييره إلى حضور أو انصراف بعد التأكيد.",
+      "roundingHint": "يُقرَّب وقت الحضور للخلف ووقت الانصراف للأمام، بما لا يتجاوز ١٠ دقائق.",
+      "deactivate": "هل تريد إيقاف {{name}}؟",
+      "deactivateDetail": "لن يستطيع {{name}} تسجيل الدخول أو تسجيل الحضور بعد الآن. لن يتم حذف بياناته أو سجلاته السابقة.",
+      "activate": "هل تريد تنشيط {{name}}؟",
+      "activateDetail": "سيستعيد {{name}} إمكانية تسجيل الدخول وتسجيل الحضور.",
+      "myCheckIn": "هل تريد تسجيل حضورك الآن؟",
+      "myCheckOut": "هل تريد تسجيل انصرافك الآن؟",
+      "deleteTitle": "حذف الموظف",
+      "deleteBody": "هل أنت متأكد من حذف «{{name}}» نهائيًا؟",
+      "deleteDetail": "لا يمكن التراجع عن هذا الإجراء. لن يبقى «{{name}}» متاحًا كموظف نشط، وسيُحذف حساب تسجيل الدخول الخاص به إن لم يكن مرتبطًا بأي سجل.",
+      "deleteConfirm": "حذف نهائي"
     }
   }
 }

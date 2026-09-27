@@ -29,7 +29,7 @@
 //! correct instant but an ambiguous *string*. Migration 19 rewrites those
 //! values to the explicit `...Z` form without changing any instant.
 
-use chrono::{DateTime, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 
 /// Station's business timezone. The single source of truth for "what day and
@@ -105,6 +105,24 @@ pub fn format_business_datetime(instant: DateTime<Utc>) -> String {
         .to_string()
 }
 
+/// First business date of the month `months_back` months before today.
+///
+/// Used by reports that state their OWN period instead of being narrowed by a
+/// caller filter — the monthly sales comparison, which is a calendar series and
+/// must not follow the Sales page's date picker. The arithmetic is pure
+/// calendar work on a `NaiveDate`, so it never touches an instant and never
+/// drifts across a DST boundary.
+pub fn business_date_months_ago(months_back: i64) -> String {
+    let today = now_utc().with_timezone(&BUSINESS_TZ).date_naive();
+    // `month0` makes the arithmetic a plain linear index over months, so
+    // December - 1 and January + 1 both cross the year boundary correctly.
+    let index = today.year() as i64 * 12 + today.month0() as i64 - months_back;
+    let (year, month0) = (index.div_euclid(12), index.rem_euclid(12));
+    NaiveDate::from_ymd_opt(year as i32, month0 as u32 + 1, 1)
+        .map(|date| date.to_string())
+        .unwrap_or_default()
+}
+
 /// Format an already-stored timestamp for display/print, in business time.
 pub fn to_business_datetime(value: &str) -> String {
     match parse_timestamp(value) {
@@ -150,10 +168,7 @@ pub fn business_day_range(day: &str) -> Option<BusinessDayRange> {
     let start = business_day_start(day)?;
     // Add one *calendar* day in the business timezone, not 24 hours, so a DST
     // transition inside the day still yields the correct next local midnight.
-    let next_day = start
-        .with_timezone(&BUSINESS_TZ)
-        .date_naive()
-        .succ_opt()?;
+    let next_day = start.with_timezone(&BUSINESS_TZ).date_naive().succ_opt()?;
     Some(BusinessDayRange {
         start_inclusive: to_db_timestamp(start),
         // Reuse the same total resolution, so a day whose midnight is skipped
@@ -217,6 +232,52 @@ mod tests {
     }
 
     #[test]
+    fn a_month_offset_lands_on_the_first_day_of_that_month() {
+        // Offset zero is the month the café is in right now, and every offset is
+        // the FIRST day of a month, so a monthly report can bound itself with it.
+        let current = business_date_months_ago(0);
+        assert!(current.ends_with("-01"));
+        assert_eq!(
+            current[..7],
+            today_business_date()[..7],
+            "offset zero must be the current business month"
+        );
+
+        // Consecutive offsets step back exactly one calendar month, in order.
+        let mut previous = current;
+        for back in 1..=14 {
+            let value = business_date_months_ago(back);
+            assert!(
+                value.ends_with("-01"),
+                "{value} is not a first day of a month"
+            );
+            assert!(
+                value < previous,
+                "offset {back} ({value}) did not step back from {previous}"
+            );
+            previous = value;
+        }
+    }
+
+    #[test]
+    fn a_month_offset_ignores_the_day_of_the_month() {
+        // Two offsets one year apart land in the same month NUMBER of the
+        // neighbouring years — the year boundary is carried, not dropped.
+        let this_month = business_date_months_ago(0);
+        let last_year = business_date_months_ago(12);
+        assert_eq!(this_month[5..7], last_year[5..7]);
+        assert_ne!(this_month[..4], last_year[..4]);
+    }
+
+    #[test]
+    fn a_month_offset_is_a_business_date_not_an_instant() {
+        let value = business_date_months_ago(3);
+        assert_eq!(value.len(), 10);
+        assert!(!value.contains('T') && !value.ends_with('Z'));
+        assert!(parse_timestamp(&format!("{value} 12:00:00")).is_some());
+    }
+
+    #[test]
     fn canonical_storage_is_explicit_utc() {
         assert_eq!(
             to_db_timestamp(utc(2026, 9, 25, 14, 30, 0)),
@@ -231,7 +292,10 @@ mod tests {
         assert_eq!(legacy, parse_timestamp("2026-09-25 14:30:00Z").unwrap());
         assert_eq!(legacy, parse_timestamp("2026-09-25T14:30:00Z").unwrap());
         // An explicit offset is honored, not assumed to be UTC.
-        assert_eq!(legacy, parse_timestamp("2026-09-25T17:30:00+03:00").unwrap());
+        assert_eq!(
+            legacy,
+            parse_timestamp("2026-09-25T17:30:00+03:00").unwrap()
+        );
         assert!(parse_timestamp("").is_none());
         assert!(parse_timestamp("not a date").is_none());
     }
@@ -364,8 +428,10 @@ mod tests {
 
     #[test]
     fn seconds_are_preserved_for_ordering() {
-        assert!(to_db_timestamp(utc(2026, 9, 25, 14, 30, 1))
-            < to_db_timestamp(utc(2026, 9, 25, 14, 30, 2)));
+        assert!(
+            to_db_timestamp(utc(2026, 9, 25, 14, 30, 1))
+                < to_db_timestamp(utc(2026, 9, 25, 14, 30, 2))
+        );
     }
 
     #[test]
