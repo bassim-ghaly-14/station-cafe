@@ -25,132 +25,70 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/states'
-import {
-  Badge,
-  Button,
-  Drawer,
-  MoneyDisplay,
-  ProgressBar,
-  Skeleton,
-  TableSkeleton,
-} from '@/components/ui'
+import { Button, Drawer, ProgressBar, Skeleton, TableSkeleton } from '@/components/ui'
 import { DisplayDate, DisplayDateTime } from '@/components/ui/display-datetime'
-import { CalendarClock, Car, Coffee, Droplets, Receipt, ShoppingBag } from '@/components/ui/icon'
-import type { LucideIcon } from '@/components/ui/icon'
 import { CustomerAvatar } from '@/lib/customer-visual'
-import { cn } from '@/lib/utils'
 import { useErrText } from '@/lib/err'
 import { formatDate } from '@/lib/date'
-import { invoiceBadgeVariant } from '@/lib/status-badge'
 import { customersApi } from '@/services/customersApi'
 import type { CustomerDetails, CustomerPeriod } from '@/services/customersApi'
 import { CustomerVehicleBadge } from './CustomerVehicleBadge'
-
-/** A compact premium stat block: a quiet label over a strong figure. */
-function StatBlock({
-  label,
-  children,
-  tone = 'default',
-  className,
-}: {
-  readonly label: string
-  readonly children: React.ReactNode
-  readonly tone?: 'default' | 'warning'
-  readonly className?: string
-}) {
-  return (
-    <div
-      className={cn(
-        'flex min-w-0 flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2.5',
-        className,
-      )}
-    >
-      <span className="truncate text-caption">{label}</span>
-      <span
-        className={cn(
-          'truncate text-body font-bold tabular-nums',
-          tone === 'warning' ? 'text-destructive' : 'text-foreground-strong',
-        )}
-      >
-        {children}
-      </span>
-    </div>
-  )
-}
+import {
+  CustomerActivitySection,
+  CustomerBreakdownSections,
+  CustomerProfileSection,
+  CustomerStatsSection,
+} from './CustomerDetailsSections'
 
 /**
- * A titled band inside the drawer. Hierarchy comes from the label, the
- * whitespace and a hairline — there is deliberately no box drawn around it.
- */
-function Section({
-  title,
-  children,
-}: Readonly<{ readonly title: string; children: React.ReactNode }>) {
-  return (
-    <section className="mt-5 border-t border-border-subtle pt-4">
-      <h3 className="mb-2.5 text-caption font-bold text-foreground-muted">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-/**
- * A row's share of the larger of its two real values, as 0–1.
+ * The drawer's body: the four genuinely different situations it can be in.
  *
- * This is a comparison between two figures the backend actually sent, not a
- * percentage of an invented total, so it can never overstate or double-count
- * anything. A zero axis yields 0 for both rows (two empty bars) instead of
- * dividing by zero.
+ *   error          — the read failed; offer the retry, show nothing partial.
+ *   loading        — first load; reserve the geometry of the real record.
+ *   record         — the payload, with a progress bar while a background
+ *                    re-read (a changed period) is still in flight.
+ *   nothing yet    — no record and no read in flight; render nothing.
+ *
+ * The ordering matters: an error outranks a still-pending re-read, because a
+ * failed request is the only state the reader must act on.
  */
-function shareOf(value: number, other: number): number {
-  const max = Math.max(value, other)
-  if (max <= 0) return 0
-  return Math.min(1, Math.max(0, value / max))
-}
-
-/**
- * One row of a proportional breakdown: label, a bar whose width is the row's
- * real share of the larger value, and the real figures beside it. The bar is
- * decorative; the numbers are the content, so nothing here depends on
- * perceiving a length.
- */
-function BreakdownRow({
-  icon: Icon,
-  label,
-  orders,
-  amount,
-  share,
+function CustomerDetailsBody({
+  details,
+  loading,
+  error,
+  onRetry,
 }: {
-  readonly icon: LucideIcon
-  readonly label: string
-  readonly orders: number
-  /** Department rows carry a value; order-type rows do not. */
-  readonly amount?: number
-  /** 0–1, derived from the real values by the caller. */
-  readonly share: number
+  readonly details: CustomerDetails | null
+  readonly loading: boolean
+  readonly error: string | null
+  readonly onRetry: () => void
 }) {
   const { t } = useTranslation()
+
+  if (error) {
+    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  }
+
+  if (loading && !details) {
+    return <CustomerDetailsSkeleton />
+  }
+
+  if (!details) {
+    return null
+  }
+
   return (
-    <li className="flex flex-col gap-1.5 py-2">
-      <div className="flex items-center gap-2">
-        <Icon size={15} aria-hidden className="shrink-0 text-foreground-subtle" />
-        <span className="min-w-0 flex-1 truncate text-body font-bold">{label}</span>
-        <span className="shrink-0 text-caption tabular-nums">
-          {t('customers.breakdown.ordersCount', { count: orders })}
-        </span>
-      </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-accent" aria-hidden="true">
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
-          style={{ width: `${Math.round(share * 100)}%` }}
-        />
-      </div>
-      {typeof amount === 'number' ? (
-        <span className="text-caption tabular-nums">
-          <MoneyDisplay amount={amount} variant="auto" />
-        </span>
-      ) : null}
-    </li>
+    <div className="flex flex-col gap-4">
+      {loading ? <ProgressBar label={t('app.loading')} /> : null}
+
+      <CustomerProfileSection details={details} />
+
+      <CustomerStatsSection details={details} />
+
+      <CustomerBreakdownSections details={details} />
+
+      <CustomerActivitySection details={details} />
+    </div>
   )
 }
 
@@ -222,18 +160,6 @@ export function CustomerDetailsDrawer({
 
   const close = useCallback(() => onClose(), [onClose])
 
-  // Bar widths are the row's share of the LARGER of its two real values — a
-  // ratio of figures that both exist, never a percentage of a total the
-  // backend did not send. An all-zero axis renders two empty bars rather than
-  // dividing by zero.
-  const cafeShare = shareOf(details?.stats.cafe_orders ?? 0, details?.stats.wash_orders ?? 0)
-  const washShare = shareOf(details?.stats.wash_orders ?? 0, details?.stats.cafe_orders ?? 0)
-  const takeawayShare = shareOf(
-    details?.stats.takeaway_orders ?? 0,
-    details?.stats.table_orders ?? 0,
-  )
-  const tableShare = shareOf(details?.stats.table_orders ?? 0, details?.stats.takeaway_orders ?? 0)
-
   return (
     <Drawer
       open={open}
@@ -261,218 +187,7 @@ export function CustomerDetailsDrawer({
         </Button>
       }
     >
-      {/* Four genuinely different situations: loading, failure, an empty
-          history, and the record itself. */}
-      {error ? (
-        <ErrorState message={error} onRetry={retry} retryLabel={t('app.retry')} />
-      ) : loading && !details ? (
-        <CustomerDetailsSkeleton />
-      ) : (
-        details && (
-          <div className="flex flex-col gap-4">
-            {loading ? <ProgressBar label={t('app.loading')} /> : null}
-
-            {/* Identity — the customer's own record, not period data. The header
-              already carries name/contact/vehicle, so this section holds only
-              what does not fit there: the notes and the plates themselves. */}
-            <Section title={t('customers.drawer.profile')}>
-              {details.customer.notes ? (
-                <Badge variant="neutral" size="sm">
-                  {details.customer.notes}
-                </Badge>
-              ) : null}
-              {details.cars.length > 0 ? (
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {details.cars.map((car) => (
-                    <li
-                      key={car.id}
-                      className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-caption"
-                    >
-                      <Car size={12} aria-hidden className="text-foreground-subtle" />
-                      <span dir="ltr" className="font-bold">
-                        {car.plate_no}
-                      </span>
-                      {car.car_model ? (
-                        <span className="text-foreground-subtle">{car.car_model}</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-caption text-foreground-subtle">
-                  {t('customers.drawer.noCars')}
-                </p>
-              )}
-            </Section>
-
-            {/* Performance — the period's headline figures, as compact blocks.
-              Every value is the backend's aggregate; nothing is derived here. */}
-            <Section title={t('customers.drawer.performance')}>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <StatBlock label={t('customers.stats.orders')}>
-                  <span className="tabular-nums">{details.stats.invoices_count}</span>
-                </StatBlock>
-                <StatBlock label={t('customers.stats.paid')}>
-                  <MoneyDisplay amount={details.stats.paid} variant="auto" />
-                </StatBlock>
-                <StatBlock label={t('customers.stats.average')}>
-                  <MoneyDisplay amount={details.stats.average_order} variant="auto" />
-                </StatBlock>
-                {/* The credit account is a standing balance, not a period
-                  movement — it is coloured as one only when money is owed. */}
-                <StatBlock
-                  label={t('customers.stats.credit')}
-                  tone={details.stats.credit_outstanding > 0 ? 'warning' : 'default'}
-                >
-                  <MoneyDisplay amount={details.stats.credit_outstanding} variant="auto" />
-                </StatBlock>
-                <StatBlock label={t('customers.stats.discounts')}>
-                  <MoneyDisplay amount={details.stats.discounts} variant="auto" />
-                </StatBlock>
-                <StatBlock label={t('customers.stats.serviceCharges')}>
-                  <MoneyDisplay amount={details.stats.service_charges} variant="auto" />
-                </StatBlock>
-              </div>
-
-              {/* The remaining aggregates stay as a quiet two-column ledger
-                under the blocks, so the panel keeps every figure the backend
-                sent without turning the top of it into a wall of tiles. */}
-              <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                <LedgerRow label={t('customers.stats.total')}>
-                  <MoneyDisplay amount={details.stats.total} variant="auto" />
-                </LedgerRow>
-                {details.stats.credit_original > 0 ? (
-                  <>
-                    <LedgerRow label={t('customers.stats.creditOriginal')}>
-                      <MoneyDisplay amount={details.stats.credit_original} variant="auto" />
-                    </LedgerRow>
-                    <LedgerRow label={t('customers.stats.creditPaid')}>
-                      <MoneyDisplay amount={details.stats.credit_paid} variant="auto" />
-                    </LedgerRow>
-                  </>
-                ) : null}
-                <LedgerRow label={t('customers.stats.firstOrder')}>
-                  {details.stats.first_at ? (
-                    <DisplayDate value={details.stats.first_at} />
-                  ) : (
-                    <span className="text-foreground-faint">—</span>
-                  )}
-                </LedgerRow>
-                <LedgerRow label={t('customers.stats.lastOrder')}>
-                  {details.stats.last_at ? (
-                    <DisplayDate value={details.stats.last_at} />
-                  ) : (
-                    <span className="text-foreground-faint">—</span>
-                  )}
-                </LedgerRow>
-              </dl>
-            </Section>
-
-            {/* Axis 1 — business (كافيه / مغسلة), from the invoice snapshot
-              totals. Proportional bars against the larger of the two. */}
-            <Section title={t('customers.drawer.business')}>
-              <ul className="divide-y divide-border-subtle">
-                <BreakdownRow
-                  icon={Coffee}
-                  label={t('customers.breakdown.cafe')}
-                  orders={details.stats.cafe_orders}
-                  amount={details.stats.cafe_total}
-                  share={cafeShare}
-                />
-                <BreakdownRow
-                  icon={Droplets}
-                  label={t('customers.breakdown.wash')}
-                  orders={details.stats.wash_orders}
-                  amount={details.stats.wash_total}
-                  share={washShare}
-                />
-              </ul>
-              <p className="mt-1 text-caption text-foreground-subtle">
-                {t('customers.drawer.businessHint')}
-              </p>
-            </Section>
-
-            {/* Axis 2 — order type (طاولة / تيك اواي), from the invoice's own
-              `order_type`. Deliberately a SEPARATE section with its own hint,
-              so nobody reads a hybrid order as two orders or adds the two axes
-              together. */}
-            <Section title={t('customers.drawer.orderType')}>
-              <ul className="divide-y divide-border-subtle">
-                <BreakdownRow
-                  icon={ShoppingBag}
-                  label={t('customers.breakdown.takeaway')}
-                  orders={details.stats.takeaway_orders}
-                  share={takeawayShare}
-                />
-                <BreakdownRow
-                  icon={Receipt}
-                  label={t('customers.breakdown.table')}
-                  orders={details.stats.table_orders}
-                  share={tableShare}
-                />
-              </ul>
-              <p className="mt-1 text-caption text-foreground-subtle">
-                {t('customers.drawer.orderTypeHint')}
-              </p>
-            </Section>
-
-            {/* Recent activity — a compact timeline of the real invoices. The
-              bullet is the timeline spine; everything else is type and
-              whitespace, so no row becomes its own card. */}
-            <Section title={t('customers.drawer.history')}>
-              {details.activity.length === 0 ? (
-                <p className="text-caption text-foreground-subtle">
-                  {t('customers.drawer.noActivity')}
-                </p>
-              ) : (
-                <ul>
-                  {details.activity.map((row) => (
-                    <li
-                      key={row.invoice_no}
-                      className="relative flex items-start gap-3 border-b border-border-subtle py-2.5 last:border-0"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="mt-1.5 size-2 shrink-0 rounded-full bg-border-accent ring-4 ring-surface-dialog"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="flex items-center gap-1.5 text-body font-bold tabular-nums">
-                            <CalendarClock
-                              size={14}
-                              aria-hidden
-                              className="text-foreground-subtle"
-                            />
-                            <span dir="ltr">#{row.invoice_no}</span>
-                          </span>
-                          <Badge variant="neutral" size="sm">
-                            {row.order_type === 'TAKEAWAY'
-                              ? t('customers.breakdown.takeaway')
-                              : (row.table_label ?? t('customers.breakdown.table'))}
-                          </Badge>
-                          <Badge variant={invoiceBadgeVariant(row.status)} size="sm" dot>
-                            {t(`invoice.status.${row.status}`)}
-                          </Badge>
-                        </span>
-                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-foreground-subtle">
-                          <DisplayDateTime value={row.created_at} />
-                          <span className="tabular-nums">
-                            {t('customers.drawer.paid')}{' '}
-                            <MoneyDisplay amount={row.paid_amount} variant="auto" />
-                          </span>
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-body font-bold tabular-nums">
-                        <MoneyDisplay amount={row.total} />
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-          </div>
-        )
-      )}
+      <CustomerDetailsBody details={details} loading={loading} error={error} onRetry={retry} />
     </Drawer>
   )
 }
@@ -493,22 +208,6 @@ function CustomerDetailsSkeleton() {
         <Skeleton variant="text" className="h-4 w-1/2" accessibilityLabel="" />
         <Skeleton variant="text" className="h-4 w-2/3" accessibilityLabel="" />
       </div>
-    </div>
-  )
-}
-
-/**
- * A one-line label/value pair for the quieter figures under the KPI blocks.
- * A `<dl>` row, so the pairing is announced as such.
- */
-function LedgerRow({
-  label,
-  children,
-}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5 last:border-0">
-      <dt className="min-w-0 truncate text-caption">{label}</dt>
-      <dd className="shrink-0 text-body font-bold tabular-nums">{children}</dd>
     </div>
   )
 }
