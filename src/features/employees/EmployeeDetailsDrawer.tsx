@@ -163,237 +163,238 @@ export function EmployeeDetailsDrawer({
         {error && !details ? (
           <ErrorState message={error} onRetry={load} retryLabel={t('app.retry')} />
         ) : loading && !details ? (
-          <div aria-busy="true" className="flex flex-col gap-4">
-            <Skeleton variant="rect" className="h-16 w-full" accessibilityLabel="" />
-            <Skeleton variant="text" className="h-4 w-1/2" accessibilityLabel="" />
-            <Skeleton variant="rect" className="h-32 w-full" accessibilityLabel="" />
-          </div>
-        ) : !details || !employee ? null : (
-          <div className={loading ? 'opacity-70' : undefined}>
-            {/* Profile header: the existing employee avatar, fed the real role. */}
-            <div className="flex min-w-0 items-start gap-3.5">
-              <EmployeeAvatar role={role} size="lg" className="mt-0.5" />
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-heading">{employee.name}</h2>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  {/* The REAL role, never the employee type. */}
-                  <Badge role={role} size="sm" dot>
-                    {roleLabel(t, role ?? 'STAFF')}
-                  </Badge>
-                  <Badge
-                    variant={employee.status === 'ACTIVE' ? 'success' : 'neutral'}
-                    size="sm"
-                    dot
-                  >
-                    {t(`employees.status.${employee.status}`)}
-                  </Badge>
-                  {employee.phone ? (
-                    <span dir="ltr" className="text-caption tabular-nums">
-                      {employee.phone}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1.5 text-caption text-foreground-subtle">
-                  {t(roleHintKey(role ?? 'STAFF'))}
-                </p>
-              </div>
-            </div>
-
-            {/* The period summary — the same figures the table row showed. */}
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <StatBlock label={t('employees.drawer.attendance')}>
-                {row?.attendance_days ?? 0}
-              </StatBlock>
-              <StatBlock label={t('employees.drawer.hours')}>
-                {formatWorkedDuration(row?.worked_minutes ?? 0, t)}
-              </StatBlock>
-              <StatBlock label={t('employees.drawer.absence')}>{row?.absence_days ?? 0}</StatBlock>
-              <StatBlock label={t('employees.drawer.leave')}>{row?.leave_days ?? 0}</StatBlock>
-            </div>
-
-            <Section title={t('employees.drawer.salary')}>
-              <dl>
-                <LedgerRow label={t('employees.drawer.baseSalary')}>
-                  <MoneyDisplay amount={employee.base_salary} variant="auto" />
-                </LedgerRow>
-              </dl>
-            </Section>
-
-            <Section title={t('employees.drawer.attendanceTimeline')}>
-              {details.attendance.length === 0 ? (
-                <p className="text-caption text-foreground-subtle">
-                  {t('employees.drawer.noAttendance')}
-                </p>
-              ) : (
-                <ul className="flex flex-col">
-                  {details.attendance.map((day) => (
-                    <li
-                      key={day.id}
-                      className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+          <EmployeeDetailsSkeleton />
+        ) : (
+          details &&
+          employee && (
+            <div className={loading ? 'opacity-70' : undefined}>
+              {/* Profile header: the existing employee avatar, fed the real role. */}
+              <div className="flex min-w-0 items-start gap-3.5">
+                <EmployeeAvatar role={role} size="lg" className="mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-heading">{employee.name}</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    {/* The REAL role, never the employee type. */}
+                    <Badge role={role} size="sm" dot>
+                      {roleLabel(t, role ?? 'STAFF')}
+                    </Badge>
+                    <Badge
+                      variant={employee.status === 'ACTIVE' ? 'success' : 'neutral'}
+                      size="sm"
+                      dot
                     >
-                      <div className="flex min-w-0 flex-col">
-                        <DisplayDate value={day.business_date} />
-                        {/* The recorder's name is the point for a wash worker:
+                      {t(`employees.status.${employee.status}`)}
+                    </Badge>
+                    {employee.phone ? (
+                      <span dir="ltr" className="text-caption tabular-nums">
+                        {employee.phone}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1.5 text-caption text-foreground-subtle">
+                    {t(roleHintKey(role ?? 'STAFF'))}
+                  </p>
+                </div>
+              </div>
+
+              {/* The period summary — the same figures the table row showed. */}
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <StatBlock label={t('employees.drawer.attendance')}>
+                  {row?.attendance_days ?? 0}
+                </StatBlock>
+                <StatBlock label={t('employees.drawer.hours')}>
+                  {formatWorkedDuration(row?.worked_minutes ?? 0, t)}
+                </StatBlock>
+                <StatBlock label={t('employees.drawer.absence')}>
+                  {row?.absence_days ?? 0}
+                </StatBlock>
+                <StatBlock label={t('employees.drawer.leave')}>{row?.leave_days ?? 0}</StatBlock>
+              </div>
+
+              <Section title={t('employees.drawer.salary')}>
+                <dl>
+                  <LedgerRow label={t('employees.drawer.baseSalary')}>
+                    <MoneyDisplay amount={employee.base_salary} variant="auto" />
+                  </LedgerRow>
+                </dl>
+              </Section>
+
+              <Section title={t('employees.drawer.attendanceTimeline')}>
+                {details.attendance.length === 0 ? (
+                  <p className="text-caption text-foreground-subtle">
+                    {t('employees.drawer.noAttendance')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col">
+                    {details.attendance.map((day) => (
+                      <li
+                        key={day.id}
+                        className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+                      >
+                        <div className="flex min-w-0 flex-col">
+                          <DisplayDate value={day.business_date} />
+                          {/* The recorder's name is the point for a wash worker:
                           they have no login, so this is the only trace of who
                           marked them in. */}
-                        <span className="text-caption text-foreground-subtle">
-                          {t('employees.drawer.recordedBy', { name: day.recorded_by_name })}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        {day.state !== 'PRESENT' ? (
-                          <Badge variant="warning" size="sm" dot>
-                            {t(`employees.state.${day.state}`)}
-                          </Badge>
-                        ) : (
-                          <>
-                            <span className="flex items-center gap-1 text-caption tabular-nums text-foreground-muted">
-                              <DisplayTime value={day.check_in_effective_at} />
-                              <ArrowLeft aria-hidden="true" className="size-3.5 shrink-0" />
-                              {day.check_out_effective_at ? (
-                                <DisplayTime value={day.check_out_effective_at} />
-                              ) : (
-                                <span className="text-foreground-faint">—</span>
-                              )}
-                            </span>
-                            <span className="text-body font-bold tabular-nums text-foreground-strong">
-                              {day.worked_minutes !== null
-                                ? formatWorkedDuration(day.worked_minutes, t)
-                                : t('employees.drawer.openDay')}
-                            </span>
-                          </>
-                        )}
-                        {/* The administrative correction, on the day it applies to.
+                          <span className="text-caption text-foreground-subtle">
+                            {t('employees.drawer.recordedBy', { name: day.recorded_by_name })}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          {day.state !== 'PRESENT' ? (
+                            <Badge variant="warning" size="sm" dot>
+                              {t(`employees.state.${day.state}`)}
+                            </Badge>
+                          ) : (
+                            <>
+                              <span className="flex items-center gap-1 text-caption tabular-nums text-foreground-muted">
+                                <DisplayTime value={day.check_in_effective_at} />
+                                <ArrowLeft aria-hidden="true" className="size-3.5 shrink-0" />
+                                {day.check_out_effective_at ? (
+                                  <DisplayTime value={day.check_out_effective_at} />
+                                ) : (
+                                  <span className="text-foreground-faint">—</span>
+                                )}
+                              </span>
+                              <span className="text-body font-bold tabular-nums text-foreground-strong">
+                                {day.worked_minutes !== null
+                                  ? formatWorkedDuration(day.worked_minutes, t)
+                                  : t('employees.drawer.openDay')}
+                              </span>
+                            </>
+                          )}
+                          {/* The administrative correction, on the day it applies to.
                           Only a PRESENT day has a punch pair to correct, so an
                           absence or a leave never offers it. */}
-                        {canOverride && day.state === 'PRESENT' ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => setOverriding(day)}
-                            aria-label={t('employees.override.action', {
-                              name: employee.name,
-                              date: day.business_date,
-                            })}
-                            title={t('employees.override.title')}
-                          >
-                            <CalendarClock size={16} aria-hidden />
-                            {t('employees.override.actionLabel')}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
+                          {canOverride && day.state === 'PRESENT' ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => setOverriding(day)}
+                              aria-label={t('employees.override.action', {
+                                name: employee.name,
+                                date: day.business_date,
+                              })}
+                              title={t('employees.override.title')}
+                            >
+                              <CalendarClock size={16} aria-hidden />
+                              {t('employees.override.actionLabel')}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
 
-            <Section title={t('employees.drawer.advances')}>
-              {details.advances.length === 0 ? (
-                <p className="text-caption text-foreground-subtle">
-                  {t('employees.drawer.noAdvances')}
-                </p>
-              ) : (
-                <ul className="flex flex-col">
-                  {details.advances.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
-                    >
-                      <div className="flex min-w-0 flex-col">
-                        <span className="truncate text-body">{item.reason}</span>
-                        <span className="text-caption text-foreground-subtle">
-                          <DisplayDate value={item.advance_date} />
-                          {' · '}
-                          {t('employees.drawer.recordedBy', { name: item.created_by_name })}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {item.status === 'REVERSED' ? (
-                          <Badge variant="neutral" size="sm" dot>
-                            {t('employees.advance.reversed')}
-                          </Badge>
-                        ) : null}
-                        {/* A reversed advance keeps its amount on the record; the
+              <Section title={t('employees.drawer.advances')}>
+                {details.advances.length === 0 ? (
+                  <p className="text-caption text-foreground-subtle">
+                    {t('employees.drawer.noAdvances')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col">
+                    {details.advances.map((item) => (
+                      <li
+                        key={item.id}
+                        className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+                      >
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate text-body">{item.reason}</span>
+                          <span className="text-caption text-foreground-subtle">
+                            <DisplayDate value={item.advance_date} />
+                            {' · '}
+                            {t('employees.drawer.recordedBy', { name: item.created_by_name })}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {item.status === 'REVERSED' ? (
+                            <Badge variant="neutral" size="sm" dot>
+                              {t('employees.advance.reversed')}
+                            </Badge>
+                          ) : null}
+                          {/* A reversed advance keeps its amount on the record; the
                           badge says it no longer counts. */}
-                        <MoneyDisplay amount={item.amount} variant="auto" />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
+                          <MoneyDisplay amount={item.amount} variant="auto" />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
 
-            <Section title={t('employees.drawer.payroll')}>
-              {details.payroll.length === 0 ? (
-                <p className="text-caption text-foreground-subtle">
-                  {t('employees.drawer.noPayroll')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {details.payroll.map((run) => (
-                    <li
-                      key={run.id}
-                      className="flex flex-col gap-1.5 rounded-md border border-border-subtle p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-body font-bold tabular-nums">{run.period}</span>
-                        <Badge
-                          variant={run.status === 'FINALIZED' ? 'success' : 'info'}
-                          size="sm"
-                          dot
-                        >
-                          {t(`employees.payroll.${run.status}`)}
-                        </Badge>
-                      </div>
-                      <dl>
-                        <LedgerRow label={t('employees.drawer.baseSalary')}>
-                          <MoneyDisplay amount={run.base_salary} variant="auto" />
-                        </LedgerRow>
-                        <LedgerRow label={t('employees.drawer.advances')}>
-                          <MoneyDisplay amount={run.advances} variant="auto" />
-                        </LedgerRow>
-                        <LedgerRow label={t('employees.drawer.deductions')}>
-                          <MoneyDisplay amount={run.deductions} variant="auto" />
-                        </LedgerRow>
-                        <LedgerRow label={t('employees.drawer.netSalary')}>
-                          <MoneyDisplay amount={run.net_salary} variant="auto" />
-                        </LedgerRow>
-                      </dl>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
+              <Section title={t('employees.drawer.payroll')}>
+                {details.payroll.length === 0 ? (
+                  <p className="text-caption text-foreground-subtle">
+                    {t('employees.drawer.noPayroll')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {details.payroll.map((run) => (
+                      <li
+                        key={run.id}
+                        className="flex flex-col gap-1.5 rounded-md border border-border-subtle p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-body font-bold tabular-nums">{run.period}</span>
+                          <Badge
+                            variant={run.status === 'FINALIZED' ? 'success' : 'info'}
+                            size="sm"
+                            dot
+                          >
+                            {t(`employees.payroll.${run.status}`)}
+                          </Badge>
+                        </div>
+                        <dl>
+                          <LedgerRow label={t('employees.drawer.baseSalary')}>
+                            <MoneyDisplay amount={run.base_salary} variant="auto" />
+                          </LedgerRow>
+                          <LedgerRow label={t('employees.drawer.advances')}>
+                            <MoneyDisplay amount={run.advances} variant="auto" />
+                          </LedgerRow>
+                          <LedgerRow label={t('employees.drawer.deductions')}>
+                            <MoneyDisplay amount={run.deductions} variant="auto" />
+                          </LedgerRow>
+                          <LedgerRow label={t('employees.drawer.netSalary')}>
+                            <MoneyDisplay amount={run.net_salary} variant="auto" />
+                          </LedgerRow>
+                        </dl>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
 
-            <Section title={t('employees.drawer.performance')}>
-              {isCashier ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <StatBlock label={t('employees.drawer.shifts')}>
-                    <span className="flex items-center gap-1.5">
-                      <Coffee size={14} aria-hidden />
-                      {row?.shifts_count ?? 0}
-                    </span>
-                  </StatBlock>
-                  <StatBlock label={t('employees.drawer.cafeRevenue')}>
-                    <MoneyDisplay amount={row?.cafe_revenue ?? 0} variant="auto" />
-                  </StatBlock>
-                </div>
-              ) : (
-                // No wash revenue here, on purpose: the wash department's money
-                // belongs to the department, so a figure under one worker's name
-                // would be a fabrication. Attendance, salary and advances above
-                // are how a wash worker is actually managed.
-                <p className="flex items-center gap-1.5 text-caption text-foreground-subtle">
-                  <Droplets size={14} aria-hidden />
-                  {t('employees.drawer.departmentRevenueNote')}
-                </p>
-              )}
-            </Section>
+              <Section title={t('employees.drawer.performance')}>
+                {isCashier ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <StatBlock label={t('employees.drawer.shifts')}>
+                      <span className="flex items-center gap-1.5">
+                        <Coffee size={14} aria-hidden />
+                        {row?.shifts_count ?? 0}
+                      </span>
+                    </StatBlock>
+                    <StatBlock label={t('employees.drawer.cafeRevenue')}>
+                      <MoneyDisplay amount={row?.cafe_revenue ?? 0} variant="auto" />
+                    </StatBlock>
+                  </div>
+                ) : (
+                  // No wash revenue here, on purpose: the wash department's money
+                  // belongs to the department, so a figure under one worker's name
+                  // would be a fabrication. Attendance, salary and advances above
+                  // are how a wash worker is actually managed.
+                  <p className="flex items-center gap-1.5 text-caption text-foreground-subtle">
+                    <Droplets size={14} aria-hidden />
+                    {t('employees.drawer.departmentRevenueNote')}
+                  </p>
+                )}
+              </Section>
 
-            {loading ? <ProgressBar label={t('app.loading')} className="mt-4 w-24" /> : null}
-          </div>
+              {loading ? <ProgressBar label={t('app.loading')} className="mt-4 w-24" /> : null}
+            </div>
+          )
         )}
       </Drawer>
       {/* The override is a SIBLING of the drawer, not a child of it: nesting a
@@ -415,5 +416,22 @@ export function EmployeeDetailsDrawer({
         />
       ) : null}
     </>
+  )
+}
+
+/**
+ * The drawer's first-load placeholder.
+ *
+ * It reserves the geometry of the real record — a header block, a line, then the
+ * taller attendance block — so the drawer does not jump when the employee
+ * resolves, and it is announced as busy rather than read as empty content.
+ */
+function EmployeeDetailsSkeleton() {
+  return (
+    <div aria-busy="true" className="flex flex-col gap-4">
+      <Skeleton variant="rect" className="h-16 w-full" accessibilityLabel="" />
+      <Skeleton variant="text" className="h-4 w-1/2" accessibilityLabel="" />
+      <Skeleton variant="rect" className="h-32 w-full" accessibilityLabel="" />
+    </div>
   )
 }

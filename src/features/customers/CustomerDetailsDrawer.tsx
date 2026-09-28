@@ -266,213 +266,234 @@ export function CustomerDetailsDrawer({
       {error ? (
         <ErrorState message={error} onRetry={retry} retryLabel={t('app.retry')} />
       ) : loading && !details ? (
-        <div className="flex flex-col gap-4">
-          <TableSkeleton rows={4} columns={2} />
-          <div className="space-y-2">
-            <Skeleton variant="text" className="h-4 w-1/3" accessibilityLabel="" />
-            <Skeleton variant="text" className="h-4 w-1/2" accessibilityLabel="" />
-            <Skeleton variant="text" className="h-4 w-2/3" accessibilityLabel="" />
-          </div>
-        </div>
-      ) : !details ? null : (
-        <div className="flex flex-col gap-4">
-          {loading ? <ProgressBar label={t('app.loading')} /> : null}
+        <CustomerDetailsSkeleton />
+      ) : (
+        details && (
+          <div className="flex flex-col gap-4">
+            {loading ? <ProgressBar label={t('app.loading')} /> : null}
 
-          {/* Identity — the customer's own record, not period data. The header
+            {/* Identity — the customer's own record, not period data. The header
               already carries name/contact/vehicle, so this section holds only
               what does not fit there: the notes and the plates themselves. */}
-          <Section title={t('customers.drawer.profile')}>
-            {details.customer.notes ? (
-              <Badge variant="neutral" size="sm">
-                {details.customer.notes}
-              </Badge>
-            ) : null}
-            {details.cars.length > 0 ? (
-              <ul className="mt-2 flex flex-wrap gap-1.5">
-                {details.cars.map((car) => (
-                  <li
-                    key={car.id}
-                    className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-caption"
-                  >
-                    <Car size={12} aria-hidden className="text-foreground-subtle" />
-                    <span dir="ltr" className="font-bold">
-                      {car.plate_no}
-                    </span>
-                    {car.car_model ? (
-                      <span className="text-foreground-subtle">{car.car_model}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-caption text-foreground-subtle">{t('customers.drawer.noCars')}</p>
-            )}
-          </Section>
+            <Section title={t('customers.drawer.profile')}>
+              {details.customer.notes ? (
+                <Badge variant="neutral" size="sm">
+                  {details.customer.notes}
+                </Badge>
+              ) : null}
+              {details.cars.length > 0 ? (
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {details.cars.map((car) => (
+                    <li
+                      key={car.id}
+                      className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-caption"
+                    >
+                      <Car size={12} aria-hidden className="text-foreground-subtle" />
+                      <span dir="ltr" className="font-bold">
+                        {car.plate_no}
+                      </span>
+                      {car.car_model ? (
+                        <span className="text-foreground-subtle">{car.car_model}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-caption text-foreground-subtle">
+                  {t('customers.drawer.noCars')}
+                </p>
+              )}
+            </Section>
 
-          {/* Performance — the period's headline figures, as compact blocks.
+            {/* Performance — the period's headline figures, as compact blocks.
               Every value is the backend's aggregate; nothing is derived here. */}
-          <Section title={t('customers.drawer.performance')}>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <StatBlock label={t('customers.stats.orders')}>
-                <span className="tabular-nums">{details.stats.invoices_count}</span>
-              </StatBlock>
-              <StatBlock label={t('customers.stats.paid')}>
-                <MoneyDisplay amount={details.stats.paid} variant="auto" />
-              </StatBlock>
-              <StatBlock label={t('customers.stats.average')}>
-                <MoneyDisplay amount={details.stats.average_order} variant="auto" />
-              </StatBlock>
-              {/* The credit account is a standing balance, not a period
+            <Section title={t('customers.drawer.performance')}>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <StatBlock label={t('customers.stats.orders')}>
+                  <span className="tabular-nums">{details.stats.invoices_count}</span>
+                </StatBlock>
+                <StatBlock label={t('customers.stats.paid')}>
+                  <MoneyDisplay amount={details.stats.paid} variant="auto" />
+                </StatBlock>
+                <StatBlock label={t('customers.stats.average')}>
+                  <MoneyDisplay amount={details.stats.average_order} variant="auto" />
+                </StatBlock>
+                {/* The credit account is a standing balance, not a period
                   movement — it is coloured as one only when money is owed. */}
-              <StatBlock
-                label={t('customers.stats.credit')}
-                tone={details.stats.credit_outstanding > 0 ? 'warning' : 'default'}
-              >
-                <MoneyDisplay amount={details.stats.credit_outstanding} variant="auto" />
-              </StatBlock>
-              <StatBlock label={t('customers.stats.discounts')}>
-                <MoneyDisplay amount={details.stats.discounts} variant="auto" />
-              </StatBlock>
-              <StatBlock label={t('customers.stats.serviceCharges')}>
-                <MoneyDisplay amount={details.stats.service_charges} variant="auto" />
-              </StatBlock>
-            </div>
+                <StatBlock
+                  label={t('customers.stats.credit')}
+                  tone={details.stats.credit_outstanding > 0 ? 'warning' : 'default'}
+                >
+                  <MoneyDisplay amount={details.stats.credit_outstanding} variant="auto" />
+                </StatBlock>
+                <StatBlock label={t('customers.stats.discounts')}>
+                  <MoneyDisplay amount={details.stats.discounts} variant="auto" />
+                </StatBlock>
+                <StatBlock label={t('customers.stats.serviceCharges')}>
+                  <MoneyDisplay amount={details.stats.service_charges} variant="auto" />
+                </StatBlock>
+              </div>
 
-            {/* The remaining aggregates stay as a quiet two-column ledger
+              {/* The remaining aggregates stay as a quiet two-column ledger
                 under the blocks, so the panel keeps every figure the backend
                 sent without turning the top of it into a wall of tiles. */}
-            <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-              <LedgerRow label={t('customers.stats.total')}>
-                <MoneyDisplay amount={details.stats.total} variant="auto" />
-              </LedgerRow>
-              {details.stats.credit_original > 0 ? (
-                <>
-                  <LedgerRow label={t('customers.stats.creditOriginal')}>
-                    <MoneyDisplay amount={details.stats.credit_original} variant="auto" />
-                  </LedgerRow>
-                  <LedgerRow label={t('customers.stats.creditPaid')}>
-                    <MoneyDisplay amount={details.stats.credit_paid} variant="auto" />
-                  </LedgerRow>
-                </>
-              ) : null}
-              <LedgerRow label={t('customers.stats.firstOrder')}>
-                {details.stats.first_at ? (
-                  <DisplayDate value={details.stats.first_at} />
-                ) : (
-                  <span className="text-foreground-faint">—</span>
-                )}
-              </LedgerRow>
-              <LedgerRow label={t('customers.stats.lastOrder')}>
-                {details.stats.last_at ? (
-                  <DisplayDate value={details.stats.last_at} />
-                ) : (
-                  <span className="text-foreground-faint">—</span>
-                )}
-              </LedgerRow>
-            </dl>
-          </Section>
+              <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                <LedgerRow label={t('customers.stats.total')}>
+                  <MoneyDisplay amount={details.stats.total} variant="auto" />
+                </LedgerRow>
+                {details.stats.credit_original > 0 ? (
+                  <>
+                    <LedgerRow label={t('customers.stats.creditOriginal')}>
+                      <MoneyDisplay amount={details.stats.credit_original} variant="auto" />
+                    </LedgerRow>
+                    <LedgerRow label={t('customers.stats.creditPaid')}>
+                      <MoneyDisplay amount={details.stats.credit_paid} variant="auto" />
+                    </LedgerRow>
+                  </>
+                ) : null}
+                <LedgerRow label={t('customers.stats.firstOrder')}>
+                  {details.stats.first_at ? (
+                    <DisplayDate value={details.stats.first_at} />
+                  ) : (
+                    <span className="text-foreground-faint">—</span>
+                  )}
+                </LedgerRow>
+                <LedgerRow label={t('customers.stats.lastOrder')}>
+                  {details.stats.last_at ? (
+                    <DisplayDate value={details.stats.last_at} />
+                  ) : (
+                    <span className="text-foreground-faint">—</span>
+                  )}
+                </LedgerRow>
+              </dl>
+            </Section>
 
-          {/* Axis 1 — business (كافيه / مغسلة), from the invoice snapshot
+            {/* Axis 1 — business (كافيه / مغسلة), from the invoice snapshot
               totals. Proportional bars against the larger of the two. */}
-          <Section title={t('customers.drawer.business')}>
-            <ul className="divide-y divide-border-subtle">
-              <BreakdownRow
-                icon={Coffee}
-                label={t('customers.breakdown.cafe')}
-                orders={details.stats.cafe_orders}
-                amount={details.stats.cafe_total}
-                share={cafeShare}
-              />
-              <BreakdownRow
-                icon={Droplets}
-                label={t('customers.breakdown.wash')}
-                orders={details.stats.wash_orders}
-                amount={details.stats.wash_total}
-                share={washShare}
-              />
-            </ul>
-            <p className="mt-1 text-caption text-foreground-subtle">
-              {t('customers.drawer.businessHint')}
-            </p>
-          </Section>
+            <Section title={t('customers.drawer.business')}>
+              <ul className="divide-y divide-border-subtle">
+                <BreakdownRow
+                  icon={Coffee}
+                  label={t('customers.breakdown.cafe')}
+                  orders={details.stats.cafe_orders}
+                  amount={details.stats.cafe_total}
+                  share={cafeShare}
+                />
+                <BreakdownRow
+                  icon={Droplets}
+                  label={t('customers.breakdown.wash')}
+                  orders={details.stats.wash_orders}
+                  amount={details.stats.wash_total}
+                  share={washShare}
+                />
+              </ul>
+              <p className="mt-1 text-caption text-foreground-subtle">
+                {t('customers.drawer.businessHint')}
+              </p>
+            </Section>
 
-          {/* Axis 2 — order type (طاولة / تيك اواي), from the invoice's own
+            {/* Axis 2 — order type (طاولة / تيك اواي), from the invoice's own
               `order_type`. Deliberately a SEPARATE section with its own hint,
               so nobody reads a hybrid order as two orders or adds the two axes
               together. */}
-          <Section title={t('customers.drawer.orderType')}>
-            <ul className="divide-y divide-border-subtle">
-              <BreakdownRow
-                icon={ShoppingBag}
-                label={t('customers.breakdown.takeaway')}
-                orders={details.stats.takeaway_orders}
-                share={takeawayShare}
-              />
-              <BreakdownRow
-                icon={Receipt}
-                label={t('customers.breakdown.table')}
-                orders={details.stats.table_orders}
-                share={tableShare}
-              />
-            </ul>
-            <p className="mt-1 text-caption text-foreground-subtle">
-              {t('customers.drawer.orderTypeHint')}
-            </p>
-          </Section>
+            <Section title={t('customers.drawer.orderType')}>
+              <ul className="divide-y divide-border-subtle">
+                <BreakdownRow
+                  icon={ShoppingBag}
+                  label={t('customers.breakdown.takeaway')}
+                  orders={details.stats.takeaway_orders}
+                  share={takeawayShare}
+                />
+                <BreakdownRow
+                  icon={Receipt}
+                  label={t('customers.breakdown.table')}
+                  orders={details.stats.table_orders}
+                  share={tableShare}
+                />
+              </ul>
+              <p className="mt-1 text-caption text-foreground-subtle">
+                {t('customers.drawer.orderTypeHint')}
+              </p>
+            </Section>
 
-          {/* Recent activity — a compact timeline of the real invoices. The
+            {/* Recent activity — a compact timeline of the real invoices. The
               bullet is the timeline spine; everything else is type and
               whitespace, so no row becomes its own card. */}
-          <Section title={t('customers.drawer.history')}>
-            {details.activity.length === 0 ? (
-              <p className="text-caption text-foreground-subtle">
-                {t('customers.drawer.noActivity')}
-              </p>
-            ) : (
-              <ul>
-                {details.activity.map((row) => (
-                  <li
-                    key={row.invoice_no}
-                    className="relative flex items-start gap-3 border-b border-border-subtle py-2.5 last:border-0"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="mt-1.5 size-2 shrink-0 rounded-full bg-border-accent ring-4 ring-surface-dialog"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="flex items-center gap-1.5 text-body font-bold tabular-nums">
-                          <CalendarClock size={14} aria-hidden className="text-foreground-subtle" />
-                          <span dir="ltr">#{row.invoice_no}</span>
+            <Section title={t('customers.drawer.history')}>
+              {details.activity.length === 0 ? (
+                <p className="text-caption text-foreground-subtle">
+                  {t('customers.drawer.noActivity')}
+                </p>
+              ) : (
+                <ul>
+                  {details.activity.map((row) => (
+                    <li
+                      key={row.invoice_no}
+                      className="relative flex items-start gap-3 border-b border-border-subtle py-2.5 last:border-0"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="mt-1.5 size-2 shrink-0 rounded-full bg-border-accent ring-4 ring-surface-dialog"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="flex items-center gap-1.5 text-body font-bold tabular-nums">
+                            <CalendarClock
+                              size={14}
+                              aria-hidden
+                              className="text-foreground-subtle"
+                            />
+                            <span dir="ltr">#{row.invoice_no}</span>
+                          </span>
+                          <Badge variant="neutral" size="sm">
+                            {row.order_type === 'TAKEAWAY'
+                              ? t('customers.breakdown.takeaway')
+                              : (row.table_label ?? t('customers.breakdown.table'))}
+                          </Badge>
+                          <Badge variant={invoiceBadgeVariant(row.status)} size="sm" dot>
+                            {t(`invoice.status.${row.status}`)}
+                          </Badge>
                         </span>
-                        <Badge variant="neutral" size="sm">
-                          {row.order_type === 'TAKEAWAY'
-                            ? t('customers.breakdown.takeaway')
-                            : (row.table_label ?? t('customers.breakdown.table'))}
-                        </Badge>
-                        <Badge variant={invoiceBadgeVariant(row.status)} size="sm" dot>
-                          {t(`invoice.status.${row.status}`)}
-                        </Badge>
-                      </span>
-                      <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-foreground-subtle">
-                        <DisplayDateTime value={row.created_at} />
-                        <span className="tabular-nums">
-                          {t('customers.drawer.paid')}{' '}
-                          <MoneyDisplay amount={row.paid_amount} variant="auto" />
+                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-caption text-foreground-subtle">
+                          <DisplayDateTime value={row.created_at} />
+                          <span className="tabular-nums">
+                            {t('customers.drawer.paid')}{' '}
+                            <MoneyDisplay amount={row.paid_amount} variant="auto" />
+                          </span>
                         </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-body font-bold tabular-nums">
-                      <MoneyDisplay amount={row.total} />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-        </div>
+                      <span className="shrink-0 text-body font-bold tabular-nums">
+                        <MoneyDisplay amount={row.total} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          </div>
+        )
       )}
     </Drawer>
+  )
+}
+
+/**
+ * The drawer's first-load placeholder.
+ *
+ * It reserves the geometry of the real record — a table of figures over a short
+ * block of notes — so the drawer does not jump when the customer resolves, and
+ * it is one announced region rather than a screen reader full of empty boxes.
+ */
+function CustomerDetailsSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      <TableSkeleton rows={4} columns={2} />
+      <div className="space-y-2">
+        <Skeleton variant="text" className="h-4 w-1/3" accessibilityLabel="" />
+        <Skeleton variant="text" className="h-4 w-1/2" accessibilityLabel="" />
+        <Skeleton variant="text" className="h-4 w-2/3" accessibilityLabel="" />
+      </div>
+    </div>
   )
 }
 
