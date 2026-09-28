@@ -6,14 +6,14 @@ conflating them is the most common release mistake.
 
 ## 1. The two signing mechanisms
 
-|                     | **Tauri updater signing**                                         | **Windows Authenticode signing**                                             |
-| ------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| What it signs       | The update bundle + its `.sig` file                               | The `.exe`/`.msi` installer and binaries                                     |
-| Algorithm           | minisign (Ed25519)                                                | Authenticode (RSA/ECDSA, X.509 chain)                                        |
-| Trust anchor        | `plugins.updater.pubkey` compiled into the app                    | A certificate in the Windows trust store                                     |
-| Who consumes it     | The **installed Station app**, at update time                     | **Windows / SmartScreen / antivirus**, at install time                       |
-| Configured via      | `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) repo secrets          | `bundle.windows.certificateThumbprint` / `signCommand`, or a CI signing step |
-| Status in this repo | Secrets wired in CI; **plugin not yet configured** (updater task) | **NOT configured** — no certificate exists (see §5)                          |
+|                     | **Tauri updater signing**                                                                                                             | **Windows Authenticode signing**                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| What it signs       | The update bundle + its `.sig` file                                                                                                   | The `.exe`/`.msi` installer and binaries                                     |
+| Algorithm           | minisign (Ed25519)                                                                                                                    | Authenticode (RSA/ECDSA, X.509 chain)                                        |
+| Trust anchor        | `plugins.updater.pubkey` compiled into the app                                                                                        | A certificate in the Windows trust store                                     |
+| Who consumes it     | The **installed Station app**, at update time                                                                                         | **Windows / SmartScreen / antivirus**, at install time                       |
+| Configured via      | `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) repo secrets                                                                              | `bundle.windows.certificateThumbprint` / `signCommand`, or a CI signing step |
+| Status in this repo | **Configured**: `plugins.updater` (pubkey + fixed endpoint), plugin registered, `createUpdaterArtifacts` on, signing verified locally | **NOT configured** — no certificate exists (see §5)                          |
 
 They solve different problems and **neither substitutes for the other**:
 
@@ -36,10 +36,30 @@ current state, and it is expected until a code-signing certificate is bought.
 - WebView2 is bundled via `webviewInstallMode: "offlineInstaller"`, so the app
   installs on a machine with **no internet**. This is deliberate: the cafe PC
   is offline.
-- Updater signing secrets are **already wired** into the release job. They
-  begin producing signed artifacts once the updater plugin is configured — see
-  §1 and the updater task in the hardening plan. Until that configuration
-  lands, the release job is building an installer only.
+- Updater signing is enabled via `bundle.createUpdaterArtifacts`, so the
+  release job emits the `.exe` **and** its `.sig`. This is verified locally:
+  building with the key present produces a signature whose minisign key id
+  matches the committed `plugins.updater.pubkey`.
+
+### Required CI secret (one-time setup)
+
+`TAURI_SIGNING_PRIVATE_KEY` must hold the **contents** of the minisign private
+key. Set it with:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/station-cafe.key
+```
+
+The key on this machine was generated **without a password**, so
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is set to an empty string. If you
+regenerate the key with `-p <password>`, set that secret too.
+
+If `TAURI_SIGNING_PRIVATE_KEY` is absent, the release build **fails loudly**
+rather than publishing an unsigned update — verified locally. It will not
+silently ship an update no client can verify.
+
+> **Losing this key permanently breaks future updates.** Back it up securely,
+> outside the repository. The committed `pubkey` cannot be used to sign.
 
 ## 3. Publishing: tag publishes, `main` does not
 
@@ -97,7 +117,22 @@ Until then, **Windows will show a SmartScreen warning on first install.** The
 current installer uses `installMode: "currentUser"`, so it installs without
 administrator rights; the warning is expected and documented for the operator.
 
-## 6. Release procedure
+## 6. Automatic updates: what exists and what does not
+
+- [x] build infrastructure: plugin, `plugins.updater` config, committed
+      public key, fixed endpoint, `createUpdaterArtifacts`, signing secrets, and
+      signature verification
+- [ ] update check command, polling, and the Arabic update dialog
+- [ ] the update permission (`updater:allow-download-and-install`), currently
+      withheld so no unused install capability is granted
+- [ ] the safety gate that blocks installing during an open shift or business
+      day
+
+Until the unchecked items exist the app never asks for an update, so Station
+stays fully functional offline. Nothing above grants the app a way to install
+software without a human deciding to.
+
+## 7. Release procedure
 
 ```bash
 # 1. set the SAME version in package.json, Cargo.toml and tauri.conf.json
@@ -110,7 +145,7 @@ git tag v0.1.0 && git push origin main --tags
 
 CI then builds, signs the updater artifacts and publishes the release.
 
-## 7. Security rules for this pipeline
+## 8. Security rules for this pipeline
 
 - The updater **private key** exists only as the repository secrets
   `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. It is

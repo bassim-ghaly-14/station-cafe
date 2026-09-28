@@ -25,6 +25,12 @@ tauri = { version = "2.11.6", features = [] }
 tauri-plugin-log = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 tauri-plugin-process = "2.3.1"
+# Automatic updates (build infrastructure only). The `plugins.updater` config
+# in tauri.conf.json — pubkey + fixed endpoint — is REQUIRED and is registered
+# in lib.rs; without it tauri-plugin-updater fails at startup. The private
+# signing key never enters this repository: it lives only in the CI secret
+# TAURI_SIGNING_PRIVATE_KEY. See docs/RELEASING.md.
+tauri-plugin-updater = "2"
 thiserror = "2.0.20"
 argon2 = "0.5"
 image = "0.25"

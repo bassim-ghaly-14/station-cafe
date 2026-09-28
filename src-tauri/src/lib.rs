@@ -60,11 +60,20 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // NOTE: no updater plugin — tauri-plugin-updater requires a
-        // `plugins.updater` config (pubkey/endpoints) in tauri.conf.json;
-        // registering it without config crashes the app at startup. This is a
-        // fully-offline application; re-add the plugin together with its
-        // configuration when auto-update is actually introduced.
+        // Updater plugin — build infrastructure only.
+        //
+        // tauri-plugin-updater REQUIRES a `plugins.updater` config (pubkey +
+        // endpoints) in tauri.conf.json; registering it without that config
+        // aborts at startup. That config is now present, and `pubkey` is the
+        // PUBLIC half only. The private signing key never enters this
+        // repository: it exists solely as the CI secret
+        // TAURI_SIGNING_PRIVATE_KEY used by the release workflow.
+        //
+        // Registering the plugin adds the update CHANNEL. No command, UI,
+        // polling, or install flow is added here — that is deliberately out
+        // of scope, and until it exists the app simply never asks for an
+        // update. Station therefore remains fully functional offline.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

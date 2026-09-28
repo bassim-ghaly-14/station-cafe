@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "enables the default permissions. Updater is granted by least privilege: allow-check only. The updater:default set would also grant download and install, which no code path uses yet (the update UI and its business-safety gating are a separate, later task). Whoever adds the install flow must add updater:allow-download-and-install in that same change, deliberately. NOTE: this file is strict JSON and the Tauri capability parser rejects comments, so the rationale lives in this description.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:allow-check"]
 }

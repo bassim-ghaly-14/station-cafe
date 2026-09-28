@@ -25,11 +25,14 @@ import tauriConfRaw from '../../src-tauri/tauri.conf.json?raw'
 import packageRaw from '../../package.json?raw'
 import cargoToml from '../../src-tauri/Cargo.toml?raw'
 import workflow from '../../.github/workflows/windows-build.yml?raw'
+import libRs from '../../src-tauri/src/lib.rs?raw'
+import capabilitiesRaw from '../../src-tauri/capabilities/default.json?raw'
 
 const tauriConf = JSON.parse(tauriConfRaw) as {
   version: string
   app: { security: { csp: string | null } }
-  bundle: { targets: string[] | 'all' }
+  bundle: { targets: string[] | 'all'; createUpdaterArtifacts?: boolean }
+  plugins?: { updater?: { pubkey: string; endpoints: string[] } }
 }
 const csp = tauriConf.app.security.csp
 
@@ -124,5 +127,97 @@ describe('release version consistency', () => {
     // release, and the updater would serve a moving target that no client
     // could pin to.
     expect(workflow).toContain("releaseDraft: ${{ github.ref_type != 'tag' }}")
+  })
+})
+
+/**
+ * Updater BUILD infrastructure. The update channel is configured and signed;
+ * the update UI, polling and install flow are deliberately NOT implemented
+ * yet. These tests protect the part that exists, because each of these values
+ * is silent when wrong: a bad pubkey makes every update fail verification on
+ * a manager's PC, and a missing pubkey makes the app abort at startup.
+ */
+describe('updater build infrastructure', () => {
+  const updater = tauriConf.plugins?.updater
+
+  it('configures the updater with a public key', () => {
+    // tauri-plugin-updater ABORTS AT STARTUP without this config. The pubkey
+    // is the PUBLIC half and is safe to commit; it cannot forge a signature.
+    expect(updater).toBeDefined()
+    expect(typeof updater?.pubkey).toBe('string')
+    expect(updater?.pubkey.length).toBeGreaterThan(40)
+  })
+
+  it('uses only fixed https update endpoints', () => {
+    // A runtime-configurable update URL would let any host serve an update
+    // manifest. The endpoint is compiled in and points at the project owner.
+    expect(Array.isArray(updater?.endpoints)).toBe(true)
+    expect(updater?.endpoints.length).toBeGreaterThan(0)
+    for (const endpoint of updater?.endpoints ?? []) {
+      expect(endpoint).toMatch(/^https:\/\//)
+    }
+    expect(updater?.endpoints.join(' ')).toContain('bassim-ghaly-14/station-cafe')
+  })
+
+  it('commits no private signing key', () => {
+    // The private key must exist ONLY as the CI secret
+    // TAURI_SIGNING_PRIVATE_KEY. A minisign secret key is recognisable by
+    // its header; if one ever appears in the repo, updates could be forged
+    // by anyone with repository read access.
+    const committed = [tauriConfRaw, workflow, cargoToml, packageRaw].join('\n')
+    expect(committed).not.toContain('minisign secret key')
+    expect(committed).not.toContain('untrusted comment: minisign secret key')
+  })
+
+  it('registers the updater plugin in Rust', () => {
+    // Config alone does nothing; the plugin must be registered for the
+    // channel to exist.
+    expect(libRs).toContain('tauri_plugin_updater::Builder::new().build()')
+  })
+
+  it('grants only the minimum updater permission', () => {
+    // `updater:default` grants check + download + install + install-at-once.
+    // Nothing installs an update yet, so standing install capability is not
+    // granted. The install flow must add its permission deliberately.
+    const caps = JSON.parse(capabilitiesRaw) as { permissions: string[] }
+    expect(caps.permissions).toContain('updater:allow-check')
+    expect(caps.permissions).not.toContain('updater:default')
+    for (const p of caps.permissions) {
+      expect(p).not.toMatch(/^updater:allow-(download|install)/)
+    }
+  })
+
+  it('grants no broad filesystem, shell or http capability', () => {
+    // The update channel needs none of these. A POS that handles money and
+    // customer data must not hand the webview ambient filesystem or network
+    // access as a side effect of being updatable.
+    const caps = JSON.parse(capabilitiesRaw) as { permissions: string[] }
+    for (const p of caps.permissions) {
+      expect(p).not.toMatch(/^fs:/)
+      expect(p).not.toMatch(/^shell:/)
+      expect(p).not.toMatch(/^http:/)
+    }
+  })
+
+  it('produces signed updater artifacts in the release build', () => {
+    // Without this, the release workflow publishes an installer that no
+    // client can ever update to. With it and no key present, the build FAILS
+    // rather than silently publishing an unsigned update.
+    expect(tauriConf.bundle.createUpdaterArtifacts).toBe(true)
+  })
+
+  it('wires the signing secrets through CI only', () => {
+    // The key reaches the build as a repository secret and never as a file
+    // in the tree.
+    expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.')
+    expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.')
+  })
+
+  it('implements no update UI or install flow yet', () => {
+    // Scope guard: the update dialog, polling and the shift/day safety gate
+    // are a separate task. Asserting their absence keeps this change honest
+    // rather than half-finished.
+    expect(libRs).not.toContain('check_for_update')
+    expect(libRs).not.toContain('install_update')
   })
 })

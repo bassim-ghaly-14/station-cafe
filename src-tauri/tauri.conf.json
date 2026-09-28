@@ -25,9 +25,18 @@
       "csp": "default-src 'self'; script-src 'self' 'sha256-Br7jN6/Y2pfS0UgDnjkTEzmkyZfNx6R90XmJEhxjjzw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIwOUI1NDQ0NTRGNEEwQ0IKUldUTG9QUlVSRlNiSUNLLytjcmVZNDZBRTgxcVkxVXk2SzZHM0QrMGpvUDVEdUpHbDgwUklwUVEK",
+      "endpoints": [
+        "https://github.com/bassim-ghaly-14/station-cafe/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
