@@ -158,45 +158,75 @@ export function CatalogCard({
       </div>
 
       {canManage ? (
-        <div
-          className={[
-            'mt-auto grid gap-2 border-t border-border-subtle p-3',
-            canDelete ? 'grid-cols-3' : 'grid-cols-2',
-          ].join(' ')}
-        >
-          <Button variant="outline" size="sm" className="min-w-0" onClick={onEdit}>
-            <Pencil size={15} aria-hidden />
-            {t('catalog.edit')}
-          </Button>
-
-          {/* Disabled → red action; Activate → GREEN. The action color always
-              states the outcome, so the relationship is self-explanatory. */}
-          <Button
-            variant={product.is_active ? 'destructiveGhost' : 'success'}
-            size="sm"
-            className="min-w-0"
-            onClick={onToggle}
-          >
-            <Power size={15} aria-hidden />
-            {product.is_active ? t('catalog.deactivate') : t('catalog.activate')}
-          </Button>
-
-          {/* Deleting is an ADMIN-only, terminal action, so it is a separate
-              affordance and never shares the reversible availability switch. */}
-          {canDelete ? (
-            <Button
-              variant="destructiveGhost"
-              size="sm"
-              className="min-w-0"
-              onClick={onDelete}
-              data-testid="catalog-card-delete"
-            >
-              <Trash2 size={15} aria-hidden />
-              {t('catalog.delete')}
-            </Button>
-          ) : null}
-        </div>
+        <CatalogCardActions
+          isActive={product.is_active}
+          canDelete={canDelete}
+          onEdit={onEdit}
+          onToggle={onToggle}
+          onDelete={onDelete}
+        />
       ) : null}
     </article>
+  )
+}
+
+/**
+ * The action row of a catalog card, for a role that may manage the catalog.
+ *
+ * The action colour always states the OUTCOME — a disabled item offers a
+ * destructive "deactivate", an enabled one a green "activate" — so the
+ * relationship is self-explanatory without reading the label. Delete is a
+ * separate, ADMIN-only, terminal affordance and never shares the reversible
+ * availability switch.
+ */
+function CatalogCardActions({
+  isActive,
+  canDelete,
+  onEdit,
+  onToggle,
+  onDelete,
+}: Readonly<{
+  isActive: boolean
+  canDelete: boolean
+  onEdit: () => void
+  onToggle: () => void
+  onDelete: () => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <div
+      className={[
+        'mt-auto grid gap-2 border-t border-border-subtle p-3',
+        canDelete ? 'grid-cols-3' : 'grid-cols-2',
+      ].join(' ')}
+    >
+      <Button variant="outline" size="sm" className="min-w-0" onClick={onEdit}>
+        <Pencil size={15} aria-hidden />
+        {t('catalog.edit')}
+      </Button>
+
+      <Button
+        variant={isActive ? 'destructiveGhost' : 'success'}
+        size="sm"
+        className="min-w-0"
+        onClick={onToggle}
+      >
+        <Power size={15} aria-hidden />
+        {isActive ? t('catalog.deactivate') : t('catalog.activate')}
+      </Button>
+
+      {canDelete ? (
+        <Button
+          variant="destructiveGhost"
+          size="sm"
+          className="min-w-0"
+          onClick={onDelete}
+          data-testid="catalog-card-delete"
+        >
+          <Trash2 size={15} aria-hidden />
+          {t('catalog.delete')}
+        </Button>
+      ) : null}
+    </div>
   )
 }
