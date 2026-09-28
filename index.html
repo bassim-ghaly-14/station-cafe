@@ -1,10 +1,80 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>scaf</title>
+    <!--
+      The favicon is deliberately the LOCAL asset, not the Cloudinary URL.
+
+      This is the one image reference the browser fetches while RUNNING the
+      app, so it is governed by the offline rule rather than the public-metadata
+      rule: the installed desktop application and the phone browser on the
+      cafe LAN must both render their tab / WebApp header icon with no internet
+      at all, which a CDN URL cannot promise.
+
+      It points at `/station-cafe.png` because the previously referenced
+      `/favicon.svg` does not exist in `public/`, so every load of the
+      application was making a guaranteed 404 for it.
+    -->
+    <link rel="icon" type="image/png" href="/station-cafe.png" />
+    <link rel="apple-touch-icon" href="/station-cafe.png" />
+
+    <!--
+      PUBLIC / SOCIAL METADATA - the one place Station publishes an image to
+      the outside world.
+
+      Why this block exists, and why it names Cloudinary rather than
+      /station-cafe.png:
+
+      Telegram's Mini App / Bot Start preview, and every other link-preview
+      crawler, fetches this document from a PUBLIC origin and then fetches the
+      image this file names. A root-relative path such as "/station-cafe.png"
+      is meaningless to that crawler: it resolves against Telegram's own host,
+      not the cafe's, so the preview renders with no logo at all. The reference
+      therefore has to be an ABSOLUTE, publicly reachable URL, and this one is
+      the canonical hosted copy of the Station mark.
+
+      The local asset (public/station-cafe.png, consumed by
+      src/components/branding/Logo.tsx) is deliberately NOT replaced. The
+      installed desktop application and the in-app UI must keep working with no
+      internet at all, which a CDN URL cannot promise. The split is
+      intentional, and src/lib/publicMetadata.test.ts asserts both halves:
+
+        public / Telegram metadata -> absolute Cloudinary URL (here)
+        internal application UI    -> local public/ asset    (Logo.tsx)
+
+      This block is inert metadata: the running application never fetches it,
+      so it does not weaken the offline-first Content-Security-Policy, which
+      continues to load no remote origin at all.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Station Cafe" />
+    <meta property="og:title" content="Station Cafe" />
+    <meta
+      property="og:description"
+      content="نظام إدارة الكافيه وخدمات السيارات — يعمل بدون إنترنت بالكامل"
+    />
+    <meta
+      property="og:image"
+      content="https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png"
+    />
+    <meta
+      property="og:image:secure_url"
+      content="https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta name="twitter:card" content="summary" />
+    <meta
+      name="twitter:image"
+      content="https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png"
+    />
+    <meta name="theme-color" content="#b07f47" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Station Cafe — نظام إدارة الكافيه وخدمات السيارات" />
+    <title>Station Cafe</title>
   </head>
   <body>
     <div id="root"></div>

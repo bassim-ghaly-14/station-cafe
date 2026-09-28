@@ -1,0 +1,33 @@
+{
+  "name": "Station Cafe",
+  "short_name": "Station",
+  "description": "نظام إدارة الكافيه وخدمات السيارات — يعمل بدون إنترنت بالكامل",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/pos",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#faf6f0",
+  "theme_color": "#b07f47",
+  "icons": [
+    {
+      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
