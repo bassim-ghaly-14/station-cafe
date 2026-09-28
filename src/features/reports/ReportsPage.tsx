@@ -27,6 +27,7 @@ import { DisplayDate, DisplayDateTimeRange } from '@/components/ui/display-datet
 import { addDays, formatDate, todayIso } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { opsApi } from '@/services/opsApi'
+import type { ClosedBusinessDay } from '@/services/opsApi'
 import { useErrText } from '@/lib/err'
 import { useAnalyticsCharts, type AnalyticsChart } from './charts/analyticsCharts'
 import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
@@ -185,23 +186,7 @@ function ChartsReport({
               chart.hasData ? (
                 <AnalyticsDonutChart key={chart.id} chart={chart} from={from} to={to} />
               ) : (
-                <Card
-                  key={chart.id}
-                  className="flex min-h-88 flex-col p-0 shadow-none"
-                  data-testid={`empty-chart-${chart.id}`}
-                >
-                  <ChartCardHeading chart={chart} />
-                  <div className="flex flex-1 items-center justify-center border-t border-border-subtle p-4">
-                    <ChartEmptyState
-                      compact
-                      headingLevel="h3"
-                      scope={scope}
-                      title={t('reports.charts.emptyChartTitle')}
-                      body={t('reports.charts.emptyChartBody')}
-                      className="border-0 bg-transparent p-0"
-                    />
-                  </div>
-                </Card>
+                <EmptyChartCard key={chart.id} chart={chart} scope={scope} />
               ),
             )}
           </div>
@@ -315,65 +300,138 @@ function ClosingReports({
       {error ? (
         <ErrorState message={error} onRetry={load} retryLabel={t('app.retry')} />
       ) : kind === 'shift' ? (
-        <Card>
-          <CardHeader title={t('reports.shiftClosings')} />
-          <div className="divide-y divide-border-subtle">
-            {shifts.map((s) => (
-              <div key={s.id} className="flex flex-wrap items-center gap-3 py-3">
-                <div className="min-w-48 flex-1">
-                  <p className="flex min-w-0 items-center gap-1.5 font-bold">
-                    <span className="tabular-nums">#{s.id}</span>
-                    <span aria-hidden>·</span>
-                    <EmployeeAvatar role={s.user_role} size="sm" />
-                    <span className="truncate">{s.user_name ?? '—'}</span>
-                  </p>
-                  <p className="min-w-0 text-caption">
-                    <DisplayDateTimeRange from={s.opened_at} to={s.closed_at} />
-                  </p>
-                  <MoneyDisplay amount={s.expected_cash} />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTarget({ kind: 'shift_report', shift_id: s.id })}
-                >
-                  {t('reports.preview')}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <ShiftClosings shifts={shifts} onPreview={setTarget} />
       ) : (
-        <Card>
-          <CardHeader title={t('reports.dayClosings')} />
-          <div className="divide-y divide-border-subtle">
-            {days.map((d) => (
-              <div key={d.business_day_id} className="flex flex-wrap items-center gap-3 py-3">
-                <div className="min-w-48 flex-1">
-                  <p className="font-bold">
-                    <span className="tabular-nums">#{d.business_day_id}</span> ·{' '}
-                    <DisplayDate value={d.day_date} />
-                  </p>
-                  <p className="min-w-0 text-caption">
-                    <DisplayDateTimeRange from={d.opened_at} to={d.closed_at} />
-                  </p>
-                  <p>
-                    {d.shift_count} · <MoneyDisplay amount={d.totals.total_sales} />
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTarget({ kind: 'day_report', day_id: d.business_day_id })}
-                >
-                  {t('reports.preview')}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <DayClosings days={days} onPreview={setTarget} />
       )}
       {target ? <PrintPreviewDialog target={target} onClose={() => setTarget(null)} /> : null}
     </div>
+  )
+}
+
+/**
+ * A chart in the grid that has nothing to plot for this period.
+ *
+ * The card keeps the chart's own heading, so the grid does not reflow and a
+ * reader can still tell WHICH measure is empty — an empty card and a missing
+ * card are different facts. The reason is stated in words inside it rather than
+ * left as an empty box.
+ */
+function EmptyChartCard({
+  chart,
+  scope,
+}: Readonly<{ readonly chart: AnalyticsChart; readonly scope: string }>) {
+  const { t } = useTranslation()
+  return (
+    <Card
+      className="flex min-h-88 flex-col p-0 shadow-none"
+      data-testid={`empty-chart-${chart.id}`}
+    >
+      <ChartCardHeading chart={chart} />
+      <div className="flex flex-1 items-center justify-center border-t border-border-subtle p-4">
+        <ChartEmptyState
+          compact
+          headingLevel="h3"
+          scope={scope}
+          title={t('reports.charts.emptyChartTitle')}
+          body={t('reports.charts.emptyChartBody')}
+          className="border-0 bg-transparent p-0"
+        />
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * The closed shifts in the range.
+ *
+ * A shift is identified by the person who ran it, so the row leads with the
+ * cashier's avatar and name; the expected cash is the figure the closing is
+ * about, and the window is when it was open. Every row previews the EXISTING
+ * shift report through the shared dialog.
+ */
+function ShiftClosings({
+  shifts,
+  onPreview,
+}: Readonly<{
+  shifts: readonly ShiftRow[]
+  onPreview: (target: PrintPreviewTarget) => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <Card>
+      <CardHeader title={t('reports.shiftClosings')} />
+      <div className="divide-y divide-border-subtle">
+        {shifts.map((s) => (
+          <div key={s.id} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="min-w-48 flex-1">
+              <p className="flex min-w-0 items-center gap-1.5 font-bold">
+                <span className="tabular-nums">#{s.id}</span>
+                <span aria-hidden>·</span>
+                <EmployeeAvatar role={s.user_role} size="sm" />
+                <span className="truncate">{s.user_name ?? '—'}</span>
+              </p>
+              <p className="min-w-0 text-caption">
+                <DisplayDateTimeRange from={s.opened_at} to={s.closed_at} />
+              </p>
+              <MoneyDisplay amount={s.expected_cash} />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPreview({ kind: 'shift_report', shift_id: s.id })}
+            >
+              {t('reports.preview')}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * The closed business days in the range.
+ *
+ * A day is a whole day, so its row carries the date, the window it was open,
+ * and how many shifts it contained alongside the day's total sales.
+ */
+function DayClosings({
+  days,
+  onPreview,
+}: Readonly<{
+  days: readonly ClosedBusinessDay[]
+  onPreview: (target: PrintPreviewTarget) => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <Card>
+      <CardHeader title={t('reports.dayClosings')} />
+      <div className="divide-y divide-border-subtle">
+        {days.map((d) => (
+          <div key={d.business_day_id} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="min-w-48 flex-1">
+              <p className="font-bold">
+                <span className="tabular-nums">#{d.business_day_id}</span> ·{' '}
+                <DisplayDate value={d.day_date} />
+              </p>
+              <p className="min-w-0 text-caption">
+                <DisplayDateTimeRange from={d.opened_at} to={d.closed_at} />
+              </p>
+              <p>
+                {d.shift_count} · <MoneyDisplay amount={d.totals.total_sales} />
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPreview({ kind: 'day_report', day_id: d.business_day_id })}
+            >
+              {t('reports.preview')}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
