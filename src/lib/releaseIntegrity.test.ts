@@ -47,6 +47,21 @@ function inlineScripts(html: string): string[] {
   return [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
 }
 
+/**
+ * A CSP hash is computed over exact bytes, so the content hashed here must be
+ * the content that actually ships. The repository stores `index.html` with LF
+ * endings (enforced by `.gitattributes`), and the release pipeline therefore
+ * always builds a LF `dist/index.html`; normalising to LF makes this check
+ * assert that canonical contract instead of whatever line endings a given
+ * checkout happened to produce. It does NOT weaken the assertion: any edit to
+ * the bootstrap — on any platform — still changes the hash and still fails.
+ * The real cross-platform guarantee is the `.gitattributes` rule; this keeps
+ * the test deterministic on top of it.
+ */
+function canonicalize(html: string): string {
+  return html.replace(/\r\n/g, '\n')
+}
+
 describe('production Content-Security-Policy', () => {
   it('is configured', () => {
     // A null policy disables CSP entirely. Station is a local, offline POS
@@ -59,7 +74,7 @@ describe('production Content-Security-Policy', () => {
     // A hash-pinned inline script is allowed; an UNlisted one is blocked,
     // which breaks the app at runtime with no local build error. This is
     // exactly the failure a future index.html edit would cause.
-    const hashes = await Promise.all(inlineScripts(indexHtml).map(sha256Base64))
+    const hashes = await Promise.all(inlineScripts(canonicalize(indexHtml)).map(sha256Base64))
     expect(hashes.length).toBeGreaterThan(0)
     for (const hash of hashes) {
       expect(csp).toContain(`sha256-${hash}`)
