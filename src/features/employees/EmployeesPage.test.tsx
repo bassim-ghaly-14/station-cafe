@@ -533,6 +533,29 @@ describe('EmployeesPage — role presentation', () => {
     expect(screen.getByRole('button', { name: 'إيقاف شخص أول' })).toBeInTheDocument()
   })
 
+  it('names the person in the status action tooltip, never the placeholder', async () => {
+    // The status button carries the same sentence twice — once as its accessible
+    // name and once as its tooltip. Both are built from one key, so both have to
+    // receive the name; a tooltip reading "{{name}}" is a leak a reader sees.
+    mocks.list.mockResolvedValue({
+      management_visible: true,
+      employees: [
+        employee({ id: 1, name: 'شخص أول', status: 'ACTIVE' }) as never,
+        employee({ id: 2, name: 'شخص ثاني', status: 'INACTIVE' }) as never,
+      ],
+    })
+    renderPage()
+    await screen.findAllByText('شخص ثاني')
+
+    const stop = screen.getByRole('button', { name: 'إيقاف شخص أول' })
+    const reactivate = screen.getByRole('button', { name: 'تنشيط شخص ثاني' })
+    expect(stop.getAttribute('title')).toBe('إيقاف شخص أول')
+    expect(reactivate.getAttribute('title')).toBe('تنشيط شخص ثاني')
+    for (const button of [stop, reactivate]) {
+      expect(button.getAttribute('title')).not.toMatch(/\{\{|\}\}/)
+    }
+  })
+
   it('deactivates through the status command, never a delete', async () => {
     mocks.list.mockResolvedValue({
       management_visible: true,

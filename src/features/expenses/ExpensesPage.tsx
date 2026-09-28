@@ -122,7 +122,10 @@ function ExpensesBody({
     return (
       <ChartEmptyState
         title={t('expenses.states.noExpensesTitle')}
-        body={t('expenses.states.noExpensesBody')}
+        /* The body names the window it is talking about, so it takes the SAME two
+           dates the scope line under it does — without them the sentence would
+           read "no expense was recorded between {{from}} and {{to}}". */
+        body={t('expenses.states.noExpensesBody', { from: range.from, to: range.to })}
         hint={t('expenses.states.noExpensesHint')}
         scope={t('expenses.states.scope', { from: range.from, to: range.to })}
         action={

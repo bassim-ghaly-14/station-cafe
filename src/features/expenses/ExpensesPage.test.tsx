@@ -122,6 +122,11 @@ const todayParts = parseIsoDate(today) ?? { year: 2026, month: 1, day: 1 }
 const picked = isoDate(todayParts.year, todayParts.month, 10)
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
+// The page's DEFAULT period — the stored one is cleared first, so these are the
+// two dates every period-scoped line on this page has to be talking about.
+const rangeFrom = `${today.slice(0, 7)}-01`
+const rangeTo = today
+
 const dateFieldName = (iso: string) => new RegExp(`التاريخ: ${formatIsoDate(iso, 'ar-EG')}`)
 
 // Let i18n finish initializing before anything renders, so no late re-render happens mid-test.
@@ -378,6 +383,24 @@ describe('Expenses analytics', () => {
       screen.queryByRole('heading', { name: 'توزيع المصروفات على الفئات' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'المصروفات عبر الأيام' })).not.toBeInTheDocument()
+  })
+
+  it('names the period in the empty state instead of printing its placeholders', async () => {
+    // The empty body and the scope line under it describe the SAME window, so
+    // both have to carry real dates. A `{{from}}` on screen is a defect a
+    // reader sees, not a formatting quirk.
+    clearStoredRange()
+    mocks.expensesOverview.mockResolvedValue(EMPTY_OVERVIEW)
+    mocks.expenses.mockResolvedValue([])
+
+    const { container } = renderPage()
+
+    await screen.findByText('لا توجد مصروفات في هذه الفترة')
+    expect(container.textContent).not.toMatch(/\{\{|\}\}/)
+    // Both ends of the window appear in the sentence and in the scope line.
+    const scope = screen.getByText(/^الفترة: /)
+    expect(scope.textContent).toBe(`الفترة: ${rangeFrom} — ${rangeTo}`)
+    expect(container.textContent).toContain(`بين ${rangeFrom} و${rangeTo}`)
   })
 
   it('reports a query failure with a working retry, not a blank page', async () => {

@@ -494,6 +494,7 @@ function EmployeeActions({
               employee.status === 'ACTIVE'
                 ? 'employees.actions.deactivate'
                 : 'employees.actions.activate',
+              { name: employee.name },
             )}
           >
             <Power size={24} aria-hidden />

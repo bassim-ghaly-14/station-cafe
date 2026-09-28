@@ -13,10 +13,11 @@
     "build:app": "tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "i18n:audit": "node scripts/i18n-callers.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -b --noEmit",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm i18n:audit && pnpm test"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
