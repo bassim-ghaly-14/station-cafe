@@ -268,9 +268,7 @@ export function EmployeeDialog({
           </>
         ) : null}
 
-        {editing ? null : isWashWorker ? (
-          <p className="text-caption text-foreground-subtle">{t('employees.form.noLoginHint')}</p>
-        ) : null}
+        <WashWorkerLoginHint editing={Boolean(editing)} isWashWorker={isWashWorker} />
 
         <Field label={t('employees.form.name')} htmlFor="employee-name" error={errors.name ?? null}>
           <Input
@@ -349,4 +347,21 @@ export function EmployeeDialog({
       </div>
     </Dialog>
   )
+}
+
+/**
+ * The note explaining that a wash worker has no login.
+ *
+ * Shown only when CREATING a wash worker: the hint explains a choice the form
+ * just made, and on an existing employee the type is already settled, so
+ * repeating it would be noise. A cashier never sees it, because a cashier is
+ * precisely the employee type that DOES have a login.
+ */
+function WashWorkerLoginHint({
+  editing,
+  isWashWorker,
+}: Readonly<{ readonly editing: boolean; readonly isWashWorker: boolean }>) {
+  const { t } = useTranslation()
+  if (editing || !isWashWorker) return null
+  return <p className="text-caption text-foreground-subtle">{t('employees.form.noLoginHint')}</p>
 }

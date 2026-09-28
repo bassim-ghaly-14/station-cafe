@@ -44,7 +44,12 @@ import { roleHintKey, roleLabel, roleOf } from './employee-role'
 import { formatWorkedDuration } from './attendance'
 import { AttendanceOverrideDialog } from './AttendanceOverrideDialog'
 import { employeesApi } from '@/services/employeesApi'
-import type { AttendanceDay, EmployeeDetails, EmployeePeriod } from '@/services/employeesApi'
+import type {
+  Advance,
+  AttendanceDay,
+  EmployeeDetails,
+  EmployeePeriod,
+} from '@/services/employeesApi'
 
 /** A compact premium stat block: a quiet label over a strong figure. */
 function StatBlock({
@@ -220,109 +225,16 @@ export function EmployeeDetailsDrawer({
               </Section>
 
               <Section title={t('employees.drawer.attendanceTimeline')}>
-                {details.attendance.length === 0 ? (
-                  <p className="text-caption text-foreground-subtle">
-                    {t('employees.drawer.noAttendance')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col">
-                    {details.attendance.map((day) => (
-                      <li
-                        key={day.id}
-                        className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
-                      >
-                        <div className="flex min-w-0 flex-col">
-                          <DisplayDate value={day.business_date} />
-                          {/* The recorder's name is the point for a wash worker:
-                          they have no login, so this is the only trace of who
-                          marked them in. */}
-                          <span className="text-caption text-foreground-subtle">
-                            {t('employees.drawer.recordedBy', { name: day.recorded_by_name })}
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          {day.state !== 'PRESENT' ? (
-                            <Badge variant="warning" size="sm" dot>
-                              {t(`employees.state.${day.state}`)}
-                            </Badge>
-                          ) : (
-                            <>
-                              <span className="flex items-center gap-1 text-caption tabular-nums text-foreground-muted">
-                                <DisplayTime value={day.check_in_effective_at} />
-                                <ArrowLeft aria-hidden="true" className="size-3.5 shrink-0" />
-                                {day.check_out_effective_at ? (
-                                  <DisplayTime value={day.check_out_effective_at} />
-                                ) : (
-                                  <span className="text-foreground-faint">—</span>
-                                )}
-                              </span>
-                              <span className="text-body font-bold tabular-nums text-foreground-strong">
-                                {day.worked_minutes !== null
-                                  ? formatWorkedDuration(day.worked_minutes, t)
-                                  : t('employees.drawer.openDay')}
-                              </span>
-                            </>
-                          )}
-                          {/* The administrative correction, on the day it applies to.
-                          Only a PRESENT day has a punch pair to correct, so an
-                          absence or a leave never offers it. */}
-                          {canOverride && day.state === 'PRESENT' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="shrink-0"
-                              onClick={() => setOverriding(day)}
-                              aria-label={t('employees.override.action', {
-                                name: employee.name,
-                                date: day.business_date,
-                              })}
-                              title={t('employees.override.title')}
-                            >
-                              <CalendarClock size={16} aria-hidden />
-                              {t('employees.override.actionLabel')}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <AttendanceTimeline
+                  days={details.attendance}
+                  employeeName={employee.name}
+                  canOverride={canOverride}
+                  onOverride={setOverriding}
+                />
               </Section>
 
               <Section title={t('employees.drawer.advances')}>
-                {details.advances.length === 0 ? (
-                  <p className="text-caption text-foreground-subtle">
-                    {t('employees.drawer.noAdvances')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col">
-                    {details.advances.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
-                      >
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-body">{item.reason}</span>
-                          <span className="text-caption text-foreground-subtle">
-                            <DisplayDate value={item.advance_date} />
-                            {' · '}
-                            {t('employees.drawer.recordedBy', { name: item.created_by_name })}
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {item.status === 'REVERSED' ? (
-                            <Badge variant="neutral" size="sm" dot>
-                              {t('employees.advance.reversed')}
-                            </Badge>
-                          ) : null}
-                          {/* A reversed advance keeps its amount on the record; the
-                          badge says it no longer counts. */}
-                          <MoneyDisplay amount={item.amount} variant="auto" />
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <AdvanceList advances={details.advances} />
               </Section>
 
               <Section title={t('employees.drawer.payroll')}>
@@ -416,6 +328,137 @@ export function EmployeeDetailsDrawer({
         />
       ) : null}
     </>
+  )
+}
+
+/**
+ * The day-by-day attendance record.
+ *
+ * A PRESENT day is a punch pair and a worked duration; anything else is just
+ * its state, and saying so is more honest than showing an empty shift. An open
+ * day — present, not yet checked out — has no duration yet, so it says "open"
+ * rather than showing zero, which would read as a day nobody worked.
+ *
+ * The correction is offered only where it can apply: a PRESENT day is the only
+ * one with a punch pair to correct, so an absence or a leave never shows it.
+ */
+function AttendanceTimeline({
+  days,
+  employeeName,
+  canOverride,
+  onOverride,
+}: Readonly<{
+  days: readonly AttendanceDay[]
+  employeeName: string
+  canOverride: boolean
+  onOverride: (day: AttendanceDay) => void
+}>) {
+  const { t } = useTranslation()
+  if (days.length === 0) {
+    return (
+      <p className="text-caption text-foreground-subtle">{t('employees.drawer.noAttendance')}</p>
+    )
+  }
+  return (
+    <ul className="flex flex-col">
+      {days.map((day) => (
+        <li
+          key={day.id}
+          className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+        >
+          <div className="flex min-w-0 flex-col">
+            <DisplayDate value={day.business_date} />
+            {/* The recorder's name is the point for a wash worker: they have no
+                login, so this is the only trace of who marked them in. */}
+            <span className="text-caption text-foreground-subtle">
+              {t('employees.drawer.recordedBy', { name: day.recorded_by_name })}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {day.state !== 'PRESENT' ? (
+              <Badge variant="warning" size="sm" dot>
+                {t(`employees.state.${day.state}`)}
+              </Badge>
+            ) : (
+              <>
+                <span className="flex items-center gap-1 text-caption tabular-nums text-foreground-muted">
+                  <DisplayTime value={day.check_in_effective_at} />
+                  <ArrowLeft aria-hidden="true" className="size-3.5 shrink-0" />
+                  {day.check_out_effective_at ? (
+                    <DisplayTime value={day.check_out_effective_at} />
+                  ) : (
+                    <span className="text-foreground-faint">—</span>
+                  )}
+                </span>
+                <span className="text-body font-bold tabular-nums text-foreground-strong">
+                  {day.worked_minutes !== null
+                    ? formatWorkedDuration(day.worked_minutes, t)
+                    : t('employees.drawer.openDay')}
+                </span>
+              </>
+            )}
+            {canOverride && day.state === 'PRESENT' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                onClick={() => onOverride(day)}
+                aria-label={t('employees.override.action', {
+                  name: employeeName,
+                  date: day.business_date,
+                })}
+                title={t('employees.override.title')}
+              >
+                <CalendarClock size={16} aria-hidden />
+                {t('employees.override.actionLabel')}
+              </Button>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The advance history.
+ *
+ * A REVERSED advance keeps its amount on the record — the money left the
+ * employee's balance and the ledger should still say so — and the badge is what
+ * states that it no longer counts. Removing the row instead would make a
+ * reversed advance indistinguishable from one that never happened.
+ */
+function AdvanceList({ advances }: Readonly<{ readonly advances: readonly Advance[] }>) {
+  const { t } = useTranslation()
+  if (advances.length === 0) {
+    return <p className="text-caption text-foreground-subtle">{t('employees.drawer.noAdvances')}</p>
+  }
+  return (
+    <ul className="flex flex-col">
+      {advances.map((item) => (
+        <li
+          key={item.id}
+          className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+        >
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-body">{item.reason}</span>
+            <span className="text-caption text-foreground-subtle">
+              <DisplayDate value={item.advance_date} />
+              {' · '}
+              {t('employees.drawer.recordedBy', { name: item.created_by_name })}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {item.status === 'REVERSED' ? (
+              <Badge variant="neutral" size="sm" dot>
+                {t('employees.advance.reversed')}
+              </Badge>
+            ) : null}
+            <MoneyDisplay amount={item.amount} variant="auto" />
+          </div>
+        </li>
+      ))}
+    </ul>
   )
 }
 
