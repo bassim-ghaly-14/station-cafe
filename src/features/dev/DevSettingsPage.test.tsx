@@ -585,4 +585,64 @@ describe('DevSettingsPage chart bar colours', () => {
     expect(document.documentElement.style.getPropertyValue('--chart-bar-primary')).toBe('')
     expect(getFormattingPreferences().charts.primary).toBe('var(--primary)')
   })
+
+  describe('amount list validation', () => {
+    // These lists drive the quick-pick buttons, so a blank, a non-number, a
+    // non-positive amount or a duplicate would all put a broken button on the
+    // POS. The page refuses the whole save rather than writing a bad list.
+    const saveSettings = () =>
+      fireEvent.click(screen.getByRole('button', { name: 'حفظ الإعدادات' }))
+
+    it('refuses a blank service charge and writes nothing', async () => {
+      page()
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+      fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '' } })
+      saveSettings()
+      await waitFor(() => expect(mocks.setServiceCharge).not.toHaveBeenCalled())
+      expect(mocks.setDiscountOptions).not.toHaveBeenCalled()
+    })
+
+    it('refuses a duplicate amount, which would render two identical quick picks', async () => {
+      page()
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+      // Add a second entry and type the same amount as the first: two identical
+      // quick picks would be a dead button on the POS.
+      fireEvent.click(screen.getByRole('button', { name: 'إضافة مبلغ خدمة' }))
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 2')).toBeInTheDocument())
+      fireEvent.change(screen.getByLabelText('رسوم الخدمة 2'), { target: { value: '10' } })
+      saveSettings()
+      await waitFor(() => expect(mocks.setServiceCharge).not.toHaveBeenCalled())
+    })
+
+    it('refuses a non-positive amount', async () => {
+      page()
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+      fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '0' } })
+      saveSettings()
+      await waitFor(() => expect(mocks.setServiceCharge).not.toHaveBeenCalled())
+    })
+
+    it('refuses a blank discount option independently of the service list', async () => {
+      page()
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+      fireEvent.change(screen.getByLabelText('مبالغ الخصم السريعة 1'), { target: { value: '' } })
+      saveSettings()
+      // The service list was fine, but the save is all-or-nothing: a bad
+      // discount list must not be persisted alongside a good service list.
+      await waitFor(() => expect(mocks.setDiscountOptions).not.toHaveBeenCalled())
+      expect(mocks.setServiceCharge).not.toHaveBeenCalled()
+    })
+
+    it('still saves a valid list after a rejected attempt', async () => {
+      page()
+      await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+      fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '' } })
+      saveSettings()
+      await waitFor(() => expect(mocks.setServiceCharge).not.toHaveBeenCalled())
+
+      fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '12' } })
+      saveSettings()
+      await waitFor(() => expect(mocks.setServiceCharge).toHaveBeenCalledWith({ amounts: [1200] }))
+    })
+  })
 })

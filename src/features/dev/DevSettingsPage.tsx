@@ -48,6 +48,30 @@ import { FormattingPreview } from './FormattingPreview'
 const SELECT =
   'h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-foreground focus-visible:outline-2 focus-visible:outline-focus'
 
+/**
+ * Turn a list of typed-in amounts into the minor-unit integers the backend
+ * stores, or refuse it.
+ *
+ * The rule is the same for service charges and discount options, so it is
+ * written once: every entry must be a real number, greater than zero, and
+ * distinct. Distinctness matters because these lists drive quick-pick buttons —
+ * two identical options would render as two buttons doing the same thing.
+ *
+ * `invalidCode` is what the manager is told, so the caller keeps ownership of
+ * which setting failed rather than this function guessing.
+ */
+function parseAmountList(
+  values: readonly string[],
+  invalidCode: 'settings.invalid_service_charge' | 'settings.invalid_discount',
+): { amounts: number[] } | { error: string } {
+  const amounts = values.map((value) => Math.round(Number(value) * 100))
+  const blank = values.some((value) => value.trim() === '' || !Number.isFinite(Number(value)))
+  const nonPositive = amounts.some((value) => value <= 0)
+  const duplicated = new Set(amounts).size !== amounts.length
+  if (blank || nonPositive || duplicated) return { error: invalidCode }
+  return { amounts }
+}
+
 export default function DevSettingsPage() {
   const { t } = useTranslation()
   const toast = useToast()
@@ -166,29 +190,18 @@ export default function DevSettingsPage() {
     setBusy('settings')
 
     try {
-      const amounts = serviceAmounts.map((value) => Math.round(Number(value) * 100))
-      const discounts = discountAmounts.map((value) => Math.round(Number(value) * 100))
+      // Discount options are configuration, not a sale; the two lists are
+      // validated by the same rule but refused with different codes, so a
+      // manager can tell which one the backend rejected.
+      const service = parseAmountList(serviceAmounts, 'settings.invalid_service_charge')
+      if ('error' in service) throw new Error(service.error)
 
-      if (
-        serviceAmounts.some((value) => value.trim() === '' || !Number.isFinite(Number(value))) ||
-        amounts.some((value) => value <= 0) ||
-        new Set(amounts).size !== amounts.length
-      ) {
-        throw new Error('settings.invalid_service_charge')
-      }
-
-      // Discount options are configuration, not a sale.
-      if (
-        discountAmounts.some((value) => value.trim() === '' || !Number.isFinite(Number(value))) ||
-        discounts.some((value) => value <= 0) ||
-        new Set(discounts).size !== discounts.length
-      ) {
-        throw new Error('settings.invalid_discount')
-      }
+      const discount = parseAmountList(discountAmounts, 'settings.invalid_discount')
+      if ('error' in discount) throw new Error(discount.error)
 
       await Promise.all([
-        settingsApi.setServiceCharge({ amounts }),
-        settingsApi.setDiscountOptions({ amounts: discounts }),
+        settingsApi.setServiceCharge({ amounts: service.amounts }),
+        settingsApi.setDiscountOptions({ amounts: discount.amounts }),
         settingsApi.setCredit(credit),
       ])
 
