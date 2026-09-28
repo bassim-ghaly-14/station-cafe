@@ -2,7 +2,6 @@
  * Root: db bridge check → SessionProvider → Login / AppShell + routed views.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/Logo'
 import { BootLoadingIndicator, ErrorState } from '@/components/states'
@@ -14,6 +13,7 @@ import {
 } from '@/app/boot'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider, useSession } from '@/features/auth/useSession'
+import { call } from '@/services/ipc'
 import LoginPage from '@/features/auth/LoginPage'
 import AppShell from '@/app/AppShell'
 import { RouterProvider, useRouter } from '@/app/router'
@@ -112,12 +112,12 @@ function SessionGate({ onReady }: Readonly<{ readonly onReady: (ready: boolean) 
 
 export default function App() {
   const { t } = useTranslation()
-  // The app is a Tauri desktop application: the backend (SQLite, commands)
-  // only exists inside the Tauri shell. When opened from a plain browser
-  // (e.g. bare `pnpm dev`), there is no IPC runtime and db_status can never
-  // succeed — surface that explicitly instead of a generic error.
-  const inTauri = '__TAURI_INTERNALS__' in window
-  const [dbOk, setDbOk] = useState<boolean | null>(inTauri ? null : false)
+  // Station runs in two places from this ONE codebase: the Tauri desktop
+  // shell, and a phone browser on the cafe LAN served by the same executable.
+  // The backend is reached through the shared transport in `@/services/ipc`,
+  // so this probe is the SAME `db_status` command on both — over IPC on the
+  // desktop, and over the LAN HTTP bridge in a browser.
+  const [dbOk, setDbOk] = useState<boolean | null>(null)
   const [tick, setTick] = useState(0)
   // Boot epoch: bumped on db retry so the 3s minimum replays for the new
   // lifecycle (a fresh boot experience, never a flash).
@@ -137,15 +137,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!inTauri) return
     let cancelled = false
-    invoke<DbStatus>('db_status')
+    call<DbStatus>('db_status')
       .then(() => !cancelled && setDbOk(true))
       .catch(() => !cancelled && setDbOk(false))
     return () => {
       cancelled = true
     }
-  }, [inTauri, tick])
+  }, [tick])
 
   // Boot may exit only when BOTH hold: real init ready AND 3s minimum met.
   // Readiness is never faked — dbOk/sessionReady come from the real
@@ -170,7 +169,7 @@ export default function App() {
   // Retry from the error screen re-enters the boot lifecycle: reset so the
   // branded experience (and its 3s minimum) replays instead of flashing.
   function retryDb() {
-    setDbOk(inTauri ? null : false)
+    setDbOk(null)
     setSessionReady(false)
     setExiting(false)
     setExited(false)
@@ -192,7 +191,7 @@ export default function App() {
           >
             <Logo size={88} />
             <ErrorState
-              message={t(inTauri ? 'errors.internal_error' : 'errors.tauri_required')}
+              message={t('errors.internal_error')}
               onRetry={retryDb}
               retryLabel={t('app.retry')}
             />

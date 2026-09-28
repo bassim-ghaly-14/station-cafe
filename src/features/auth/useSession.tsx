@@ -1,7 +1,7 @@
 /** Session context: current user + login/logout actions. */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { call, callPublic } from '@/services/ipc'
+import { call, callPublic, onUnauthorized } from '@/services/ipc'
 import { roleRank, type UserRole } from '@/lib/roles'
 import { sessionToken, setSessionToken } from './session'
 
@@ -65,6 +65,24 @@ export function SessionProvider({ children }: Readonly<{ readonly children: Reac
       setUser(null)
     }
   }, [])
+
+  /**
+   * A 401 from ANY command drops the session.
+   *
+   * Without this, a phone whose session was revoked mid-session would keep
+   * rendering the last successful page and fail silently on every action. The
+   * user is returned to the Station login screen, which is the same screen the
+   * desktop shows. A 403 is NOT routed here: a role refusal is a real answer
+   * and must stay visible on the page.
+   */
+  useEffect(
+    () =>
+      onUnauthorized(() => {
+        setSessionToken(null)
+        setUser(null)
+      }),
+    [],
+  )
 
   const clearSessionToken = useCallback(() => {
     setSessionToken(null)

@@ -43,6 +43,9 @@ pub struct RuntimeStatus {
 pub const ERR_DISABLED: &str = "disabled";
 pub const ERR_NO_LAN_ADDRESS: &str = "no_lan_address";
 pub const ERR_BIND_FAILED: &str = "bind_failed";
+/// No application handle, so the browser surface and the command bridge have
+/// nothing to serve from. Reported rather than silently degraded.
+pub const ERR_NO_APP_HANDLE: &str = "no_app_handle";
 
 /// Current observed state, without changing anything.
 pub fn status(state: &AppState) -> RuntimeStatus {
@@ -112,11 +115,26 @@ pub fn apply(state: &AppState, cfg: &NetworkConfig) -> RuntimeStatus {
     let addr = SocketAddr::new(ip, cfg.port);
 
     // 3. Bind. A failure here is a normal, recoverable condition.
-    let handle = match crate::network::server::start(addr, Arc::clone(&state.conn)) {
-        Ok(handle) => handle,
-        Err(e) => {
-            log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
-            return unavailable(true, ERR_BIND_FAILED);
+    //
+    // The application handle comes from the state, never from a global: it is
+    // what lets this listener serve the Station application and reach the real
+    // commands. Without it there is no browser surface, and that is reported
+    // honestly instead of serving something that cannot work.
+    let handle = match state.app() {
+        Some(app) => match crate::network::server::start(
+            addr,
+            Arc::clone(&state.conn),
+            app.clone(),
+        ) {
+            Ok(handle) => handle,
+            Err(e) => {
+                log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
+                return unavailable(true, ERR_BIND_FAILED);
+            }
+        },
+        None => {
+            log::error!("local api: no application handle; the POS is unaffected");
+            return unavailable(true, ERR_NO_APP_HANDLE);
         }
     };
     log::info!("local api: listening on http://{}", handle.local_addr());

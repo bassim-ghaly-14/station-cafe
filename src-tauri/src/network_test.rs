@@ -38,6 +38,11 @@ mod runtime_tests {
             developer_seed_grant: Mutex::new(None),
             api: Mutex::new(None),
             discovery: Mutex::new(None),
+            // No Tauri runtime in a unit test, so the browser application and
+            // the command bridge are unavailable here. That is exactly the
+            // condition the production code reports honestly rather than
+            // degrading, and it is covered by `apply` below.
+            handle: std::sync::OnceLock::new(),
         }
     }
 
@@ -581,7 +586,7 @@ fn the_listener_serves_health_over_a_real_socket() {
     crate::network::server::reset_login_limiter_for_tests();
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let handle = crate::network::server::start(addr, conn).expect("start");
+    let handle = crate::network::server::start_api_only(addr, conn).expect("start");
 
     let (status, raw) = http_get(handle.local_addr(), "/api/v1/health", None);
     assert_eq!(status, 200, "{raw}");
@@ -603,7 +608,7 @@ fn the_api_stays_usable_when_discovery_is_impossible() {
     // proves the manager can still reach it by IP.
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let handle = crate::network::server::start(addr, conn.clone()).expect("start");
+    let handle = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
 
     // Deliberately no Advertisement is created: this is the degraded mode.
     let (status, raw) = http_get(handle.local_addr(), "/api/v1/health", None);
@@ -621,7 +626,7 @@ fn a_bearer_token_authorizes_a_real_socket_request() {
     crate::network::server::reset_login_limiter_for_tests();
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let handle = crate::network::server::start(addr, conn.clone()).expect("start");
+    let handle = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
 
     let token = login_token(&conn.lock().unwrap(), "manager");
     let (status, raw) = http_get(handle.local_addr(), "/api/v1/me", Some(&format!("Bearer {token}")));
@@ -637,7 +642,7 @@ fn stopping_the_server_releases_the_port() {
     // refuse to reopen the till on the next launch.
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let handle = crate::network::server::start(addr, conn.clone()).expect("start");
+    let handle = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
     let bound = handle.local_addr();
     assert!(std::net::TcpStream::connect(bound).is_ok(), "must be listening");
 
@@ -653,7 +658,7 @@ fn stopping_the_server_releases_the_port() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let mut rebound = None;
     while std::time::Instant::now() < deadline {
-        match crate::network::server::start(bound, conn.clone()) {
+        match crate::network::server::start_api_only(bound, conn.clone()) {
             Ok(h) => {
                 rebound = Some(h);
                 break;
@@ -672,10 +677,10 @@ fn a_bind_failure_is_returned_not_panicked() {
     // the app can carry on without the network.
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let first = crate::network::server::start(addr, conn.clone()).expect("start");
+    let first = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
     let taken = first.local_addr();
 
-    let second = crate::network::server::start(taken, conn);
+    let second = crate::network::server::start_api_only(taken, conn);
     let message = match second {
         Ok(_) => panic!("binding a taken port must fail cleanly"),
         Err(e) => e,
@@ -691,7 +696,7 @@ fn stopping_twice_is_safe() {
     // Shutdown can be reached from both the window event and Drop.
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-    let handle = crate::network::server::start(addr, conn).expect("start");
+    let handle = crate::network::server::start_api_only(addr, conn).expect("start");
     handle.stop();
     handle.stop();
     assert!(!handle.is_running());
@@ -746,17 +751,21 @@ fn a_valid_token_is_accepted() {
 mod web_tests {
     //! Tests for the browser surface served alongside the API.
     //!
-    //! Two things are protected here, and they pull in opposite directions:
+    //! The phone must reach the REAL Station application — the same bundle the
+    //! desktop window loads — and the REAL commands, not a parallel
+    //! implementation. These tests pin the three properties that make that
+    //! true and keep it true:
     //!
-    //!   1. `/` must return a real HTML application, so a phone that scanned
-    //!      the QR gets a login screen instead of raw JSON.
-    //!   2. `/api/v1/*` must stay EXACTLY as it was — JSON, authenticated,
-    //!      role-protected — and must never fall through to the HTML.
+    //!   1. A non-API path is answered by the Station frontend, with an SPA
+    //!      fallback so a refresh or a deep link works.
+    //!   2. `/api/v1/*` stays EXACTLY as it was — JSON, authenticated,
+    //!      role-protected — and never falls through to the HTML.
+    //!   3. `/api/v1/cmd/*` runs the SAME Rust commands the desktop runs, so
+    //!      login, roles and business rules are shared rather than reimplemented.
     //!
-    //! The unit tests drive `web::route` directly; the socket tests drive the
-    //! real listener, because only those prove the split holds on the wire.
+    //! The socket tests drive the real listener, because only those prove the
+    //! split holds on the wire.
 
-    use crate::network::api;
     use crate::network::web::{self, Route};
     use crate::services::auth;
     use rusqlite::Connection;
@@ -777,10 +786,17 @@ mod web_tests {
         Arc::new(Mutex::new(conn))
     }
 
-    /// A listener on a free loopback port, as the other tests here already do.
+    /// A listener on a free loopback port.
+    ///
+    /// The browser application and the command bridge are served from Tauri's
+    /// embedded asset set, so those two surfaces only exist inside a running
+    /// Tauri application. These tests therefore cover what does not need one —
+    /// the JSON API, routing, argument handling and the security rules — while
+    /// the asset and command surfaces are proved on the wire during LAN
+    /// verification, where the real application is running.
     fn start(conn: &Db) -> crate::network::server::ServerHandle {
         let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 0));
-        crate::network::server::start(addr, Arc::clone(conn)).expect("start")
+        crate::network::server::start_api_only(addr, Arc::clone(conn)).expect("start")
     }
 
     /// A login token for a seeded user, produced by the real auth service.
@@ -796,190 +812,192 @@ mod web_tests {
         .token
     }
 
-    /// A request carrying the path a real client sends, INCLUDING the `/api/v1`
-    /// namespace, exactly as the socket delivers it.
-    fn web_request(method: &str, path: &str) -> api::ApiRequest {
-        api::ApiRequest {
-            method: method.into(),
-            path: path.into(),
-            query: String::new(),
-            authorization: None,
-            client: "10.0.0.9".into(),
-            body: String::new(),
-        }
-    }
-
     // ---- routing ----------------------------------------------------------
 
     #[test]
-    fn the_root_serves_the_application_shell() {
+    fn the_root_and_client_routes_reach_the_frontend() {
         assert_eq!(web::route("/"), Route::Index);
-        let (content_type, body) = web::index();
-        assert_eq!(content_type, "text/html; charset=utf-8");
-        let html = String::from_utf8(body.to_vec()).unwrap();
-        assert!(html.contains("<html"), "{html}");
-        // Arabic and RTL from the very first byte, so the phone never flashes
-        // an English, left-to-right page before the app boots.
-        assert!(html.contains("dir=\"rtl\""), "{html}");
-        assert!(html.contains("lang=\"ar\""), "{html}");
+        assert_eq!(web::route("/index.html"), Route::Index);
+        // The SPA fallback: the application owns its own routing, so a refresh
+        // on a deep link must return the shell rather than a 404.
+        assert_eq!(web::route("/pos"), Route::Spa);
+        assert_eq!(web::route("/reports"), Route::Spa);
     }
 
     #[test]
-    fn every_asset_is_served_with_a_usable_content_type() {
-        for asset in web::ASSETS {
-            assert!(asset.path.starts_with("/assets/"), "{}", asset.path);
-            assert!(!asset.body.is_empty(), "{} is empty", asset.path);
-            assert!(
-                asset.content_type.starts_with("text/")
-                    || asset.content_type.starts_with("application/"),
-                "{} has content type {}",
-                asset.path,
-                asset.content_type
-            );
-        }
+    fn a_missing_file_is_never_the_shell() {
+        // Answering a missing script with HTML would surface as a baffling
+        // parse error in the browser instead of a clean 404.
+        assert_eq!(web::route("/nope.js"), Route::NotFound);
+        assert_eq!(web::route("/assets/missing-abc123.js"), Route::NotFound);
     }
 
     #[test]
-    fn no_bundled_asset_reaches_the_internet() {
-        // The offline guarantee, enforced rather than assumed: no CDN, no web
-        // font, no analytics and no remote script or stylesheet anywhere in
-        // what ships to the phone.
-        for asset in web::ASSETS {
-            let text = String::from_utf8_lossy(asset.body);
-            for forbidden in ["https://", "googleapis", "cdn.", "fonts.", "googletagmanager"] {
-                assert!(
-                    !text.contains(forbidden),
-                    "{} references {forbidden}",
-                    asset.path
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn an_unknown_web_path_is_not_the_application_shell() {
-        // A mistyped URL must not be answered with a working page, and an API
-        // path must never be answered with HTML.
-        for path in ["/nope", "/assets/missing.js", "/index.php", "/api/v10/health"] {
-            assert_eq!(web::route(path), Route::NotFound, "{path}");
-        }
-    }
-
-    #[test]
-    fn an_asset_path_cannot_escape_the_allowlist() {
-        // No client string ever reaches a filesystem, so traversal is
-        // structurally impossible — and this closed allowlist proves it.
-        for path in [
-            "/assets/../../../etc/passwd",
-            "/assets/..%2f..%2fetc%2fpasswd",
+    fn an_asset_path_cannot_escape_the_bundle() {
+        // Structural, not a filter: traversal never becomes a key.
+        for attempt in [
+            "/assets/../../etc/passwd",
+            "/assets/..%2f..%2fsecret",
+            "/assets/a/../../b",
+            "/assets/./x",
+            "/assets//x",
             "/assets/",
-            "//etc/passwd",
         ] {
-            assert_eq!(web::route(path), Route::NotFound, "{path}");
+            assert!(web::asset_key(attempt).is_none(), "{attempt}");
+            assert_eq!(web::route(attempt), Route::NotFound, "{attempt}");
         }
     }
 
     #[test]
     fn the_api_namespace_is_decided_by_one_prefix_test() {
-        for path in ["/api/v1/health", "/api/v1/me", "/api/v1/manager/summary", "/api/v1"] {
-            assert!(web::is_api_path(path), "{path} must be the API");
-        }
-        // A path that merely shares a prefix is NOT the API, so it can never be
-        // answered as JSON.
+        use crate::network::server::command_name;
         for path in ["/api/v10/health", "/api/v", "/apixyz", "/", "/assets/app.js"] {
-            assert!(!web::is_api_path(path), "{path} must not be the API");
+            assert!(!web::is_api_path(path), "{path} must not be an API path");
+            assert!(command_name(path).is_none(), "{path} must not be a command");
+        }
+        assert!(web::is_api_path("/api/v1/health"));
+        assert_eq!(
+            command_name("/api/v1/cmd/list_products"),
+            Some("list_products")
+        );
+    }
+
+    #[test]
+    fn a_command_name_must_be_a_plain_identifier() {
+        use crate::network::server::command_name;
+        // Anything that could smuggle a separator or a path never reaches the
+        // command lookup.
+        for path in [
+            "/api/v1/cmd/",
+            "/api/v1/cmd/list products",
+            "/api/v1/cmd/../../etc",
+            "/api/v1/cmd/List_Products",
+        ] {
+            assert!(command_name(path).is_none(), "{path}");
         }
     }
 
-    #[test]
-    fn the_api_keeps_its_json_404_for_unknown_routes() {
-        // The regression this whole split exists to prevent: an unknown API
-        // route answering 200 with the HTML shell would make a broken client
-        // look like a working one.
-        let conn = fresh();
-        let err = api::handle(&web_request("GET", "/api/v1/nope"), &conn).unwrap_err();
-        assert_eq!(err.status, 404);
-        assert_eq!(err.code, "NOT_FOUND");
-    }
-
-    // ---- real socket ------------------------------------------------------
+    // ---- the wire ---------------------------------------------------------
 
     #[test]
-    fn the_root_serves_html_while_the_api_still_serves_json() {
-        // THE end-to-end proof, over a real socket on the real listener.
+    fn the_api_namespace_keeps_its_json_404() {
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
         let addr = handle.local_addr();
 
-        // 1. `/` is a real HTML document.
-        let (status, raw) = get(addr, "/", None);
-        assert_eq!(status, 200, "{raw}");
-        assert!(raw.contains("Content-Type: text/html"), "{raw}");
-        assert!(raw.contains("<html"), "{raw}");
-
-        // 2. The API is untouched.
-        let (status, raw) = get(addr, "/api/v1/health", None);
-        assert_eq!(status, 200, "{raw}");
-        assert!(raw.contains("application/json"), "{raw}");
-        assert!(raw.contains("station-cafe"), "{raw}");
-
-        // 3. Assets are served with their own content types.
-        let (status, raw) = get(addr, "/assets/app.js", None);
-        assert_eq!(status, 200, "{raw}");
-        assert!(raw.contains("javascript"), "{raw}");
-
-        let (status, raw) = get(addr, "/assets/app.css", None);
-        assert_eq!(status, 200, "{raw}");
-        assert!(raw.contains("text/css"), "{raw}");
-
-        // The shared Arabic locale is served from its real location.
-        let (status, raw) = get(addr, "/assets/ar.json", None);
-        assert_eq!(status, 200, "{raw}");
-        assert!(raw.contains("application/json"), "{raw}");
-
-        // 4. An unknown API route is JSON, never HTML.
         let (status, raw) = get(addr, "/api/v1/nope", None);
         assert_eq!(status, 404, "{raw}");
         assert!(raw.contains("application/json"), "{raw}");
-        assert!(!raw.contains("<html"), "an API 404 must not be the app: {raw}");
-
-        // 5. An unknown web path is a 404, not the shell.
-        let (status, raw) = get(addr, "/definitely-not-here", None);
-        assert_eq!(status, 404, "{raw}");
+        // An API 404 must NEVER be the HTML application.
         assert!(!raw.contains("<html"), "{raw}");
 
         handle.stop();
     }
 
     #[test]
-    fn the_served_app_carries_a_strict_csp_and_no_embedded_secret() {
-        crate::network::server::reset_login_limiter_for_tests();
+    fn the_health_probe_is_still_json() {
         let conn = shared(fresh());
         let handle = start(&conn);
         let addr = handle.local_addr();
 
-        let (_, raw) = get(addr, "/", None);
-        // The browser is confined to this origin: no CDN, no framing, no forms.
-        assert!(raw.contains("Content-Security-Policy"), "{raw}");
-        assert!(raw.contains("default-src 'self'"), "{raw}");
-        assert!(raw.contains("frame-ancestors 'none'"), "{raw}");
-        assert!(raw.contains("X-Frame-Options: DENY"), "{raw}");
-
-        // Nothing session-shaped is written into the document a phone receives.
-        let token = login(&conn, "manager");
-        assert!(!raw.contains(&token), "a token leaked into the HTML shell");
-        assert!(
-            !raw.to_lowercase().contains("password"),
-            "no credential word in the HTML shell"
-        );
+        let (status, raw) = get(addr, "/api/v1/health", None);
+        assert_eq!(status, 200, "{raw}");
+        assert!(raw.contains("station-cafe"), "{raw}");
+        assert!(raw.contains("application/json"), "{raw}");
 
         handle.stop();
     }
 
     #[test]
-    fn the_api_is_still_authenticated_and_role_protected_with_the_app_served() {
-        // Adding the browser surface must not have relaxed a single API rule.
+    fn a_command_route_refuses_a_get() {
+        // Commands mutate state; only an explicit POST may run one.
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+
+        let (status, _) = get(addr, "/api/v1/cmd/list_categories", None);
+        assert_eq!(status, 405);
+
+        handle.stop();
+    }
+
+    #[test]
+    fn a_command_without_a_token_is_401_not_an_empty_result() {
+        // The core authorization guarantee for the browser: an unauthenticated
+        // caller is refused, and never handed plausible-looking empty data.
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+
+        let (status, _) = post(addr, "/api/v1/cmd/list_categories", "{}");
+        assert_eq!(status, 401);
+
+        handle.stop();
+    }
+
+    #[test]
+    fn a_malformed_command_body_is_a_400() {
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+        let token = login(&conn, "manager");
+
+        let (status, _) = post_auth(addr, "/api/v1/cmd/create_category", &token, "not json");
+        assert_eq!(status, 400);
+
+        handle.stop();
+    }
+
+    #[test]
+    fn a_missing_required_argument_is_a_400_not_a_default() {
+        // A silently defaulted `""` or `0` is how a business rule gets skipped.
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+        let token = login(&conn, "manager");
+
+        let (status, _) = post_auth(addr, "/api/v1/cmd/create_category", &token, "{}");
+        assert_eq!(status, 400);
+
+        handle.stop();
+    }
+
+    #[test]
+    fn a_token_in_the_query_string_never_authorizes_a_command() {
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+        let token = login(&conn, "manager");
+
+        let (status, raw) = get(addr, &format!("/api/v1/cmd/me?token={token}"), None);
+        assert_ne!(status, 200, "a token in the URL must never authorize: {raw}");
+
+        handle.stop();
+    }
+
+    #[test]
+    fn an_error_response_never_echoes_the_token() {
+        let conn = shared(fresh());
+        let handle = start(&conn);
+        let addr = handle.local_addr();
+        let token = login(&conn, "manager");
+
+        let (status, raw) = post_auth(
+            addr,
+            "/api/v1/cmd/delete_category",
+            &token,
+            r#"{"category_id":999999}"#,
+        );
+        assert_ne!(status, 200, "{raw}");
+        assert!(!raw.contains(&token), "the token leaked into the error: {raw}");
+
+        handle.stop();
+    }
+
+    #[test]
+    fn the_api_is_still_authenticated_and_role_protected() {
+        // Serving the browser must not have relaxed a single API rule.
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
@@ -999,7 +1017,6 @@ mod web_tests {
         );
         assert_eq!(status, 403, "{raw}");
 
-        // MANAGER gets it.
         let manager = login(&conn, "manager");
         let (status, raw) = get(
             addr,
@@ -1012,9 +1029,7 @@ mod web_tests {
     }
 
     #[test]
-    fn login_over_the_socket_still_authenticates_against_the_rust_services() {
-        // The browser posts here; this proves the exact route it uses works
-        // unchanged over a real connection.
+    fn login_over_the_socket_authenticates_against_the_rust_services() {
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
@@ -1029,19 +1044,20 @@ mod web_tests {
         assert!(raw.contains("\"token\""), "{raw}");
         assert!(raw.contains("MANAGER"), "{raw}");
         // The response carries a session, never the password.
-        assert!(!raw.contains("manager123"), "the password echoed back: {raw}");
+        assert!(!raw.contains("manager123"), "{raw}");
 
-        let (status, raw) = post(
+        let (status, _) = post(
             addr,
             "/api/v1/auth/login",
             r#"{"name":"manager","password":"wrong"}"#,
         );
-        assert_eq!(status, 401, "{raw}");
+        assert_eq!(status, 401);
 
         handle.stop();
     }
 
     // ---- socket helpers ---------------------------------------------------
+
     /// A GET over a real socket, returning the status and the whole response.
     fn get(addr: SocketAddr, path: &str, header: Option<&str>) -> (u16, String) {
         let mut request = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n");
@@ -1052,7 +1068,18 @@ mod web_tests {
         exchange(addr, request.as_bytes())
     }
 
-    /// A POST over a real socket, so the browser's login path is exercised.
+    /// A POST with a bearer token, the exact shape the browser transport sends.
+    fn post_auth(addr: SocketAddr, path: &str, token: &str, body: &str) -> (u16, String) {
+        let request = format!(
+            "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\
+             Content-Type: application/json\r\nAuthorization: Bearer {token}\r\n\
+             Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        exchange(addr, request.as_bytes())
+    }
+
+    /// A POST with no Authorization header at all.
     fn post(addr: SocketAddr, path: &str, body: &str) -> (u16, String) {
         let request = format!(
             "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\

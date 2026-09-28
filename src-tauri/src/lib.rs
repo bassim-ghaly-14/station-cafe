@@ -49,7 +49,7 @@ mod workflow_test;
 pub mod time;
 mod wash_tickets_test;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Manager;
 
 /// Shared application state: connection pool is a single connection
@@ -69,6 +69,24 @@ pub struct AppState {
     /// The mDNS advertisement, if discovery started. Purely optional: `None`
     /// leaves the API fully usable by IP.
     pub discovery: Mutex<Option<network::mdns::Advertisement>>,
+    /// The running application handle, stored so the local HTTP listener can
+    /// reach the two things it must serve without a second implementation:
+    /// the embedded Station assets and the real `State<AppState>` that the
+    /// commands take.
+    ///
+    /// It is `Option` because the state is built before the handle is managed,
+    /// and because unit tests construct `AppState` with no Tauri runtime at
+    /// all. When it is `None` the API still serves health and login; only the
+    /// browser application and the command surface are unavailable, and that is
+    /// reported honestly rather than faked.
+    pub handle: OnceLock<tauri::AppHandle>,
+}
+
+impl AppState {
+    /// The application handle, when this state is running inside Tauri.
+    pub fn app(&self) -> Option<&tauri::AppHandle> {
+        self.handle.get()
+    }
 }
 
 
@@ -125,7 +143,13 @@ pub fn run() {
                     developer_seed_grant: Mutex::new(None),
                     api: Mutex::new(None),
                     discovery: Mutex::new(None),
+                    // Stored BEFORE the listener is applied, because starting the
+                    // local service is what needs it: the listener serves the
+                    // Station application out of the embedded assets and reaches
+                    // the real commands through this handle.
+                    handle: OnceLock::new(),
                 };
+                let _ = state.handle.set(app.handle().clone());
                 let status = network::runtime::apply(&state, &stored);
                 log::info!(
                     "local api: configured={} running={} {}",
