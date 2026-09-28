@@ -52,21 +52,29 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/station-cafe.key
 
 The key on this machine is stored in minisign's **encrypted** format, but its
 password is the **empty string**. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must
-therefore exist as an **empty** secret:
+therefore **not exist**:
 
 ```bash
-# empty password -- the key on this machine uses none
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ''
+# This key's password is EMPTY. The secret must be ABSENT -- GitHub cannot
+# store an empty secret, so `gh secret set ... --body ''` is a no-op and any
+# real value you set is simply wrong. Absence is what makes the variable
+# resolve to "", which is the one value this key accepts.
+gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
-> **Do not omit this secret, and do not give it some other value.** Because
-> the key is in the _encrypted_ format, Tauri always performs a decrypt.
-> The older note here that the key was "generated without a password" is what
-> made this ambiguous: an _encrypted_ key with an empty password is not an
-> _unencrypted_ key. Supplying a wrong password, or supplying none at all
-> (which makes Tauri prompt and then fail in CI), produce the same opaque
-> `failed to decode secret key` error. If you regenerate the key with
-> `-p <password>`, set that secret to that same password.
+> **This exact mistake broke the release pipeline on 2026-09-28.** The key
+> secret was byte-for-byte correct and matched the committed `pubkey`, yet the
+> build failed with `failed to decode secret key: ... Wrong password for that
+key` — because a 4-character `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret had
+> been created. An _encrypted_ key with an _empty_ password is not an
+> _unencrypted_ key: Tauri always decrypts, and rejects any non-empty password.
+> Both a wrong password and a missing one produce the same opaque error.
+> If you ever regenerate the key with `-p <password>`, set that secret to that
+> same password instead of deleting it.
+
+The `Verify updater signing key` step now **fails the build** on a non-empty
+password (`LAYER 6`) rather than only reporting its length, so this cannot
+recur silently.
 
 To confirm which key GitHub actually holds — without revealing it — compare
 the SHA-256 printed by the workflow's `Verify updater signing key` step with

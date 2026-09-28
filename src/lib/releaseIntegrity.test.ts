@@ -262,12 +262,31 @@ describe('updater build infrastructure', () => {
   })
 
   it('documents the encrypted-key empty password accurately', () => {
-    // The key is in minisign's ENCRYPTED format with an empty password, so
-    // the password secret must exist and be empty. The previous wording
-    // ("generated without a password") is what led to the secret being set
-    // incorrectly, and it must not come back.
-    expect(releasingDoc).toContain('gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD')
+    // The key is in minisign's ENCRYPTED format with an EMPTY password, so
+    // the password secret must be ABSENT. The previous wording told the
+    // operator to run `gh secret set ... --body ''`, which GitHub silently
+    // discards -- leaving them to set a real password, which is exactly the
+    // 4-character value that broke the release build. That instruction must
+    // not come back; the fix is `gh secret delete`.
+    expect(releasingDoc).toContain('gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD')
+    expect(releasingDoc).not.toMatch(/gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD/)
     expect(releasingDoc).not.toMatch(/generated \*\*without a password\*\*/)
+  })
+
+  it('fails the build on a non-empty signing password', () => {
+    // A wrong password and a missing key produce the SAME opaque Tauri error
+    // ("failed to decode secret key"), which is how a byte-perfect key plus
+    // a stray password secret produced an unexplained red build. The password
+    // must therefore be ASSERTED, not merely logged: this key is encrypted
+    // with an empty password, so any non-empty value is wrong.
+    expect(workflow).toContain('LAYER 6')
+    expect(workflow).toMatch(/LAYER 6 \(wrong password\)/)
+    // Fail-closed: the password layer must ABORT the job, not merely warn.
+    // Scope the check to the layer's own block, so a later step's `exit 1`
+    // cannot make this pass by accident.
+    const afterLayer6 = workflow.slice(workflow.indexOf('LAYER 6 (wrong password)'))
+    const block = afterLayer6.slice(0, afterLayer6.indexOf('\n\n'))
+    expect(block).toContain('exit 1')
   })
 
   it('implements no update UI or install flow yet', () => {

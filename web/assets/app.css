@@ -1,0 +1,383 @@
+/*
+ * Station Cafe — LOCAL WEB stylesheet.
+ *
+ * Mobile-first, Arabic/RTL, and completely offline. This file is served by the
+ * Rust HTTP server from /assets/app.css, so:
+ *
+ *   - NO @import, NO url() pointing at another host, NO web font. The desktop
+ *     app loads Cairo; a phone on a café LAN cannot, so this uses the system
+ *     Arabic stack the platform already has. Nothing is fetched.
+ *   - The colours below are COPIES of the semantic tokens in
+ *     src/styles/colors.css (the desktop source of truth), limited to the light
+ *     theme. They are duplicated rather than imported because this file is
+ *     served raw to a browser with no build step; the values are identical, so
+ *     the phone shows the Station identity, not a different brand.
+ *
+ * Layout rules that matter on a phone:
+ *   - Everything is sized in %, rem or auto — no fixed pixel widths — so nothing
+ *     can force a horizontal scrollbar on a 360px screen.
+ *   - Touch targets are at least 48px and are never hover-only.
+ *   - Safe-area insets keep the login card and the logout button reachable on
+ *     notched phones and behind the Android gesture bar.
+ */
+
+:root {
+  /* Semantic tokens, mirrored from src/styles/colors.css (light theme). */
+  --background: #faf6f0;
+  --surface: #fffdf9;
+  --surface-muted: #f4ede3;
+  --surface-input: #faf6f0;
+  --foreground: #2b1d12;
+  --foreground-strong: #432d1c;
+  --foreground-muted: #5e3f25;
+  --foreground-subtle: #96673a;
+  --border: #e6d5b8;
+  --border-strong: #d9b98f;
+  --primary: #7a5230;
+  --primary-active: #432d1c;
+  --primary-foreground: #ffffff;
+  --secondary: #e6d5b8;
+  --secondary-foreground: #2b1d12;
+  --focus: #96673a;
+  --destructive-soft: #fee2e2;
+  --destructive-soft-foreground: #991b1b;
+  --destructive-border: #fca5a5;
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --success-foreground: #166534;
+  --success-border: #86efac;
+  --warning-soft: #fef3c7;
+  --warning-foreground: #78350f;
+  --warning-border: #fcd34d;
+
+  /* The desktop typography baseline, applied without the Cairo web font. */
+  --font-sans: 'Segoe UI', 'Noto Sans Arabic', 'Geeza Pro', Tahoma, system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* Nothing may exceed the viewport width, so a long URL or a long Arabic word
+     can never introduce a horizontal scroll. */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  /* Respect the user's larger system text size rather than fighting it. */
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  /* Safe areas: the notch, the home indicator, the Android gesture bar. */
+  padding: calc(1rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right))
+    calc(1rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.noscript,
+.loading {
+  text-align: center;
+  color: var(--foreground-muted);
+  padding: 2rem 1rem;
+}
+
+/* ---- Header -------------------------------------------------------------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.header__mark {
+  /* The wordmark stands in for the desktop logo image: no binary asset to ship
+     and nothing to download. Same name, same brown. */
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  border-radius: 0.75rem;
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.header__text {
+  min-width: 0;
+}
+
+.header__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground-strong);
+  /* A long product name must wrap, not widen the page. */
+  overflow-wrap: anywhere;
+}
+
+.header__subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--foreground-subtle);
+}
+
+/* ---- Cards --------------------------------------------------------------- */
+
+.card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card--centered {
+  /* The login card. Centred vertically on a tall phone, but never so tall that
+     the submit button falls below the fold on a short screen. */
+  margin-block: auto;
+  padding: 1.25rem;
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgb(43 29 18 / 0.06);
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--foreground-strong);
+}
+
+.card__hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--foreground-muted);
+}
+
+/* ---- Status pill --------------------------------------------------------- */
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background-color: var(--surface-muted);
+  color: var(--foreground-muted);
+}
+
+.status--online {
+  background-color: var(--success-soft);
+  color: var(--success-foreground);
+  border-color: var(--success-border);
+}
+
+.status--offline {
+  background-color: var(--destructive-soft);
+  color: var(--destructive-soft-foreground);
+  border-color: var(--destructive-border);
+}
+
+/* ---- Rows ---------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row__label {
+  font-size: 0.875rem;
+  color: var(--foreground-muted);
+}
+
+.row__value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground-strong);
+  /* An Arabic name or a long value wraps instead of overflowing. */
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+
+  /* ---- Forms --------------------------------------------------------------- */
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .field__label {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--foreground-strong);
+  }
+
+  .input {
+    /* 16px minimum: anything smaller makes iOS Safari zoom the page on focus,
+     which is the classic way a "mobile" form ends up unusable. */
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--foreground);
+    background-color: var(--surface-input);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.5rem;
+    /* 16px + 0.75rem padding keeps the control at the 48px touch target. */
+    padding: 0.75rem;
+    width: 100%;
+    min-height: 3rem;
+  }
+
+  .input:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+    border-color: var(--focus);
+  }
+
+  .input:disabled {
+    color: var(--foreground-subtle);
+    background-color: var(--surface-muted);
+  }
+
+  .button {
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary-foreground);
+    background-color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    min-height: 3rem;
+    width: 100%;
+    cursor: pointer;
+    /* Removes the 300ms tap delay and the grey flash on Android Chrome. */
+    touch-action: manipulation;
+  }
+
+  .button:active {
+    background-color: var(--primary-active);
+  }
+
+  .button:disabled {
+    cursor: default;
+    opacity: 0.65;
+  }
+
+  .button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .button--secondary {
+    color: var(--secondary-foreground);
+    background-color: var(--secondary);
+    border-color: var(--border-strong);
+  }
+
+  .button--secondary:active {
+    background-color: var(--border-strong);
+  }
+
+  /* ---- Messages ------------------------------------------------------------ */
+
+  .alert {
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--destructive-border);
+    background-color: var(--destructive-soft);
+    color: var(--destructive-soft-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  .notice {
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--warning-border);
+    background-color: var(--warning-soft);
+    color: var(--warning-foreground);
+    overflow-wrap: anywhere;
+  }
+
+  .footer {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--foreground-subtle);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  /* Wider screens get a slightly roomier card rather than a stretched full-bleed
+   one. The layout stays a single column: there is no desktop navigation to
+   port, so none is invented. */
+  @media (min-width: 30rem) {
+    .app {
+      padding-block: calc(1.5rem + env(safe-area-inset-top)) 1.5rem;
+      gap: 1.25rem;
+    }
+
+    .card {
+      padding: 1.25rem;
+    }
+  }
+
+  /* Respect a reduced-motion preference: nothing animates. */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  font-weight: 700;
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+}

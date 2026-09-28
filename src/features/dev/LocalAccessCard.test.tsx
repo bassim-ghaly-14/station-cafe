@@ -10,7 +10,7 @@ vi.mock('@/services/localAccessApi', () => ({
 
 /** A running service: there is a listener, so there is a URL and a QR. */
 const running = {
-  url: 'http://192.168.1.61:47821/api/v1/health',
+  url: 'http://192.168.1.61:47821/',
   svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>',
   apiRunning: true,
   error: null,
@@ -125,9 +125,7 @@ describe('LocalAccessCard', () => {
     renderCard()
     fireEvent.click(await screen.findByTestId('dev-local-access-toggle'))
     await waitFor(() =>
-      expect(localAccessApi.save).toHaveBeenCalledWith(
-        expect.objectContaining({ enabled: false }),
-      ),
+      expect(localAccessApi.save).toHaveBeenCalledWith(expect.objectContaining({ enabled: false })),
     )
   })
 
@@ -150,11 +148,31 @@ describe('LocalAccessCard', () => {
     expect(shown.textContent).not.toMatch(/[?#@]/)
     expect(shown.textContent).toBe(running.url)
   })
-})
+
+  it('points at the local web app, not the health endpoint', async () => {
+    // THE change: the QR must open the Station login screen in a browser. The
+    // health endpoint used to be the destination, which showed raw JSON.
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
+    renderCard()
+    const shown = await screen.findByTestId('dev-local-access-url')
+    expect(shown.textContent).toBe('http://192.168.1.61:47821/')
+    expect(shown.textContent).not.toContain('/api/v1/health')
+  })
+
+  it('states what the QR opens, so the purpose is obvious', async () => {
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
+    renderCard()
+    expect(await screen.findByTestId('dev-local-access-name')).toHaveTextContent('Station Local')
+  })
+
   it('states in Arabic that scanning does NOT sign the user in', async () => {
     vi.mocked(localAccessApi.load).mockResolvedValue(running)
     vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
     renderCard()
-    // The most important string on the card: a QR must not read as a login.
+    // Still the most important string on the card: opening the web app is not a
+    // login, and the QR must never read as one.
     expect(await screen.findByText(/مسح الرمز لا يسجّل الدخول/)).toBeInTheDocument()
   })
+})

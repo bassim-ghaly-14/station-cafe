@@ -1,14 +1,17 @@
 //! The local-access QR code.
 //!
-//! What the QR is: a PHONE NUMBER for a building. It says "Station's API is
-//! this far away, on this address". That is all.
+//! What the QR is: a PHONE NUMBER for a building. It says "Station's web app is
+//! this far away, on this address". Scanning it opens the Station login screen
+//! in the phone's browser; the user then signs in with their own Station
+//! account. That is all.
 //!
 //! What the QR is emphatically not: a key. It carries no username, no
 //! password, no bearer token, no session id, no API key, no discount PIN, no
 //! database path and no customer or employee data. A QR is a sticker on a
 //! counter that anyone nearby can photograph, so anything secret in it is
 //! compromised the moment it is printed. Authentication stays exactly where it
-//! already is — `services::auth::login` over the API.
+//! already is — `services::auth::login`, reached in the browser through
+//! `POST /api/v1/auth/login`.
 //!
 //! Because the payload is an address, it is assembled HERE, beside the code
 //! that knows the real port and this machine's real addresses, rather than in
@@ -16,27 +19,31 @@
 //! token being concatenated into a URL later, and it makes the exact string
 //! testable.
 
-use crate::network::api::API_PREFIX;
 use crate::network::config::NetworkConfig;
 use std::net::IpAddr;
 
-/// The one real, unauthenticated endpoint a scanner can usefully land on.
+/// The one path a scanner can usefully land on: the Station web application.
 ///
-/// Deliberately the health probe: it exists, it answers, and it reveals nothing.
-/// The QR therefore points at something that genuinely works, rather than at a
-/// future mobile UI that does not exist yet.
-pub const ACCESS_PATH: &str = "/health";
+/// Deliberately the ROOT, not `/api/v1/health`. The QR exists to put a manager
+/// in front of the Station login screen on their phone, so it must open the
+/// application itself. It is not a health probe any more: the browser app is
+/// served from `/` by the same listener, so this is a real, working entry point
+/// rather than a promise of a future one.
+///
+/// Still an address and nothing else — no credential, no token, no session id.
+pub const ACCESS_PATH: &str = "/";
 
 /// Build the access URL for a host and the configured port.
 ///
-/// The ONLY thing this produces is `scheme://host:port/path`. It has no branch
-/// that could add a query string, a fragment or a credential, so there is no
-/// code path by which a secret could be encoded.
+/// The ONLY thing this produces is `scheme://host:port/`. It has no branch that
+/// could add a query string, a fragment or a credential, so there is no code
+/// path by which a secret could be encoded — and, since the app authenticates
+/// in the browser, none is needed.
 pub fn access_url(host: &str, port: u16) -> String {
     // `http` because the listener is plain HTTP on a LAN. A phone scanning this
-    // gets a real page; it is not a login form, and nothing is transmitted that
-    // would justify TLS here.
-    format!("http://{host}:{port}{API_PREFIX}{ACCESS_PATH}")
+    // gets the real Station login page over the café's own network; no secret
+    // is transmitted in the address, which is what would otherwise justify TLS.
+    format!("http://{host}:{port}{ACCESS_PATH}")
 }
 
 /// Everything the UI needs to show the QR and explain it.
@@ -178,8 +185,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_url_is_protocol_host_port_and_a_real_path() {
-        assert_eq!(access_url("192.168.1.50", 47821), "http://192.168.1.50:47821/api/v1/health");
+    fn the_url_is_protocol_host_port_and_the_app_root() {
+        assert_eq!(access_url("192.168.1.50", 47821), "http://192.168.1.50:47821/");
+    }
+
+    #[test]
+    fn the_qr_opens_the_web_app_not_the_health_endpoint() {
+        // THE change: the QR must land a manager on the login screen. Pointing
+        // it at the health probe would show them raw JSON on their phone.
+        let url = access_url("192.168.1.50", 47821);
+        assert!(url.ends_with('/'), "the QR must address the app root: {url}");
+        assert!(!url.contains("/api/v1/health"), "no longer a health probe: {url}");
+        assert!(!url.contains("/api"), "the QR is not an API address: {url}");
     }
 
     #[test]
@@ -205,11 +222,22 @@ mod tests {
     }
 
     #[test]
-    fn the_path_is_a_real_endpoint_that_exists() {
-        // The QR must land on an endpoint Station actually serves.
-        let url = access_url("10.0.0.5", 47821);
-        assert!(url.ends_with(&format!("{API_PREFIX}{ACCESS_PATH}")));
-        assert!(url.ends_with("/api/v1/health"));
+    fn the_qr_svg_renders_for_the_app_root_and_fetches_nothing() {
+        // The QR must encode an address Station actually serves, and the SVG it
+        // produces must not be able to execute or fetch anything itself.
+        let svg = render_svg(&access_url("10.0.0.5", 47821)).expect("renders");
+        assert!(svg.contains("<svg"));
+        // The SVG namespace is the one `http://` a valid document may contain;
+        // it is an identifier, never a request. Any OTHER remote reference
+        // would make the image depend on the network.
+        let without_namespace = svg.replace("http://www.w3.org/2000/svg", "");
+        assert!(
+            !without_namespace.contains("http://"),
+            "the SVG must reference nothing: {svg}"
+        );
+        assert!(!without_namespace.contains("https://"), "the SVG must reference nothing: {svg}");
+        assert!(!svg.contains("<script"), "no script in an image");
+        assert!(!svg.contains("xlink:href"), "no external reference in an image");
     }
 
     #[test]
@@ -225,7 +253,7 @@ mod tests {
 
     #[test]
     fn a_hostname_may_be_used_when_discovery_supports_it() {
-        assert_eq!(access_url("station.local", 47821), "http://station.local:47821/api/v1/health");
+        assert_eq!(access_url("station.local", 47821), "http://station.local:47821/");
     }
 
     #[test]

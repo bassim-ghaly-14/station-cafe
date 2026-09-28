@@ -15,6 +15,7 @@
 //!   released and no background thread is left behind.
 
 use crate::network::api::{self, ApiError, ApiRequest, ApiResponse};
+use crate::network::web;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -152,23 +153,38 @@ fn serve_forever(
 
 /// Translate an HTTP request into a response.
 ///
-/// The database lock is taken only for the duration of the handler and released
-/// before the response is written, so a slow network peer can never hold the
-/// database while the POS is waiting to use it.
+/// Three surfaces, in this order, and never overlapping:
+///
+///   1. `/api/v1/*`  → [`api::handle`], JSON in and JSON out. Protected
+///      routes, roles and the error shape are unchanged.
+///   2. `/` and `/assets/*` → the embedded browser app, from [`web`].
+///   3. anything else → a JSON 404. Never the HTML shell, so a mistyped API
+///      path cannot be mistaken for a working endpoint, and a client parsing
+///      JSON always gets JSON.
+///
+/// The database lock is taken only for an API request, and only for the
+/// duration of the handler: serving a static asset must never contend with the
+/// POS for the single shared connection.
 fn respond(
     request: &mut tiny_http::Request,
     conn: &Arc<Mutex<crate::repositories::Db>>,
 ) -> ResponseBox {
-    let outcome = match parse(request) {
-        Ok(req) => {
-            let guard = match conn.lock() {
-                Ok(g) => g,
-                // A poisoned lock must not become an outage on the LAN.
-                Err(_) => return error_response(&ApiError::internal()),
-            };
-            api::handle(&req, &guard)
-        }
-        Err(err) => Err(err),
+    let req = match parse(request) {
+        Ok(req) => req,
+        Err(err) => return error_response(&err),
+    };
+
+    if !web::is_api_path(&req.path) {
+        return web_response(&req);
+    }
+
+    let outcome = {
+        let guard = match conn.lock() {
+            Ok(g) => g,
+            // A poisoned lock must not become an outage on the LAN.
+            Err(_) => return error_response(&ApiError::internal()),
+        };
+        api::handle(&req, &guard)
     };
 
     match outcome {
@@ -181,6 +197,51 @@ fn respond(
             error_response(&err)
         }
     }
+}
+
+/// Answer a non-API request from the embedded browser app.
+fn web_response(req: &ApiRequest) -> ResponseBox {
+    // Only GET and HEAD can address a document. A POST to `/` is a client
+    // mistake, and answering it with the shell would be actively misleading.
+    if !matches!(req.method.as_str(), "GET" | "HEAD") {
+        return error_response(&ApiError::method_not_allowed());
+    }
+    match web::route(&req.path) {
+        web::Route::Index => {
+            let (content_type, body) = web::index();
+            asset_response(200, content_type, body)
+        }
+        web::Route::Asset(asset) => asset_response(200, asset.content_type, asset.body),
+        web::Route::NotFound => error_response(&ApiError::not_found()),
+    }
+}
+
+/// Write an embedded asset.
+///
+/// The security headers are the same ones the API sends, plus a strict CSP:
+/// this content is HTML and JavaScript executing in a browser on the same LAN
+/// as the till, so it is held to at least the same standard.
+fn asset_response(status: u16, content_type: &str, body: &'static [u8]) -> ResponseBox {
+    let mut response = Response::from_data(body).with_status_code(status);
+    if let Ok(h) = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()) {
+        response.add_header(h);
+    }
+    for (name, value) in [
+        ("X-Content-Type-Options", "nosniff"),
+        // The app must never be framed, so a cafe's page cannot clickjack a
+        // manager's phone.
+        ("X-Frame-Options", "DENY"),
+        ("Content-Security-Policy", web::CSP),
+        // Nothing on this origin should ever be indexed, cached by a shared
+        // phone, or leaked to a third party through a Referer header.
+        ("Cache-Control", "no-store"),
+        ("Referrer-Policy", "no-referrer"),
+    ] {
+        if let Ok(h) = Header::from_bytes(name.as_bytes(), value.as_bytes()) {
+            response.add_header(h);
+        }
+    }
+    response.boxed()
 }
 
 /// Parse a tiny_http request into the reduced shape handlers are allowed to see.

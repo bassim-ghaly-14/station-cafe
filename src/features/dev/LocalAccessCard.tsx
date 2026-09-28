@@ -21,11 +21,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, Loader } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
-import {
-  localAccessApi,
-  type LocalAccess,
-  type NetworkConfig,
-} from '@/services/localAccessApi'
+import { localAccessApi, type LocalAccess, type NetworkConfig } from '@/services/localAccessApi'
 import { useErrText } from '@/lib/err'
 
 export function LocalAccessCard() {
@@ -113,6 +109,13 @@ export function LocalAccessCard() {
               />
 
               <div className="flex flex-col gap-2 text-start">
+                {/* What the QR opens, stated first: the local web app, not an
+                    API endpoint. The manager should know what tapping it does
+                    before they tap it. */}
+                <p className="text-body-strong" dir="ltr" data-testid="dev-local-access-name">
+                  {t('dev.localAccessProductName')}
+                </p>
+
                 {/* The address a manager reads out or types. LTR: it is a URL. */}
                 <p
                   className="font-mono text-body-strong"
@@ -122,6 +125,8 @@ export function LocalAccessCard() {
                   {access.url}
                 </p>
 
+                {/* The security explanation is kept, verbatim in spirit: the QR
+                    is an address, not a key. */}
                 <p className="text-caption text-foreground-muted" dir="rtl">
                   {t('dev.localAuthStillRequired')}
                 </p>

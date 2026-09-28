@@ -128,13 +128,18 @@ jobs:
             exit 1
           fi
 
-          # The password is reported as state and length ONLY. GitHub masks the
-          # value, and this never prints it.
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD+x}" ]; then
-            echo "password: variable not exported (Tauri will use an empty password)"
-          else
-            echo "password: variable exported, length=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD} (value never printed)"
+          # The password is checked, not merely reported. This key is in
+          # minisign's ENCRYPTED format and its password is the EMPTY string.
+          # Any non-empty value here makes Tauri fail at signing time with
+          # "failed to decode secret key: ... Wrong password for that key" --
+          # the exact error this pipeline produced while the key itself was
+          # byte-perfect. Reporting only a length let that pass silently.
+          # The value is NEVER printed; only its length is used.
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            echo "::error::LAYER 6 (wrong password): this key is encrypted with an EMPTY password, but TAURI_SIGNING_PRIVATE_KEY_PASSWORD is non-empty (length=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD}). A non-empty password is rejected by the key. Delete the secret with: gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD  (GitHub cannot store an empty secret, so absence -- not an empty value -- is the correct representation.)"
+            exit 1
           fi
+          echo "password: empty (correct for this encrypted key; value never printed)"
 
           # The trust anchor the release will be checked against at runtime.
           echo "pubkey: $(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey" | head -c 44)... (fingerprint only)"

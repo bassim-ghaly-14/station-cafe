@@ -31,6 +31,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // The second pattern covers the LOCAL WEB surface in /web — the standalone
+    // browser app served to a phone. It is deliberately outside `src`: it is
+    // not part of the Tauri desktop bundle, pulls in no Tauri dependency, and
+    // is shipped verbatim to the browser. It is still plain ES modules, so the
+    // same runner and the same jsdom environment exercise it unchanged.
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'web/**/*.{test,spec}.js'],
   },
 })
