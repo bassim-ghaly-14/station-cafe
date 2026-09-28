@@ -78,7 +78,7 @@ for (const localeDir of fs.readdirSync(LOCALES, { withFileTypes: true })) {
         })
       }
       if (!contracts.has(key)) contracts.set(key, {})
-      contracts.get(key)[locale] = [...vars].sort()
+      contracts.get(key)[locale] = [...vars].sort((a, b) => a.localeCompare(b))
     }
   }
 }
@@ -315,7 +315,7 @@ if (process.argv.includes('--json')) {
   for (const c of opaqueCalls) console.log(`  ${c.file}:${c.line} ${c.key} -> ${c.args}`)
   console.log(`\nnon-literal t() key call sites: ${dynamicCalls.length}`)
   console.log('\ndynamic keys with NO literal t() call site (runtime-covered):')
-  for (const key of [...contracts.keys()].sort()) {
+  for (const key of [...contracts.keys()].sort((a, b) => a.localeCompare(b))) {
     const locale = Object.keys(contracts.get(key))[0]
     if (contracts.get(key)[locale].length === 0) continue
     if (auditedKeys.has(key)) continue
