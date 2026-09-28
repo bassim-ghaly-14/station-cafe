@@ -102,7 +102,14 @@ export default function PosPage() {
   }, [refresh])
 
   useEffect(() => {
-    void settingsApi.serviceCharge().then((config) => setServiceChargeOptions(config.amounts))
+    // The service-charge quick-picks are an OPTION list, not part of opening the
+    // POS. A failure here must never take the whole screen down with it, but it
+    // must also not become an unhandled rejection: the sibling preview effect
+    // below degrades to "no preview" rather than leaving a rejection dangling.
+    void settingsApi
+      .serviceCharge()
+      .then((config) => setServiceChargeOptions(config.amounts))
+      .catch(() => setServiceChargeOptions([]))
   }, [])
 
   useEffect(() => {

@@ -24,6 +24,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   tables: vi.fn(),
+  serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
   openTakeaways: vi.fn(),
   openTable: vi.fn(),
   closeEmptyTable: vi.fn(),
@@ -62,7 +63,9 @@ vi.mock('@/services/posApi', async (importOriginal) => ({
   // the command surface the page drives is replaced.
   ...(await importOriginal<typeof import('@/services/posApi')>()),
   settingsApi: {
-    serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
+    // Declared on `mocks` so a test can make this particular read fail; the
+    // POS must survive it (see "POS resilience on load").
+    serviceCharge: mocks.serviceCharge,
     discountOptions: vi.fn().mockResolvedValue({ amounts: [2000, 5000, 10000] }),
   },
   api: {
@@ -210,6 +213,22 @@ function renderCard(tv: TableView) {
     </ToastProvider>,
   )
 }
+
+/**
+ * The Node-level unhandled-rejection hook.
+ *
+ * jsdom does not re-dispatch Node's `unhandledRejection` onto `window`, so a
+ * dangling promise is only observable here. Typed structurally rather than
+ * imported: the app tsconfig deliberately does not pull in the Node types.
+ */
+const rejectionHook = (
+  globalThis as unknown as {
+    process: {
+      on(event: string, listener: (reason: unknown) => void): void
+      off(event: string, listener: (reason: unknown) => void): void
+    }
+  }
+).process
 
 function renderPage() {
   // The POS page navigates to Today's Invoices, so it renders inside the same
@@ -1714,6 +1733,46 @@ describe('closing card system', () => {
     expect(accentClasses.length).toBeGreaterThan(0)
     for (const cls of accentClasses) {
       expect(cls).toMatch(/^(bg|text|border)-(closing-(shift|day)(-(soft|foreground|border))?)$/)
+    }
+  })
+})
+
+describe('POS resilience on load', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.tables.mockResolvedValue([table()])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1 },
+      any_active_shift: true,
+    })
+    mocks.serviceCharge.mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] })
+  })
+
+  // The service-charge quick-picks are an option list, not part of opening the
+  // POS. If that read fails the screen must still come up — and, just as
+  // importantly, must not leave a rejected promise dangling, which is what an
+  // uncaught rejection in a Tauri webview actually looks like in production.
+  it('opens the POS and raises no unhandled rejection when the service-charge read fails', async () => {
+    const rejections: unknown[] = []
+    // jsdom does not re-dispatch Node's unhandledRejection onto `window`, so
+    // the process-level hook is what actually observes a dangling rejection.
+    const onRejection = (reason: unknown) => rejections.push(reason)
+    rejectionHook.on('unhandledRejection', onRejection)
+    mocks.serviceCharge.mockRejectedValue(new Error('settings_unavailable'))
+
+    try {
+      renderPage()
+      // The POS is up: the table grid rendered despite the settings failure.
+      await waitFor(() => expect(screen.getAllByTestId('table-card-select-1').length).toBe(1))
+      // Two macrotask turns: one for the rejection to be reported, one for the
+      // listener above to have run.
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(rejections).toEqual([])
+    } finally {
+      rejectionHook.off('unhandledRejection', onRejection)
     }
   })
 })
