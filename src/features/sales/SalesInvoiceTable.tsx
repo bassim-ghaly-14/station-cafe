@@ -15,6 +15,7 @@
  * columns drop out below their breakpoint instead of squeezing the money
  * columns.
  */
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import {
   Badge,
@@ -71,11 +72,7 @@ export function SalesInvoiceTable({
               </span>
               {/* The order context as quiet second-line information. */}
               <span className="text-caption text-foreground-subtle">
-                {invoice.order_type === 'TAKEAWAY'
-                  ? typeof invoice.takeaway_no === 'number'
-                    ? `TW-${invoice.takeaway_no}`
-                    : t('pos.orderType.TAKEAWAY')
-                  : (invoice.table_label ?? t('pos.orderType.TABLE'))}
+                {orderContextLabel(invoice, t)}
               </span>
             </span>
           </DataTableCell>
@@ -174,4 +171,19 @@ export function SalesInvoiceTable({
       ))}
     </DataTable>
   )
+}
+
+/**
+ * The second line under an invoice number: where the order was placed.
+ *
+ * A takeaway is identified by its `TW-` number when the backend sent one, and
+ * falls back to the generic takeaway word when it did not. A table order shows
+ * its label, and falls back to the generic table word when the label is absent.
+ */
+function orderContextLabel(invoice: SalesInvoiceRow, t: TFunction): string {
+  if (invoice.order_type === 'TAKEAWAY') {
+    if (typeof invoice.takeaway_no === 'number') return `TW-${invoice.takeaway_no}`
+    return t('pos.orderType.TAKEAWAY')
+  }
+  return invoice.table_label ?? t('pos.orderType.TABLE')
 }

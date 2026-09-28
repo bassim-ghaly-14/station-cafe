@@ -73,6 +73,7 @@ import {
   UserX,
 } from '@/components/ui/icon'
 import { attendanceAvailability, formatWorkedDuration, todayOf } from './attendance'
+import { attendanceBadgeVariant } from '@/lib/status-badge'
 import type { TodayFacts } from './attendance'
 import { roleLabel, roleOf } from './employee-role'
 import type { TFunction } from 'i18next'
@@ -320,13 +321,7 @@ function AttendanceToday({
   }
   return (
     <div className="flex flex-col items-start gap-0.5">
-      <Badge
-        variant={
-          today.state === 'PRESENT' ? 'success' : today.state === 'ABSENT' ? 'danger' : 'warning'
-        }
-        size="sm"
-        dot
-      >
+      <Badge variant={attendanceBadgeVariant(today.state)} size="sm" dot>
         {t(`employees.state.${today.state}`)}
       </Badge>
       {today.check_in_effective_at ? (

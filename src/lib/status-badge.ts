@@ -1,4 +1,5 @@
 import type { BadgeProps } from '@/components/ui/badge'
+import type { AttendanceState } from '@/services/employeesApi'
 
 export type BadgeVariant = NonNullable<BadgeProps['variant']>
 
@@ -34,3 +35,19 @@ export const tableBadgeVariant = (status?: string | null): BadgeVariant => {
   if (status === 'OCCUPIED') return 'success'
   return 'warning'
 }
+
+/**
+ * The tone of an attendance state, used by both the roster and the personal card.
+ *
+ * The union is closed, so the mapping is a total lookup: present is the good
+ * news, absent is the bad news, and leave is the in-between that must not be
+ * mistaken for either.
+ */
+const ATTENDANCE_VARIANT: Record<AttendanceState, BadgeVariant> = {
+  PRESENT: 'success',
+  ABSENT: 'danger',
+  LEAVE: 'warning',
+}
+
+export const attendanceBadgeVariant = (state: AttendanceState): BadgeVariant =>
+  ATTENDANCE_VARIANT[state]

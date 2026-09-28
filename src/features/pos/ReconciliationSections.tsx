@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { MoneyDisplay } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { CashReconciliation, ExpenseBreakdownRow } from '@/services/shiftApi'
-import { STATUS_LABEL, STATUS_TONE } from './reconciliationStatus'
+import { STATUS_LABEL, STATUS_TONE, statusMagnitude } from './reconciliationStatus'
 
 /**
  * Presentation of the ONE backend reconciliation.
@@ -188,16 +188,7 @@ export function HandoverSection({ cash }: Readonly<{ readonly cash: CashReconcil
       >
         <span className="text-base font-bold">{t(STATUS_LABEL[cash.status])}</span>
         {/* The magnitude the backend already resolved — never a client |diff|. */}
-        <MoneyDisplay
-          amount={
-            cash.status === 'SHORTAGE'
-              ? cash.shortage
-              : cash.status === 'SURPLUS'
-                ? cash.surplus
-                : 0
-          }
-          className="text-base font-bold"
-        />
+        <MoneyDisplay amount={statusMagnitude(cash)} className="text-base font-bold" />
       </div>
     </Section>
   )

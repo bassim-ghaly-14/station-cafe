@@ -30,3 +30,20 @@ export function statusLabelKey(status: CashStatus): string {
 export function statusTone(status: CashStatus): string {
   return STATUS_TONE[status]
 }
+
+/**
+ * The magnitude that belongs to a verdict, in minor units.
+ *
+ * A balanced handover has no gap to show, so it shows zero. The other two
+ * verdicts show the exact figure the backend already resolved — the client
+ * never recomputes a difference.
+ */
+export function statusMagnitude(cash: {
+  status: CashStatus
+  shortage: number
+  surplus: number
+}): number {
+  if (cash.status === 'SHORTAGE') return cash.shortage
+  if (cash.status === 'SURPLUS') return cash.surplus
+  return 0
+}

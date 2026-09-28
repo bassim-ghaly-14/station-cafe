@@ -147,8 +147,15 @@ export function monthOverMonth(
     return { trend: 'unavailable', percent: null, currentTotal, previousTotal }
   }
   const percent = ((currentTotal - previousTotal) / previousTotal) * 100
-  const trend: MonthOverMonthTrend = percent > 0 ? 'up' : percent < 0 ? 'down' : 'flat'
+  const trend: MonthOverMonthTrend = trendFor(percent)
   return { trend, percent, currentTotal, previousTotal }
+}
+
+/** A positive change grew, a negative one shrank, and no change at all is flat. */
+function trendFor(percent: number): MonthOverMonthTrend {
+  if (percent > 0) return 'up'
+  if (percent < 0) return 'down'
+  return 'flat'
 }
 
 const percentFormatters = new Map<number, Intl.NumberFormat>()

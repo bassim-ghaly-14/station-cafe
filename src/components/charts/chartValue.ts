@@ -85,8 +85,14 @@ export function formatChartValue(
   const { useThousandsSeparator } = getMoneySettings()
   // A COUNT is a whole number of things: it is grouped like the money figures
   // around it, and it never carries a fraction or a currency label.
-  const fractionDigits = type === 'count' ? 0 : style === 'exact' ? 2 : 0
+  const fractionDigits = chartFractionDigits(type, style)
   return numberFormatter(fractionDigits, useThousandsSeparator).format(value)
+}
+
+/** Counts are whole; every other type follows the requested rounding style. */
+function chartFractionDigits(type: ChartValueType, style: ChartValueStyle): number {
+  if (type === 'count') return 0
+  return style === 'exact' ? 2 : 0
 }
 
 /** The workbook column format an exported column of this type wears. */

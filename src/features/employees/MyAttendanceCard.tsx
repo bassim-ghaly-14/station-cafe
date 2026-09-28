@@ -27,6 +27,7 @@ import {
 import { DisplayTime } from '@/components/ui/display-datetime'
 import { Clock, DoorClosed, DoorOpen } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
+import type { BadgeVariant } from '@/lib/status-badge'
 import { useErrText } from '@/lib/err'
 import { attendanceAvailability, formatWorkedDuration } from './attendance'
 import { roleLabel, roleOf } from './employee-role'
@@ -94,6 +95,23 @@ function AttendancePlaceholder({
   }
 
   return null
+}
+
+/**
+ * The tone of today's shift on the personal card.
+ *
+ * This is NOT the attendance state: a present employee whose shift has already
+ * closed reads as done (success), one still on the floor as live (info), and
+ * anyone else — absent, on leave, or not recorded — as the in-between warning
+ * that must not be mistaken for either.
+ */
+function shiftBadgeVariant({
+  open,
+  closed,
+}: Readonly<{ readonly open: boolean; readonly closed: boolean }>): BadgeVariant {
+  if (open) return 'info'
+  if (closed) return 'success'
+  return 'warning'
 }
 
 export function MyAttendanceCard({
@@ -187,6 +205,7 @@ export function MyAttendanceCard({
   const today = mine.today
   const open = today?.state === 'PRESENT' && !today.check_out_effective_at
   const closed = today?.state === 'PRESENT' && Boolean(today.check_out_effective_at)
+  const shiftTone = shiftBadgeVariant({ open, closed })
   const employee = mine.employee
 
   /*
@@ -245,7 +264,7 @@ export function MyAttendanceCard({
         <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-3">
           <div className="flex min-w-0 flex-col gap-1">
             {today ? (
-              <Badge variant={open ? 'info' : closed ? 'success' : 'warning'} size="sm" dot>
+              <Badge variant={shiftTone} size="sm" dot>
                 {t(`employees.state.${today.state}`)}
               </Badge>
             ) : (
