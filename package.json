@@ -16,8 +16,9 @@
     "i18n:audit": "node scripts/i18n-callers.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "version:check": "node scripts/check-version.mjs",
     "typecheck": "tsc -b --noEmit",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm i18n:audit && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm i18n:audit && pnpm version:check && pnpm test"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

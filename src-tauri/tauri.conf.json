@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'sha256-Br7jN6/Y2pfS0UgDnjkTEzmkyZfNx6R90XmJEhxjjzw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     }
   },
   "bundle": {
@@ -38,6 +38,11 @@
     "windows": {
       "webviewInstallMode": {
         "type": "offlineInstaller"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Arabic"],
+        "displayLanguageSelector": false
       }
     },
     "android": {

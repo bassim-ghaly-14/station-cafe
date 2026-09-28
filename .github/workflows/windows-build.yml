@@ -1,7 +1,13 @@
 name: Windows Build
 
-# Builds the production Windows .exe for every tag (release) and
-# provides a test build artifact on pushes to main.
+# Builds the production Windows .exe.
+#
+# Two distinct outcomes, and the difference matters:
+#   - push a `v*` TAG  -> publishes a real GitHub Release for that version.
+#   - push to `main`   -> builds and verifies ONLY; the release is created as
+#                         a draft prerelease, so ordinary commits can never
+#                         overwrite a published release or become an update
+#                         target for installed clients.
 # The developer never needs a Windows machine for normal releases.
 
 on:
@@ -44,16 +50,42 @@ jobs:
       - name: Typecheck & test
         run: pnpm typecheck && pnpm lint && pnpm test
 
+      - name: Verify version consistency
+        # The installer filename, the release tag and the updater manifest
+        # version are all derived from the version in package.json /
+        # Cargo.toml / tauri.conf.json. If those three disagree, a published
+        # release advertises an update version that no client will ever
+        # compare against itself. This gate fails the build instead.
+        # On a tag push the tag is checked too (a release tag must be v<version>).
+        run: node scripts/check-version.mjs --tag "$env:STATION_TAG"
+        shell: pwsh
+        env:
+          STATION_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
       - name: Build Tauri app (Windows)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
-          # Required for automatic updates (Phase 2): signing key + release
+          # Tauri UPDATER signing (minisign) — proves an update bundle was
+          # produced by this project. This is NOT Windows Authenticode
+          # signing; see docs/RELEASING.md. The private key must exist as a
+          # repository secret and must never be committed or echoed.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # Windows release artifacts ONLY: NSIS. The Tauri updater signs and
+          # applies NSIS exclusively, so an MSI could never be updated to, and
+          # building it would drag the WiX toolchain into every release for an
+          # artifact no client uses. The bundle `targets` key stays "all" in
+          # tauri.conf.json because that config is shared with the macOS
+          # developer build, where "nsis" is not a valid target.
+          args: --bundles nsis
           tagName: v__VERSION__
           releaseName: 'Station Cafe v__VERSION__'
           releaseBody: 'انظر التغييرات في المرفقات / See the assets below.'
-          releaseDraft: false
-          prerelease: false
+          # A release is published ONLY for a version tag. A push to main
+          # must verify the build, not publish a release: without this the
+          # workflow would overwrite the published v<version> release on
+          # every commit, and the updater would serve a moving target.
+          releaseDraft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ github.ref_type != 'tag' }}
