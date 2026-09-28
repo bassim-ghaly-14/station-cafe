@@ -31,9 +31,12 @@ import { formatDate, todayIso } from '@/lib/date'
 import {
   salesApi,
   type SalesCashier,
+  type SalesDayRow,
   type SalesFilter,
   type SalesInvoiceRow,
+  type SalesItemRow,
   type SalesItemSort,
+  type SalesSummary,
 } from '@/services/salesApi'
 import { SalesBreakdown } from './SalesBreakdown'
 import { SalesFilters } from './SalesFilters'
@@ -41,7 +44,7 @@ import { SalesInvoiceTable } from './SalesInvoiceTable'
 import { SalesKpiBand } from './SalesKpiBand'
 import { SalesDailyChart } from './SalesDailyChart'
 import { TopItemsTable } from './TopItemsTable'
-import { useSalesData } from './useSalesData'
+import { useSalesData, type SalesDataState } from './useSalesData'
 
 const RANGE_KEY = 'station.sales.dateRange'
 
@@ -148,60 +151,18 @@ export default function SalesPage() {
       ) : data.error && !data.overview ? (
         <ErrorState message={data.error} onRetry={data.reload} retryLabel={t('app.retry')} />
       ) : (
-        <>
-          <SalesKpiBand summary={summary} loading={data.refreshing} />
-
-          {/* A re-fetch keeps the previous numbers on screen and marks the
-              surfaces busy, so changing the period is not a full-page flash. */}
-          {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
-
-          {summary?.invoices_count === 0 ? (
-            <Card className="p-4">
-              <EmptyState
-                title={narrowed ? t('sales.states.noResults') : t('sales.states.noSales')}
-                action={
-                  narrowed ? (
-                    <Button variant="outline" onClick={resetFilters}>
-                      {t('sales.filters.reset')}
-                    </Button>
-                  ) : null
-                }
-              />
-            </Card>
-          ) : (
-            <>
-              <SalesDailyChart trend={trend} period={period} />
-              {summary ? <SalesBreakdown summary={summary} /> : null}
-              <TopItemsTable items={items} sort={sort} onSortChange={setSort} />
-            </>
-          )}
-
-          {/* The evidence behind the numbers, always reachable. */}
-          <Card className="overflow-hidden p-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-              <div>
-                <h2 className="text-section text-foreground-strong">{t('sales.invoices.title')}</h2>
-                <p className="mt-0.5 text-caption text-foreground-subtle">
-                  {t('sales.invoices.hint')}
-                </p>
-              </div>
-              {data.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-            </div>
-            {data.invoices.length === 0 ? (
-              <div className="p-4">
-                <EmptyState
-                  title={narrowed ? t('sales.invoices.noMatch') : t('sales.invoices.empty')}
-                />
-              </div>
-            ) : (
-              <SalesInvoiceTable
-                invoices={data.invoices}
-                onOpen={openInvoice}
-                busy={data.refreshing}
-              />
-            )}
-          </Card>
-        </>
+        <SalesResults
+          data={data}
+          summary={summary}
+          trend={trend}
+          items={items}
+          sort={sort}
+          onSortChange={setSort}
+          period={period}
+          narrowed={narrowed}
+          onResetFilters={resetFilters}
+          onOpenInvoice={openInvoice}
+        />
       )}
 
       {/* The EXISTING preview mechanism — same dialog as the POS and Reports. */}
@@ -212,5 +173,99 @@ export default function SalesPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Everything below the filters, once the page has data to show.
+ *
+ * Two independent things live here and are deliberately not confused:
+ *
+ *  - the ANALYSIS (KPIs, trend, breakdown, top items) collapses to a single
+ *    empty state when the period contains no invoices at all, offering a reset
+ *    ONLY when the user narrowed the page — "there were no sales" and "your
+ *    filter hid them" must not read the same;
+ *  - the EVIDENCE (the invoice list) is always reachable, and has its own empty
+ *    state for the same reason.
+ *
+ * A refresh is neither: it keeps the previous numbers on screen and marks the
+ * surfaces busy, so changing the period is never a full-page flash.
+ */
+function SalesResults({
+  data,
+  summary,
+  trend,
+  items,
+  sort,
+  onSortChange,
+  period,
+  narrowed,
+  onResetFilters,
+  onOpenInvoice,
+}: Readonly<{
+  data: SalesDataState
+  summary: SalesSummary | null
+  trend: SalesDayRow[]
+  items: SalesItemRow[]
+  sort: SalesItemSort
+  onSortChange: (sort: SalesItemSort) => void
+  period: string
+  narrowed: boolean
+  onResetFilters: () => void
+  onOpenInvoice: (invoice: SalesInvoiceRow) => void
+}>) {
+  const { t } = useTranslation()
+
+  return (
+    <>
+      <SalesKpiBand summary={summary} loading={data.refreshing} />
+
+      {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
+
+      {summary?.invoices_count === 0 ? (
+        <Card className="p-4">
+          <EmptyState
+            title={narrowed ? t('sales.states.noResults') : t('sales.states.noSales')}
+            action={
+              narrowed ? (
+                <Button variant="outline" onClick={onResetFilters}>
+                  {t('sales.filters.reset')}
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
+      ) : (
+        <>
+          <SalesDailyChart trend={trend} period={period} />
+          {summary ? <SalesBreakdown summary={summary} /> : null}
+          <TopItemsTable items={items} sort={sort} onSortChange={onSortChange} />
+        </>
+      )}
+
+      {/* The evidence behind the numbers, always reachable. */}
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+          <div>
+            <h2 className="text-section text-foreground-strong">{t('sales.invoices.title')}</h2>
+            <p className="mt-0.5 text-caption text-foreground-subtle">{t('sales.invoices.hint')}</p>
+          </div>
+          {data.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+        </div>
+        {data.invoices.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              title={narrowed ? t('sales.invoices.noMatch') : t('sales.invoices.empty')}
+            />
+          </div>
+        ) : (
+          <SalesInvoiceTable
+            invoices={data.invoices}
+            onOpen={onOpenInvoice}
+            busy={data.refreshing}
+          />
+        )}
+      </Card>
+    </>
   )
 }
