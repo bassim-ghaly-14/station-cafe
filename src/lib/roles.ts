@@ -7,6 +7,27 @@ export function isUserRole(value: unknown): value is UserRole {
 }
 
 /**
+ * How much authority each login role carries, highest first.
+ *
+ * The numbers only matter relative to one another; what they encode is the
+ * order ADMIN > MANAGER > STAFF. An absent or unrecognised role ranks 0, the
+ * same as the weakest real role's floor, so an unresolved session can never
+ * satisfy a minimum it should not.
+ *
+ * This is a UI convenience only. The backend is the real gate — a rank here
+ * never grants anything the server would refuse.
+ */
+const ROLE_RANK: Record<UserRole, number> = {
+  STAFF: 1,
+  MANAGER: 2,
+  ADMIN: 3,
+}
+
+export function roleRank(role: string | undefined): number {
+  return isUserRole(role) ? ROLE_RANK[role] : 0
+}
+
+/**
  * The operational employee type, mirroring `EMPLOYEE_TYPES` in
  * `repositories/employees.rs`. `CASHIER` is the type of an employee WHO HAS a
  * login; the login's own `users.role` is what makes that person an admin, a

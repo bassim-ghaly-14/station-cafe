@@ -30,7 +30,7 @@ import { useErrText } from '@/lib/err'
 import { employeesApi } from '@/services/employeesApi'
 import type { AttendanceDay } from '@/services/employeesApi'
 import { overrideDraftError, overrideDraftOf, overrideTimesOf } from './attendance'
-import type { OverrideDraft } from './attendance'
+import type { OverrideDraft, OverrideDraftError } from './attendance'
 
 /** One side of the pair: the value on record, and the one being stated. */
 function OverrideField({
@@ -171,13 +171,7 @@ export function AttendanceOverrideDialog({
           />
         </Field>
 
-        {error === 'unchanged' ? (
-          <p className="text-caption text-foreground-subtle">{t('employees.override.unchanged')}</p>
-        ) : error ? (
-          <p role="alert" className="text-caption text-destructive">
-            {t(`employees.override.${error}`)}
-          </p>
-        ) : null}
+        <OverrideError error={error} />
 
         <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -196,5 +190,27 @@ export function AttendanceOverrideDialog({
         </div>
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * The draft's complaint, in the two registers the form distinguishes.
+ *
+ * `unchanged` is not an error at all: nothing was wrong, the manager simply
+ * has not changed anything yet, so it is stated quietly and is NOT announced as
+ * an alert. The two genuine problems are announced, because they need acting on.
+ */
+function OverrideError({ error }: Readonly<{ readonly error: OverrideDraftError | null }>) {
+  const { t } = useTranslation()
+  if (error === null) return null
+  if (error === 'unchanged') {
+    return (
+      <p className="text-caption text-foreground-subtle">{t('employees.override.unchanged')}</p>
+    )
+  }
+  return (
+    <p role="alert" className="text-caption text-destructive">
+      {t(`employees.override.${error}`)}
+    </p>
   )
 }

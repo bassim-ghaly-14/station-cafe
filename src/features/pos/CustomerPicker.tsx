@@ -104,61 +104,13 @@ export function CustomerPicker({
         </button>
       </div>
 
-      {all === null ? (
-        <p className="py-6 text-center text-sm text-foreground-subtle">{t('app.loading')}</p>
-      ) : results.length === 0 ? (
-        <div className="py-8 text-center">
-          <p className="text-sm font-bold text-foreground-strong">{t('pos.noCustomers')}</p>
-
-          <p className="mt-1 text-xs text-foreground-subtle">{t('pos.noCustomersHint')}</p>
-        </div>
-      ) : (
-        <>
-          <p className="mb-2 text-xs font-medium text-foreground-subtle">
-            {searching ? t('pos.customerSearchResults') : t('pos.customerRegistered')}
-          </p>
-
-          <ul className="grid max-h-80 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
-            {results.map((c) => (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => attach(c.id, null)}
-                  disabled={busy}
-                  className="flex min-h-16 w-full flex-col justify-center gap-1 rounded-md border border-border-strong p-2 text-start transition-colors hover:border-border-accent-hover hover:bg-surface-hover disabled:opacity-60"
-                >
-                  <span className="w-full truncate text-sm font-bold text-foreground-strong">
-                    {c.name}
-                  </span>
-
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-subtle">
-                    {c.phone ? (
-                      <span dir="ltr" className="tabular-nums">
-                        {c.phone}
-                      </span>
-                    ) : null}
-
-                    {c.cars.map((car) => (
-                      <span
-                        key={car.id}
-                        className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5"
-                      >
-                        <Car size={12} aria-hidden />
-
-                        <span dir="ltr">{car.plate_no}</span>
-
-                        {car.car_model ? (
-                          <span className="text-foreground-subtle">{car.car_model}</span>
-                        ) : null}
-                      </span>
-                    ))}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <CustomerResults
+        loaded={all !== null}
+        results={results}
+        searching={searching}
+        busy={busy}
+        onAttach={attach}
+      />
 
       {newOpen ? (
         <NewCustomerForm
@@ -174,5 +126,89 @@ export function CustomerPicker({
         />
       ) : null}
     </Dialog>
+  )
+}
+
+/**
+ * The browsable customer list in its three states: still loading, nothing to
+ * show, or the results.
+ *
+ * The heading distinguishes a search from browsing the registered list, so the
+ * user is never left wondering whether the list they see is everything or just
+ * what matched.
+ */
+function CustomerResults({
+  loaded,
+  results,
+  searching,
+  busy,
+  onAttach,
+}: Readonly<{
+  /** The registered list has resolved; before that there is nothing to show. */
+  loaded: boolean
+  results: CustomerWithCars[]
+  searching: boolean
+  busy: boolean
+  onAttach: (customerId: number, plate: string | null) => void
+}>) {
+  const { t } = useTranslation()
+  if (!loaded) {
+    return <p className="py-6 text-center text-sm text-foreground-subtle">{t('app.loading')}</p>
+  }
+  if (results.length === 0) {
+    return (
+      <div className="py-8 text-center">
+        <p className="text-sm font-bold text-foreground-strong">{t('pos.noCustomers')}</p>
+
+        <p className="mt-1 text-xs text-foreground-subtle">{t('pos.noCustomersHint')}</p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <p className="mb-2 text-xs font-medium text-foreground-subtle">
+        {searching ? t('pos.customerSearchResults') : t('pos.customerRegistered')}
+      </p>
+
+      <ul className="grid max-h-80 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+        {results.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => onAttach(c.id, null)}
+              disabled={busy}
+              className="flex min-h-16 w-full flex-col justify-center gap-1 rounded-md border border-border-strong p-2 text-start transition-colors hover:border-border-accent-hover hover:bg-surface-hover disabled:opacity-60"
+            >
+              <span className="w-full truncate text-sm font-bold text-foreground-strong">
+                {c.name}
+              </span>
+
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-subtle">
+                {c.phone ? (
+                  <span dir="ltr" className="tabular-nums">
+                    {c.phone}
+                  </span>
+                ) : null}
+
+                {c.cars.map((car) => (
+                  <span
+                    key={car.id}
+                    className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5"
+                  >
+                    <Car size={12} aria-hidden />
+
+                    <span dir="ltr">{car.plate_no}</span>
+
+                    {car.car_model ? (
+                      <span className="text-foreground-subtle">{car.car_model}</span>
+                    ) : null}
+                  </span>
+                ))}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }

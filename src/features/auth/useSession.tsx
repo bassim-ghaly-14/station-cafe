@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { call, callPublic } from '@/services/ipc'
-import type { UserRole } from '@/lib/roles'
+import { roleRank, type UserRole } from '@/lib/roles'
 import { sessionToken, setSessionToken } from './session'
 
 export interface User {
@@ -102,7 +102,5 @@ export function useOptionalSession(): SessionCtx | null {
 
 /** Role helpers — UI convenience only; the backend is the real gate. */
 export function atLeast(role: UserRole | undefined, min: UserRole): boolean {
-  const rank = (r: string | undefined) =>
-    r === 'ADMIN' ? 3 : r === 'MANAGER' ? 2 : r === 'STAFF' ? 1 : 0
-  return rank(role) >= rank(min)
+  return roleRank(role) >= roleRank(min)
 }
