@@ -1,0 +1,28 @@
+# Normalise line endings in the REPOSITORY, so every platform checks out
+# byte-identical sources.
+#
+# This is not cosmetic. The production Content-Security-Policy in
+# `src-tauri/tauri.conf.json` authorises the inline theme bootstrap in
+# `index.html` by sha256 hash, and a hash is byte-exact: the same script
+# hashes differently under LF and CRLF. GitHub's `windows-latest` runners
+# set `core.autocrlf=true`, so without this file a Windows release would
+# check out `index.html` with CRLF, `vite build` would copy those CRLF bytes
+# into `dist/`, and the shipped app's CSP would no longer match its own
+# inline script -- a blank window in production only, with a green local
+# build. `src/lib/releaseIntegrity.test.ts` is what makes that visible.
+#
+# `eol=lf` pins the working tree to LF on every OS (LF in the repository,
+# LF on disk), so the pinned hash is correct for macOS, Linux and Windows
+# alike. `text=auto` keeps git's binary detection, so images and icons are
+# never touched.
+* text=auto eol=lf
+
+# Binary assets: never let line-ending conversion reach them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
