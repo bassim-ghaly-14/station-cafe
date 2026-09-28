@@ -268,6 +268,34 @@ describe('EmployeesPage — manager', () => {
     await waitFor(() => expect(mocks.recordAttendance).toHaveBeenCalledWith(1, 'CHECK_IN'))
   })
 
+  it('states the rounding rule for a punch and the closed-day warning for an absence', async () => {
+    renderPage()
+    await screen.findAllByText('أحمد سيد')
+
+    // The two punches are a moment and carry the stored-time rounding rule…
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل حضور أحمد سيد' }))
+    expect(
+      await screen.findByText(
+        'يُقرَّب وقت الحضور للخلف ووقت الانصراف للأمام، بما لا يتجاوز ١٠ دقائق.',
+      ),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // …while closing the whole day is irreversible and says so, and neither
+    // punch nor absence is presented as a destructive confirmation.
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل غياب أحمد سيد' }))
+    const absence = await screen.findByRole('dialog')
+    expect(
+      within(absence).getByText(
+        'سيُسجَّل هذا اليوم غيابًا، ولا يمكن تغييره إلى حضور أو انصراف بعد التأكيد.',
+      ),
+    ).toBeInTheDocument()
+    expect(within(absence).getByRole('button', { name: 'تأكيد' }).className).not.toMatch(
+      /destructive/,
+    )
+  })
+
   it('cancelling a punch sends nothing at all', async () => {
     renderPage()
     await screen.findAllByText('أحمد سيد')
