@@ -40,6 +40,7 @@ import {
 import { DisplayDate, DisplayTime } from '@/components/ui/display-datetime'
 import { Coffee, Droplets, ArrowLeft, CalendarClock } from '@/components/ui/icon'
 import { useErrText } from '@/lib/err'
+import type { EmployeeRole } from '@/lib/roles'
 import { roleHintKey, roleLabel, roleOf } from './employee-role'
 import { formatWorkedDuration } from './attendance'
 import { AttendanceOverrideDialog } from './AttendanceOverrideDialog'
@@ -47,8 +48,11 @@ import { employeesApi } from '@/services/employeesApi'
 import type {
   Advance,
   AttendanceDay,
+  Employee,
   EmployeeDetails,
   EmployeePeriod,
+  EmployeeRow,
+  PayrollRun,
 } from '@/services/employeesApi'
 
 /** A compact premium stat block: a quiet label over a strong figure. */
@@ -88,6 +92,199 @@ function LedgerRow({
     <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5 last:border-0">
       <dt className="min-w-0 truncate text-caption">{label}</dt>
       <dd className="shrink-0 text-body font-bold tabular-nums">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * The profile header: identity, the presented role, the status and the phone.
+ *
+ * The role is the SAME derivation the table uses, passed down already resolved,
+ * so the drawer can never show a different role for the same person than the row
+ * it was opened from.
+ */
+function EmployeeHeader({ employee, role }: Readonly<{ employee: Employee; role: EmployeeRole }>) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex min-w-0 items-start gap-3.5">
+      <EmployeeAvatar role={role} size="lg" className="mt-0.5" />
+      <div className="min-w-0 flex-1">
+        <h2 className="truncate text-heading">{employee.name}</h2>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {/* The REAL role, never the employee type. */}
+          <Badge role={role} size="sm" dot>
+            {roleLabel(t, role)}
+          </Badge>
+          <Badge variant={employee.status === 'ACTIVE' ? 'success' : 'neutral'} size="sm" dot>
+            {t(`employees.status.${employee.status}`)}
+          </Badge>
+          {employee.phone ? (
+            <span dir="ltr" className="text-caption tabular-nums">
+              {employee.phone}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1.5 text-caption text-foreground-subtle">{t(roleHintKey(role))}</p>
+      </div>
+    </div>
+  )
+}
+
+/** The period summary — the same figures the table row showed. */
+function PeriodSummary({ row }: Readonly<{ row: EmployeeRow | null }>) {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatBlock label={t('employees.drawer.attendance')}>{row?.attendance_days ?? 0}</StatBlock>
+      <StatBlock label={t('employees.drawer.hours')}>
+        {formatWorkedDuration(row?.worked_minutes ?? 0, t)}
+      </StatBlock>
+      <StatBlock label={t('employees.drawer.absence')}>{row?.absence_days ?? 0}</StatBlock>
+      <StatBlock label={t('employees.drawer.leave')}>{row?.leave_days ?? 0}</StatBlock>
+    </div>
+  )
+}
+
+/** The payroll runs recorded for the employee. */
+function PayrollList({ runs }: Readonly<{ runs: readonly PayrollRun[] }>) {
+  const { t } = useTranslation()
+  if (runs.length === 0) {
+    return <p className="text-caption text-foreground-subtle">{t('employees.drawer.noPayroll')}</p>
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {runs.map((run) => (
+        <li
+          key={run.id}
+          className="flex flex-col gap-1.5 rounded-md border border-border-subtle p-3"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-body font-bold tabular-nums">{run.period}</span>
+            <Badge variant={run.status === 'FINALIZED' ? 'success' : 'info'} size="sm" dot>
+              {t(`employees.payroll.${run.status}`)}
+            </Badge>
+          </div>
+          <dl>
+            <LedgerRow label={t('employees.drawer.baseSalary')}>
+              <MoneyDisplay amount={run.base_salary} variant="auto" />
+            </LedgerRow>
+            <LedgerRow label={t('employees.drawer.advances')}>
+              <MoneyDisplay amount={run.advances} variant="auto" />
+            </LedgerRow>
+            <LedgerRow label={t('employees.drawer.deductions')}>
+              <MoneyDisplay amount={run.deductions} variant="auto" />
+            </LedgerRow>
+            <LedgerRow label={t('employees.drawer.netSalary')}>
+              <MoneyDisplay amount={run.net_salary} variant="auto" />
+            </LedgerRow>
+          </dl>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The performance band.
+ *
+ * A CASHIER is measured on the shifts they opened and the cafe money booked to
+ * them. A wash worker is not, and there is deliberately no wash revenue here: the
+ * department's money belongs to the department, so a figure under one worker's
+ * name would be a fabrication. Attendance, salary and advances above are how a
+ * wash worker is actually managed.
+ */
+function PerformanceSection({
+  employee,
+  row,
+}: Readonly<{ employee: Employee; row: EmployeeRow | null }>) {
+  const { t } = useTranslation()
+  if (employee.employee_type !== 'CASHIER') {
+    return (
+      <p className="flex items-center gap-1.5 text-caption text-foreground-subtle">
+        <Droplets size={14} aria-hidden />
+        {t('employees.drawer.departmentRevenueNote')}
+      </p>
+    )
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <StatBlock label={t('employees.drawer.shifts')}>
+        <span className="flex items-center gap-1.5">
+          <Coffee size={14} aria-hidden />
+          {row?.shifts_count ?? 0}
+        </span>
+      </StatBlock>
+      <StatBlock label={t('employees.drawer.cafeRevenue')}>
+        <MoneyDisplay amount={row?.cafe_revenue ?? 0} variant="auto" />
+      </StatBlock>
+    </div>
+  )
+}
+
+/**
+ * The whole record, once it has resolved.
+ *
+ * The panel reads top to bottom as an employee profile: header (identity), the
+ * period summary, the attendance timeline, the advances, the payroll periods and
+ * finally the performance. Sections are separated by LABELS, spacing and
+ * hairlines rather than by a bordered card around each one — no card inside
+ * card inside card.
+ *
+ * A RELOAD behind an override dims the record and shows a progress bar rather
+ * than replacing it: the figures are still true while they are being refreshed,
+ * and the correction dialog has just closed on top of them.
+ */
+function EmployeeRecord({
+  details,
+  canOverride,
+  loading,
+  onOverride,
+}: Readonly<{
+  details: EmployeeDetails
+  canOverride: boolean
+  loading: boolean
+  onOverride: (day: AttendanceDay) => void
+}>) {
+  const { t } = useTranslation()
+  const { employee } = details
+  const row = details.period_row ?? null
+
+  return (
+    <div className={loading ? 'opacity-70' : undefined}>
+      <EmployeeHeader employee={employee} role={roleOf(employee)} />
+
+      <PeriodSummary row={row} />
+
+      <Section title={t('employees.drawer.salary')}>
+        <dl>
+          <LedgerRow label={t('employees.drawer.baseSalary')}>
+            <MoneyDisplay amount={employee.base_salary} variant="auto" />
+          </LedgerRow>
+        </dl>
+      </Section>
+
+      <Section title={t('employees.drawer.attendanceTimeline')}>
+        <AttendanceTimeline
+          days={details.attendance}
+          employeeName={employee.name}
+          canOverride={canOverride}
+          onOverride={onOverride}
+        />
+      </Section>
+
+      <Section title={t('employees.drawer.advances')}>
+        <AdvanceList advances={details.advances} />
+      </Section>
+
+      <Section title={t('employees.drawer.payroll')}>
+        <PayrollList runs={details.payroll} />
+      </Section>
+
+      <Section title={t('employees.drawer.performance')}>
+        <PerformanceSection employee={employee} row={row} />
+      </Section>
+
+      {loading ? <ProgressBar label={t('app.loading')} className="mt-4 w-24" /> : null}
     </div>
   )
 }
@@ -151,11 +348,6 @@ export function EmployeeDetailsDrawer({
   useEffect(load, [load])
 
   const employee = details?.employee
-  const isCashier = employee?.employee_type === 'CASHIER'
-  // The same derivation the table uses, so the drawer can never show a different
-  // role for the same person than the row they opened it from.
-  const role = employee ? roleOf(employee) : null
-  const row = details?.period_row ?? null
 
   return (
     <>
@@ -169,145 +361,14 @@ export function EmployeeDetailsDrawer({
           <ErrorState message={error} onRetry={load} retryLabel={t('app.retry')} />
         ) : loading && !details ? (
           <EmployeeDetailsSkeleton />
-        ) : (
-          details &&
-          employee && (
-            <div className={loading ? 'opacity-70' : undefined}>
-              {/* Profile header: the existing employee avatar, fed the real role. */}
-              <div className="flex min-w-0 items-start gap-3.5">
-                <EmployeeAvatar role={role} size="lg" className="mt-0.5" />
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-heading">{employee.name}</h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {/* The REAL role, never the employee type. */}
-                    <Badge role={role} size="sm" dot>
-                      {roleLabel(t, role ?? 'STAFF')}
-                    </Badge>
-                    <Badge
-                      variant={employee.status === 'ACTIVE' ? 'success' : 'neutral'}
-                      size="sm"
-                      dot
-                    >
-                      {t(`employees.status.${employee.status}`)}
-                    </Badge>
-                    {employee.phone ? (
-                      <span dir="ltr" className="text-caption tabular-nums">
-                        {employee.phone}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1.5 text-caption text-foreground-subtle">
-                    {t(roleHintKey(role ?? 'STAFF'))}
-                  </p>
-                </div>
-              </div>
-
-              {/* The period summary — the same figures the table row showed. */}
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <StatBlock label={t('employees.drawer.attendance')}>
-                  {row?.attendance_days ?? 0}
-                </StatBlock>
-                <StatBlock label={t('employees.drawer.hours')}>
-                  {formatWorkedDuration(row?.worked_minutes ?? 0, t)}
-                </StatBlock>
-                <StatBlock label={t('employees.drawer.absence')}>
-                  {row?.absence_days ?? 0}
-                </StatBlock>
-                <StatBlock label={t('employees.drawer.leave')}>{row?.leave_days ?? 0}</StatBlock>
-              </div>
-
-              <Section title={t('employees.drawer.salary')}>
-                <dl>
-                  <LedgerRow label={t('employees.drawer.baseSalary')}>
-                    <MoneyDisplay amount={employee.base_salary} variant="auto" />
-                  </LedgerRow>
-                </dl>
-              </Section>
-
-              <Section title={t('employees.drawer.attendanceTimeline')}>
-                <AttendanceTimeline
-                  days={details.attendance}
-                  employeeName={employee.name}
-                  canOverride={canOverride}
-                  onOverride={setOverriding}
-                />
-              </Section>
-
-              <Section title={t('employees.drawer.advances')}>
-                <AdvanceList advances={details.advances} />
-              </Section>
-
-              <Section title={t('employees.drawer.payroll')}>
-                {details.payroll.length === 0 ? (
-                  <p className="text-caption text-foreground-subtle">
-                    {t('employees.drawer.noPayroll')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {details.payroll.map((run) => (
-                      <li
-                        key={run.id}
-                        className="flex flex-col gap-1.5 rounded-md border border-border-subtle p-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-body font-bold tabular-nums">{run.period}</span>
-                          <Badge
-                            variant={run.status === 'FINALIZED' ? 'success' : 'info'}
-                            size="sm"
-                            dot
-                          >
-                            {t(`employees.payroll.${run.status}`)}
-                          </Badge>
-                        </div>
-                        <dl>
-                          <LedgerRow label={t('employees.drawer.baseSalary')}>
-                            <MoneyDisplay amount={run.base_salary} variant="auto" />
-                          </LedgerRow>
-                          <LedgerRow label={t('employees.drawer.advances')}>
-                            <MoneyDisplay amount={run.advances} variant="auto" />
-                          </LedgerRow>
-                          <LedgerRow label={t('employees.drawer.deductions')}>
-                            <MoneyDisplay amount={run.deductions} variant="auto" />
-                          </LedgerRow>
-                          <LedgerRow label={t('employees.drawer.netSalary')}>
-                            <MoneyDisplay amount={run.net_salary} variant="auto" />
-                          </LedgerRow>
-                        </dl>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Section>
-
-              <Section title={t('employees.drawer.performance')}>
-                {isCashier ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <StatBlock label={t('employees.drawer.shifts')}>
-                      <span className="flex items-center gap-1.5">
-                        <Coffee size={14} aria-hidden />
-                        {row?.shifts_count ?? 0}
-                      </span>
-                    </StatBlock>
-                    <StatBlock label={t('employees.drawer.cafeRevenue')}>
-                      <MoneyDisplay amount={row?.cafe_revenue ?? 0} variant="auto" />
-                    </StatBlock>
-                  </div>
-                ) : (
-                  // No wash revenue here, on purpose: the wash department's money
-                  // belongs to the department, so a figure under one worker's name
-                  // would be a fabrication. Attendance, salary and advances above
-                  // are how a wash worker is actually managed.
-                  <p className="flex items-center gap-1.5 text-caption text-foreground-subtle">
-                    <Droplets size={14} aria-hidden />
-                    {t('employees.drawer.departmentRevenueNote')}
-                  </p>
-                )}
-              </Section>
-
-              {loading ? <ProgressBar label={t('app.loading')} className="mt-4 w-24" /> : null}
-            </div>
-          )
-        )}
+        ) : details && employee ? (
+          <EmployeeRecord
+            details={details}
+            canOverride={canOverride}
+            loading={loading}
+            onOverride={setOverriding}
+          />
+        ) : null}
       </Drawer>
       {/* The override is a SIBLING of the drawer, not a child of it: nesting a
           dialog inside the panel would make Escape and the backdrop close both
