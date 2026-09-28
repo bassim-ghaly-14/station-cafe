@@ -7,7 +7,6 @@ import {
   CardHeader,
   Dialog,
   Field,
-  Input,
   PinInput,
   Select,
   Switch,
@@ -15,7 +14,6 @@ import {
   DISCOUNT_PIN_LENGTH,
 } from '@/components/ui'
 import {
-  ArrowRight,
   Lock,
   Minus,
   Package,
@@ -26,6 +24,7 @@ import {
   Trash2,
   TriangleAlert,
 } from '@/components/ui/icon'
+import { DevAmountList } from './DevAmountList'
 import { useToast } from '@/components/ui/toast'
 import { api, settingsApi, MONTHLY_SALES_PERIOD_MONTHS, type CreditConfig } from '@/services/posApi'
 import { developerApi } from '@/services/developerApi'
@@ -368,83 +367,15 @@ export default function DevSettingsPage() {
           <div className="flex flex-col gap-3 md:col-span-2">
             <h3 className="font-bold text-foreground">{t('dev.serviceCharge')}</h3>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              {serviceAmounts.map((amount, index) => (
-                <div key={amount} className="flex min-w-0 items-center gap-2">
-                  <Input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    aria-label={`${t('dev.serviceCharge')} ${index + 1}`}
-                    value={amount}
-                    className="w-24 min-w-0 flex-none"
-                    onChange={(e) =>
-                      setServiceAmounts((values) =>
-                        values.map((value, current) =>
-                          current === index ? e.target.value : value,
-                        ),
-                      )
-                    }
-                  />
-
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    disabled={index === 0}
-                    aria-label={t('dev.moveUp')}
-                    onClick={() =>
-                      setServiceAmounts((values) => {
-                        const next = [...values]
-
-                        ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
-
-                        return next
-                      })
-                    }
-                  >
-                    <ArrowRight size={16} aria-hidden className="rotate-90" />
-                  </Button>
-
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    disabled={index === serviceAmounts.length - 1}
-                    aria-label={t('dev.moveDown')}
-                    onClick={() =>
-                      setServiceAmounts((values) => {
-                        const next = [...values]
-
-                        ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
-
-                        return next
-                      })
-                    }
-                  >
-                    <ArrowRight size={16} aria-hidden className="-rotate-90" />
-                  </Button>
-
-                  <Button
-                    size="icon"
-                    variant="destructiveGhost"
-                    aria-label={t('dev.removeAmount')}
-                    onClick={() =>
-                      setServiceAmounts((values) => values.filter((_, i) => i !== index))
-                    }
-                  >
-                    <Trash2 size={16} aria-hidden />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <Button
-              variant="outline"
-              className="self-start"
-              onClick={() => setServiceAmounts((values) => [...values, ''])}
-            >
-              <Plus size={16} aria-hidden />
-              {t('dev.addAmount')}
-            </Button>
+            <DevAmountList
+              className="flex flex-col gap-3"
+              label={t('dev.serviceCharge')}
+              amounts={serviceAmounts}
+              onChange={setServiceAmounts}
+              addLabel={t('dev.addAmount')}
+              removeLabel={t('dev.removeAmount')}
+              reorderable
+            />
           </div>
 
           {/* Discount quick-picks */}
@@ -453,47 +384,14 @@ export default function DevSettingsPage() {
 
             <p className="text-sm text-foreground-muted">{t('dev.discountOptionsHelp')}</p>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              {discountAmounts.map((amount, index) => (
-                <div key={amount} className="flex min-w-0 items-center gap-2">
-                  <Input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    aria-label={`${t('dev.discountOptions')} ${index + 1}`}
-                    value={amount}
-                    className="w-24 min-w-0 flex-none"
-                    onChange={(e) =>
-                      setDiscountAmounts((values) =>
-                        values.map((value, current) =>
-                          current === index ? e.target.value : value,
-                        ),
-                      )
-                    }
-                  />
-
-                  <Button
-                    size="icon"
-                    variant="destructiveGhost"
-                    aria-label={t('dev.removeDiscountAmount')}
-                    onClick={() =>
-                      setDiscountAmounts((values) => values.filter((_, i) => i !== index))
-                    }
-                  >
-                    <Trash2 size={16} aria-hidden />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <Button
-              variant="outline"
-              className="self-start"
-              onClick={() => setDiscountAmounts((values) => [...values, ''])}
-            >
-              <Plus size={16} aria-hidden />
-              {t('dev.addDiscountAmount')}
-            </Button>
+            <DevAmountList
+              className="flex flex-col gap-3"
+              label={t('dev.discountOptions')}
+              amounts={discountAmounts}
+              onChange={setDiscountAmounts}
+              addLabel={t('dev.addDiscountAmount')}
+              removeLabel={t('dev.removeDiscountAmount')}
+            />
           </div>
 
           {/* Shared discount PIN */}
