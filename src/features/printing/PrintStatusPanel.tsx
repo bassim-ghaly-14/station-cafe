@@ -169,7 +169,10 @@ function PrintJobItem({ job }: Readonly<{ readonly job: PrintJobRow }>) {
   const message = printJobErrorMessage(t, job)
 
   return (
-    <div className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0">
+    // `flex-col` below `sm` so the icon, the document's identity and its
+    // metadata are never squeezed into a 296px row by `min-w-48`; the value
+    // floor is kept from `sm` up where the two-column layout has the width.
+    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:gap-3">
       <span
         aria-hidden
         className="flex size-9 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-muted"
@@ -177,7 +180,7 @@ function PrintJobItem({ job }: Readonly<{ readonly job: PrintJobRow }>) {
         <DocumentIcon size={18} />
       </span>
 
-      <div className="min-w-48 flex-1">
+      <div className="min-w-0 flex-1 sm:min-w-48">
         <p className="flex flex-wrap items-center gap-2">
           <span className="text-body font-bold text-foreground-strong">
             {printDocumentLabel(t, job.doc_type)}

@@ -307,7 +307,7 @@ export function MyAttendanceCard({
 
         {/* Zone 3 — the actions, at the far edge. Each opens a confirmation; see
             `confirmRecord`. */}
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:shrink-0 sm:flex-wrap sm:items-center sm:gap-2">
           <Button
             disabled={busy || !availability.checkIn}
             onClick={() => requestRecord('CHECK_IN')}
@@ -320,6 +320,7 @@ export function MyAttendanceCard({
             variant="secondary"
             disabled={busy || !availability.checkOut}
             onClick={() => requestRecord('CHECK_OUT')}
+            className="min-w-32"
           >
             <DoorClosed size={18} aria-hidden />
             {t('employees.actions.checkOut')}

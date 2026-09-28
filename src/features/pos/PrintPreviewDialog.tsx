@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, useToast } from '@/components/ui'
+import { Button, Dialog, DialogActions, useToast } from '@/components/ui'
 import { Maximize2, RotateCcw, X } from '@/components/ui/icon'
 import { DocumentPreviewState } from '@/components/states'
 import { useErrText } from '@/lib/err'
@@ -255,7 +255,7 @@ export function PrintPreviewDialog({
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
+      <DialogActions className="mt-4">
         <Button variant="outline" onClick={onClose}>
           <X size={16} aria-hidden />
           {t('app.close')}
@@ -267,7 +267,7 @@ export function PrintPreviewDialog({
             {printing ? t('app.loading') : t('print.reprint')}
           </Button>
         ) : null}
-      </div>
+      </DialogActions>
     </Dialog>
   )
 }

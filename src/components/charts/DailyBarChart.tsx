@@ -418,38 +418,76 @@ export function DailyBarChart({
 
   const body = (mode: ChartPresentation) => (
     <>
-      {/* The plot reads left-to-right like the calendar; its labels do not. */}
-      <div
-        dir="ltr"
-        className={cn(
-          'relative w-full min-h-0',
-          // The height is the DATA's height, not a card's: a two-day period is
-          // two compact rows, a fortnight is comfortable, a month is bounded.
-          // In fullscreen the same figure is additionally capped against the
-          // viewport, so the dialog uses the screen it has without demanding
-          // more of it than a laptop has. `shrink-0` then keeps whichever
-          // height was resolved — a `flex-1` would let the plot collapse and
-          // hand its space to whatever sits below it.
-          mode === 'fullscreen' ? 'mt-4 shrink-0' : 'mt-5',
-        )}
-        style={{ height: `min(62dvh, ${dailyPlotHeight(data.length, mode)}px)` }}
-        data-testid="daily-chart-plot"
-      >
-        <ChartContainer id={id} config={chartConfig} className="[&_.recharts-text]:fill-foreground">
-          {/* `layout="vertical"` is what makes a DAY a ROW: the CATEGORY axis is
+      {/*
+        The plot reads left-to-right like the calendar; its labels do not.
+
+        # The phone treatment, and why it is a contained scroll
+        *
+        This chart reserves a FIXED 148px for the day column plus 76px for the
+        value labels — 224px, which is 76% of the 296px a 320px screen actually
+        has once the page and card padding are taken off. Squeezing the plot into
+        what is left would produce a chart of 70px-wide bars, and a chart that
+        small says nothing; the alternative, shortening the Arabic date, is
+        forbidden by this component's own contract (the date is never split,
+        truncated or abbreviated, and there is a test that pins it).
+        *
+        So the third option is taken deliberately: below `sm` the plot gets a
+        minimum width and the SCROLL IS THE PLOT'S OWN, inside the card.
+        *
+        * `min-w-[22rem]` is 352px — the smallest width at which a 148px date
+          column, a real bar and a 76px figure column coexist without any of
+          them being squeezed;
+        * `overflow-x-auto` + `overscroll-x-contain` keep that scroll INSIDE the
+          card: a horizontal swipe that reaches its end is contained rather than
+          handed to the page, so the whole screen never slides sideways;
+        * the negative inline margins + matching padding bleed the scroller to
+          the screen edge, so a partly-visible bar reads as "there is more this
+          way" rather than as a clipped chart, and the first day still lines up
+          with the rest of the card;
+        * `sm:` restores `min-w-0` and no scroller, which is the desktop chart
+          exactly as it was.
+
+        This is the case the "add overflow-x-auto" advice is about: a scroll
+        region introduced HERE, on purpose, where the alternative is either an
+        illegible chart or a shortened date — not a scroll region sprinkled over
+        a layout that was never measured.
+      */}
+      <div className="-mx-4 overflow-x-auto overscroll-x-contain px-4 sm:mx-0 sm:overflow-x-visible sm:px-0">
+        <div
+          dir="ltr"
+          className={cn(
+            'relative min-h-0 min-w-88 sm:min-w-0 sm:w-full',
+            // The height is the DATA's height, not a card's: a two-day period is
+            // two compact rows, a fortnight is comfortable, a month is bounded.
+            // In fullscreen the same figure is additionally capped against the
+            // viewport, so the dialog uses the screen it has without demanding
+            // more of it than a laptop has. `shrink-0` then keeps whichever
+            // height was resolved — a `flex-1` would let the plot collapse and
+            // hand its space to whatever sits below it.
+            mode === 'fullscreen' ? 'mt-4 shrink-0' : 'mt-5',
+          )}
+          style={{ height: `min(62dvh, ${dailyPlotHeight(data.length, mode)}px)` }}
+          data-testid="daily-chart-plot"
+        >
+          <ChartContainer
+            id={id}
+            config={chartConfig}
+            className="[&_.recharts-text]:fill-foreground"
+          >
+            {/* `layout="vertical"` is what makes a DAY a ROW: the CATEGORY axis is
               the Y axis, the VALUE axis is the X axis, and every bar extends
               horizontally out of the value axis. */}
-          <BarChart
-            layout="vertical"
-            data={[...data]}
-            margin={{ top: 4, right: 76, bottom: 4, left: 8 }}
-            barCategoryGap={dailyBarCategoryGap}
-            barGap={0}
-          >
-            {/* The grid follows the bars: vertical rules, so the eye reads ACROSS
+            <BarChart
+              layout="vertical"
+              data={[...data]}
+              margin={{ top: 4, right: 76, bottom: 4, left: 8 }}
+              barCategoryGap={dailyBarCategoryGap}
+              barGap={0}
+            >
+              {/* The grid follows the bars: vertical rules, so the eye reads ACROSS
                 a row to its figure rather than up a column. */}
-            <CartesianGrid horizontal={false} stroke="var(--chart-grid)" />
-            {/* The VALUE axis. Its ticks are the scale, so they are abbreviated:
+              <CartesianGrid horizontal={false} stroke="var(--chart-grid)" />
+              {/* The VALUE axis. Its ticks are the scale, so they are abbreviated:
                 an axis is not a place to spend a line of digits.
 
                 `xAxisId`/`yAxisId` below are NOT decoration: recharts binds a
@@ -459,35 +497,35 @@ export function DailyBarChart({
                 bars collapse onto each other at the edges of the plot with an
                 11px height, so one mark is all a reader ever sees. Every axis
                 named by a bar below therefore names itself the same way. */}
-            <XAxis
-              id="value"
-              xAxisId="value"
-              type="number"
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value: number) => format(primary?.key ?? '', value, 'compact')}
-              minTickGap={24}
-            />
-            {/* The CATEGORY axis: one row per day, in the app's Arabic date form.
+              <XAxis
+                id="value"
+                xAxisId="value"
+                type="number"
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value: number) => format(primary?.key ?? '', value, 'compact')}
+                minTickGap={24}
+              />
+              {/* The CATEGORY axis: one row per day, in the app's Arabic date form.
                 The column is wide enough for the WHOLE date — that width is what
                 keeps it on one line, and the tick below is told never to break
                 it, so the label is never split or shortened to fit. Thinning,
                 not scrolling: a long period drops ticks rather than growing a
                 scroll region inside the card. */}
-            <YAxis
-              id="days"
-              yAxisId="days"
-              type="category"
-              dataKey="label"
-              tickLine={false}
-              axisLine={false}
-              width={DAILY_DAY_AXIS_WIDTH[mode]}
-              tick={DayLabelTick}
-              interval="preserveStartEnd"
-              minTickGap={2}
-            />
+              <YAxis
+                id="days"
+                yAxisId="days"
+                type="category"
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                width={DAILY_DAY_AXIS_WIDTH[mode]}
+                tick={DayLabelTick}
+                interval="preserveStartEnd"
+                minTickGap={2}
+              />
 
-            {/* `axisId` names the axis the TOOLTIP reads, and it is NOT optional
+              {/* `axisId` names the axis the TOOLTIP reads, and it is NOT optional
                 decoration. recharts' `Tooltip` defaults to `axisId={0}`, but the
                 day axis below is registered under `"days"` (that name is what
                 binds the `Bar` to it), so the tooltip was resolving an axis that
@@ -501,67 +539,68 @@ export function DailyBarChart({
 
                 Naming the axis is the whole fix, and it is recharts' own
                 supported API — not `shared={false}` and not a hit-area overlay. */}
-            <ChartTooltip
-              axisId="days"
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={renderTooltipLabel}
-                  // Each ROW is about ONE figure and is named by the CHART'S OWN
-                  // Arabic label for it, never by the mark's key. The day is
-                  // already the heading above.
-                  itemLabel={(_item, key) => seriesTooltipName(figures, key)}
-                  // The name is what the manager is looking for in a row of
-                  // figures, so it carries the project's bold weight.
-                  boldItemLabel
-                  formatter={renderTooltipValue}
-                  footer={metrics.length || showTotal ? renderTooltipFooter : undefined}
-                />
-              }
-            />
-
-            {series.map((item) => (
-              <Bar
-                key={item.key}
-                dataKey={item.key}
-                name={item.key}
-                // The bars belong to the value axis, so they grow out of it
-                // sideways; the day axis is what lays them out in rows.
-                xAxisId="value"
-                yAxisId="days"
-                fill={`var(--color-${item.key})`}
-                // A horizontal bar rounds at the end it grows towards.
-                radius={[0, 4, 4, 0]}
-                // Per-BAR colour: the datum may name a different centralized role
-                // for its own day, and the shape resolves it. A datum that names
-                // none — every Sales day — paints exactly the series colour above.
-                shape={barShapes.get(item.key)}
-                // The ceiling, derived from the row this period's box gives each
-                // day: substantial for a short period, naturally thinned for a
-                // long one, and never larger than the band it sits in.
-                maxBarSize={dailyBarSize(data.length, mode)}
-                isAnimationActive={false}
-              >
-                {labelled ? (
-                  <LabelList
-                    dataKey={item.key}
-                    fontSize={11}
-                    offset={10}
-                    // Beside the bar it labels, on the side the bar grows into.
-                    position="right"
-                    className="fill-foreground"
-                    // The bar's own figure, in the SERIES' OWN type: a money bar
-                    // ends in ج.م and a counted bar ends in a whole number. The
-                    // `auto` style keeps the figure exact until it is long enough
-                    // to crowd its own bar, then abbreviates it.
-                    formatter={(value: unknown) => format(item.key, Number(value), 'auto')}
+              <ChartTooltip
+                axisId="days"
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={renderTooltipLabel}
+                    // Each ROW is about ONE figure and is named by the CHART'S OWN
+                    // Arabic label for it, never by the mark's key. The day is
+                    // already the heading above.
+                    itemLabel={(_item, key) => seriesTooltipName(figures, key)}
+                    // The name is what the manager is looking for in a row of
+                    // figures, so it carries the project's bold weight.
+                    boldItemLabel
+                    formatter={renderTooltipValue}
+                    footer={metrics.length || showTotal ? renderTooltipFooter : undefined}
                   />
-                ) : null}
-              </Bar>
-            ))}
-          </BarChart>
-        </ChartContainer>
-        <span className="sr-only" role="img" aria-label={summary} />
+                }
+              />
+
+              {series.map((item) => (
+                <Bar
+                  key={item.key}
+                  dataKey={item.key}
+                  name={item.key}
+                  // The bars belong to the value axis, so they grow out of it
+                  // sideways; the day axis is what lays them out in rows.
+                  xAxisId="value"
+                  yAxisId="days"
+                  fill={`var(--color-${item.key})`}
+                  // A horizontal bar rounds at the end it grows towards.
+                  radius={[0, 4, 4, 0]}
+                  // Per-BAR colour: the datum may name a different centralized role
+                  // for its own day, and the shape resolves it. A datum that names
+                  // none — every Sales day — paints exactly the series colour above.
+                  shape={barShapes.get(item.key)}
+                  // The ceiling, derived from the row this period's box gives each
+                  // day: substantial for a short period, naturally thinned for a
+                  // long one, and never larger than the band it sits in.
+                  maxBarSize={dailyBarSize(data.length, mode)}
+                  isAnimationActive={false}
+                >
+                  {labelled ? (
+                    <LabelList
+                      dataKey={item.key}
+                      fontSize={11}
+                      offset={10}
+                      // Beside the bar it labels, on the side the bar grows into.
+                      position="right"
+                      className="fill-foreground"
+                      // The bar's own figure, in the SERIES' OWN type: a money bar
+                      // ends in ج.م and a counted bar ends in a whole number. The
+                      // `auto` style keeps the figure exact until it is long enough
+                      // to crowd its own bar, then abbreviates it.
+                      formatter={(value: unknown) => format(item.key, Number(value), 'auto')}
+                    />
+                  ) : null}
+                </Bar>
+              ))}
+            </BarChart>
+          </ChartContainer>
+          <span className="sr-only" role="img" aria-label={summary} />
+        </div>
       </div>
 
       {/* The footer states the period total, so a reader who never hovers a bar

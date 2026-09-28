@@ -20,21 +20,207 @@
  */
 import { useTranslation } from 'react-i18next'
 import {
+  ActionMenu,
   Badge,
   DataTable,
   DataTableCell,
   DataTableRow,
   MoneyDisplay,
+  RecordList,
+  RecordListActions,
+  RecordListItem,
   TableActionButton,
   TableActionDivider,
   TableActionGroup,
+  type ActionMenuItem,
   type DataTableColumn,
 } from '@/components/ui'
 import { Car, Eye, Pencil, Trash2 } from '@/components/ui/icon'
 import { CustomerAvatar } from '@/lib/customer-visual'
 import { CustomerVehicleBadge } from './CustomerVehicleBadge'
 import { DisplayDate, DisplayDateTime } from '@/components/ui/display-datetime'
+import { useIsWide } from '@/lib/use-media-query'
 import type { CustomerRow } from '@/services/customersApi'
+
+/**
+ * The PHONE presentation of the customers list: one record per customer.
+ *
+ * It states the row's own values in the row's own order — identity, vehicles,
+ * lifetime date, the period figures the role is given, then the actions — and
+ * drops nothing. Two decisions are worth stating:
+ *
+ *  - DETAILS and EDIT stay directly visible. They are the two things a manager
+ *    does with a customer most of the time, and two 48px targets fit a 296px
+ *    record with room to spare, so there is no reason to charge an extra tap.
+ *  - The permanent DELETE moves behind the overflow menu. It is irreversible,
+ *    it is ADMIN-only, and separating it from the reversible actions is the
+ *    same separation the desktop column draws with its hairline — on a phone
+ *    where the two would sit side by side, that hairline is not enough.
+ */
+function CustomerRecordList({
+  customers,
+  financialVisible,
+  canDelete,
+  onOpenDetails,
+  onEdit,
+  onDelete,
+  className,
+}: {
+  readonly customers: readonly CustomerRow[]
+  readonly financialVisible: boolean
+  readonly canDelete: boolean
+  readonly onOpenDetails: (customer: CustomerRow) => void
+  readonly onEdit: (customer: CustomerRow) => void
+  readonly onDelete: (customer: CustomerRow) => void
+  readonly className?: string
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <RecordList className={className} aria-label={t('customers.table.caption')}>
+      {customers.map((customer) => {
+        const stats = financialVisible ? customer.stats : null
+        const menuItems: ActionMenuItem[] = canDelete
+          ? [
+              {
+                key: 'delete',
+                label: t('customers.actions.delete', { name: customer.name }),
+                icon: <Trash2 size={20} aria-hidden />,
+                tone: 'danger',
+                onClick: () => onDelete(customer),
+                testId: 'customer-row-delete',
+              },
+            ]
+          : []
+
+        return (
+          <RecordListItem key={customer.id}>
+            <CustomerRecordIdentity customer={customer} />
+            <CustomerRecordVehicles customer={customer} />
+            <p className="mt-2 text-caption text-foreground-subtle">
+              {t('customers.columns.created')} <DisplayDate value={customer.created_at} />
+            </p>
+            {financialVisible ? <CustomerRecordFigures stats={stats} /> : null}
+            <RecordListActions>
+              <TableActionGroup>
+                <TableActionButton
+                  tone="info"
+                  onClick={() => onOpenDetails(customer)}
+                  aria-label={t('customers.actions.details', { name: customer.name })}
+                  title={t('customers.actions.details', { name: customer.name })}
+                >
+                  <Eye size={24} aria-hidden />
+                </TableActionButton>
+                <TableActionButton
+                  tone="warning"
+                  onClick={() => onEdit(customer)}
+                  aria-label={t('customers.actions.edit', { name: customer.name })}
+                  title={t('customers.actions.edit', { name: customer.name })}
+                >
+                  <Pencil size={24} aria-hidden />
+                </TableActionButton>
+              </TableActionGroup>
+              {menuItems.length > 0 ? (
+                <ActionMenu items={menuItems} label={`${t('app.moreActions')}: ${customer.name}`} />
+              ) : null}
+            </RecordListActions>
+          </RecordListItem>
+        )
+      })}
+    </RecordList>
+  )
+}
+
+/** Identity: the deterministic avatar, the name, and the phone beneath it. */
+function CustomerRecordIdentity({ customer }: { readonly customer: CustomerRow }) {
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-3">
+        <CustomerAvatar id={customer.id} name={customer.name} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-body font-bold text-foreground-strong">{customer.name}</p>
+          <span dir="ltr" className="mt-0.5 block truncate text-caption tabular-nums">
+            {customer.phone ?? '—'}
+          </span>
+        </div>
+      </div>
+      {customer.notes ? (
+        <p className="mt-1.5 line-clamp-2 text-caption text-foreground-faint">{customer.notes}</p>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * The vehicle situation as ONE badge plus the plates beneath it — the same
+ * statement the table's column makes, so the two presentations agree on what
+ * "two cars" looks like.
+ */
+function CustomerRecordVehicles({ customer }: { readonly customer: CustomerRow }) {
+  return (
+    <div className="mt-2 flex flex-col items-start gap-1">
+      <CustomerVehicleBadge carsCount={customer.cars_count} />
+      {customer.plates.length > 0 ? (
+        <span className="flex flex-wrap items-center gap-1">
+          {customer.plates.map((plate) => (
+            <span
+              key={plate}
+              className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-caption"
+            >
+              <Car size={12} aria-hidden />
+              <span dir="ltr">{plate}</span>
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The period figures a manager is given, at the shared type sizes. The values
+ * are the backend's aggregates, read from the same `stats` the table's cells
+ * read, so the two presentations can never disagree about a total.
+ */
+function CustomerRecordFigures({ stats }: { readonly stats: CustomerRow['stats'] | null }) {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+      <CustomerFigure label={t('customers.columns.orders')}>
+        <span className="tabular-nums">{stats?.invoices_count ?? 0}</span>
+      </CustomerFigure>
+      <CustomerFigure label={t('customers.columns.paid')}>
+        <MoneyDisplay amount={stats?.paid ?? 0} variant="auto" />
+      </CustomerFigure>
+      <CustomerFigure label={t('customers.columns.credit')}>
+        {stats && stats.credit_outstanding > 0 ? (
+          <MoneyDisplay amount={stats.credit_outstanding} variant="auto" />
+        ) : (
+          '—'
+        )}
+      </CustomerFigure>
+      <CustomerFigure label={t('customers.columns.lastActivity')}>
+        {stats?.last_at ? <DisplayDateTime value={stats.last_at} /> : '—'}
+      </CustomerFigure>
+    </div>
+  )
+}
+
+/** A labelled figure inside a customer record, at the shared type sizes. */
+function CustomerFigure({
+  label,
+  children,
+}: {
+  readonly label: string
+  readonly children: React.ReactNode
+}) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="text-caption text-foreground-subtle">{label}</span>
+      <span className="text-body font-bold tabular-nums text-foreground-strong">{children}</span>
+    </span>
+  )
+}
 
 export function CustomerTable({
   customers,
@@ -63,6 +249,17 @@ export function CustomerTable({
 }) {
   const { t } = useTranslation()
 
+  /*
+   * The same two-presentation rule the Employees roster follows, for the same
+   * reason and with the same shared breakpoint: at `md` and up this is the
+   * table, and below it the same data is a record per customer. This table is
+   * lighter than the roster — three columns survive at 360px — but its ACTIONS
+   * still need 144px of a 296px record, and the customer's name and their money
+   * cannot both stay on screen beside a horizontal scroller. Exactly one of the
+   * two presentations is mounted.
+   */
+  const wide = useIsWide()
+
   const activity: DataTableColumn[] = [
     { key: 'orders', label: t('customers.columns.orders') },
     { key: 'paid', label: t('customers.columns.paid') },
@@ -84,6 +281,20 @@ export function CustomerTable({
       ? [{ key: 'actions', label: t('app.actions') } satisfies DataTableColumn]
       : []),
   ]
+
+  if (!wide) {
+    return (
+      <CustomerRecordList
+        customers={customers}
+        financialVisible={financialVisible}
+        canDelete={canDelete ?? false}
+        onOpenDetails={onOpenDetails}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        className={className}
+      />
+    )
+  }
 
   return (
     <DataTable

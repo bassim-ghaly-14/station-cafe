@@ -290,7 +290,20 @@ function LineList({
       {order.lines.map((l) => (
         <li
           key={l.id}
-          className="flex items-center justify-between gap-2 rounded border border-border-subtle px-2 py-1.5"
+          // The phone layout of one order line, and it is a deliberate
+          // restructure rather than a wrap:
+          //
+          // - the product's NAME takes the whole first line. Beside a qty
+          //   stepper, a delete button and a right-aligned amount, a name that
+          //   truncates is unreadable — and an unreadable product name on a
+          //   till is a real operational problem, not a cosmetic one;
+          // - the stepper, the remove control and the line total share the
+          //   second line at the inline end, which is where the hand is and
+          //   where the money already was.
+          //
+          // `sm:flex-row` restores the original single line exactly, so the
+          // desktop order panel is byte-for-byte unchanged.
+          className="flex flex-col gap-1.5 rounded border border-border-subtle px-2 py-1.5 sm:flex-row sm:items-center sm:gap-2"
         >
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">
@@ -300,35 +313,40 @@ function LineList({
               <MoneyDisplay amount={l.unit_price} /> × {l.quantity}
             </span>
           </span>
-          <QtyStepper
-            qty={l.quantity}
-            onChange={(q) =>
-              api
-                .setQty(order.id, l.id, q)
-                .then((o) => {
-                  onChange(o)
-                  onRefreshTables()
-                })
-                .catch(report)
-            }
-          />
-          <Button
-            variant="destructiveGhost"
-            size="icon-sm"
-            aria-label={t('pos.removeLine')}
-            onClick={() =>
-              api
-                .removeLine(order.id, l.id)
-                .then((o) => {
-                  onChange(o)
-                  onRefreshTables()
-                })
-                .catch(report)
-            }
-          >
-            <Trash2 size={16} aria-hidden />
-          </Button>
-          <MoneyDisplay amount={l.line_total} className="w-20 text-left text-sm font-medium" />
+          <span className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
+            <QtyStepper
+              qty={l.quantity}
+              onChange={(q) =>
+                api
+                  .setQty(order.id, l.id, q)
+                  .then((o) => {
+                    onChange(o)
+                    onRefreshTables()
+                  })
+                  .catch(report)
+              }
+            />
+            <Button
+              variant="destructiveGhost"
+              size="icon-sm"
+              aria-label={t('pos.removeLine')}
+              onClick={() =>
+                api
+                  .removeLine(order.id, l.id)
+                  .then((o) => {
+                    onChange(o)
+                    onRefreshTables()
+                  })
+                  .catch(report)
+              }
+            >
+              <Trash2 size={16} aria-hidden />
+            </Button>
+            <MoneyDisplay
+              amount={l.line_total}
+              className="w-20 text-left text-sm font-medium sm:text-end"
+            />
+          </span>
         </li>
       ))}
     </ul>

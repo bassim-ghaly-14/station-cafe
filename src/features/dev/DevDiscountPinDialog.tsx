@@ -13,11 +13,12 @@ import { useTranslation } from 'react-i18next'
 
 import {
   Button,
+  DISCOUNT_PIN_LENGTH,
   Dialog,
+  DialogActions,
   Field,
   PinInput,
   isValidDiscountPin,
-  DISCOUNT_PIN_LENGTH,
 } from '@/components/ui'
 import { Save } from '@/components/ui/icon'
 
@@ -70,7 +71,7 @@ export function DevDiscountPinDialog({
           />
         </Field>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button type="button" variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -79,7 +80,7 @@ export function DevDiscountPinDialog({
             {busy ? null : <Save size={16} aria-hidden />}
             {busy ? t('app.loading') : t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </form>
     </Dialog>
   )

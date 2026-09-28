@@ -17,9 +17,8 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, DateRangePicker, Select } from '@/components/ui'
+import { Button, DateRangePicker, FilterBar, Select } from '@/components/ui'
 import { FilterX, RefreshCw, Search, SlidersHorizontal, X } from '@/components/ui/icon'
-import { cn } from '@/lib/utils'
 import type { DateRange } from '@/components/ui/date-range-picker'
 import type { SalesCashier, SalesFilter } from '@/services/salesApi'
 
@@ -56,15 +55,22 @@ export function SalesFilters({
     (filter.customer ?? '') !== ''
 
   return (
-    <div className={cn('flex flex-col gap-2', className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <DateRangePicker
-          from={filter.from ?? ''}
-          to={filter.to ?? ''}
-          onChange={(range: DateRange) => onChange({ ...filter, from: range.from, to: range.to })}
-          label={t('sales.period.label')}
-        />
-
+    // A fragment, because the period/filter row and the panel it discloses are
+    // SIBLINGS: the panel is not one of the toolbar's controls, and nesting it
+    // inside the control row is what made it share the wrapped toolbar's ragged
+    // leftover width on a phone.
+    <>
+      <FilterBar
+        className={className}
+        search={
+          <DateRangePicker
+            from={filter.from ?? ''}
+            to={filter.to ?? ''}
+            onChange={(range: DateRange) => onChange({ ...filter, from: range.from, to: range.to })}
+            label={t('sales.period.label')}
+          />
+        }
+      >
         <Button
           type="button"
           variant="outline"
@@ -84,13 +90,13 @@ export function SalesFilters({
           </Button>
         ) : null}
 
-        <span className="ms-auto">
+        <span className="sm:ms-auto">
           <Button type="button" variant="ghost" size="sm" onClick={onRefresh} loading={refreshing}>
             {!refreshing ? <RefreshCw size={15} aria-hidden /> : null}
             {t('sales.filters.refresh')}
           </Button>
         </span>
-      </div>
+      </FilterBar>
 
       {expanded ? (
         <div
@@ -157,7 +163,7 @@ export function SalesFilters({
           </div>
 
           {/* The one free-text control: the backend matches it against the
-              customer name snapshotted on the invoice, not the live record. */}
+            customer name snapshotted on the invoice, not the live record. */}
           <div className="relative w-full sm:w-56">
             <label className="sr-only" htmlFor="sales-customer">
               {t('sales.filters.customer')}
@@ -193,6 +199,6 @@ export function SalesFilters({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   )
 }

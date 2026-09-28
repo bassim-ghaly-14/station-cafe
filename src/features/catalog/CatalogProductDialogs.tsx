@@ -11,7 +11,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button, Dialog } from '@/components/ui'
+import { Button, Dialog, DialogActions } from '@/components/ui'
 import { Field, Input, Label, Switch } from '@/components/ui/input'
 import { Coffee, Droplets, Save } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
@@ -107,7 +107,7 @@ export function CategoryDialog({
             }}
           />
         </Field>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+        <DialogActions className="border-t border-border pt-4">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -115,7 +115,7 @@ export function CategoryDialog({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )
@@ -402,7 +402,7 @@ export function CreateProductDialog({
           </Field>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+        <DialogActions className="border-t border-border pt-4">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -412,7 +412,7 @@ export function CreateProductDialog({
 
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )
@@ -606,7 +606,7 @@ export function EditProductDialog({
 
         <p className="text-caption">{t('catalog.priceSnapshotHint')}</p>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+        <DialogActions className="border-t border-border pt-4">
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -616,7 +616,7 @@ export function EditProductDialog({
 
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

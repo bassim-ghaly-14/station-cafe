@@ -250,7 +250,10 @@ export function ChartShell({
     <>
       <Card
         className={cn(
-          'relative flex flex-col p-5 shadow-none',
+          // `p-4 sm:p-5`: 20px of card padding on each side of a 320px screen is
+          // 40px of a 296px card, and on a chart card that is plot width given to
+          // nothing. Desktop keeps its original measurement.
+          'relative flex flex-col p-4 shadow-none sm:p-5',
           // Fullscreen GROWS with its content rather than being a fixed slice of
           // the viewport, so a long legend wraps into more rows instead of
           // scrolling inside the card. Only if the whole thing outgrows the
@@ -287,7 +290,14 @@ export function ChartShell({
           open={fullscreenOpen}
           onClose={closeFullscreen}
           title={t('reports.charts.fullscreen')}
-          className="w-[calc(100vw-1rem)] max-w-none max-h-[calc(100dvh-1rem)] p-3 sm:p-5"
+          className={
+            // On a phone the dialog is already a full-bleed bottom sheet, so
+            // this presentation uses its full width and adds NO extra padding —
+            // the dialog body and the card's own padding already provide it, and
+            // a third layer of inset is what pushed the plot off a 320px screen.
+            // `sm:` restores the desktop measurement and the sheet's own padding.
+            'max-h-dvh p-0 sm:w-[calc(100vw-1rem)] sm:max-w-none sm:max-h-[calc(100dvh-1rem)] sm:p-5'
+          }
         >
           <ChartShell
             id={id}

@@ -6,6 +6,7 @@ import {
   Card,
   CardHeader,
   Dialog,
+  DialogActions,
   Field,
   Select,
   Switch,
@@ -953,7 +954,7 @@ export default function DevSettingsPage() {
 
           <p className="text-xs leading-5 text-foreground-muted">{t('dev.clearNextStep')}</p>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button
               variant="outline"
               disabled={busy === 'clear'}
@@ -971,7 +972,7 @@ export default function DevSettingsPage() {
               <Trash2 size={16} aria-hidden />
               {t('dev.dangerZoneConfirmLabel')}
             </Button>
-          </div>
+          </DialogActions>
         </div>
       </Dialog>
 

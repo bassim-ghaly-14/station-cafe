@@ -16,8 +16,8 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, DateRangePicker, Switch } from '@/components/ui'
-import { FilterX, Search, X } from '@/components/ui/icon'
+import { Button, DateRangePicker, FilterBar, Switch, ToolbarSearch } from '@/components/ui'
+import { FilterX } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { DateRange } from '@/components/ui/date-range-picker'
 
@@ -50,42 +50,21 @@ export function EmployeeFilters({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-56 flex-1">
-          <label className="sr-only" htmlFor="employee-search">
-            {t('employees.search.label')}
-          </label>
-          <Search
-            size={16}
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 inset-s-3 my-auto text-foreground-subtle"
-          />
-          <input
-            id="employee-search"
-            type="search"
-            role="searchbox"
+      {/* Row 1 — the data-management toolbar. The shared `FilterBar` gives the
+          search its own full-width line on a phone and puts the create action
+          beneath it, instead of the two competing for 296px. */}
+      <FilterBar
+        search={
+          <ToolbarSearch
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onValueChange={onQueryChange}
+            label={t('employees.search.label')}
             placeholder={t('employees.search.placeholder')}
-            aria-describedby="employee-search-hint"
-            className="h-10 w-full rounded-md border border-border-strong bg-surface-input ps-9 pe-9 text-base text-foreground placeholder:text-placeholder-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus [&::-webkit-search-cancel-button]:hidden"
+            hint={t('employees.search.hint')}
+            clearLabel={t('employees.search.clear')}
           />
-          {query !== '' ? (
-            <button
-              type="button"
-              onClick={() => onQueryChange('')}
-              aria-label={t('employees.search.clear')}
-              title={t('employees.search.clear')}
-              className="absolute inset-y-0 inset-e-1 my-auto flex size-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-            >
-              <X size={15} aria-hidden />
-            </button>
-          ) : null}
-          <p id="employee-search-hint" className="sr-only">
-            {t('employees.search.hint')}
-          </p>
-        </div>
-
+        }
+      >
         {actions}
 
         {filtered ? (
@@ -94,7 +73,7 @@ export function EmployeeFilters({
             {t('employees.filters.reset')}
           </Button>
         ) : null}
-      </div>
+      </FilterBar>
 
       {/* Row 2 — the period that scopes every figure, plus the roster filter. */}
       <div className="flex flex-wrap items-center gap-3">

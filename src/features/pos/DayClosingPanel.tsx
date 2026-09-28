@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Dialog,
+  DialogActions,
   EmployeeAvatar,
   MoneyDisplay,
   Skeleton,
@@ -432,7 +433,7 @@ export function DayClosingPanel({
             <p className="text-caption">
               {t('settlement.openShiftsInReport')}: {report.shift_count}
             </p>
-            <div className="flex flex-wrap justify-end gap-2 border-t border-border-subtle pt-4">
+            <DialogActions className="border-t border-border-subtle pt-4">
               <Button variant="outline" onClick={() => setWarnOpenShifts(false)}>
                 {t('app.cancel')}
               </Button>
@@ -444,7 +445,7 @@ export function DayClosingPanel({
               >
                 {t('settlement.continueAnyway')}
               </Button>
-            </div>
+            </DialogActions>
           </div>
         </Dialog>
       ) : null}
@@ -564,7 +565,7 @@ export function DayClosingPanel({
             {error ? (
               <ErrorState message={error} onRetry={() => void load()} retryLabel={t('app.retry')} />
             ) : null}
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle pt-4">
+            <DialogActions className="border-t border-border-subtle pt-4">
               <Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>
                 {t('app.cancel')}
               </Button>
@@ -591,7 +592,7 @@ export function DayClosingPanel({
                   ? t('settlement.confirmSettlement')
                   : t('settlement.confirmClose')}
               </Button>
-            </div>
+            </DialogActions>
           </div>
         </Dialog>
       ) : null}

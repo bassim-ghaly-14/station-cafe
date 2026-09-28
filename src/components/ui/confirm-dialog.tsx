@@ -26,6 +26,7 @@
 import { useTranslation } from 'react-i18next'
 import { Button } from './button'
 import { Dialog } from './dialog'
+import { DialogActions } from './dialog-actions'
 
 export function ConfirmDialog({
   open,
@@ -59,7 +60,10 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onClose} title={title}>
       <p className="text-body text-foreground-muted">{body}</p>
       {detail ? <p className="mt-2 text-caption text-foreground-subtle">{detail}</p> : null}
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+      {/* The shared action row: on a phone the two buttons stack full width
+          rather than sharing a 296px line and wrapping raggedly, which is what
+          put a narrower "confirm" beside a wider "cancel" on a 320px screen. */}
+      <DialogActions className="mt-5">
         <Button variant="outline" onClick={onClose} disabled={busy}>
           {cancelLabel ?? t('app.cancel')}
         </Button>
@@ -71,7 +75,7 @@ export function ConfirmDialog({
         >
           {confirmLabel ?? t('app.confirm')}
         </Button>
-      </div>
+      </DialogActions>
     </Dialog>
   )
 }

@@ -121,11 +121,25 @@ export function CatalogOverview({
         ].join(' ')}
       />
 
-      <div className="flex min-h-28 items-center justify-between gap-5 p-5 ps-6">
-        <div className="flex min-w-0 items-center gap-4">
+      {/*
+        The card's own body.
+
+        `p-4 sm:p-5`, a `h-12 sm:h-14` icon tile and a `h-9 sm:h-10` count box, so
+        the whole card fits the 296px a 320px screen has. At the original
+        measurement — 20px padding, a 56px tile and 16px gaps — the label
+        between them was left with under 60px and every department name truncated
+        to an ellipsis, on the one card that names the two halves of the business.
+
+        The count box keeps `shrink-0` and the label keeps `min-w-0 truncate`, so
+        what gives way at the narrowest width is the NAME and never the figure:
+        the count is what the card is selected for.
+      */}
+      <div className="flex min-h-24 items-center justify-between gap-3 p-4 ps-5 sm:min-h-28 sm:gap-5 sm:p-5 sm:ps-6">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div
             className={[
-              'flex h-14 w-14 shrink-0 items-center justify-center border',
+              'flex shrink-0 items-center justify-center border',
+              'h-12 w-12 sm:h-14 sm:w-14',
               isTotal
                 ? 'border-border bg-surface-muted text-foreground-muted'
                 : `${style?.soft} ${style?.border} ${style?.accentText}`,
@@ -152,7 +166,8 @@ export function CatalogOverview({
 
         <div
           className={[
-            'flex h-10 w-10 shrink-0 items-center justify-center border',
+            'flex shrink-0 items-center justify-center border',
+            'h-9 w-9 sm:h-10 sm:w-10',
             isTotal
               ? 'border-border bg-surface-muted text-foreground-muted'
               : `${style?.mutedBorder} ${style?.accentText} ${

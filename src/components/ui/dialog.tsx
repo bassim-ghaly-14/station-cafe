@@ -98,7 +98,11 @@ export function Dialog({
            * behind once the dialog's own content is exhausted, which on a
            * phone otherwise slides the page out from under the dialog.
            */
-          'flex max-h-[92dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-xl border border-border-strong bg-surface-dialog shadow-xl sm:max-h-[90dvh] sm:rounded-lg',
+          'flex max-h-[92dvh] w-full max-w-full flex-col overflow-y-auto overscroll-contain rounded-t-xl border border-border-strong bg-surface-dialog shadow-xl sm:max-h-[90dvh] sm:rounded-lg',
+          // `max-w-full` is the guard the whole mobile treatment rests on: the
+          // sheet is `w-full` inside a viewport-wide scrim, and a long Arabic
+          // title or a wide control could otherwise push it past the screen
+          // edge. The desktop caps are unchanged.
           wide ? 'sm:max-w-2xl' : 'sm:max-w-md',
           className,
         )}
@@ -110,7 +114,7 @@ export function Dialog({
          * not find; sticking it costs no layout and no scroll listener.
          */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-surface-dialog px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
-          <h2 className="text-base font-bold text-foreground-strong">{title}</h2>
+          <h2 className="min-w-0 text-base font-bold text-foreground-strong">{title}</h2>
           <Button
             type="button"
             variant="ghost"

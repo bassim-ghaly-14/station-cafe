@@ -30,6 +30,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
+import { DialogActions } from './dialog-actions'
 import { X } from './icon'
 
 export function Sheet({
@@ -116,9 +117,9 @@ export function Sheet({
         </div>
 
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
+          <DialogActions className="border-t border-border-subtle px-4 py-3">
             {footer}
-          </div>
+          </DialogActions>
         ) : null}
       </div>
     </div>

@@ -33,6 +33,7 @@ import {
   DatePicker,
   DateRangePicker,
   Dialog,
+  DialogActions,
   DisplayDate,
   EmployeeAvatar,
   ListRowsSkeleton,
@@ -296,8 +297,24 @@ function ExpenseList({ rows }: Readonly<{ readonly rows: Expense[] }>) {
     <ul className="divide-y divide-border-subtle">
       {rows.map((row) => (
         <li key={row.id}>
-          <Card className="flex flex-wrap items-center gap-3 rounded-none border-0 py-3 shadow-none">
-            <div className="min-w-40 flex-1">
+          {/*
+            One record per expense.
+
+            `flex-col` below `sm` gives the amount its OWN LINE on a phone
+            instead of leaving it to share a wrapped 296px row with the category,
+            the date, the recorder and the recurring badge — which is what
+            produced rows of two ragged lines where the figure landed on
+            whichever line happened to have room. `sm:flex-row` restores the
+            original single line exactly, so the desktop column of amounts at the
+            trailing edge is untouched and still scans vertically.
+
+            The ORDER is unchanged at both widths, because it is correct: what the
+            row is, then when it happened and who recorded it, then what it cost.
+            Nothing is hidden and no font is shrunk; the row is simply allowed to
+            be two lines tall on a screen that has the height to spend on it.
+          */}
+          <Card className="flex flex-col gap-2 rounded-none border-0 py-3 shadow-none sm:flex-row sm:items-center sm:gap-3">
+            <div className="min-w-0 flex-1">
               {/* The Arabic category name is resolved by the backend. */}
               <p className="text-body font-bold">{row.category_name}</p>
 
@@ -316,13 +333,17 @@ function ExpenseList({ rows }: Readonly<{ readonly rows: Expense[] }>) {
               {row.description ? <p className="text-caption mt-1">{row.description}</p> : null}
             </div>
 
-            {row.is_recurring ? (
-              <Badge variant="info" size="sm" dot>
-                {t('expenses.recurring')}
-              </Badge>
-            ) : null}
-
-            <MoneyDisplay amount={row.amount} className="text-money min-w-24" />
+            {/* The figure, and the badge that qualifies it, on their own line on
+                a phone. `ms-auto` keeps the pair at the trailing edge from `sm`
+                up, so the desktop column of amounts is unchanged. */}
+            <div className="flex items-center justify-between gap-2 sm:ms-auto sm:justify-end">
+              {row.is_recurring ? (
+                <Badge variant="info" size="sm" dot>
+                  {t('expenses.recurring')}
+                </Badge>
+              ) : null}
+              <MoneyDisplay amount={row.amount} className="text-money min-w-24" />
+            </div>
           </Card>
         </li>
       ))}
@@ -459,7 +480,7 @@ function CreateExpenseDialog({
           </Field>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -468,7 +489,7 @@ function CreateExpenseDialog({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, MoneyDisplay, useToast } from '@/components/ui'
+import { Button, Dialog, DialogActions, MoneyDisplay, useToast } from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Plus, Save } from '@/components/ui/icon'
 import { parseMajor } from '@/lib/utils'
@@ -140,7 +140,7 @@ export function ShiftExpenseDialog({
           </p>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button variant="outline" onClick={onClose} disabled={busy}>
             {t('app.cancel')}
           </Button>
@@ -148,7 +148,7 @@ export function ShiftExpenseDialog({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

@@ -9,9 +9,10 @@ import {
   Card,
   CardHeader,
   Dialog,
+  DialogActions,
   DisplayTime,
-  MoneyDisplay,
   Loader,
+  MoneyDisplay,
   useToast,
 } from '@/components/ui'
 import {
@@ -556,7 +557,7 @@ export default function PosPage() {
             {t('pos.closeEmptyBody', { label: closeTarget.label })}
           </p>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button variant="outline" onClick={() => setCloseTarget(null)}>
               {t('app.cancel')}
             </Button>
@@ -569,7 +570,7 @@ export default function PosPage() {
               <DoorClosed size={16} aria-hidden />
               {t('pos.closeEmpty')}
             </Button>
-          </div>
+          </DialogActions>
         </Dialog>
       ) : null}
     </div>

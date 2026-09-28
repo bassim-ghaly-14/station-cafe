@@ -15,7 +15,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo } from '@/components/branding/Logo'
-import { Badge, Button, EmployeeAvatar, ThemeToggle, Dialog } from '@/components/ui'
+import { Badge, Button, DialogActions, EmployeeAvatar, ThemeToggle, Dialog } from '@/components/ui'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { ChevronRight, LogOut, Pin, PinOff } from '@/components/ui/icon'
 import { isNavViewActive, visibleNav } from './navigation'
@@ -300,7 +300,7 @@ export default function AppShell({ children }: Readonly<{ readonly children: Rea
         <div className="flex flex-col gap-4">
           <p className="text-body">{t('auth.logoutConfirm')}</p>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button variant="outline" onClick={() => setLogoutConfirmOpen(false)}>
               {t('app.cancel')}
             </Button>
@@ -309,7 +309,7 @@ export default function AppShell({ children }: Readonly<{ readonly children: Rea
               <LogOut size={16} aria-hidden />
               {t('auth.logout')}
             </Button>
-          </div>
+          </DialogActions>
         </div>
       </Dialog>
     </div>

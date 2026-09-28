@@ -32,11 +32,19 @@ import { cn } from '@/lib/utils'
 import type { EmployeeOverview, Leader } from '@/services/employeesApi'
 
 /**
- * 1 → 2 → 3 → 5. The band has exactly five tiles, so the desktop step is FIVE
- * columns and the whole band is a single row with no orphan; the intermediate
- * steps keep a card wide enough to stay legible on smaller screens.
+ * 2 from `min-[360px]`, then 2 → 3 → 5.
+ *
+ * The phone step is the interesting one. A single column made every band five
+ * full-width cards, which on a 360px phone is roughly 500px of scrolling before
+ * the roster the band exists to summarise is even on screen — the band became
+ * the page. Two columns from 360px up costs each tile ~150px, which still fits
+ * its icon, its truncated label and its figure, and it halves the scroll.
+ *
+ * 320px keeps ONE column deliberately: two tiles there would be ~140px each,
+ * narrow enough that an Arabic label truncates to nothing and the figure
+ * crowds it. A tile that says less is worse than a tile that is lower.
  */
-const BAND_GRID = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
+const BAND_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
 
 /** One tile: label, value, and an optional second line of context. */
 function KpiTile({

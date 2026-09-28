@@ -26,8 +26,17 @@ import { CHART_BAR_TOKENS } from '@/lib/chart-colors'
 import { cn } from '@/lib/utils'
 import type { ExpenseOverview } from '@/services/opsApi'
 
-/** 1 → 2 → 3 → 4. The strip never squeezes a tile into illegibility. */
-const STRIP_GRID = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+/**
+ * 1 → 2 (from 360px) → 3 → 4.
+ *
+ * The strip never squeezes a tile into illegibility, and the phone step is the
+ * same decision the other bands make: one column made a four-tile summary
+ * ~400px of scrolling on a phone before the ranking it summarises. Two columns
+ * from 360px up costs each tile ~150px, which still fits the icon, the
+ * truncated label and the figure. 320px stays at one column, where two ~140px
+ * tiles would truncate an Arabic label to nothing.
+ */
+const STRIP_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
 
 function StatTile({
   icon: Icon,

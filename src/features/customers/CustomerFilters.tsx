@@ -20,8 +20,8 @@
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, DateRangePicker } from '@/components/ui'
-import { FilterX, Search, X } from '@/components/ui/icon'
+import { Button, DateRangePicker, FilterBar, ToolbarSearch } from '@/components/ui'
+import { FilterX } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { DateRange } from '@/components/ui/date-range-picker'
 
@@ -52,45 +52,21 @@ export function CustomerFilters({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        {/* The search field takes the free space; the create action keeps its
-            natural width so the field stays visually dominant. */}
-        <div className="relative min-w-56 flex-1">
-          <label className="sr-only" htmlFor="customer-search">
-            {t('customers.search.label')}
-          </label>
-          <Search
-            size={16}
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 inset-s-3 my-auto text-foreground-subtle"
-          />
-          <input
-            id="customer-search"
-            type="search"
-            role="searchbox"
+      {/* Row 1 — the data-management toolbar. The shared `FilterBar` gives the
+          search its own full-width line on a phone and puts the create action
+          beneath it, instead of the two competing for 296px. */}
+      <FilterBar
+        search={
+          <ToolbarSearch
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onValueChange={onQueryChange}
+            label={t('customers.search.label')}
             placeholder={t('customers.search.placeholder')}
-            aria-describedby="customer-search-hint"
-            className="h-10 w-full rounded-md border border-border-strong bg-surface-input ps-9 pe-9 text-base text-foreground placeholder:text-placeholder-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus [&::-webkit-search-cancel-button]:hidden"
+            hint={t('customers.search.hint')}
+            clearLabel={t('customers.search.clear')}
           />
-          {query !== '' ? (
-            <button
-              type="button"
-              onClick={() => onQueryChange('')}
-              aria-label={t('customers.search.clear')}
-              title={t('customers.search.clear')}
-              className="absolute inset-y-0 inset-e-1 my-auto flex size-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-            >
-              <X size={15} aria-hidden />
-            </button>
-          ) : null}
-          {/* States the live behaviour in words, so "instant" is not a guess. */}
-          <p id="customer-search-hint" className="sr-only">
-            {t('customers.search.hint')}
-          </p>
-        </div>
-
+        }
+      >
         {actions}
 
         {filtered ? (
@@ -99,7 +75,7 @@ export function CustomerFilters({
             {t('customers.filters.reset')}
           </Button>
         ) : null}
-      </div>
+      </FilterBar>
 
       {/* Row 2 — the analytics period, deliberately on its own line. */}
       {showPeriod ? (

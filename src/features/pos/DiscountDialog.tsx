@@ -9,7 +9,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, MoneyDisplay, useToast } from '@/components/ui'
+import { Button, Dialog, DialogActions, MoneyDisplay, useToast } from '@/components/ui'
 import { Tag, X } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { api, type DiscountSel, type PosOrder } from '@/services/posApi'
@@ -140,7 +140,7 @@ export function DiscountDialog({
             </>
           ) : null}
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button variant="outline" onClick={onClose}>
               {t('app.cancel')}
             </Button>
@@ -161,7 +161,7 @@ export function DiscountDialog({
               <Tag size={16} aria-hidden />
               {t('pos.discountContinue')}
             </Button>
-          </div>
+          </DialogActions>
         </div>
       </Dialog>
 

@@ -90,8 +90,30 @@ export default function ReportsPage() {
         </div>
       </header>
 
+      {/*
+        The tab strip.
+
+        On a desktop this is the row of buttons it always was. Below `sm` it
+        becomes a single horizontally scrollable LINE rather than a wrapped
+        block, and that is a deliberate choice rather than a concession:
+
+        - five Arabic tab labels at `size="sm"` need roughly 420px on one line,
+          which no phone has, so `flex-wrap` produced two ragged rows of
+          three-and-two with a selected tab that could sit alone;
+        - a tab strip is a NAVIGATION, and a navigation that reflows while the
+          user reads it is disorienting in a way a horizontally scrollable strip
+          is not — the selected tab stays where it was;
+        - `overscroll-x-contain` keeps a horizontal swipe that reaches the end
+          of the strip from being handed to the page, so the strip does not turn
+          into "the whole screen slid sideways".
+
+        The negative inline margins + matching padding bleed the strip to the
+        screen edge on a phone so the cut-off tab reads as "there is more this
+        way" rather than as a clipped layout, while its FIRST tab still lines up
+        with the rest of the page. The `sm:` reset puts desktop back exactly.
+      */}
       <div
-        className="flex flex-wrap items-center gap-2"
+        className="-mx-3 flex gap-2 overflow-x-auto overscroll-x-contain px-3 sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-0"
         role="tablist"
         aria-label={t('nav.reports')}
       >
@@ -103,6 +125,9 @@ export default function ReportsPage() {
             aria-selected={tab === x.id}
             variant={tab === x.id ? 'default' : 'ghost'}
             size="sm"
+            // `shrink-0` so a long label is never compressed into an ellipsis
+            // by a narrower neighbour; the strip scrolls instead.
+            className="shrink-0"
             onClick={() => setTab(x.id)}
           >
             {x.label}
@@ -363,8 +388,12 @@ function ShiftClosings({
       <CardHeader title={t('reports.shiftClosings')} />
       <div className="divide-y divide-border-subtle">
         {shifts.map((s) => (
-          <div key={s.id} className="flex flex-wrap items-center gap-3 py-3">
-            <div className="min-w-48 flex-1">
+          // `flex-col` below `sm`: the shift's identity, its window and its
+          // expected cash need the full width on a phone, and a `flex-wrap` row
+          // left the preview button on a line of its own at a random width.
+          // `sm:flex-row` is the original single line.
+          <div key={s.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3">
+            <div className="min-w-0 flex-1 sm:min-w-48">
               <p className="flex min-w-0 items-center gap-1.5 font-bold">
                 <span className="tabular-nums">#{s.id}</span>
                 <span aria-hidden>·</span>
@@ -379,6 +408,7 @@ function ShiftClosings({
             <Button
               variant="outline"
               size="sm"
+              className="sm:ms-auto"
               onClick={() => onPreview({ kind: 'shift_report', shift_id: s.id })}
             >
               {t('reports.preview')}
@@ -409,8 +439,13 @@ function DayClosings({
       <CardHeader title={t('reports.dayClosings')} />
       <div className="divide-y divide-border-subtle">
         {days.map((d) => (
-          <div key={d.business_day_id} className="flex flex-wrap items-center gap-3 py-3">
-            <div className="min-w-48 flex-1">
+          // The same phone treatment as the shift rows above, for the same
+          // reason: identity, window and totals need the full width below `sm`.
+          <div
+            key={d.business_day_id}
+            className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3"
+          >
+            <div className="min-w-0 flex-1 sm:min-w-48">
               <p className="font-bold">
                 <span className="tabular-nums">#{d.business_day_id}</span> ·{' '}
                 <DisplayDate value={d.day_date} />
@@ -425,6 +460,7 @@ function DayClosings({
             <Button
               variant="outline"
               size="sm"
+              className="sm:ms-auto"
               onClick={() => onPreview({ kind: 'day_report', day_id: d.business_day_id })}
             >
               {t('reports.preview')}

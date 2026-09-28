@@ -17,7 +17,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, MoneyDisplay, isValidDiscountPin } from '@/components/ui'
+import { Button, Dialog, DialogActions, MoneyDisplay, isValidDiscountPin } from '@/components/ui'
 import { Lock } from '@/components/ui/icon'
 import { DISCOUNT_PIN_LENGTH, Field, PinInput } from '@/components/ui/input'
 
@@ -70,7 +70,7 @@ export function DiscountAuthorizationDialog({
           />
         </Field>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
             {t('app.cancel')}
           </Button>
@@ -78,7 +78,7 @@ export function DiscountAuthorizationDialog({
             {!busy ? <Lock size={16} aria-hidden /> : null}
             {busy ? t('app.loading') : t('pos.discountAuthorize')}
           </Button>
-        </div>
+        </DialogActions>
       </form>
     </Dialog>
   )

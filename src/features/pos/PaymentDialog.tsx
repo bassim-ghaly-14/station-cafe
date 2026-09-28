@@ -1,7 +1,15 @@
 /** Payment dialog: method + live totals, cash tendered/change, print. */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AmountAutoFill, Button, Dialog, Loader, MoneyDisplay, useToast } from '@/components/ui'
+import {
+  AmountAutoFill,
+  Button,
+  Dialog,
+  DialogActions,
+  Loader,
+  MoneyDisplay,
+  useToast,
+} from '@/components/ui'
 import { Check } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { api, type DiscountSel, type OrderPreview, type PrintOutcome } from '@/services/posApi'
@@ -195,7 +203,7 @@ export function PaymentDialog({
         </p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
+      <DialogActions className="mt-3">
         <Button variant="outline" onClick={onClose}>
           {t('app.cancel')}
         </Button>
@@ -203,7 +211,7 @@ export function PaymentDialog({
           {!busy ? <Check size={16} aria-hidden /> : null}
           {busy ? t('app.loading') : t('pos.confirmPay')}
         </Button>
-      </div>
+      </DialogActions>
       <p className="mt-2 text-xs text-foreground-subtle">{t('pos.payHintDiscount')}</p>
     </Dialog>
   )

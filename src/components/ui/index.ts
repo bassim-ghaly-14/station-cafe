@@ -11,7 +11,18 @@ export {
 } from './table-action-button'
 export { Select } from './select'
 export { ProgressBar } from './progress-bar'
-export { DataTable, DataTableRow, DataTableCell, type DataTableColumn } from './data-table'
+export {
+  DataTable,
+  DataTableRow,
+  DataTableCell,
+  RecordList,
+  RecordListItem,
+  RecordListActions,
+  type DataTableColumn,
+} from './data-table'
+export { DialogActions } from './dialog-actions'
+export { ActionMenu, type ActionMenuItem } from './action-menu'
+export { FilterBar, ToolbarSearch } from './toolbar'
 export {
   Input,
   Textarea,

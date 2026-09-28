@@ -18,6 +18,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
+import { DialogActions } from './dialog-actions'
 import { X } from './icon'
 
 const FOCUSABLE = 'input, button, select, textarea, [tabindex]'
@@ -162,9 +163,12 @@ export function Drawer({
         </div>
 
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle px-4 py-3 sm:px-5">
+          // The shared action row, so a drawer's footer behaves exactly like a
+          // dialog's: full-width stacked buttons on a phone, the trailing row on
+          // a desktop. The hairline and the padding stay the drawer's own.
+          <DialogActions className="border-t border-border-subtle px-4 py-3 sm:px-5">
             {footer}
-          </div>
+          </DialogActions>
         ) : null}
       </div>
     </div>

@@ -12,6 +12,7 @@ import {
   Card,
   CardHeader,
   Dialog,
+  DialogActions,
   DisplayDateTime,
   ListRowsSkeleton,
 } from '@/components/ui'
@@ -33,26 +34,34 @@ function StockRow({
   const { t } = useTranslation()
   const low = row.quantity <= row.min_quantity
   return (
-    <div className="flex flex-wrap items-center gap-3 py-2.5">
-      <div className="min-w-40 flex-1">
+    // `flex-col` below `sm` for the same reason the expenses rows use it: the
+    // quantity, its low-stock badge and the adjust action each need their own
+    // line in 296px, and a wrapped row put the action button on a line of its own
+    // at a random width. `sm:flex-row` is the original single line.
+    <div className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+      <div className="min-w-0 flex-1 sm:min-w-40">
         <p className="text-body font-bold">{row.product_name}</p>
         <p className="text-caption">
           {t(`catalog.${row.department}`)} · {t('catalog.category')}: {row.category_name} ·{' '}
           {t(`catalog.${row.item_type}`)} · {t('inventory.min')}: {row.min_quantity}
         </p>
       </div>
-      <span
-        className={cn('text-money', low ? 'text-destructive' : 'text-foreground-muted')}
-        aria-label={low ? t('inventory.low') : undefined}
-      >
-        {row.quantity}
-      </span>
-      {low ? (
-        <Badge variant="warning" size="sm" dot>
-          {t('inventory.low')}
-        </Badge>
-      ) : null}
-      <Button variant="outline" size="sm" onClick={() => onAdjust(row)}>
+      {/* The quantity leads the phone row, because "how much is left" is the
+          question this screen exists to answer. */}
+      <div className="flex items-center justify-between gap-2 sm:ms-auto sm:justify-end">
+        <span
+          className={cn('text-money', low ? 'text-destructive' : 'text-foreground-muted')}
+          aria-label={low ? t('inventory.low') : undefined}
+        >
+          {row.quantity}
+        </span>
+        {low ? (
+          <Badge variant="warning" size="sm" dot>
+            {t('inventory.low')}
+          </Badge>
+        ) : null}
+      </div>
+      <Button variant="outline" size="sm" onClick={() => onAdjust(row)} className="sm:ms-2">
         <SlidersHorizontal size={16} aria-hidden />
         {t('inventory.adjust')}
       </Button>
@@ -236,7 +245,7 @@ function AdjustStockDialog({
         <Field label={t('app.notes')}>
           <Textarea value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -244,7 +253,7 @@ function AdjustStockDialog({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

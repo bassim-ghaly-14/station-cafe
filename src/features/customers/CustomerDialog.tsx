@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog } from '@/components/ui'
+import { Button, Dialog, DialogActions } from '@/components/ui'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { Save } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
@@ -163,7 +163,7 @@ export function CustomerDialog({
           </p>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <DialogActions>
           <Button variant="outline" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -171,7 +171,7 @@ export function CustomerDialog({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {busy ? t('app.loading') : t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

@@ -17,6 +17,7 @@ import {
   AmountAutoFill,
   Button,
   Dialog,
+  DialogActions,
   EmployeeAvatar,
   ListRowsSkeleton,
   MoneyDisplay,
@@ -223,7 +224,7 @@ function CloseShiftActions({
 }>) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle pt-4">
+    <DialogActions className="border-t border-border-subtle pt-4">
       <Button variant="outline" disabled={busy} onClick={onCancel}>
         {t('app.cancel')}
       </Button>
@@ -241,7 +242,7 @@ function CloseShiftActions({
         {!busy ? <Lock size={16} aria-hidden /> : null}
         {t('shift.confirmClose')}
       </Button>
-    </div>
+    </DialogActions>
   )
 }
 

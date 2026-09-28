@@ -145,3 +145,94 @@ export function DataTableCell({
 }) {
   return <td className={cn('px-3 py-2.5 align-middle', className)}>{children}</td>
 }
+
+/**
+ * RecordList — the PHONE presentation of a dense record table.
+ *
+ * The problem it solves
+ * --------------------
+ * A `DataTable` is honest about its trade: it keeps real table semantics and a
+ * controlled horizontal scroller, so density survives a narrow window. But that
+ * trade has a floor. Past roughly 400px of content, the scroller stops being a
+ * convenience and becomes the thing the user has to fight: the identity column
+ * — the one column that says WHICH record this is — is off the edge, and the
+ * actions are off the other edge. Dragging a table sideways to read a person's
+ * name is not a responsive layout; it is a desktop layout that was squeezed.
+ *
+ * So the decision about WHICH presentation to use is made by JS, from the real
+ * viewport, and exactly one of the two is mounted. This is the same rule
+ * `InvoiceList` and `WashTicketList` already follow, stated once here so every
+ * dense table can follow it instead of reinventing the breakpoint:
+ *
+ *  - `useIsWide()` true  → the `DataTable`, unchanged, for every width that can
+ *    carry it;
+ *  - `useIsWide()` false → these records, one per row, with the SAME values in
+ *    the SAME reading order, and the row's actions on their own line.
+ *
+ * A CSS-hidden copy is not an option: it stays in the accessibility tree, is
+ * still announced, is still parsed by tests and is still held twice in memory.
+ *
+ * What a record preserves
+ * -----------------------
+ * Everything the row stated, in the row's own order: the identity first and
+ * untruncated as far as the name allows, then the secondary facts, then the
+ * actions. Nothing is dropped for being inconvenient on a phone — a value the
+ * table showed is a value the record shows.
+ */
+export function RecordList({
+  children,
+  className,
+  ...rest
+}: React.HTMLAttributes<HTMLUListElement>) {
+  return (
+    <ul className={cn('flex flex-col', className)} {...rest}>
+      {children}
+    </ul>
+  )
+}
+
+/**
+ * One record in a `RecordList`.
+ *
+ * The hairline separator and the vertical rhythm are the same ones the table
+ * uses, so the two presentations read as one list at two widths rather than as
+ * two different screens.
+ */
+export function RecordListItem({
+  children,
+  className,
+  ...rest
+}: React.LiHTMLAttributes<HTMLLIElement>) {
+  return (
+    <li
+      className={cn('border-b border-border-subtle px-3 py-3 last:border-0', className)}
+      {...rest}
+    >
+      {children}
+    </li>
+  )
+}
+
+/**
+ * The action strip at the foot of a record.
+ *
+ * It is a flex row that WRAPS, which is correct here and was wrong in the table
+ * cell: a record owns its full width (a 320px phone gives it ~296px), so the
+ * controls sit on one line when they fit and fold onto a second when they do
+ * not — and a second line of three 48px buttons is a legible group, not the
+ * one-icon-per-row column the cell produced. `justify-between` with the group
+ * hugging the inline end keeps the strip reading as a command bar.
+ */
+export function RecordListActions({
+  children,
+  className,
+}: {
+  readonly children: React.ReactNode
+  readonly className?: string
+}) {
+  return (
+    <div className={cn('mt-2.5 flex flex-wrap items-center justify-end gap-1', className)}>
+      {children}
+    </div>
+  )
+}

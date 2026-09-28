@@ -23,7 +23,7 @@
  */
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Dialog, Field, Input, Textarea, useToast } from '@/components/ui'
+import { Button, Dialog, DialogActions, Field, Input, Textarea, useToast } from '@/components/ui'
 import { DisplayDate, DisplayTime } from '@/components/ui/display-datetime'
 import { CalendarClock } from '@/components/ui/icon'
 import { useErrText } from '@/lib/err'
@@ -173,7 +173,7 @@ export function AttendanceOverrideDialog({
 
         <OverrideError error={error} />
 
-        <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+        <DialogActions className="mt-1">
           <Button variant="outline" onClick={onClose} disabled={busy}>
             {t('app.cancel')}
           </Button>
@@ -187,7 +187,7 @@ export function AttendanceOverrideDialog({
           >
             {t('employees.override.confirm')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )

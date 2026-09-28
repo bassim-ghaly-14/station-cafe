@@ -11,7 +11,7 @@
  */
 import { useTranslation } from 'react-i18next'
 
-import { Button, ConfirmDialog, Dialog } from '@/components/ui'
+import { Button, ConfirmDialog, Dialog, DialogActions } from '@/components/ui'
 import { Check, Trash2 } from '@/components/ui/icon'
 
 import { CatalogCategoryManagerDrawer } from './CatalogCategoryManagerDrawer'
@@ -176,7 +176,7 @@ export function CatalogDialogs({
             })}
           </p>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button variant="outline" onClick={onCloseConfirming}>
               {t('app.cancel')}
             </Button>
@@ -192,7 +192,7 @@ export function CatalogDialogs({
               <Check size={16} aria-hidden />
               {t('app.confirm')}
             </Button>
-          </div>
+          </DialogActions>
         </Dialog>
       ) : null}
 
@@ -204,7 +204,7 @@ export function CatalogDialogs({
 
           <p className="text-caption mb-4">{t('catalog.deleteHistoryHint')}</p>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <DialogActions>
             <Button variant="outline" onClick={onCloseDeleting}>
               {t('app.cancel')}
             </Button>
@@ -220,7 +220,7 @@ export function CatalogDialogs({
               <Trash2 size={16} aria-hidden />
               {t('catalog.delete')}
             </Button>
-          </div>
+          </DialogActions>
         </Dialog>
       ) : null}
     </>

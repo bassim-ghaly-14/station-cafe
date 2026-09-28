@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, useToast } from '@/components/ui'
+import { Button, DialogActions, useToast } from '@/components/ui'
 import { Save } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { api } from '@/services/posApi'
@@ -55,7 +55,7 @@ export function NewCustomerForm({
           </p>
         ) : null}
 
-        <div className="flex justify-end gap-2">
+        <DialogActions>
           <Button variant="outline" size="sm" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -88,7 +88,7 @@ export function NewCustomerForm({
             {!busy ? <Save size={16} aria-hidden /> : null}
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </div>
   )

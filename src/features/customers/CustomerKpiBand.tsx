@@ -36,8 +36,17 @@ import type { LucideIcon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { CustomerOverview } from '@/services/customersApi'
 
-/** 1 → 2 → 3 → 5. The five-column step only kicks in where a card still fits. */
-const BAND_GRID = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
+/**
+ * 1 → 2 (from 360px) → 3 → 5.
+ *
+ * The phone step is the interesting one, and it is the same decision the
+ * employees band makes: a single column turned a five-tile summary into ~500px
+ * of scrolling before the customer list it summarises. Two columns from 360px
+ * up costs each tile ~150px, which still fits its icon, its truncated label and
+ * its figure. 320px keeps ONE column, because two ~140px tiles there would
+ * truncate an Arabic label to nothing.
+ */
+const BAND_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
 
 /** One tile: label, value, and an optional second line of context. */
 function KpiTile({

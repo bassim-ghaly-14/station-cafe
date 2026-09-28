@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { Button, Select } from '@/components/ui'
-import { RotateCcw, Search, X } from '@/components/ui/icon'
-import { cn } from '@/lib/utils'
+import { Button, FilterBar, Select, ToolbarSearch } from '@/components/ui'
+import { RotateCcw } from '@/components/ui/icon'
 import type { AuditEntry } from '@/services/opsApi'
 import { hasActiveFilters, presentActors, type OperationFilters } from './useOperationHistory'
 import { operationGroupLabelKey, presentGroups, type OperationGroupId } from './operationTypes'
@@ -36,40 +35,18 @@ export function OperationHistoryFilters({
   const active = hasActiveFilters(filters)
 
   return (
-    <div className={cn('flex flex-wrap items-end gap-2', className)}>
-      <div className="relative min-w-56 flex-1">
-        <label className="sr-only" htmlFor="operation-history-search">
-          {t('audit.search.label')}
-        </label>
-        <Search
-          size={16}
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 inset-s-3 my-auto text-foreground-subtle"
-        />
-        <input
-          id="operation-history-search"
-          type="search"
+    <FilterBar
+      className={className}
+      search={
+        <ToolbarSearch
           value={filters.search}
-          onChange={(event) => onChange({ ...filters, search: event.target.value })}
+          onValueChange={(search) => onChange({ ...filters, search })}
+          label={t('audit.search.label')}
           placeholder={t('audit.search.placeholder')}
-          // WebKit draws its own clear affordance on `type="search"`; the
-          // explicit button below is the one that is labelled and RTL-correct,
-          // so the native one is suppressed to avoid two competing controls.
-          className="h-10 w-full rounded-md border border-border-strong bg-surface-input ps-9 pe-9 text-base text-foreground placeholder:text-placeholder-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus [&::-webkit-search-cancel-button]:hidden"
+          clearLabel={t('audit.search.clear')}
         />
-        {filters.search !== '' ? (
-          <button
-            type="button"
-            onClick={() => onChange({ ...filters, search: '' })}
-            aria-label={t('audit.search.clear')}
-            title={t('audit.search.clear')}
-            className="absolute inset-y-0 inset-e-1 my-auto flex size-8 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-          >
-            <X size={15} aria-hidden />
-          </button>
-        ) : null}
-      </div>
-
+      }
+    >
       <div className="w-full sm:w-44">
         <label className="sr-only" htmlFor="operation-history-group">
           {t('audit.filters.type')}
@@ -125,6 +102,6 @@ export function OperationHistoryFilters({
           {t('audit.filters.reset')}
         </Button>
       ) : null}
-    </div>
+    </FilterBar>
   )
 }

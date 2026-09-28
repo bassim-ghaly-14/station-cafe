@@ -53,26 +53,28 @@ export function TableActionGroup({
   readonly children: React.ReactNode
 }) {
   return (
-    /*
-     * `flex-wrap` is the mobile fix, and it is not cosmetic.
-     *
-     * The employees row can carry seven of these buttons (four attendance
-     * actions, a divider, details, edit, deactivate) at a 48px target each —
-     * 336px of control in a single cell. On a 360px phone that is wider than
-     * the screen, so the cell forced the whole table into a horizontal scroll
-     * and the actions were the reason for scrolling: a user had to drag the
-     * table sideways just to reach the buttons, and a row whose actions do not
-     * fit is a row whose actions nobody uses.
-     *
-     * Wrapping puts them on two rows inside the cell instead. The dividers sit
-     * between families, so a wrap between them still reads correctly, and the
-     * row simply grows taller — which is the right trade on a phone, where
-     * vertical space is cheap and horizontal scrolling is not.
-     *
-     * The inline-end alignment is kept so a wrapped group still hugs the same
-     * edge it did on one line.
-     */
-    <div className={cn('flex flex-wrap items-center justify-end gap-1 [&_svg]:size-6', className)}>
+    <div
+      className={cn(
+        'flex flex-wrap items-center justify-end gap-1',
+        // The scoped glyph override lives here, and it is load-bearing rather
+        // than decorative: a Button variant sets `[&_svg]:size-*`, which is a
+        // rule on the CHILD and therefore wins over a `size` prop passed to the
+        // icon. Without this every glyph renders at the variant size whatever
+        // the icon asks for. `tailwind-merge` resolves the two `[&_svg]:size-*`
+        // rules by order, which is what makes the 24px win over the variant's
+        // own 20px.
+        '[&_svg]:size-6',
+        // Below `sm` the group is one line and NOTHING wraps. The previous
+        // `flex-wrap` was the mobile defect this file exists to fix: seven 48px
+        // controls in a 320px cell wrapped into a three-row column of icons,
+        // which is neither tappable-in-context nor readable as a set. A single
+        // nowrap line keeps the actions grouped and lets the TABLE's own
+        // controlled scroller (see `DataTable`) carry the overflow, so the
+        // group never becomes a tall stack.
+        'flex-nowrap',
+        className,
+      )}
+    >
       {children}
     </div>
   )

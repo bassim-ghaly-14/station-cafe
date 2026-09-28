@@ -42,7 +42,17 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Dialog, Field, Input, Select, Textarea, useToast } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogActions,
+  Field,
+  Input,
+  Select,
+  Textarea,
+  useToast,
+} from '@/components/ui'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { useErrText } from '@/lib/err'
 import { parseMajor } from '@/lib/utils'
@@ -336,14 +346,14 @@ export function EmployeeDialog({
 
         {/* The action row lives inside the dialog body, exactly like the other
             forms in the app — the shared Dialog has no footer slot. */}
-        <div className="mt-1 flex items-center justify-end gap-2">
+        <DialogActions className="mt-1">
           <Button variant="ghost" onClick={onClose}>
             {t('app.cancel')}
           </Button>
           <Button onClick={save} disabled={busy || name.trim() === ''} loading={busy}>
             {t('app.save')}
           </Button>
-        </div>
+        </DialogActions>
       </div>
     </Dialog>
   )
