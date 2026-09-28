@@ -86,4 +86,60 @@ describe('Station Excel reports', () => {
       expect(workbook.Props?.Title).toBe(`Station Cafe | ${chart.title}`)
     }
   })
+
+  it('gives each cell role its own fill, colour, size and emphasis', () => {
+    // The palette is read from the live CSS custom properties, so the tokens
+    // the report actually uses are set here rather than a palette literal.
+    const css = document.documentElement.style
+    css.setProperty('--palette-brand-900', '#2b1d12')
+    css.setProperty('--palette-brand-800', '#5e3f25')
+    css.setProperty('--palette-brand-600', '#96673a')
+    css.setProperty('--print-paper', '#fffdf9')
+    css.setProperty('--print-total-bg', '#f4eee4')
+    css.setProperty('--print-border', '#d8cbb8')
+    css.setProperty('--print-ink', '#211c17')
+    css.setProperty('--print-ink-muted', '#5c5146')
+
+    const { sheet } = createStationReportSheet({
+      title: 'الأدوار',
+      description: 'وصف',
+      period: '01/09/2026 — 25/09/2026',
+      columns,
+      rows: [
+        ['المغسلة', 2000, 0.5],
+        ['الكافيه', 1000, 0.5],
+      ],
+      summary: [{ label: 'الإجمالي', value: 3000, format: 'currency' }],
+      total: ['الإجمالي', 3000, 1],
+      sheetName: 'التقرير',
+      labels: {
+        period: 'الفترة:',
+        generated: 'تاريخ التصدير:',
+        summary: 'ملخص التقرير',
+        details: 'تفاصيل التقرير',
+        total: 'الإجمالي',
+      },
+    })
+
+    // With one summary row the table header lands on A8 and the first data row
+    // on A9: row 1 brand banner, row 2 title, rows 6 summary, row 8 header.
+    const style = (address: string) => sheet[address]?.s as Record<string, never>
+    expect(style('A1').fill).toEqual({ patternType: 'solid', fgColor: { rgb: '2b1d12' } })
+    expect(style('A2').fill).toEqual({ patternType: 'solid', fgColor: { rgb: '5e3f25' } })
+    expect(style('A8').fill).toEqual({ patternType: 'solid', fgColor: { rgb: '96673a' } })
+    expect(style('A9').fill).toEqual({ patternType: 'solid', fgColor: { rgb: 'fffdf9' } })
+
+    // Sizes: the banner is the largest thing on the sheet, body copy the
+    // smallest, and the title sits between them.
+    const size = (address: string) => (style(address).font as { sz: number }).sz
+    expect(size('A1')).toBe(20)
+    expect(size('A2')).toBe(15)
+    expect(size('A8')).toBe(11)
+    expect(size('A9')).toBe(10)
+
+    // Body copy is not emphasised; the table header is.
+    const bold = (address: string) => (style(address).font as { bold?: boolean }).bold
+    expect(bold('A9')).toBe(false)
+    expect(bold('A8')).toBe(true)
+  })
 })

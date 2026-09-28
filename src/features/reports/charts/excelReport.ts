@@ -37,6 +37,89 @@ type StationReportPalette = {
 type ReportCell = string | number | Date
 type ReportRow = ReportCell[]
 
+/**
+ * The role a cell plays in a Station sheet.
+ *
+ * A closed union: every cell in a report is one of these, and each role has a
+ * fixed presentation. Naming the type lets the style tables below be total, so
+ * adding a role is a compile error until its presentation is decided.
+ */
+type CellRole =
+  | 'brand'
+  | 'title'
+  | 'meta'
+  | 'summaryLabel'
+  | 'summaryValue'
+  | 'header'
+  | 'body'
+  | 'alternate'
+  | 'total'
+
+/** Which palette slot fills a cell of this role. */
+const ROLE_FILL: Record<CellRole, keyof StationReportPalette> = {
+  brand: 'brand',
+  title: 'title',
+  header: 'header',
+  meta: 'body',
+  summaryLabel: 'alternate',
+  summaryValue: 'alternate',
+  alternate: 'alternate',
+  total: 'alternate',
+  body: 'body',
+}
+
+/** The text colour a cell of this role is written in. */
+const ROLE_COLOR: Record<CellRole, keyof StationReportPalette> = {
+  brand: 'headerText',
+  title: 'headerText',
+  header: 'headerText',
+  meta: 'muted',
+  summaryLabel: 'text',
+  summaryValue: 'text',
+  alternate: 'text',
+  total: 'text',
+  body: 'text',
+}
+
+/** The point size a cell of this role is written at. */
+const ROLE_SIZE: Record<CellRole, number> = {
+  brand: 20,
+  title: 15,
+  header: 11,
+  summaryLabel: 11,
+  summaryValue: 11,
+  meta: 10,
+  body: 10,
+  alternate: 10,
+  total: 10,
+}
+
+/** Roles that are not body copy are emphasised. */
+const ROLE_BOLD: Record<CellRole, boolean> = {
+  brand: true,
+  title: true,
+  header: true,
+  summaryLabel: true,
+  summaryValue: true,
+  total: true,
+  body: false,
+  alternate: false,
+  meta: false,
+}
+
+/** Roles whose cells carry the rule that separates a section from the next. */
+const ROLE_SEPARATED: Record<CellRole, boolean> = {
+  title: true,
+  summaryLabel: true,
+  summaryValue: true,
+  total: true,
+  brand: false,
+  header: false,
+  meta: false,
+  body: false,
+  alternate: false,
+}
+
 const STATION_REPORT_FONT = 'Arial'
 const MIN_COLUMN_WIDTH = 12
 const MAX_COLUMN_WIDTH = 34
@@ -78,51 +161,14 @@ function border(color: string, heavy = false) {
 
 function cellStyle(
   palette: StationReportPalette,
-  role:
-    | 'brand'
-    | 'title'
-    | 'meta'
-    | 'summaryLabel'
-    | 'summaryValue'
-    | 'header'
-    | 'body'
-    | 'alternate'
-    | 'total',
+  role: CellRole,
   align: 'right' | 'center' | 'left',
   format?: string,
 ) {
-  const darkFill = role === 'brand' || role === 'header'
-  const fill =
-    role === 'brand'
-      ? palette.brand
-      : role === 'title'
-        ? palette.title
-        : role === 'header'
-          ? palette.header
-          : role === 'alternate' ||
-              role === 'total' ||
-              role === 'summaryLabel' ||
-              role === 'summaryValue'
-            ? palette.alternate
-            : palette.body
-  const color = darkFill
-    ? palette.headerText
-    : role === 'title'
-      ? palette.headerText
-      : role === 'meta'
-        ? palette.muted
-        : palette.text
-  const size =
-    role === 'brand'
-      ? 20
-      : role === 'title'
-        ? 15
-        : role === 'header' || role === 'summaryLabel' || role === 'summaryValue'
-          ? 11
-          : 10
-  const bold = role !== 'body' && role !== 'alternate' && role !== 'meta'
-  const separator =
-    role === 'title' || role === 'summaryLabel' || role === 'summaryValue' || role === 'total'
+  const fill = palette[ROLE_FILL[role]]
+  const color = palette[ROLE_COLOR[role]]
+  const size = ROLE_SIZE[role]
+  const bold = ROLE_BOLD[role]
 
   return {
     font: font(color, size, bold),
@@ -133,7 +179,7 @@ function cellStyle(
       wrapText: true,
       readingOrder: align === 'right' ? 2 : 1,
     },
-    border: separator
+    border: ROLE_SEPARATED[role]
       ? { bottom: { style: 'medium', color: { rgb: palette.border.replace(/^#/, '') } } }
       : role === 'header'
         ? border(palette.headerText, false)
@@ -172,6 +218,22 @@ export function calculateColumnWidths(columns: ReportColumn[], rows: ReportRow[]
     const contentWidth = Math.max(...sample.map(displayLength), MIN_COLUMN_WIDTH) + 2
     return Math.round(Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, contentWidth)))
   })
+}
+
+/**
+ * The height of one printed row, in points.
+ *
+ * The rhythm is what makes a Station sheet read as a document rather than a
+ * dump: the brand banner and title get room, the table header and the section
+ * label sit between the data rows, and everything else is body height. Row 4 is
+ * the metadata block, which is a section of its own.
+ */
+function rowHeight(index: number, tableSectionRow: number, tableHeaderRow: number): number {
+  if (index === 0) return 32
+  if (index === 1) return 26
+  if (index === tableHeaderRow) return 25
+  if (index === tableSectionRow || index === 4) return 22
+  return 20
 }
 
 function defaultAlignment(): 'right' {
@@ -305,16 +367,7 @@ export function createStationReportSheet({
   ]
   sheet['!cols'] = widths.map((wch) => ({ wch }))
   sheet['!rows'] = Array.from({ length: finalExcelRow }, (_, index) => ({
-    hpt:
-      index === 0
-        ? 32
-        : index === 1
-          ? 26
-          : index === tableHeaderRow
-            ? 25
-            : index === tableSectionRow || index === 4
-              ? 22
-              : 20,
+    hpt: rowHeight(index, tableSectionRow, tableHeaderRow),
   }))
   if (rows.length)
     sheet['!autofilter'] = { ref: `A${tableHeaderRow + 1}:${lastColumn}${lastDataRow + 1}` }
