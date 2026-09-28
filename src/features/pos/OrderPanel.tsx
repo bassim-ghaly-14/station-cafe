@@ -14,7 +14,7 @@ import {
   type PosOrder,
   type Product,
 } from '@/services/posApi'
-import { formatMinorMoney } from '@/lib/money'
+import { discountLabelFor } from './orderDiscountLabel'
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
@@ -124,13 +124,7 @@ export function OrderPanel({
   // A fixed discount is labelled with the money it actually removes; a legacy
   // percentage selection is rendered as a number only (read-only), never as an
   // editable control.
-  const discountLabel = discount.mode
-    ? discount.mode === 'FIXED' && typeof discount.value === 'number'
-      ? formatMinorMoney(discount.value, { variant: 'auto' })
-      : discount.mode === 'PERCENT' && typeof discount.value === 'number'
-        ? `${discount.value / 1000}%`
-        : null
-    : null
+  const discountLabel = discountLabelFor(discount)
 
   const addItem = (p: Product) =>
     api
@@ -169,6 +163,12 @@ export function OrderPanel({
       .catch(report)
       .finally(() => setTicketBusy(false))
   }
+
+  // Three states, not two. `null` means this order has no wash line at all, so
+  // no ticket is offered. A handler that does nothing means there IS a wash
+  // line but a ticket is already being issued — the control stays visible and
+  // inert rather than disappearing under the cashier's finger mid-print.
+  const washTicketAction = !hasWash ? null : ticketBusy ? () => {} : issueTicket
 
   return (
     <Card>
@@ -210,7 +210,7 @@ export function OrderPanel({
         onCustomer={() => setCustomerOpen(true)}
         onDetachCustomer={detach}
         detaching={detaching}
-        onTicket={hasWash && !ticketBusy ? issueTicket : hasWash ? () => {} : null}
+        onTicket={washTicketAction}
         onReviewPay={onPay}
         onPrintPreview={() => setPreviewTarget(orderPreviewTarget)}
         onTicketPreview={ticketPreviewTarget ? () => setPreviewTarget(ticketPreviewTarget) : null}
