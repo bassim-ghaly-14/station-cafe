@@ -12,12 +12,15 @@
       ;(() => {
         const key = 'station.theme'
         const stored = localStorage.getItem(key)
-        const theme =
-          stored === 'light' || stored === 'dark'
-            ? stored
-            : matchMedia('(prefers-color-scheme: dark)').matches
-              ? 'dark'
-              : 'light'
+        // An explicit stored choice always wins. Only when there is no choice at
+        // all does the system preference decide, so a user's pick is never
+        // overridden by a later OS change.
+        let theme = 'light'
+        if (stored === 'light' || stored === 'dark') {
+          theme = stored
+        } else if (matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark'
+        }
         document.documentElement.dataset.theme = theme
       })()
     </script>
