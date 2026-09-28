@@ -58,7 +58,7 @@ function readRoute() {
   return { view, params: segments.length > 1 ? { segments: segments.slice(1) } : {} }
 }
 
-export function RouterProvider({ children }: { children: ReactNode }) {
+export function RouterProvider({ children }: Readonly<{ readonly children: ReactNode }>) {
   const [route, setRoute] = useState(readRoute)
 
   useEffect(() => {

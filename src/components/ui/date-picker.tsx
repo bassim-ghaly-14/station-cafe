@@ -54,7 +54,7 @@ export function DatePicker({
   label,
   className,
   disabled = false,
-}: DatePickerProps) {
+}: Readonly<DatePickerProps>) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language
   const rtl = isRtl(locale)

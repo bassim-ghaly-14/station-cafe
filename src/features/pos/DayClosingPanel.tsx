@@ -69,7 +69,7 @@ function SummaryRow({
   )
 }
 
-function ShiftRowItem({ shift }: { shift: ShiftRow }) {
+function ShiftRowItem({ shift }: Readonly<{ readonly shift: ShiftRow }>) {
   const { t } = useTranslation()
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2.5 text-sm">

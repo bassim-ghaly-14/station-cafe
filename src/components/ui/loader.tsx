@@ -21,7 +21,7 @@ export interface LoaderProps
 }
 
 /** Lightweight circular progress indicator for compact asynchronous operations. */
-export function Loader({ size, label, className, ...props }: LoaderProps) {
+export function Loader({ size, label, className, ...props }: Readonly<LoaderProps>) {
   return (
     <Loader2
       {...props}

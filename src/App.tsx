@@ -67,7 +67,7 @@ function RoutedViews() {
  * progress bar and the surrounding `<output>` carry the loading meaning.
  * Initialization, timing and the exit transition are unchanged.
  */
-function BootScreen({ exiting }: { exiting?: boolean }) {
+function BootScreen({ exiting }: Readonly<{ readonly exiting?: boolean }>) {
   const { t } = useTranslation()
   return (
     <main
@@ -90,7 +90,7 @@ function BootScreen({ exiting }: { exiting?: boolean }) {
 }
 
 /** Session/auth gate. Mounted only after the db bridge is up. */
-function SessionGate({ onReady }: { onReady: (ready: boolean) => void }) {
+function SessionGate({ onReady }: Readonly<{ readonly onReady: (ready: boolean) => void }>) {
   const { user, loading } = useSession()
   const ready = !loading
   useEffect(() => {

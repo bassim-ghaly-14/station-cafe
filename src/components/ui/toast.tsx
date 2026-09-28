@@ -16,7 +16,7 @@ const ToastCtx = createContext<{
 
 let nextId = 1
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ readonly children: ReactNode }>) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const toast = useCallback((message: string, tone: ToastTone = 'info') => {

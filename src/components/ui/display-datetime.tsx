@@ -17,9 +17,9 @@ import { useFormattingPreferences } from '@/lib/formatting'
 import { cn } from '@/lib/utils'
 
 type Props = {
-  value: string | Date | number | null | undefined
-  className?: string
-  options?: DisplayFormatOptions
+  readonly value: string | Date | number | null | undefined
+  readonly className?: string
+  readonly options?: DisplayFormatOptions
 }
 
 /** Isolate a value from the surrounding paragraph direction. */
@@ -29,7 +29,10 @@ const LTR_ISOLATE: CSSProperties = { direction: 'ltr', unicodeBidi: 'isolate' }
 const EMPTY = '—'
 
 /** One localized value: isolated, allowed to wrap, never given a fixed width. */
-function Slot({ children, className }: { children: string; className?: string }) {
+function Slot({
+  children,
+  className,
+}: Readonly<{ readonly children: string; className?: string }>) {
   return (
     <span
       dir="ltr"

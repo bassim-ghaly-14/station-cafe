@@ -24,12 +24,12 @@ export function OperationHistoryFilters({
   filters,
   onChange,
   className,
-}: {
-  rows: readonly AuditEntry[]
+}: Readonly<{
+  readonly rows: readonly AuditEntry[]
   readonly filters: OperationFilters
   readonly onChange: (next: OperationFilters) => void
   readonly className?: string
-}) {
+}>) {
   const { t } = useTranslation()
   const groups = presentGroups(rows.map((entry) => entry.action))
   const actors = presentActors(rows)

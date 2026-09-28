@@ -8,7 +8,10 @@ import { cn } from '@/lib/utils'
  * `<output>`, whose implicit `status` role gives assistive technology the busy
  * signal; the label is required so the animation is never silent.
  */
-export function ProgressBar({ label, className }: { label: string; className?: string }) {
+export function ProgressBar({
+  label,
+  className,
+}: Readonly<{ readonly label: string; className?: string }>) {
   return (
     <output
       aria-label={label}

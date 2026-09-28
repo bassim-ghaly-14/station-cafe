@@ -264,7 +264,7 @@ export function DailyBarChart({
   onExportExcel,
   presentation = 'card',
   className,
-}: DailyBarChartProps) {
+}: Readonly<DailyBarChartProps>) {
   const primary = series[0]
   const barShapes = useBarShapes(series)
 

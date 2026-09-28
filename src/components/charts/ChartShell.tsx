@@ -96,23 +96,23 @@ function ChartHeader({
   onExportPng,
   onExportExcel,
   setFullscreenOpen,
-}: {
-  t: TFunction
-  title: string
-  description?: string
-  period?: string
-  showPeriod: boolean
-  icon?: ReactNode
-  fullscreen: boolean
-  id: string
-  hasExports: boolean
-  menuOpen: boolean
-  setMenuOpen: (open: boolean) => void
-  toolbarExtra?: ReactNode
-  onExportPng?: () => void | Promise<void>
-  onExportExcel?: () => void | Promise<void>
-  setFullscreenOpen: (open: boolean) => void
-}) {
+}: Readonly<{
+  readonly t: TFunction
+  readonly title: string
+  readonly description?: string
+  readonly period?: string
+  readonly showPeriod: boolean
+  readonly icon?: ReactNode
+  readonly fullscreen: boolean
+  readonly id: string
+  readonly hasExports: boolean
+  readonly menuOpen: boolean
+  readonly setMenuOpen: (open: boolean) => void
+  readonly toolbarExtra?: ReactNode
+  readonly onExportPng?: () => void | Promise<void>
+  readonly onExportExcel?: () => void | Promise<void>
+  readonly setFullscreenOpen: (open: boolean) => void
+}>) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
@@ -167,13 +167,13 @@ function ExportMenu({
   setMenuOpen,
   onExportPng,
   onExportExcel,
-}: {
-  t: TFunction
-  menuOpen: boolean
-  setMenuOpen: (open: boolean) => void
-  onExportPng?: () => void | Promise<void>
-  onExportExcel?: () => void | Promise<void>
-}) {
+}: Readonly<{
+  readonly t: TFunction
+  readonly menuOpen: boolean
+  readonly setMenuOpen: (open: boolean) => void
+  readonly onExportPng?: () => void | Promise<void>
+  readonly onExportExcel?: () => void | Promise<void>
+}>) {
   return (
     <div className="relative">
       <Button
@@ -233,7 +233,7 @@ export function ChartShell({
   inlineCardClassName,
   testId,
   children,
-}: ChartShellProps) {
+}: Readonly<ChartShellProps>) {
   const { t } = useTranslation()
   const fullscreen = presentation === 'fullscreen'
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
@@ -310,7 +310,10 @@ export function ChartShell({
   )
 }
 
-function ExportMenuItem({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+function ExportMenuItem({
+  onClick,
+  children,
+}: Readonly<{ readonly onClick: () => void; children: ReactNode }>) {
   return (
     <button
       role="menuitem"

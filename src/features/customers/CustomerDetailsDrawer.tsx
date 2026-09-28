@@ -82,7 +82,10 @@ function StatBlock({
  * A titled band inside the drawer. Hierarchy comes from the label, the
  * whitespace and a hairline — there is deliberately no box drawn around it.
  */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: Readonly<{ readonly title: string; children: React.ReactNode }>) {
   return (
     <section className="mt-5 border-t border-border-subtle pt-4">
       <h3 className="mb-2.5 text-caption font-bold text-foreground-muted">{title}</h3>
@@ -477,7 +480,10 @@ export function CustomerDetailsDrawer({
  * A one-line label/value pair for the quieter figures under the KPI blocks.
  * A `<dl>` row, so the pairing is announced as such.
  */
-function LedgerRow({ label, children }: { label: string; children: React.ReactNode }) {
+function LedgerRow({
+  label,
+  children,
+}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5 last:border-0">
       <dt className="min-w-0 truncate text-caption">{label}</dt>

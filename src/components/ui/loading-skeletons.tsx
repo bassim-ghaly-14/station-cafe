@@ -2,7 +2,10 @@ import { Card } from './card'
 import { Skeleton } from './skeleton'
 import { cn } from '@/lib/utils'
 
-export function ListRowsSkeleton({ rows = 5, className }: { rows?: number; className?: string }) {
+export function ListRowsSkeleton({
+  rows = 5,
+  className,
+}: Readonly<{ readonly rows?: number; className?: string }>) {
   return (
     <div className={className} aria-label="جارٍ تحميل المحتوى">
       {Array.from({ length: rows }, (_, index) => (
@@ -112,7 +115,7 @@ export function ChartGridSkeleton({
  * chart needs the same card silhouette (header, plot, legend rows) without the
  * surrounding grid, so the surface does not jump when the data resolves.
  */
-export function ChartCardSkeleton({ className }: { className?: string }) {
+export function ChartCardSkeleton({ className }: Readonly<{ readonly className?: string }>) {
   return (
     <Card
       className={cn('block min-h-88 space-y-5 p-5', className)}
@@ -141,7 +144,10 @@ export function ChartCardSkeleton({ className }: { className?: string }) {
   )
 }
 
-export function CardGridSkeleton({ cards = 6, className }: { cards?: number; className?: string }) {
+export function CardGridSkeleton({
+  cards = 6,
+  className,
+}: Readonly<{ readonly cards?: number; className?: string }>) {
   return (
     <div className={className} aria-label="جارٍ تحميل البيانات">
       {Array.from({ length: cards }, (_, index) => (

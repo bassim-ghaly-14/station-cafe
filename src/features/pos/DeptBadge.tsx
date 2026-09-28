@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 
 type Department = 'CAFE' | 'WASH'
 
-export function DeptBadge({ dept }: { dept: Department }) {
+export function DeptBadge({ dept }: Readonly<{ readonly dept: Department }>) {
   const { t } = useTranslation()
   return (
     <Badge variant={dept === 'CAFE' ? 'brand' : 'info'} size="sm">

@@ -222,7 +222,7 @@ function CategoryChip({
  * bar, and how to reach them. Rendered by the page under the bar so the
  * "everything is still there" promise is explicit rather than implied.
  */
-export function CatalogHiddenCategoriesNote({ count }: { count: number }) {
+export function CatalogHiddenCategoriesNote({ count }: Readonly<{ readonly count: number }>) {
   const { t } = useTranslation()
 
   if (count <= 0) {

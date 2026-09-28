@@ -42,7 +42,7 @@ import { useMonthlyRevenue } from './useMonthlyRevenue'
 
 export const MONTHLY_REVENUE_CHART_ID = 'sales-monthly-cafe-wash'
 
-export function SalesMonthlyRevenueChart({ className }: { className?: string }) {
+export function SalesMonthlyRevenueChart({ className }: Readonly<{ readonly className?: string }>) {
   const { t, i18n } = useTranslation()
   const toast = useToast()
   const { report, initialLoading, error, reload } = useMonthlyRevenue()

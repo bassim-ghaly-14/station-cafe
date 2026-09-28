@@ -55,7 +55,7 @@ export function Badge({
   className,
   children,
   ...props
-}: BadgeProps) {
+}: Readonly<BadgeProps>) {
   const icon = Icon ? <Icon aria-hidden="true" /> : null
   const roleVisual = role !== undefined ? getRoleVisual(role) : null
   return (

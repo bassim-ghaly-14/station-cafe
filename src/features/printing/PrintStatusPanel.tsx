@@ -141,7 +141,7 @@ export function PrintStatusPanel() {
  * attempts, and — on failure — the localized reason. The raw backend error stays
  * in the database for diagnostics and is never rendered.
  */
-function PrintJobItem({ job }: { job: PrintJobRow }) {
+function PrintJobItem({ job }: Readonly<{ readonly job: PrintJobRow }>) {
   const { t } = useTranslation()
   const document = printDocumentPresentation(job.doc_type)
   const status = printJobStatusPresentation(job.status)

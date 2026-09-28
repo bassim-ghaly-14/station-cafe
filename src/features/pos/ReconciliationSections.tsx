@@ -38,7 +38,7 @@ function AmountRow({
 }
 
 /** A count-only line: the value is a document count, never an amount. */
-function CountRow({ label }: { label: ReactNode }) {
+function CountRow({ label }: Readonly<{ readonly label: ReactNode }>) {
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
       <span className="text-foreground-muted">{label}</span>
@@ -47,7 +47,7 @@ function CountRow({ label }: { label: ReactNode }) {
 }
 
 /** A titled block within a closing document. */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: Readonly<{ readonly title: string; children: ReactNode }>) {
   return (
     <section className="border-t border-border-subtle pt-3">
       <h3 className="mb-1 text-caption font-bold text-foreground-strong">{title}</h3>
@@ -68,7 +68,7 @@ export interface SalesArea {
 }
 
 /** 1. المبيعات — invoice counts and totals per business area. */
-export function SalesSection({ data }: { data: SalesArea }) {
+export function SalesSection({ data }: Readonly<{ readonly data: SalesArea }>) {
   const { t } = useTranslation()
   return (
     <Section title={t('shift.salesSection')}>
@@ -165,7 +165,7 @@ export function ExpensesSection({
  * The status badge is the single most important figure on the document, so it
  * is rendered last, at the heaviest weight, with a semantic color.
  */
-export function HandoverSection({ cash }: { cash: CashReconciliation }) {
+export function HandoverSection({ cash }: Readonly<{ readonly cash: CashReconciliation }>) {
   const { t } = useTranslation()
   return (
     <Section title={t('shift.handoverSection')}>
@@ -210,7 +210,7 @@ export function HandoverSection({ cash }: { cash: CashReconciliation }) {
  * the opening / inflow / outflow / expected lines are meaningful. The
  * difference and the status are the backend's, shown once the user submits.
  */
-export function ExpectedCashSection({ cash }: { cash: CashReconciliation }) {
+export function ExpectedCashSection({ cash }: Readonly<{ readonly cash: CashReconciliation }>) {
   const { t } = useTranslation()
   return (
     <Section title={t('shift.custodySection')}>

@@ -63,7 +63,7 @@ export function DocumentPreviewState({
   reason,
   onRetry,
   className,
-}: DocumentPreviewStateProps) {
+}: Readonly<DocumentPreviewStateProps>) {
   const { t } = useTranslation()
 
   if (variant === 'loading') {
@@ -184,7 +184,7 @@ function DocumentSkeleton() {
  * Shared with the invoices-page empty state — the "document" metaphor must look
  * the same everywhere a document is expected.
  */
-export function DocumentPaperMotif({ className }: { className?: string }) {
+export function DocumentPaperMotif({ className }: Readonly<{ readonly className?: string }>) {
   return (
     <div aria-hidden dir="ltr" className={cn('w-full max-w-48', className)}>
       <svg viewBox="0 0 224 120" className="h-auto w-full" focusable="false">

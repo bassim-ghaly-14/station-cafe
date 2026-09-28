@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils'
  * Operational availability. Active = success, inactive = danger (never gray),
  * and the state is announced by text and a dot as well as by hue.
  */
-export function CatalogStatusBadge({ isActive }: { isActive: boolean }) {
+export function CatalogStatusBadge({ isActive }: Readonly<{ readonly isActive: boolean }>) {
   const { t } = useTranslation()
   return (
     <Badge
@@ -82,7 +82,10 @@ export function CatalogNewRibbon() {
  * always looks the same and a newly created category automatically gets a
  * color without anyone styling it by hand.
  */
-export function CatalogCategoryBadge({ categoryId, name }: { categoryId: number; name: string }) {
+export function CatalogCategoryBadge({
+  categoryId,
+  name,
+}: Readonly<{ readonly categoryId: number; name: string }>) {
   const tone = categoryTone(categoryId)
   return (
     <span

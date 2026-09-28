@@ -223,7 +223,7 @@ function ChartsReport({
  * The card heading shared by a populated chart and its empty variant, so a card
  * never changes identity just because the period has no numbers in it.
  */
-function ChartCardHeading({ chart }: { chart: AnalyticsChart }) {
+function ChartCardHeading({ chart }: Readonly<{ readonly chart: AnalyticsChart }>) {
   const { t } = useTranslation()
   const Icon = chart.icon
   return (

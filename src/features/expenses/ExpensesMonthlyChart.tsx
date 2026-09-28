@@ -50,7 +50,7 @@ export const MONTHLY_EXPENSES_CHART_ID = 'expenses-monthly-by-category'
 /** The recharts stack identity of the expense segments inside one monthly bar. */
 export const MONTHLY_EXPENSES_STACK_ID = 'expenses'
 
-export function ExpensesMonthlyChart({ className }: { className?: string }) {
+export function ExpensesMonthlyChart({ className }: Readonly<{ readonly className?: string }>) {
   const { t, i18n } = useTranslation()
   const toast = useToast()
   const { window, initialLoading, error, reload } = useMonthlyExpenses()

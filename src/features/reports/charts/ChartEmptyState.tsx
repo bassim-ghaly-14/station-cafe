@@ -98,7 +98,7 @@ export function ChartEmptyState({
  * `preserveAspectRatio`-free so it fills the width without distorting, and it
  * is `dir="ltr"` internally because plot geometry is direction-agnostic.
  */
-function ChartFrame({ compact }: { compact: boolean }) {
+function ChartFrame({ compact }: Readonly<{ readonly compact: boolean }>) {
   const markers = [
     [34, 118],
     [98, 96],

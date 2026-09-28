@@ -325,7 +325,11 @@ export function DateRangePicker({
 }
 
 /** One "start / end" line of the draft summary inside the popover. */
-function RangeRow({ label, value, locale }: { label: string; value: string; locale: string }) {
+function RangeRow({
+  label,
+  value,
+  locale,
+}: Readonly<{ readonly label: string; value: string; locale: string }>) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-caption">{label}</span>

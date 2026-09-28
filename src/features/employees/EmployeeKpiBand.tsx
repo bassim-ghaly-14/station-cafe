@@ -82,7 +82,7 @@ function KpiTile({
  * The second line of a leader tile: the person's name, or an honest "nobody
  * leads this period" when there is no leader at all.
  */
-function LeaderName({ leader }: { leader: Leader | null }) {
+function LeaderName({ leader }: Readonly<{ readonly leader: Leader | null }>) {
   const { t } = useTranslation()
   if (!leader) return <>{t('employees.kpi.none')}</>
   return <span className="font-medium text-foreground-muted">{leader.name}</span>

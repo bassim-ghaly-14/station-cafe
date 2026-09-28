@@ -49,7 +49,7 @@ function textStyle(op: PreviewTextOp): CSSProperties {
 
 const LOGO_MM = 31
 
-export function ThermalReceipt({ preview }: { preview: PrintPreview }) {
+export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPreview }>) {
   const { t } = useTranslation()
   let separatorIndex = 0
   let itemHeaderShown = false
@@ -167,7 +167,7 @@ function ItemColumnHeader() {
   )
 }
 
-function ItemRow({ op }: { op: PreviewItemOp }) {
+function ItemRow({ op }: Readonly<{ readonly op: PreviewItemOp }>) {
   return (
     <div
       data-testid="receipt-item-row"
@@ -198,7 +198,7 @@ function ItemRow({ op }: { op: PreviewItemOp }) {
  * time) are heavier, never larger, and always stay below the title and the
  * document total.
  */
-function MetaRow({ op }: { op: PreviewMetaOp }) {
+function MetaRow({ op }: Readonly<{ readonly op: PreviewMetaOp }>) {
   return (
     <div
       data-testid="receipt-meta-row"
@@ -221,7 +221,7 @@ function MetaRow({ op }: { op: PreviewMetaOp }) {
   )
 }
 
-function FinancialRow({ op }: { op: PreviewFinancialOp }) {
+function FinancialRow({ op }: Readonly<{ readonly op: PreviewFinancialOp }>) {
   return (
     <div
       data-testid={op.total ? 'receipt-total' : 'receipt-financial-row'}
@@ -243,7 +243,10 @@ function FinancialRow({ op }: { op: PreviewFinancialOp }) {
   )
 }
 
-function Money({ children, strong = false }: { children: ReactNode; strong?: boolean }) {
+function Money({
+  children,
+  strong = false,
+}: Readonly<{ readonly children: ReactNode; strong?: boolean }>) {
   return (
     <span
       dir="ltr"
@@ -255,7 +258,7 @@ function Money({ children, strong = false }: { children: ReactNode; strong?: boo
 }
 
 /** The canonical 1254px source is used for screens; ESC/POS still uses its raster. */
-function ScreenLogo({ align }: { align: 'left' | 'center' | 'right' }) {
+function ScreenLogo({ align }: Readonly<{ readonly align: 'left' | 'center' | 'right' }>) {
   return (
     <div
       className="mb-[3mm] flex"

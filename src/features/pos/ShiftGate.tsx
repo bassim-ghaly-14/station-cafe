@@ -7,7 +7,10 @@ import { Field, Input } from '@/components/ui/input'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { parseMajor } from '@/lib/utils'
 
-export function ShiftGate({ state, onReady }: { state: DayShiftState; onReady: () => void }) {
+export function ShiftGate({
+  state,
+  onReady,
+}: Readonly<{ readonly state: DayShiftState; onReady: () => void }>) {
   const { t } = useTranslation()
   const toast = useToast()
   const [opening, setOpening] = useState(false)

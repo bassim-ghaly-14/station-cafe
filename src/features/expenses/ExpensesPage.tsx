@@ -95,19 +95,19 @@ function ExpensesBody({
   period,
   onRetry,
   onAdd,
-}: {
-  t: TFunction
-  initialLoading: boolean
-  error: string | null
-  empty: boolean
-  overview: ExpenseOverview | null
-  refreshing: boolean
-  rows: Expense[]
-  range: DateRange
-  period: string
-  onRetry: () => void
-  onAdd: () => void
-}) {
+}: Readonly<{
+  readonly t: TFunction
+  readonly initialLoading: boolean
+  readonly error: string | null
+  readonly empty: boolean
+  readonly overview: ExpenseOverview | null
+  readonly refreshing: boolean
+  readonly rows: Expense[]
+  readonly range: DateRange
+  readonly period: string
+  readonly onRetry: () => void
+  readonly onAdd: () => void
+}>) {
   if (initialLoading) {
     return <ListRowsSkeleton rows={5} />
   }
@@ -278,7 +278,7 @@ export default function ExpensesPage() {
 }
 
 /** The records themselves. Purely presentational — no total is derived here. */
-function ExpenseList({ rows }: { rows: Expense[] }) {
+function ExpenseList({ rows }: Readonly<{ readonly rows: Expense[] }>) {
   const { t } = useTranslation()
 
   if (rows.length === 0) {

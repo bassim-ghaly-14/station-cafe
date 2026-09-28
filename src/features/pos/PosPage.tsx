@@ -533,7 +533,10 @@ export default function PosPage() {
  * It intentionally matches the table-card geometry so takeaway becomes
  * a first-class POS destination instead of looking like a toolbar action.
  */
-export function TakeawayCard({ busy, onStart }: { busy: boolean; onStart: () => void }) {
+export function TakeawayCard({
+  busy,
+  onStart,
+}: Readonly<{ readonly busy: boolean; onStart: () => void }>) {
   const { t } = useTranslation()
 
   return (

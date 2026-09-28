@@ -25,7 +25,7 @@ export function Skeleton({
   accessibilityLabel = 'جارٍ التحميل…',
   className,
   ...props
-}: SkeletonProps) {
+}: Readonly<SkeletonProps>) {
   const labelled = accessibilityLabel.length > 0
   return (
     <output

@@ -155,7 +155,7 @@ export function ChartTooltipContent({
   footer,
   hideZeroValues = false,
   className,
-}: ChartTooltipContentProps) {
+}: Readonly<ChartTooltipContentProps>) {
   if (!active || !payload?.length) return null
 
   const rows = hideZeroValues ? payload.filter((item) => Number(item.value) !== 0) : payload

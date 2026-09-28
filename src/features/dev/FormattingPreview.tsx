@@ -59,7 +59,7 @@ function Row({
   )
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: Readonly<{ readonly title: string; children: ReactNode }>) {
   return (
     <section className="min-w-0">
       <h4 className="mb-1 text-sm font-bold text-foreground-strong">{title}</h4>
@@ -70,7 +70,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-export function FormattingPreview({ draft }: { draft: FormattingPreferences }) {
+export function FormattingPreview({ draft }: Readonly<{ readonly draft: FormattingPreferences }>) {
   const { t } = useTranslation()
   const money = { settings: draft.money }
   const dateOptions = { settings: draft.date }

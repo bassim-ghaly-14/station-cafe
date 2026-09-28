@@ -157,7 +157,10 @@ export function OperationDetails({
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
   return (
     <>
       <dt className="text-caption font-bold">{label}</dt>

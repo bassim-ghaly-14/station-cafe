@@ -17,7 +17,7 @@ import { RefreshCw } from '@/components/ui/icon'
  * loading phrase.
  * Language-independent animation: the sweep uses physical transforms only.
  */
-export function BootLoadingIndicator({ statement }: { statement?: string }) {
+export function BootLoadingIndicator({ statement }: Readonly<{ readonly statement?: string }>) {
   return (
     <output
       aria-live="polite"
@@ -31,7 +31,10 @@ export function BootLoadingIndicator({ statement }: { statement?: string }) {
   )
 }
 
-export function EmptyState({ title, action }: { title: string; action?: React.ReactNode }) {
+export function EmptyState({
+  title,
+  action,
+}: Readonly<{ readonly title: string; action?: React.ReactNode }>) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border p-8 text-center">
       <p className="font-medium text-foreground-muted">{title}</p>

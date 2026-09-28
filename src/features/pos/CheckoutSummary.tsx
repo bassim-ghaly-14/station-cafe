@@ -196,7 +196,7 @@ export function CheckoutSummary({
   )
 }
 
-export function TotalsBlock({ shown }: { shown: OrderPreview }) {
+export function TotalsBlock({ shown }: Readonly<{ readonly shown: OrderPreview }>) {
   const { t } = useTranslation()
   return (
     <div className="mb-3 flex flex-col gap-1 rounded-md border border-border-subtle bg-surface-muted p-2.5 text-sm">

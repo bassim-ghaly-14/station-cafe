@@ -309,7 +309,10 @@ export function EmployeeTable({
  * is a Rust rule, and a UI that computed its own would eventually disagree with
  * the payroll it is showing.
  */
-function AttendanceToday({ today, t }: { today: TodayFacts | null; t: TFunction }) {
+function AttendanceToday({
+  today,
+  t,
+}: Readonly<{ readonly today: TodayFacts | null; t: TFunction }>) {
   if (!today) {
     // "Not recorded" is NOT an absence — the same distinction the personal card
     // makes, and the backend has no row because nobody has written one down.

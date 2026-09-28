@@ -58,13 +58,13 @@ export function InvoiceList({
   onPreview,
   onPrint,
   busy = false,
-}: {
-  rows: readonly InvoiceRow[]
+}: Readonly<{
+  readonly rows: readonly InvoiceRow[]
   readonly onPreview: (invoice: InvoiceRow) => void
   readonly onPrint: (invoice: InvoiceRow) => void
   /** A reload is running over rows that are already on screen. */
   readonly busy?: boolean
-}) {
+}>) {
   const { t } = useTranslation()
 
   const columns: DataTableColumn[] = [
@@ -134,7 +134,7 @@ export function InvoiceList({
 }
 
 /** The issue timestamp, always through the shared Cairo/UTC formatter. */
-function InvoiceTime({ invoice }: { invoice: InvoiceRow }) {
+function InvoiceTime({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
   return (
     <DisplayDateTime
       value={invoice.created_at}
@@ -146,7 +146,7 @@ function InvoiceTime({ invoice }: { invoice: InvoiceRow }) {
 }
 
 /** Invoice number as the row's anchor, with the external-order number beside it. */
-function InvoiceIdentity({ invoice }: { invoice: InvoiceRow }) {
+function InvoiceIdentity({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
   const { t } = useTranslation()
   return (
     <span className="block min-w-0">
@@ -171,7 +171,10 @@ function InvoiceIdentity({ invoice }: { invoice: InvoiceRow }) {
 }
 
 /** Customer and car — the "who was this for" context, always stated explicitly. */
-function InvoiceContext({ invoice, className }: { invoice: InvoiceRow; className?: string }) {
+function InvoiceContext({
+  invoice,
+  className,
+}: Readonly<{ readonly invoice: InvoiceRow; className?: string }>) {
   const { t } = useTranslation()
   return (
     <span className={cn('block min-w-0', className)}>
@@ -188,7 +191,7 @@ function InvoiceContext({ invoice, className }: { invoice: InvoiceRow; className
 }
 
 /** Status as label + dot + icon, so colour is never the only signal. */
-function InvoiceStatus({ invoice }: { invoice: InvoiceRow }) {
+function InvoiceStatus({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
   const { t } = useTranslation()
   return (
     <Badge
@@ -208,7 +211,7 @@ function InvoiceStatus({ invoice }: { invoice: InvoiceRow }) {
  * Both figures come straight from the persisted invoice snapshot — nothing is
  * recomputed here, and a historical invoice is never presented as editable.
  */
-function InvoiceTotal({ invoice }: { invoice: InvoiceRow }) {
+function InvoiceTotal({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
   const { t } = useTranslation()
   const unsettled = invoice.paid_amount !== invoice.total
   return (

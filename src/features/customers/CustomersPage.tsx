@@ -62,22 +62,22 @@ function CustomerListSection({
   onOpenDetails,
   onEdit,
   onDelete,
-}: {
-  t: TFunction
-  error: string | null
-  initialLoading: boolean
-  refreshing: boolean
-  customers: CustomerRow[]
-  financialVisible: boolean
-  canDelete: boolean
-  searching: boolean
-  onRetry: () => void
-  onReset: () => void
-  onCreate: () => void
-  onOpenDetails: (customer: CustomerRow) => void
-  onEdit: (customer: CustomerRow) => void
-  onDelete: (customer: CustomerRow) => void
-}) {
+}: Readonly<{
+  readonly t: TFunction
+  readonly error: string | null
+  readonly initialLoading: boolean
+  readonly refreshing: boolean
+  readonly customers: CustomerRow[]
+  readonly financialVisible: boolean
+  readonly canDelete: boolean
+  readonly searching: boolean
+  readonly onRetry: () => void
+  readonly onReset: () => void
+  readonly onCreate: () => void
+  readonly onOpenDetails: (customer: CustomerRow) => void
+  readonly onEdit: (customer: CustomerRow) => void
+  readonly onDelete: (customer: CustomerRow) => void
+}>) {
   if (error) {
     return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
   }

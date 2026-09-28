@@ -60,7 +60,7 @@ export function Button({
   disabled,
   children,
   ...props
-}: ButtonProps) {
+}: Readonly<ButtonProps>) {
   const isDisabled = disabled || loading
   return (
     <button

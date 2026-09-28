@@ -112,7 +112,7 @@ export function MonthlyComparisonBarChart({
   onExportExcel,
   presentation = 'card',
   className,
-}: MonthlyComparisonBarChartProps) {
+}: Readonly<MonthlyComparisonBarChartProps>) {
   const { t } = useTranslation()
   const stacked = layout === 'stacked'
   // A stack is identified by name, and the name is namespaced by the chart id so

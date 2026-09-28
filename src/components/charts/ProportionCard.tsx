@@ -36,7 +36,7 @@ export type ProportionSlice = {
   hint?: string
 }
 
-function SliceRow({ slice }: { slice: ProportionSlice }) {
+function SliceRow({ slice }: Readonly<{ readonly slice: ProportionSlice }>) {
   const Icon = slice.icon
   return (
     <li className="flex flex-col gap-1.5">

@@ -104,13 +104,13 @@ export function CustomerAvatar({
   size = 'md',
   className,
   accessibilityLabel,
-}: {
-  id: number
-  name: string | null | undefined
-  size?: CustomerAvatarSize
-  className?: string
-  accessibilityLabel?: string
-}) {
+}: Readonly<{
+  readonly id: number
+  readonly name: string | null | undefined
+  readonly size?: CustomerAvatarSize
+  readonly className?: string
+  readonly accessibilityLabel?: string
+}>) {
   const tone = customerAvatarTone(id)
   const dimensions = TONE_SIZES[size]
   return (

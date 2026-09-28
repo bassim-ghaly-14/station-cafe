@@ -47,7 +47,10 @@ import { employeesApi } from '@/services/employeesApi'
 import type { AttendanceDay, EmployeeDetails, EmployeePeriod } from '@/services/employeesApi'
 
 /** A compact premium stat block: a quiet label over a strong figure. */
-function StatBlock({ label, children }: { label: string; children: React.ReactNode }) {
+function StatBlock({
+  label,
+  children,
+}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2.5">
       <span className="truncate text-caption">{label}</span>
@@ -59,7 +62,10 @@ function StatBlock({ label, children }: { label: string; children: React.ReactNo
 }
 
 /** A titled band inside the drawer: a label, whitespace and a hairline. */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: Readonly<{ readonly title: string; children: React.ReactNode }>) {
   return (
     <section className="mt-5 border-t border-border-subtle pt-4">
       <h3 className="mb-2.5 text-caption font-bold text-foreground-muted">{title}</h3>
@@ -69,7 +75,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 /** A `<dl>` row for the quieter ledger figures. */
-function LedgerRow({ label, children }: { label: string; children: React.ReactNode }) {
+function LedgerRow({
+  label,
+  children,
+}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1.5 last:border-0">
       <dt className="min-w-0 truncate text-caption">{label}</dt>

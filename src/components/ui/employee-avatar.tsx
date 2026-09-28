@@ -25,7 +25,7 @@ export function EmployeeAvatar({
   size = 'md',
   className,
   accessibilityLabel,
-}: EmployeeAvatarProps) {
+}: Readonly<EmployeeAvatarProps>) {
   const roleVisual = getRoleVisual(role)
   // A wash worker IS a role, not a missing role, so it keeps its own identity
   // marker rather than falling into the generic FALLBACK treatment.

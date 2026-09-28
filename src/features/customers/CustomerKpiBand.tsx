@@ -80,7 +80,7 @@ function KpiTile({
   )
 }
 
-function Count({ value }: { value: number }) {
+function Count({ value }: Readonly<{ readonly value: number }>) {
   return <span className="tabular-nums">{value}</span>
 }
 

@@ -155,7 +155,7 @@ export function ShiftExpenseDialog({
 }
 
 /** The expenses booked to the current shift, with the backend's own labels. */
-export function ShiftExpenseList({ rows }: { rows: Expense[] | null }) {
+export function ShiftExpenseList({ rows }: Readonly<{ readonly rows: Expense[] | null }>) {
   const { t } = useTranslation()
   if (rows === null) return null
   if (rows.length === 0) {
@@ -173,7 +173,7 @@ export function ShiftExpenseList({ rows }: { rows: Expense[] | null }) {
   )
 }
 
-export function AddExpenseButton({ onClick }: { onClick: () => void }) {
+export function AddExpenseButton({ onClick }: Readonly<{ readonly onClick: () => void }>) {
   const { t } = useTranslation()
   return (
     <Button variant="outline" size="sm" onClick={onClick}>

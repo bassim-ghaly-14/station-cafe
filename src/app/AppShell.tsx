@@ -73,7 +73,7 @@ function getInitialSidebarPinned(isStaff: boolean) {
   return !isStaff
 }
 
-export default function AppShell({ children }: { children: ReactNode }) {
+export default function AppShell({ children }: Readonly<{ readonly children: ReactNode }>) {
   const { t } = useTranslation()
   const { user, logout } = useSession()
   const { view, navigate } = useRouter()

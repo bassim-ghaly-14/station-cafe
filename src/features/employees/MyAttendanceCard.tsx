@@ -41,7 +41,10 @@ import type { MyAttendance } from '@/services/employeesApi'
  * side by side keep their columns aligned, which is what makes a horizontal row
  * of figures readable rather than a row of unrelated numbers.
  */
-function Figure({ label, children }: { label: string; children: React.ReactNode }) {
+function Figure({
+  label,
+  children,
+}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className="truncate text-caption text-foreground-subtle">{label}</span>
@@ -71,12 +74,12 @@ function AttendancePlaceholder({
   error,
   loading,
   onRetry,
-}: {
-  t: TFunction
-  error: string | null
-  loading: boolean
-  onRetry: () => void
-}) {
+}: Readonly<{
+  readonly t: TFunction
+  readonly error: string | null
+  readonly loading: boolean
+  readonly onRetry: () => void
+}>) {
   if (error) {
     return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
   }
