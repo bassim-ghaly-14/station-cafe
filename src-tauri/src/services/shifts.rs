@@ -387,12 +387,24 @@ pub fn close_day(conn: &Db, actor: &User) -> AppResult<DayCloseResult> {
         return Err(AppError::business("day.orders_open"));
     }
     let preview = build_day_close_preview(&tx, day.clone())?;
-    if preview.report.shifts.is_empty() {
-        // A day with no settled shift has no financial result to record.
-        // Closing it would freeze an empty report and leave the still-open shift
-        // with no business day to settle into, so it stays blocked.
+    if preview.report.shifts.is_empty() && !preview.open_shifts.is_empty() {
+        // There IS unsettled work and nothing settled to record: closing now
+        // would leave a still-open shift with no business day to settle into.
+        // Closing it would also freeze an empty report, so it stays blocked —
+        // the open shift must be closed first. This is the ONE case an empty
+        // closing is not yet a legitimate closing.
         return Err(AppError::business("day.no_settled_shifts"));
     }
+    // Otherwise a zero-activity day is a REAL closing and is recorded as one.
+    // A day opened and closed without a single invoice, wash ticket, expense
+    // or settled shift is a legitimate business fact, not a missing record:
+    // it is persisted as an all-zero final snapshot, it counts as a closed
+    // business day, and it is listed by the reports exactly like any other.
+    // Blocking it used to leave `business_days.status = 'OPEN'` forever, and
+    // because only one business day may be open, the next day could then never
+    // be opened either. Nothing is invented to make this look like activity —
+    // the totals are genuinely zero, and `day_closing_shifts` is legitimately
+    // empty because the closing really did include no shift.
     let r = preview.report;
     // The snapshot is written from the INCLUDED shifts' own immutable rows, and
     // `day_closing_shifts` records exactly which shifts those were — so a

@@ -22,13 +22,22 @@ export function InvoiceEmptyState({
   variant,
   onReset,
   className,
+  copy,
 }: {
   readonly variant: 'no-data' | 'no-results'
   readonly onReset?: () => void
   readonly className?: string
+  /**
+   * The message namespace to speak from. The invoices page passes nothing and
+   * gets its own copy; a sibling record view (تذاكر المغسلة اليوم) passes its
+   * own, so the frame, the motif and the reset affordance are implemented ONCE
+   * instead of being copied into a lookalike empty state.
+   */
+  readonly copy?: string
 }) {
   const { t } = useTranslation()
   const noResults = variant === 'no-results'
+  const ns = copy ?? 'invoicesPage'
 
   return (
     <div
@@ -42,19 +51,17 @@ export function InvoiceEmptyState({
 
       <div className="flex max-w-md flex-col gap-1.5">
         <h2 className="text-section text-balance">
-          {noResults
-            ? t('invoicesPage.states.noResultsTitle')
-            : t('invoicesPage.states.noDataTitle')}
+          {noResults ? t(`${ns}.states.noResultsTitle`) : t(`${ns}.states.noDataTitle`)}
         </h2>
         <p className="text-pretty text-sm leading-relaxed text-foreground-muted">
-          {noResults ? t('invoicesPage.states.noResultsBody') : t('invoicesPage.states.noDataBody')}
+          {noResults ? t(`${ns}.states.noResultsBody`) : t(`${ns}.states.noDataBody`)}
         </p>
       </div>
 
       {noResults && onReset ? (
         <Button type="button" onClick={onReset}>
           <FilterX size={16} aria-hidden />
-          {t('invoicesPage.filters.reset')}
+          {t(`${ns}.filters.reset`)}
         </Button>
       ) : null}
     </div>

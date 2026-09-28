@@ -104,6 +104,14 @@ export function OrderPanel({
   const shown = preview
   const hasWash = shown?.has_wash ?? order.lines.some((l) => l.department === 'WASH')
   const ticketIssued = hasWash && typeof order.waiting_no === 'number'
+  /*
+   * The cancellation rule, mirrored in the UI. `waiting_no` is written in the
+   * SAME transaction as the ticket row, so it states the same fact the service
+   * reads from `wash_tickets` — it is not an independent guess, and it stays
+   * true even after the wash lines are gone. Hiding the action is a courtesy:
+   * the backend rejects the cancellation either way.
+   */
+  const cancelBlocked = typeof order.waiting_no === 'number'
   // TWO documents, TWO triggers, ONE preview system.
   //
   // The invoice preview always addresses the live order (the backend selects
@@ -182,7 +190,10 @@ export function OrderPanel({
             : t('pos.state.' + order.status)
         }
         actions={
-          onDiscard ? (
+          // The panel is the LAST place the rule can be honoured, so it decides
+          // for itself: even if a parent hands down a handler, a ticketed order
+          // is never rendered with an executable cancellation.
+          onDiscard && !cancelBlocked ? (
             <Button
               size="sm"
               variant="ghost"
@@ -194,6 +205,12 @@ export function OrderPanel({
               <Trash2 size={16} aria-hidden />
               {t('pos.discardOrder')}
             </Button>
+          ) : cancelBlocked ? (
+            // The action is gone because the rule forbids it, so the reason is
+            // stated rather than left to be guessed at.
+            <span className="max-w-56 text-end text-caption text-foreground-subtle">
+              {t('pos.cancelBlockedByTicket')}
+            </span>
           ) : null
         }
       />

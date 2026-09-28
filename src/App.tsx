@@ -27,6 +27,7 @@ import InventoryPage from '@/features/inventory/InventoryPage'
 import ReportsPage from '@/features/reports/ReportsPage'
 import DevSettingsPage from '@/features/dev/DevSettingsPage'
 import { TodayInvoicesPage } from '@/features/pos/TodayInvoicesPage'
+import { TodayWashTicketsPage } from '@/features/pos/TodayWashTicketsPage'
 
 interface DbStatus {
   ok: boolean
@@ -56,6 +57,8 @@ function RoutedViews() {
       return <PosPage />
     case 'today-invoices':
       return <TodayInvoicesPage />
+    case 'today-wash-tickets':
+      return <TodayWashTicketsPage />
     default:
       return <PosPage />
   }

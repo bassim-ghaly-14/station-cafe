@@ -266,11 +266,16 @@ export function DayClosingPanel({
       />
     )
 
-  const actionMode = readyToSettle
-    ? 'settle'
-    : pending.length === 0 && report.shift_count > 0
-      ? 'close'
-      : 'blocked'
+  /*
+   * The close action is offered whenever closing it would leave NOTHING
+   * unsettled behind — including a day with no settled shift at all, which is
+   * a legitimate zero-activity closing the backend now records. It stays
+   * blocked only when an OPEN shift would be stranded, because that is the one
+   * case where closing is genuinely premature. This mirrors the service rule;
+   * the backend remains the authority and rejects a premature close either way.
+   */
+  const strandedOpenShift = openShifts.length > 0 && report.shift_count === 0
+  const actionMode = readyToSettle ? 'settle' : strandedOpenShift ? 'blocked' : 'close'
   const actionLabel =
     actionMode === 'settle'
       ? t('settlement.settleAction')

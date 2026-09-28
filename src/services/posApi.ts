@@ -119,6 +119,26 @@ export interface InvoiceRow {
   business_day_id: number | null
 }
 
+export interface WashTicketRow {
+  id: number
+  waiting_no: number
+  day_date: string
+  issued_at: string
+  order_id: number
+  /** The ORDER's own status — the domain has no wash-ticket status. */
+  order_status: string
+  customer_name: string | null
+  customer_phone: string | null
+  car_plate: string | null
+  car_model: string | null
+  services: string | null
+  /** The related receipt, through the persisted `invoices.order_id`. */
+  invoice_id: number | null
+  invoice_no: number | null
+  invoice_status: string | null
+  invoice_total: number | null
+}
+
 export interface CustomerWithCars {
   id: number
   name: string
@@ -338,6 +358,17 @@ export const api = {
       status: args.status ?? null,
       method: args.method ?? null,
     }),
+  /**
+   * The issued wash tickets of a business day — the twin of `invoices`, read
+   * through the same business-day resolution so the two pages can never
+   * disagree about which day they are showing.
+   */
+  washTickets: (args: WashTicketFilter) =>
+    call<WashTicketRow[]>('list_daily_wash_tickets', {
+      business_day_id: args.business_day_id ?? null,
+      query: args.query ?? null,
+      order_status: args.order_status ?? null,
+    }),
   customers: (query: string) => call<CustomerWithCars[]>('search_customers', { query }),
   createCustomer: (input: { name: string; phone?: string | null; notes?: string | null }) =>
     call<number>('create_customer', { input }),
@@ -473,6 +504,18 @@ export interface InvoiceFilter {
   query?: string
   status?: string
   method?: string
+}
+
+/**
+ * The daily wash-ticket read. The day and the free text are resolved by the
+ * BACKEND, exactly like `InvoiceFilter` — the page never filters a list it
+ * already downloaded, because that would be a second, drifting rule about
+ * what belongs to the day.
+ */
+export interface WashTicketFilter {
+  business_day_id?: number
+  query?: string
+  order_status?: string
 }
 
 export interface DayTotals {

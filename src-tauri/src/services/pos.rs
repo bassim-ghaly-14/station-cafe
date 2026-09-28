@@ -208,9 +208,31 @@ pub fn list_open_takeaways(conn: &Db, actor: &User) -> AppResult<Vec<pos::Takeaw
 /// Discard an order that holds no items (an abandoned cart) so it can never
 /// block the day close. Financially inert: no invoice, no payment, no stock.
 /// Orders WITH items stay exclusively governed by the payment flow.
+///
+/// ONCE A WASH TICKET IS ISSUED, THE ORDER MUST NOT BE CANCELLED.
+///
+/// An issued ticket is a real document: it carries a waiting number, it has
+/// usually been printed and handed to a car in the wash bay, and it is
+/// permanently attached to its order (`wash_tickets.order_id` is a NOT NULL
+/// foreign key). Cancelling the order would leave that printed ticket pointing
+/// at a cancelled order — a historical document detached from the work it
+/// records. So the rule is enforced HERE, at the service boundary, and not by
+/// hiding a button: a client that skips the UI is rejected identically.
+///
+/// The ticket is only ever READ. Nothing in this function — or anywhere else —
+/// deletes, reissues or re-points a ticket to make a cancellation possible.
+///
+/// The check reads the ticket table, not the order's lines, so it cannot be
+/// side-stepped by first removing the wash lines and then discarding an
+/// "empty" order. The cashier is the role this rule is stated for; MANAGER and
+/// ADMIN keep the elevated access the existing authorization model already
+/// grants them over any order.
 pub fn discard_order(conn: &Db, actor: &User, order_id: i64) -> AppResult<()> {
     let tx = conn.unchecked_transaction()?;
     let order = get_order(&tx, order_id)?;
+    if actor.role == "STAFF" && pos::has_wash_ticket(&tx, order_id)? {
+        return Err(AppError::business("pos.order_ticket_issued"));
+    }
     if !order.lines.is_empty() {
         return Err(AppError::business("pos.order_not_empty"));
     }
@@ -694,4 +716,26 @@ pub fn wash_ticket_snapshot(conn: &Db, order_id: i64) -> AppResult<WashTicketDat
         .waiting_no
         .ok_or_else(|| AppError::business("wash.ticket_not_issued"))?;
     Ok(ticket_data(src, waiting_no))
+}
+
+/// The issued wash tickets of a business day — the read behind تذاكر المغسلة اليوم.
+///
+/// A thin, side-effect-free delegation: there is no business rule to enforce
+/// here beyond what the repository already guarantees, and inventing one would
+/// be a second opinion about what a wash ticket is. The authoritative record is
+/// `wash_tickets`; the related receipt travels with each row through the
+/// persisted `invoices.order_id` relation, and a ticket with no receipt yet is
+/// still a ticket and is still returned.
+pub fn daily_wash_tickets(
+    conn: &Db,
+    business_day_id: Option<i64>,
+    query: Option<&str>,
+    order_status: Option<&str>,
+) -> AppResult<Vec<pos::WashTicketRow>> {
+    pos::daily_wash_tickets(
+        conn,
+        business_day_id,
+        query.map(str::trim).filter(|q| !q.is_empty()),
+        order_status.filter(|s| !s.is_empty()),
+    )
 }

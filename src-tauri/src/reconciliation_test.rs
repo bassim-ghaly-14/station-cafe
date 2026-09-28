@@ -715,6 +715,93 @@ fn a_day_can_be_closed_after_its_shifts_were_settled() {
     assert_eq!(stored.included_shift_ids, vec![shift_id]);
 }
 
+/// A business day that saw NO activity at all is still a legitimate closing.
+///
+/// Nothing is invented to make it look busy: the shift never happened, so the
+/// closing genuinely includes no shift and every total is genuinely zero. What
+/// must be true is that the closing is PERSISTED, COUNTS as a closed business
+/// day, and is listed by the reports like any other.
+#[test]
+fn a_business_day_with_no_activity_is_closed_and_recorded_as_an_empty_closing() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let day_id = shift_svc::open_day(&conn, &manager).unwrap();
+
+    let result = shift_svc::close_day(&conn, &manager).unwrap();
+
+    assert_eq!(result.report.shift_count, 0);
+    assert_eq!(result.report.included_shift_ids, Vec::<i64>::new());
+    assert_eq!(result.totals.invoices_count, 0);
+    assert_eq!(result.totals.total_sales, 0);
+    assert_eq!(result.totals.expenses, 0);
+
+    // The business day is genuinely CLOSED, not stranded.
+    assert!(shifts_repo::current_day(&conn).unwrap().is_none());
+
+    // It is a real, countable closing: the reports read it from the persisted
+    // final snapshot, so the day cannot vanish from history.
+    let days = shifts_repo::closed_business_days(&conn, None, None).unwrap();
+    assert_eq!(days.len(), 1, "an empty closing is still counted");
+    assert_eq!(days[0].business_day_id, day_id);
+    assert_eq!(days[0].shift_count, 0);
+    assert_eq!(days[0].totals.total_sales, 0);
+
+    // And the immutable snapshot reproduces the same zeroed report.
+    let stored = reports::day_report(&conn, day_id).unwrap();
+    assert_eq!(stored.invoices_count, 0);
+    assert_eq!(stored.total_sales, 0);
+    assert_eq!(stored.shift_count, 0);
+}
+
+/// A shift that ran with no invoices, no wash tickets and no expenses is a
+/// legitimate closing in its own right, and the day must be able to include it.
+#[test]
+fn an_empty_shift_closing_is_persisted_and_settles_its_day() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    let day_id = shift_svc::open_day(&conn, &manager).unwrap();
+    let shift_id = shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
+
+    let closed = shift_svc::close_shift(&conn, &staff, 5_000).unwrap();
+
+    assert_eq!(closed.shift.id, shift_id);
+    assert_eq!(closed.shift.status, "CLOSED");
+    assert_eq!(closed.shift.invoices_count, 0);
+    assert_eq!(closed.expected_cash, 5_000);
+
+    let shifts = shifts_repo::closed_shifts(&conn, None, None).unwrap();
+    assert_eq!(shifts.len(), 1, "an empty shift closing is listed");
+    assert_eq!(shifts[0].invoices_count, 0);
+
+    let result = shift_svc::close_day(&conn, &manager).unwrap();
+    assert_eq!(result.report.included_shift_ids, vec![shift_id]);
+    assert_eq!(result.report.shift_count, 1);
+    assert_eq!(result.totals.invoices_count, 0);
+    assert_eq!(result.totals.total_sales, 0);
+    // The drawer is still a real reconciliation of the float that was counted.
+    assert_eq!(result.report.cash.opening_cash, 5_000);
+    assert_eq!(result.report.cash.expected_cash, 5_000);
+    let _ = day_id;
+}
+
+/// An empty closing must never leave the till unable to start a new day.
+#[test]
+fn closing_an_empty_day_unblocks_the_next_business_day() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "manager123");
+    let staff = login(&conn, "cashier", "cashier123");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    shift_svc::close_shift(&conn, &staff, 0).unwrap();
+    shift_svc::close_day(&conn, &manager).unwrap();
+
+    // Only ONE business day may be open, so a day that could never be closed
+    // would silently block every day after it.
+    let next = shift_svc::open_day(&conn, &manager).unwrap();
+    assert!(next > 0);
+}
+
 #[test]
 fn closing_an_already_closed_day_is_rejected() {
     let conn = fresh();

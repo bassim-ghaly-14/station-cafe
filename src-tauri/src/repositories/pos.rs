@@ -423,6 +423,58 @@ pub fn set_order_status(conn: &Db, order_id: i64, status: &str) -> AppResult<()>
     Ok(())
 }
 
+// ---- WASH TICKETS ----------------------------------------------------------
+
+/// Has a wash job ticket already been ISSUED for this order?
+///
+/// `wash_tickets` is the persisted document itself, so its EXISTENCE is the
+/// single source of truth for "issued" — never the presence of order lines
+/// (those stay editable) and never a client-side flag. The waiting number the
+/// cashier handed over is a copy of this fact, not the fact itself.
+pub fn has_wash_ticket(conn: &Db, order_id: i64) -> AppResult<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM wash_tickets WHERE order_id = ?1)",
+        [order_id],
+        |r| r.get(0),
+    )?;
+    Ok(n != 0)
+}
+
+/// One issued wash job ticket, as the daily wash-tickets view reads it.
+///
+/// Every column is an EXISTING persisted fact. There is deliberately no
+/// `status`: the domain has no wash-ticket status, and inventing one would be
+/// a second source of truth. The operational state a row can honestly show is
+/// its ORDER's state (`order_status`) plus the related invoice when one exists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WashTicketRow {
+    /// The ticket's own identifier — the row in `wash_tickets`.
+    pub id: i64,
+    /// The number the customer is called by, unique per business day.
+    pub waiting_no: i64,
+    /// The Station BUSINESS date the ticket was issued on.
+    pub day_date: String,
+    /// Issue instant (UTC), rendered through the shared formatter.
+    pub issued_at: String,
+    /// The order the ticket was issued for (a NOT NULL foreign key).
+    pub order_id: i64,
+    /// The order's own status — the only status this domain actually has.
+    pub order_status: String,
+    pub customer_name: Option<String>,
+    pub customer_phone: Option<String>,
+    /// The customer's most recent car: the same rule the printed ticket uses.
+    pub car_plate: Option<String>,
+    pub car_model: Option<String>,
+    /// The WASH services the ticket was issued for, from the order's own lines.
+    pub services: Option<String>,
+    /// The related receipt, through the REAL relation `invoices.order_id`.
+    /// Absent while the wash job has not been invoiced yet.
+    pub invoice_id: Option<i64>,
+    pub invoice_no: Option<i64>,
+    pub invoice_status: Option<String>,
+    pub invoice_total: Option<i64>,
+}
+
 pub fn set_order_customer(conn: &Db, order_id: i64, customer_id: i64) -> AppResult<()> {
     conn.execute(
         "UPDATE orders SET customer_id = ?2 WHERE id = ?1",
@@ -557,4 +609,89 @@ pub fn has_wash_lines(conn: &Db, order_id: i64) -> AppResult<bool> {
         |r| r.get(0),
     )?;
     Ok(n > 0)
+}
+
+const WASH_TICKET_COLS: &str = "t.id, t.waiting_no, t.day_date, t.issued_at,
+    o.id, o.status, c.name, c.phone, car.plate_no, car.car_model,
+    (SELECT GROUP_CONCAT(w.product_name, ' · ') FROM (
+        SELECT l.product_name FROM order_lines l
+        WHERE l.order_id = o.id AND l.department = 'WASH' ORDER BY l.id) w),
+    inv.id, inv.invoice_no, inv.status, inv.total";
+
+/// The wash tickets of one business day — or of the whole history when no
+/// business day is given, mirroring how `search_invoices` treats فواتير اليوم.
+///
+/// TWO relationship rules this query must never break:
+///
+/// 1. **A ticket is never dropped for lacking an invoice.** The receipt is
+///    reached with a LEFT JOIN, because the ticket is the EARLIER,
+///    authoritative document: a wash job is ticketed when it starts and only
+///    invoiced when it leaves the bay. An INNER JOIN here would silently hide
+///    every ticket still in progress.
+/// 2. **The receipt is matched by the persisted key, never by resemblance.**
+///    `invoices.order_id` is the real relation checkout already writes. No
+///    customer name, plate, timestamp, amount or row position is ever compared.
+///
+/// The day filter is `orders.business_day_id` — the same business-day key the
+/// invoices page uses. It is deliberately NOT `wash_tickets.day_date`:
+/// business days are repeatable and two of them may share one calendar label,
+/// so the label is not a day identity.
+pub fn daily_wash_tickets(
+    conn: &Db,
+    business_day_id: Option<i64>,
+    query: Option<&str>,
+    order_status: Option<&str>,
+) -> AppResult<Vec<WashTicketRow>> {
+    let mut sql = format!(
+        "SELECT {WASH_TICKET_COLS} FROM wash_tickets t
+         JOIN orders o ON o.id = t.order_id
+         LEFT JOIN customers c ON c.id = o.customer_id
+         LEFT JOIN cars car ON car.id = (
+             SELECT id FROM cars WHERE customer_id = o.customer_id ORDER BY id DESC LIMIT 1)
+         LEFT JOIN invoices inv ON inv.order_id = o.id
+         WHERE 1=1"
+    );
+    let mut args: Vec<String> = Vec::new();
+    if let Some(d) = business_day_id {
+        args.push(d.to_string());
+        sql.push_str(&format!(" AND o.business_day_id = ?{}", args.len()));
+    }
+    if let Some(qq) = query {
+        args.push(format!("%{qq}%"));
+        sql.push_str(&format!(
+            " AND (CAST(t.waiting_no AS TEXT) LIKE ?{n}
+                  OR CAST(o.id AS TEXT) LIKE ?{n}
+                  OR c.name LIKE ?{n} OR c.phone LIKE ?{n} OR car.plate_no LIKE ?{n}
+                  OR CAST(inv.invoice_no AS TEXT) LIKE ?{n})",
+            n = args.len()
+        ));
+    }
+    if let Some(s) = order_status {
+        args.push(s.to_string());
+        sql.push_str(&format!(" AND o.status = ?{}", args.len()));
+    }
+    // The same newest-first ordering as فواتير اليوم, so the twins read alike.
+    sql.push_str(" ORDER BY t.id DESC");
+    let mut stmt = conn.prepare(&sql)?;
+    let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|a| a as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(refs.as_slice(), |r| {
+        Ok(WashTicketRow {
+            id: r.get(0)?,
+            waiting_no: r.get(1)?,
+            day_date: r.get(2)?,
+            issued_at: r.get(3)?,
+            order_id: r.get(4)?,
+            order_status: r.get(5)?,
+            customer_name: r.get(6)?,
+            customer_phone: r.get(7)?,
+            car_plate: r.get(8)?,
+            car_model: r.get(9)?,
+            services: r.get(10)?,
+            invoice_id: r.get(11)?,
+            invoice_no: r.get(12)?,
+            invoice_status: r.get(13)?,
+            invoice_total: r.get(14)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }

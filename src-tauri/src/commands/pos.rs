@@ -227,6 +227,29 @@ pub fn preview_order(
     })
 }
 
+/// The issued wash tickets of a business day (تذاكر المغسلة اليوم).
+///
+/// The twin of `search_invoices`: same business-day resolution, same
+/// authorization level, same "no business day open means the whole history"
+/// fallback, so the two pages can never disagree about which day they show.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_daily_wash_tickets(
+    state: State<'_, AppState>,
+    token: String,
+    business_day_id: Option<i64>,
+    query: Option<String>,
+    order_status: Option<String>,
+) -> AppResult<Vec<pos::WashTicketRow>> {
+    authorized(&state, &token, "STAFF", move |conn, _| {
+        pos_svc::daily_wash_tickets(
+            conn,
+            business_day_id,
+            query.as_deref(),
+            order_status.as_deref(),
+        )
+    })
+}
+
 /// Issue + print the wash job ticket (requires wash items, customer and car).
 #[tauri::command(rename_all = "snake_case")]
 pub fn issue_wash_ticket(

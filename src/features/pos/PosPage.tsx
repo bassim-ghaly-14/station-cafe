@@ -22,6 +22,7 @@ import {
   DoorOpen,
   Receipt,
   ShoppingBag,
+  Ticket,
 } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { formatDate, formatDateTime } from '@/lib/date'
@@ -342,10 +343,16 @@ export default function PosPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* History is its own page now, not a dialog stacked over the POS. */}
+          {/* History is its own page now, not a dialog stacked over the POS.
+              The two daily records are siblings: the day's invoices and the
+              day's wash tickets, reachable from the same place. */}
           <Button variant="outline" size="sm" onClick={() => navigate('today-invoices')}>
             <Receipt size={16} aria-hidden />
             {t('pos.todayInvoices')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate('today-wash-tickets')}>
+            <Ticket size={16} aria-hidden />
+            {t('pos.todayWashTickets')}
           </Button>
         </div>
       </header>
@@ -428,7 +435,14 @@ export default function PosPage() {
                 onRefreshTables={() => void refresh()}
                 onPay={() => setPayOpen(true)}
                 onDiscard={
-                  activeOrder.lines.length === 0 ? () => void discardActiveOrder() : undefined
+                  // The SERVICE rejects cancelling a ticketed order, so the UI
+                  // must not offer it either. `waiting_no` is written in the
+                  // same transaction as the ticket row, so it is the same fact
+                  // the backend reads — this hides a dead action, it is not the
+                  // enforcement.
+                  activeOrder.lines.length === 0 && activeOrder.waiting_no === null
+                    ? () => void discardActiveOrder()
+                    : undefined
                 }
                 discarding={busy === 'discard'}
               />

@@ -44,6 +44,7 @@ mod services;
 mod workflow_test;
 
 pub mod time;
+mod wash_tickets_test;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -146,6 +147,7 @@ pub fn run() {
             commands::pos::get_order_customer,
             commands::pos::preview_order,
             commands::pos::issue_wash_ticket,
+            commands::pos::list_daily_wash_tickets,
             commands::pos::checkout_order,
             commands::pos::get_invoice,
             commands::pos::search_invoices,
