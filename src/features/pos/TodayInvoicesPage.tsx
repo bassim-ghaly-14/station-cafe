@@ -127,35 +127,18 @@ export function TodayInvoicesPage() {
       {/* The records grow with the page instead of scrolling inside a dialog.
           Four distinct situations, four distinct presentations: first load,
           refresh over existing rows, failure, and "nothing here". */}
-      {error ? (
-        <ErrorState message={error} onRetry={reload} retryLabel={t('app.retry')} />
-      ) : initialLoading ? (
-        <InvoiceRowsSkeleton />
-      ) : rows.length === 0 ? (
-        <InvoiceEmptyState variant={filtered ? 'no-results' : 'no-data'} onReset={resetFilters} />
-      ) : (
-        <Card className="overflow-hidden p-0">
-          <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
-            <p className="text-caption tabular-nums" aria-live="polite">
-              {t('invoicesPage.resultsCount', { count: rows.length })}
-            </p>
-            {/* A refresh keeps the rows on screen and marks the list busy, so
-                typing in the search field never blanks the page. */}
-            {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-          </div>
-          <InvoiceList
-            rows={rows}
-            onPreview={openPreview}
-            onPrint={(row) => printAgain(row.id)}
-            busy={refreshing}
-          />
-          {dayId === null ? (
-            <p className="border-t border-border-subtle px-3 py-2 text-caption">
-              {t('pos.noDayHint')}
-            </p>
-          ) : null}
-        </Card>
-      )}
+      <InvoiceResults
+        rows={rows}
+        error={error}
+        initialLoading={initialLoading}
+        refreshing={refreshing}
+        filtered={filtered}
+        onRetry={reload}
+        onResetFilters={resetFilters}
+        onPreview={openPreview}
+        onPrint={printAgain}
+        dayId={dayId}
+      />
 
       {previewId !== null ? (
         <PrintPreviewDialog
@@ -164,6 +147,70 @@ export function TodayInvoicesPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * The result list in the four situations the page names: failure, first load,
+ * nothing to show, and the records themselves.
+ *
+ * Failure is checked before loading, so a failed first load is reported rather
+ * than spinning forever. A refresh is NOT one of these states: it keeps the
+ * rows on screen and marks the list busy, so typing in the search field never
+ * blanks the page. "Nothing here" distinguishes itself from "your filter hid
+ * them" through the `filtered` flag.
+ */
+function InvoiceResults({
+  rows,
+  error,
+  initialLoading,
+  refreshing,
+  filtered,
+  onRetry,
+  onResetFilters,
+  onPreview,
+  onPrint,
+  dayId,
+}: Readonly<{
+  rows: readonly InvoiceRow[]
+  error: string | null
+  initialLoading: boolean
+  refreshing: boolean
+  filtered: boolean
+  onRetry: () => void
+  onResetFilters: () => void
+  onPreview: (row: InvoiceRow) => void
+  onPrint: (id: number) => void
+  dayId: number | null
+}>) {
+  const { t } = useTranslation()
+  if (error) return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  if (initialLoading) return <InvoiceRowsSkeleton />
+  if (rows.length === 0) {
+    return (
+      <InvoiceEmptyState variant={filtered ? 'no-results' : 'no-data'} onReset={onResetFilters} />
+    )
+  }
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+        <p className="text-caption tabular-nums" aria-live="polite">
+          {t('invoicesPage.resultsCount', { count: rows.length })}
+        </p>
+        {/* A refresh keeps the rows on screen and marks the list busy, so
+            typing in the search field never blanks the page. */}
+        {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+      </div>
+      <InvoiceList
+        rows={rows}
+        onPreview={onPreview}
+        onPrint={(row) => onPrint(row.id)}
+        busy={refreshing}
+      />
+      {dayId === null ? (
+        <p className="border-t border-border-subtle px-3 py-2 text-caption">{t('pos.noDayHint')}</p>
+      ) : null}
+    </Card>
   )
 }
 
