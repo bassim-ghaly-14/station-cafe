@@ -40,7 +40,12 @@ export interface CatalogDialogsProps {
   readonly deletingCategory: Category | null
   readonly categoryDeleting: boolean
   readonly onCloseDeleteCategory: () => void
-  readonly onDeleteCategory: (category: Category) => void
+  /**
+   * The page's own mutation: it awaits the backend command, toasts the outcome
+   * and closes the confirmation. It is asynchronous, so the type says so and the
+   * confirm handler simply hands the category over.
+   */
+  readonly onDeleteCategory: (category: Category) => Promise<void>
 
   readonly createOpen: boolean
   readonly onCloseCreate: () => void
@@ -125,9 +130,11 @@ export function CatalogDialogs({
         <ConfirmDialog
           open={deletingCategory !== null}
           onClose={onCloseDeleteCategory}
-          onConfirm={() => {
+          onConfirm={async () => {
+            // The page owns the mutation and its outcome (toast, close, refresh),
+            // so the confirmation only forwards the intent and awaits it.
             if (deletingCategory) {
-              void onDeleteCategory(deletingCategory)
+              await onDeleteCategory(deletingCategory)
             }
           }}
           title={t('catalog.deleteCategoryTitle')}
