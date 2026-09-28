@@ -66,6 +66,9 @@ pub struct AppState {
     /// The running local API listener, if the owner enabled it. `None` means no
     /// port is open. Dropping the app closes it.
     pub api: Mutex<Option<network::server::ServerHandle>>,
+    /// The mDNS advertisement, if discovery started. Purely optional: `None`
+    /// leaves the API fully usable by IP.
+    pub discovery: Mutex<Option<network::mdns::Advertisement>>,
 }
 
 /// Start the local HTTP API if the owner enabled it.
@@ -102,6 +105,29 @@ fn start_local_api(conn: &Arc<Mutex<db::Db>>) -> Option<network::server::ServerH
             // Most often: the port is already taken by another program, or the
             // interface disappeared. Neither may stop the POS.
             log::error!("local api: not started ({e}); the POS is unaffected");
+            None
+        }
+    }
+}
+
+/// Advertise Station over mDNS, if discovery is possible.
+///
+/// Returns `None` on any failure. Multicast being blocked, a missing
+/// interface or a name conflict are all recoverable conditions for a POS: the
+/// API keeps serving and the manager reaches it by IP.
+fn start_discovery(bound: std::net::SocketAddr) -> Option<network::mdns::Advertisement> {
+    let version = env!("CARGO_PKG_VERSION");
+    match network::mdns::Advertisement::register(bound.ip(), bound.port(), version) {
+        Ok(ad) => {
+            log::info!(
+                "local discovery: advertising {} as {} on {bound}",
+                network::mdns::INSTANCE_NAME,
+                network::mdns::SERVICE_TYPE
+            );
+            Some(ad)
+        }
+        Err(e) => {
+            log::error!("local discovery: not advertised ({e}); the API and POS are unaffected");
             None
         }
     }
@@ -151,18 +177,30 @@ pub fn run() {
             // till in the morning. Station is a local POS first.
             let api = start_local_api(&conn);
 
+            // Discovery is advertised ONLY if the API actually came up, and a
+            // discovery failure can never affect the API or the POS. There is
+            // no point announcing a service that is not listening.
+            let discovery = api
+                .as_ref()
+                .and_then(|h| start_discovery(h.local_addr()));
+
             app.manage(AppState {
                 conn,
                 developer_seed_grant: Mutex::new(None),
                 api: Mutex::new(api),
+                discovery: Mutex::new(discovery),
             });
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window ends the session: stop accepting connections
-            // and release the port rather than leaving a listener behind.
+            // Closing the window ends the session: stop advertising, stop
+            // accepting connections and release the port, rather than leaving
+            // a listener behind or a phantom service on the cafe network.
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    if let Ok(mut guard) = state.discovery.lock() {
+                        guard.take();
+                    }
                     if let Ok(mut guard) = state.api.lock() {
                         if let Some(handle) = guard.take() {
                             handle.stop();

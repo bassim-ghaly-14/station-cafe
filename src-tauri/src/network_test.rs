@@ -317,6 +317,28 @@ fn the_listener_serves_health_over_a_real_socket() {
 }
 
 #[test]
+fn the_api_stays_usable_when_discovery_is_impossible() {
+    // The failure mode that matters: discovery is a convenience, so its
+    // absence must leave the API fully functional. This exercises a real
+    // listener with NO advertisement at all — the state Station is in
+    // whenever multicast is blocked or the responder cannot start — and
+    // proves the manager can still reach it by IP.
+    let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+    let handle = crate::network::server::start(addr, conn.clone()).expect("start");
+
+    // Deliberately no Advertisement is created: this is the degraded mode.
+    let (status, raw) = http_get(handle.local_addr(), "/api/v1/health", None);
+    assert_eq!(status, 200, "{raw}");
+
+    // And it is still secured: absence of discovery is not absence of auth.
+    let (status, _) = http_get(handle.local_addr(), "/api/v1/me", None);
+    assert_eq!(status, 401);
+
+    handle.stop();
+}
+
+#[test]
 fn a_bearer_token_authorizes_a_real_socket_request() {
     crate::network::server::reset_login_limiter_for_tests();
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));

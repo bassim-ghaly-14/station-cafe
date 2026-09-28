@@ -16,4 +16,5 @@
 
 pub mod api;
 pub mod config;
+pub mod mdns;
 pub mod server;

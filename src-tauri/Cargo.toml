@@ -25,6 +25,14 @@ tauri = { version = "2.11.6", features = [] }
 tauri-plugin-log = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 tauri-plugin-process = "2.3.1"
+# mDNS/DNS-SD advertisement so a manager's phone can find Station by name.
+#
+# Pure Rust, cross-platform (Windows 10/11 and macOS), no Bonjour and no system
+# dependency. Default features are disabled: this app does not need the async
+# flume channel or the `log` bridge, because advertisement is started and
+# stopped synchronously alongside the HTTP server. Keeping them off stops an
+# async runtime re-entering a synchronous application.
+mdns-sd = { version = "0.21.4", default-features = false }
 # Local HTTP API for manager access on the cafe LAN.
 #
 # tiny_http is chosen deliberately over Axum/Tokio: Station is a synchronous,
