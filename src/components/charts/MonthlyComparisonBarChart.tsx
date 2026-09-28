@@ -342,6 +342,26 @@ export function MonthlyComparisonBarChart({
 }
 
 /**
+ * How each measured trend is presented.
+ *
+ * The three directions are the whole vocabulary, and icon and colour must
+ * always agree: a change is not conveyed by colour alone. `unavailable` is
+ * deliberately absent — it is not a direction but the absence of one, and it
+ * renders as plain muted text with no glyph.
+ */
+const TREND_ICON = {
+  up: TrendingUp,
+  down: TrendingDown,
+  flat: Minus,
+} as const
+
+const TREND_TONE = {
+  up: 'text-success',
+  down: 'text-destructive',
+  flat: 'text-foreground-muted',
+} as const
+
+/**
  * The month-over-month reading.
  *
  * The ICON carries the direction, so the meaning survives without colour and
@@ -361,13 +381,8 @@ function MonthOverMonthBadge({
   if (change.trend === 'unavailable') {
     return <span className="text-caption text-foreground-subtle">{unavailableLabel ?? '—'}</span>
   }
-  const Icon = change.trend === 'up' ? TrendingUp : change.trend === 'down' ? TrendingDown : Minus
-  const tone =
-    change.trend === 'up'
-      ? 'text-success'
-      : change.trend === 'down'
-        ? 'text-destructive'
-        : 'text-foreground-muted'
+  const Icon = TREND_ICON[change.trend]
+  const tone = TREND_TONE[change.trend]
   return (
     <span className={cn('flex items-center gap-1 text-caption font-medium', tone)}>
       <Icon size={15} aria-hidden />

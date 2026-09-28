@@ -22,6 +22,7 @@ import {
   todayIso,
   weekdayLabels,
   weekStartIndex,
+  type MonthCell,
 } from '@/lib/date'
 import { Button } from './button'
 import { ArrowLeft, ArrowRight, CalendarDays, ChevronLeft, ChevronRight, X } from './icon'
@@ -158,7 +159,6 @@ export function DateRangePicker({
   const edgeA = previewEnd ?? draft.from
   const edgeB = draft.to || previewEnd || ''
   const [lo, hi] = edgeA < edgeB ? [edgeA, edgeB] : [edgeB, edgeA]
-  const inRange = (iso: string) => Boolean(lo && hi && iso > lo && iso < hi)
   const cells = monthCells(view.year, view.month, weekStart)
   const arrowProps = {
     size: 14,
@@ -251,58 +251,16 @@ export function DateRangePicker({
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-y-0.5" onMouseLeave={() => setHover(null)}>
-            {cells.map((cell) => {
-              if (!cell.inMonth) {
-                return (
-                  <span
-                    key={cell.iso}
-                    aria-hidden
-                    className="flex h-9 items-center justify-center text-sm text-foreground-faint tabular-nums"
-                  >
-                    {cell.day}
-                  </span>
-                )
-              }
-              const isEdge = cell.iso === draft.from || cell.iso === draft.to
-              const edgeLabel = edgeLabelFor(cell.iso, draft, t)
-              const dateLabel = formatIsoDateLong(cell.iso, locale)
-              return (
-                <button
-                  key={cell.iso}
-                  type="button"
-                  data-day={cell.iso}
-                  aria-pressed={isEdge}
-                  aria-current={cell.iso === today ? 'date' : undefined}
-                  aria-label={edgeLabel ? `${dateLabel} — ${edgeLabel}` : dateLabel}
-                  onClick={() => select(cell.iso)}
-                  onMouseEnter={() => setHover(cell.iso)}
-                  onFocus={() => setHover(cell.iso)}
-                  className={cn(
-                    'relative flex h-9 items-center justify-center rounded-md text-sm tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
-                    !isEdge && inRange(cell.iso) && 'bg-accent text-foreground',
-                    !isEdge &&
-                      !inRange(cell.iso) &&
-                      'text-foreground hover:bg-surface-hover active:bg-surface-active',
-                    cell.iso === today && !isEdge && 'font-bold text-foreground-strong',
-                    isEdge &&
-                      'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
-                  )}
-                >
-                  {cell.day}
-                  {cell.iso === today ? (
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'absolute bottom-0.5 h-1 w-1 rounded-full',
-                        isEdge ? 'bg-primary-foreground' : 'bg-primary',
-                      )}
-                    />
-                  ) : null}
-                </button>
-              )
-            })}
-          </div>
+          <DayGrid
+            cells={cells}
+            draft={draft}
+            lo={lo}
+            hi={hi}
+            today={today}
+            locale={locale}
+            onSelect={select}
+            onHover={setHover}
+          />
 
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-border-subtle pt-2">
             <Button
@@ -327,6 +285,96 @@ export function DateRangePicker({
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The day grid of the popover.
+ *
+ * Three kinds of cell, and the styling has to keep them apart: a day outside
+ * the displayed month (filler, not a control), an ordinary day, and an EDGE of
+ * the drafted range. An edge is the strongest thing on screen, so nothing else
+ * may share its appearance — which is why the in-range and today rules both
+ * explicitly stand down when a cell is an edge, rather than layering on top.
+ *
+ * The range interior is drawn between `lo` and `hi` exclusive, so a preview
+ * that is still being hovered does not paint the two endpoints as filled.
+ */
+function DayGrid({
+  cells,
+  draft,
+  lo,
+  hi,
+  today,
+  locale,
+  onSelect,
+  onHover,
+}: Readonly<{
+  cells: readonly MonthCell[]
+  draft: DateRange
+  lo: string
+  hi: string
+  today: string
+  locale: string
+  onSelect: (day: string) => void
+  onHover: (day: string | null) => void
+}>) {
+  const { t } = useTranslation()
+  const inRange = (iso: string) => Boolean(lo && hi && iso > lo && iso < hi)
+
+  return (
+    <div className="grid grid-cols-7 gap-y-0.5" onMouseLeave={() => onHover(null)}>
+      {cells.map((cell) => {
+        if (!cell.inMonth) {
+          return (
+            <span
+              key={cell.iso}
+              aria-hidden
+              className="flex h-9 items-center justify-center text-sm text-foreground-faint tabular-nums"
+            >
+              {cell.day}
+            </span>
+          )
+        }
+        const isEdge = cell.iso === draft.from || cell.iso === draft.to
+        const edgeLabel = edgeLabelFor(cell.iso, draft, t)
+        const dateLabel = formatIsoDateLong(cell.iso, locale)
+        return (
+          <button
+            key={cell.iso}
+            type="button"
+            data-day={cell.iso}
+            aria-pressed={isEdge}
+            aria-current={cell.iso === today ? 'date' : undefined}
+            aria-label={edgeLabel ? `${dateLabel} — ${edgeLabel}` : dateLabel}
+            onClick={() => onSelect(cell.iso)}
+            onMouseEnter={() => onHover(cell.iso)}
+            onFocus={() => onHover(cell.iso)}
+            className={cn(
+              'relative flex h-9 items-center justify-center rounded-md text-sm tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
+              !isEdge && inRange(cell.iso) && 'bg-accent text-foreground',
+              !isEdge &&
+                !inRange(cell.iso) &&
+                'text-foreground hover:bg-surface-hover active:bg-surface-active',
+              cell.iso === today && !isEdge && 'font-bold text-foreground-strong',
+              isEdge &&
+                'bg-primary font-bold text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+            )}
+          >
+            {cell.day}
+            {cell.iso === today ? (
+              <span
+                aria-hidden
+                className={cn(
+                  'absolute bottom-0.5 h-1 w-1 rounded-full',
+                  isEdge ? 'bg-primary-foreground' : 'bg-primary',
+                )}
+              />
+            ) : null}
+          </button>
+        )
+      })}
     </div>
   )
 }
