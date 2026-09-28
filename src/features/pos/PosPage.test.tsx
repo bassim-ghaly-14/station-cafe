@@ -1765,7 +1765,7 @@ describe('POS resilience on load', () => {
     try {
       renderPage()
       // The POS is up: the table grid rendered despite the settings failure.
-      await waitFor(() => expect(screen.getAllByTestId('table-card-select-1').length).toBe(1))
+      await waitFor(() => expect(screen.getAllByTestId('table-card-select-1')).toHaveLength(1))
       // Two macrotask turns: one for the rejection to be reported, one for the
       // listener above to have run.
       await new Promise((resolve) => setTimeout(resolve, 10))
