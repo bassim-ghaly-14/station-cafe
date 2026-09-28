@@ -7,11 +7,9 @@ import {
   CardHeader,
   Dialog,
   Field,
-  PinInput,
   Select,
   Switch,
   isValidDiscountPin,
-  DISCOUNT_PIN_LENGTH,
 } from '@/components/ui'
 import {
   Lock,
@@ -25,6 +23,7 @@ import {
   TriangleAlert,
 } from '@/components/ui/icon'
 import { DevAmountList } from './DevAmountList'
+import { DevDiscountPinDialog } from './DevDiscountPinDialog'
 import { useToast } from '@/components/ui/toast'
 import { api, settingsApi, MONTHLY_SALES_PERIOD_MONTHS, type CreditConfig } from '@/services/posApi'
 import { developerApi } from '@/services/developerApi'
@@ -344,6 +343,19 @@ export default function DevSettingsPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** Closing the PIN dialog always discards the draft, never keeps it. */
+  function closePinDialog() {
+    setPinDraft('')
+    setPinError(null)
+    setPinDialogOpen(false)
+  }
+
+  /** Typing a new entry clears the complaint about the previous one. */
+  function handlePinDraft(next: string) {
+    setPinDraft(next)
+    setPinError(null)
   }
 
   return (
@@ -960,69 +972,15 @@ export default function DevSettingsPage() {
         </div>
       </Dialog>
 
-      {/* Shared discount PIN */}
-      <Dialog
+      <DevDiscountPinDialog
         open={pinDialogOpen}
-        onClose={() => {
-          setPinDraft('')
-          setPinError(null)
-          setPinDialogOpen(false)
-        }}
-        title={t('dev.discountPin')}
-      >
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void saveDiscountPin()
-          }}
-        >
-          <p className="text-sm text-foreground-muted">{t('dev.discountPinHelp')}</p>
-
-          <Field
-            label={t('dev.discountPin')}
-            htmlFor="shared-discount-pin"
-            hint={t('dev.discountPinFormatHint', {
-              length: DISCOUNT_PIN_LENGTH,
-            })}
-            error={pinError}
-          >
-            <PinInput
-              id="shared-discount-pin"
-              data-dialog-autofocus
-              value={pinDraft}
-              disabled={busy === 'pin'}
-              onValueChange={(next) => {
-                setPinDraft(next)
-                setPinError(null)
-              }}
-            />
-          </Field>
-
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setPinDraft('')
-                setPinError(null)
-                setPinDialogOpen(false)
-              }}
-            >
-              {t('app.cancel')}
-            </Button>
-
-            <Button
-              type="submit"
-              loading={busy === 'pin'}
-              disabled={busy === 'pin' || !isValidDiscountPin(pinDraft)}
-            >
-              {busy === 'pin' ? null : <Save size={16} aria-hidden />}
-              {busy === 'pin' ? t('app.loading') : t('app.save')}
-            </Button>
-          </div>
-        </form>
-      </Dialog>
+        value={pinDraft}
+        error={pinError}
+        busy={busy === 'pin'}
+        onClose={closePinDialog}
+        onValueChange={handlePinDraft}
+        onSubmit={() => void saveDiscountPin()}
+      />
     </div>
   )
 }

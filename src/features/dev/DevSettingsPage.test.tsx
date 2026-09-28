@@ -171,6 +171,32 @@ describe('DevSettingsPage', () => {
     await waitFor(() => expect(screen.getByText('مُعدّ')).toBeInTheDocument())
   })
 
+  it('clears the PIN complaint as soon as the entry is corrected, and discards the draft on close', async () => {
+    page()
+    await waitFor(() => expect(mocks.discountAuthorization).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'تعيين الرمز' }))
+    const field = within(screen.getByRole('dialog')).getByLabelText('رمز تفويض الخصم')
+
+    // A backend refusal is shown under the field…
+    mocks.setDiscountPin.mockRejectedValueOnce({ message: 'db.error' })
+    fireEvent.change(field, { target: { value: '0097' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' }))
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toBeInTheDocument()
+
+    // …and a new keystroke clears it, so a corrected field is not still
+    // covered by a complaint about the old entry.
+    fireEvent.change(field, { target: { value: '0098' } })
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument()
+
+    // Cancelling throws the draft away rather than keeping it for next time.
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'إلغاء' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'تعيين الرمز' }))
+    expect(within(screen.getByRole('dialog')).getByLabelText('رمز تفويض الخصم')).toHaveValue('')
+  })
+
   it('keeps the developer data actions inside a labelled Danger Zone', async () => {
     page()
     await waitFor(() => expect(mocks.discountAuthorization).toHaveBeenCalled())
