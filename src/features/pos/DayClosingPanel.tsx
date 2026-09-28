@@ -455,7 +455,10 @@ export function DayClosingPanel({
           title={actionMode === 'settle' ? t('settlement.reviewTitle') : t('settlement.finalTitle')}
           wide
         >
-          <div className="max-h-[68vh] space-y-4 overflow-y-auto">
+          {/* `dvh`, not `vh`: this sits inside a dialog, and `vh` on a phone is
+              the height with the URL bar hidden, so the cap would let the
+              content run past the bottom of what the user can actually see. */}
+          <div className="max-h-[68dvh] space-y-4 overflow-y-auto">
             <div className="grid gap-3 rounded-md bg-surface-muted p-3 sm:grid-cols-3">
               <div className="min-w-0">
                 <p className="text-caption">{t('app.date')}</p>

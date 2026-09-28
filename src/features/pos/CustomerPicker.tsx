@@ -170,7 +170,18 @@ function CustomerResults({
         {searching ? t('pos.customerSearchResults') : t('pos.customerRegistered')}
       </p>
 
-      <ul className="grid max-h-80 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+      {/*
+       * The results list.
+       *
+       * `sm:`-only height cap and scroll, for the same reason as the POS product
+       * grid: this list lives inside a `Dialog`, and the dialog is ALREADY the
+       * scroll container on a phone. An independently scrolling list inside it
+       * is a nested scroller — dragging the results scrolls a small inner box
+       * while the dialog stays put, so a long result set becomes very hard to
+       * reach the bottom of. On desktop, where the dialog is a fixed-height
+       * card that must not grow without limit, the cap earns its keep.
+       */}
+      <ul className="grid grid-cols-1 gap-2 sm:max-h-80 sm:grid-cols-2 sm:overflow-y-auto">
         {results.map((c) => (
           <li key={c.id}>
             <button

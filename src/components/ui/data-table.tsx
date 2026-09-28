@@ -52,8 +52,39 @@ export function DataTable({
   readonly busy?: boolean
 }) {
   return (
-    <div className={cn('overflow-x-auto', className)}>
-      <table className="w-full min-w-2xl border-collapse">
+    /*
+     * The scroll container.
+     *
+     * `overscroll-x-contain` is the mobile fix for a real defect: without it,
+     * a horizontal swipe that reaches the end of the table hands the gesture to
+     * the page and scrolls it sideways on iOS, which is the "the whole screen
+     * slid" feeling. Containing it keeps the gesture inside the table.
+     *
+     * Negative inline margins + matching padding let the table bleed to the
+     * screen edge on a phone while its FIRST cell still lines up with the rest
+     * of the page. Without this, edge-to-edge content would either clip the
+     * first column or sit inset from the edge with a visible gap beside it.
+     * The `sm:` reset puts desktop back to exactly the padding it had.
+     */
+    <div
+      className={cn('-mx-3 overflow-x-auto overscroll-x-contain px-3 sm:mx-0 sm:px-0', className)}
+    >
+      {/*
+       * `min-w-2xl` is a FLOOR, not a target, and only from `sm` up.
+       *
+       * On desktop the floor is what preserves density: a 9-column operational
+       * table is more useful as a table than as a stack of cards, and columns
+       * the caller marked `hideBelow` are already gone by this width.
+       *
+       * On a phone the floor is REMOVED (`w-full min-w-0`). Forcing a 42rem
+       * minimum there meant every table opened already scrolled sideways, with
+       * the identity column — the one column a user needs to know which record
+       * they are looking at — pushed off-screen to the right. Letting the
+       * remaining columns use the real width is what makes the `hideBelow`
+       * priority system actually work: the columns that survive are the ones
+       * that fit.
+       */}
+      <table className="w-full min-w-0 border-collapse sm:min-w-2xl">
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="border-b border-border">

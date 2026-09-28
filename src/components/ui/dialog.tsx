@@ -68,7 +68,7 @@ export function Dialog({
   if (!open) return null
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-overlay p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -79,12 +79,37 @@ export function Dialog({
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         className={cn(
-          'max-h-[90vh] w-full overflow-y-auto rounded-lg border border-border-strong bg-surface-dialog p-5 shadow-xl',
-          wide ? 'max-w-2xl' : 'max-w-md',
+          /*
+           * Mobile: a SHEET. Anchored to the bottom edge, full width, no side
+           * margin, and rounded only at the top — which is what a dialog becomes
+           * when the screen it has to fit inside is 360px wide and the soft
+           * keyboard is up. Anchoring it to the bottom also puts the primary
+           * action under the thumb rather than at the top of the screen.
+           *
+           * Desktop: unchanged — a centred card with side margin and a full
+           * border radius.
+           *
+           * `dvh` (not `vh`) everywhere: on a phone `100vh` is the height of
+           * the screen with the URL bar HIDDEN, so a `vh`-based cap produces a
+           * dialog taller than what is actually visible and its footer lands
+           * below the fold. `100dvh` is the height the user can really see.
+           *
+           * `overscroll-contain` stops the scroll from chaining out to the page
+           * behind once the dialog's own content is exhausted, which on a
+           * phone otherwise slides the page out from under the dialog.
+           */
+          'flex max-h-[92dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-xl border border-border-strong bg-surface-dialog shadow-xl sm:max-h-[90dvh] sm:rounded-lg',
+          wide ? 'sm:max-w-2xl' : 'sm:max-w-md',
           className,
         )}
       >
-        <div className="mb-4 flex items-center justify-between gap-4">
+        {/*
+         * The header is `sticky` INSIDE the scrolling dialog rather than
+         * sitting outside it. A dialog's body is one scroll container, so a
+         * title that scrolled away on a long form is a title the user could
+         * not find; sticking it costs no layout and no scroll listener.
+         */}
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-surface-dialog px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
           <h2 className="text-base font-bold text-foreground-strong">{title}</h2>
           <Button
             type="button"
@@ -96,7 +121,20 @@ export function Dialog({
             <X size={16} aria-hidden />
           </Button>
         </div>
-        {children}
+
+        {/*
+         * The body. The bottom padding carries the safe-area inset on a phone,
+         * so the last field clears the iPhone home indicator and the Telegram
+         * WebApp's own bottom chrome; `sm:` drops it back to a plain gap on
+         * desktop, which has no inset to clear.
+         *
+         * The mobile keyboard is handled by the browser scrolling the focused
+         * input into view INSIDE this container — which is why the dialog, not
+         * the page behind it, is the scroll container on a phone.
+         */}
+        <div className="px-4 pt-1 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:px-5 sm:pb-5">
+          {children}
+        </div>
       </div>
     </div>
   )

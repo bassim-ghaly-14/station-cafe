@@ -87,7 +87,7 @@ export function Drawer({
   if (!open) return null
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end overflow-hidden bg-overlay motion-safe:animate-[drawer-scrim-in_150ms_ease-out]"
+      className="fixed inset-0 z-50 flex items-end justify-end overflow-hidden bg-overlay max-sm:justify-center motion-safe:animate-[drawer-scrim-in_150ms_ease-out]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -98,14 +98,46 @@ export function Drawer({
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         className={cn(
-          'flex h-full w-full flex-col border-s border-border-strong bg-surface-dialog shadow-xl motion-safe:animate-[drawer-panel-in_180ms_cubic-bezier(0.22,1,0.36,1)]',
+          /*
+           * Desktop (unchanged): a full-height panel anchored to the inline end,
+           * entering from the side.
+           *
+           * Phone: the SAME element becomes a bottom sheet. A record inspector
+           * (a customer, an employee) is tall content, and on a 360px screen a
+           * full-height side panel is a takeover that leaves no visible context
+           * and no obvious relationship to the list it came from. Rising from
+           * the bottom edge instead keeps the sheet's own header and footer
+           * where the thumb is.
+           *
+           * The two presentations are the same markup with different utilities
+           * rather than two components, so every existing caller keeps working
+           * and there is still exactly one drawer implementation.
+           *
+           * `max-sm:` (not `sm:`) because the phone case is the EXCEPTION here,
+           * and the desktop classes stay exactly as they were.
+           */
+          'flex w-full flex-col border-border-strong bg-surface-dialog shadow-xl',
+          /*
+           * The entrance animation is scoped per breakpoint rather than applied
+           * twice. The two keyframes move the panel along DIFFERENT axes — the
+           * sheet rises, the drawer slides in from the side — so exactly one may
+           * be active at a width, and `twMerge` would otherwise collapse two
+           * competing `animation` values down to the last one listed.
+           */
+          // Phone: bottom-anchored, capped to the visible viewport, rounded on
+          // top only, and lifted clear of the home indicator.
+          'max-h-[92dvh] max-sm:rounded-t-xl max-sm:border-t max-sm:pb-[env(safe-area-inset-bottom)]',
+          'max-sm:motion-safe:animate-[sheet-panel-in_200ms_cubic-bezier(0.22,1,0.36,1)]',
+          // Desktop: full height, side border only, enters from the side.
+          'sm:h-full sm:max-h-none sm:rounded-none sm:border-s sm:pb-0',
+          'sm:motion-safe:animate-[drawer-panel-in_180ms_cubic-bezier(0.22,1,0.36,1)]',
           WIDTHS[width],
           className,
         )}
       >
         {/* The header sits OUTSIDE the scrolling body, so it is already sticky
             with no scroll listener and no layout jitter. */}
-        <div className="flex items-start justify-between gap-4 border-b border-border-subtle bg-surface-dialog px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-border-subtle bg-surface-dialog px-4 py-4 sm:px-5">
           {header ?? (
             <div className="min-w-0">
               <h2 className="text-section truncate">{title}</h2>
@@ -125,12 +157,12 @@ export function Drawer({
 
         {/* The body owns the scroll so the header and footer stay put on a
             short window; `min-h-0` is what lets a flex child actually shrink. */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {children}
         </div>
 
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle px-5 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border-subtle px-4 py-3 sm:px-5">
             {footer}
           </div>
         ) : null}

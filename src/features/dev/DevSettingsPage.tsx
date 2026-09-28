@@ -360,7 +360,8 @@ export default function DevSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    /* Steps down to `gap-4` on a phone — see the note in `CatalogPage`. */
+    <div className="flex flex-col gap-4 sm:gap-6">
       {/* Page header */}
       <header className="flex flex-col gap-1">
         <h1 className="text-heading flex items-center gap-2">

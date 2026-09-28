@@ -189,7 +189,7 @@ export function PrintPreviewDialog({
       title={t('print.previewTitle')}
       className={
         expanded
-          ? 'w-[min(calc(100vw-1rem),42rem)] max-h-[calc(100vh-1rem)] max-w-2xl'
+          ? 'w-[min(calc(100vw-1rem),42rem)] max-h-[calc(100dvh-1rem)] max-w-2xl'
           : 'w-[min(calc(100vw-1rem),30rem)] max-w-120'
       }
     >

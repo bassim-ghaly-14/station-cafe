@@ -279,7 +279,8 @@ export function CloseShiftDialog({
   const { t } = useTranslation()
   return (
     <Dialog open onClose={onCancel} title={t('shift.closeTitle')} wide>
-      <div className="max-h-[65vh] space-y-4 overflow-y-auto">
+      {/* `dvh`, not `vh` — see the note in `DayClosingPanel`. */}
+      <div className="max-h-[65dvh] space-y-4 overflow-y-auto">
         <CloseShiftMeta preview={preview} />
 
         <ReconciliationDocument preview={preview} />

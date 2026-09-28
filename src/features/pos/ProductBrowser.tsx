@@ -19,6 +19,24 @@ type Department = 'CAFE' | 'WASH'
 
 const DEPARTMENTS: Department[] = ['CAFE', 'WASH']
 
+/**
+ * The shared grid for the category list and the product list.
+ *
+ * Two columns on a phone, three from `sm` up — chosen so a product name and its
+ * price both fit legibly at 360px rather than being truncated to nothing.
+ *
+ * The height cap and the internal scroll are `sm:`-only, and that is the whole
+ * point of this constant. The POS page is a two-pane desktop layout: a fixed
+ * product grid beside a live order panel, each scrolling inside itself. On a
+ * phone the two panes are stacked and the PAGE is the only scroll container, so
+ * a capped, independently scrolling grid inside it produced the nested-scroll
+ * trap — dragging through the products scrolled a small inner box while the
+ * page stayed put, and the cashier had to find the right scroll target. Letting
+ * the phone grid grow with the page removes the inner scroller entirely, which
+ * is why the cap is not applied below `sm`.
+ */
+const PRODUCT_GRID = 'grid grid-cols-2 gap-2 sm:max-h-72 sm:grid-cols-3 sm:overflow-y-auto'
+
 interface CategoryGroup {
   id: number
   name: string
@@ -117,7 +135,8 @@ export function ProductBrowser({
         categories.length === 0 ? (
           <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noCategories')}</p>
         ) : (
-          <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+          // See PRODUCT_GRID for why the internal scroll is desktop-only.
+          <div className={PRODUCT_GRID}>
             {categories.map((category) => (
               <button
                 key={category.id}
@@ -137,7 +156,7 @@ export function ProductBrowser({
       ) : activeCategory.items.length === 0 ? (
         <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noItems')}</p>
       ) : (
-        <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+        <div className={PRODUCT_GRID}>
           {activeCategory.items.map((product) => (
             <button
               key={product.id}

@@ -53,7 +53,26 @@ export function TableActionGroup({
   readonly children: React.ReactNode
 }) {
   return (
-    <div className={cn('flex items-center justify-end gap-1 [&_svg]:size-6', className)}>
+    /*
+     * `flex-wrap` is the mobile fix, and it is not cosmetic.
+     *
+     * The employees row can carry seven of these buttons (four attendance
+     * actions, a divider, details, edit, deactivate) at a 48px target each —
+     * 336px of control in a single cell. On a 360px phone that is wider than
+     * the screen, so the cell forced the whole table into a horizontal scroll
+     * and the actions were the reason for scrolling: a user had to drag the
+     * table sideways just to reach the buttons, and a row whose actions do not
+     * fit is a row whose actions nobody uses.
+     *
+     * Wrapping puts them on two rows inside the cell instead. The dividers sit
+     * between families, so a wrap between them still reads correctly, and the
+     * row simply grows taller — which is the right trade on a phone, where
+     * vertical space is cheap and horizontal scrolling is not.
+     *
+     * The inline-end alignment is kept so a wrapped group still hugs the same
+     * edge it did on one line.
+     */
+    <div className={cn('flex flex-wrap items-center justify-end gap-1 [&_svg]:size-6', className)}>
       {children}
     </div>
   )

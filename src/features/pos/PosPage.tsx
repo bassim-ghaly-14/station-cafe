@@ -37,6 +37,7 @@ import {
 } from '@/services/posApi'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { tableBadgeVariant } from '@/lib/status-badge'
+import { cn } from '@/lib/utils'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { useRouter } from '@/app/router'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
@@ -315,7 +316,13 @@ export default function PosPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    /*
+     * `gap-5` steps down to `gap-4` on a phone. Horizontal width is the scarce
+     * resource on a phone, but a stack of cards separated by five 20px gaps is
+     * a lot of scrolling past nothing, and it pushes the product pad below the
+     * fold.
+     */
+    <div className="flex flex-col gap-4 sm:gap-5">
       {/*
         Page header: shift/session state is the first thing a cashier must read,
         and history ("فواتير اليوم") belongs with operations — never next to the
@@ -357,12 +364,32 @@ export default function PosPage() {
         </div>
       </header>
 
+      {/*
+       * The selling workspace.
+       *
+       * Desktop: tables on the inline-start, the order panel in a 460px column
+       * at the inline-end. Unchanged.
+       *
+       * Phone: the SAME two elements in the OPPOSITE order. With an order open
+       * the order panel is what the cashier is working on — it holds the
+       * product pad, the running total and the pay action — so putting it
+       * first means the products and the pay button are reachable without
+       * scrolling past every table card first. Before this, adding an item to
+       * an order on a phone meant: scroll down past the whole table grid,
+       * scroll back up to the order panel, repeat on every single item.
+       *
+       * The switch is `order-*` classes rather than a reordered DOM, so the
+       * reading order and the desktop layout are both untouched.
+       */}
       <div
         className={
           hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
         }
       >
-        <Card aria-label={t('pos.tables')} className={hasWorkspace ? 'min-w-0' : 'w-full'}>
+        <Card
+          aria-label={t('pos.tables')}
+          className={cn(hasWorkspace ? 'min-w-0' : 'w-full', hasWorkspace && 'order-2 xl:order-1')}
+        >
           <CardHeader title={t('pos.tables')} subtitle={t('pos.tablesLegend', counts)} />
 
           {takeaways && takeaways.length > 0 ? (
@@ -402,7 +429,8 @@ export default function PosPage() {
           <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
         </Card>
 
-        <div className={hasWorkspace ? 'min-w-0' : ''}>
+        {/* The counterpart to the tables card's `order-2`: first on a phone. */}
+        <div className={cn(hasWorkspace && 'order-1 min-w-0 xl:order-2')}>
           {activeOrder ? (
             <>
               {takeawayActive ? (

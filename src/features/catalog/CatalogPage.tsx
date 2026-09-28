@@ -285,7 +285,12 @@ export default function CatalogPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    /*
+     * `gap-6` steps down to `gap-4` on a phone, for the same reason the POS page
+     * does: a stack of cards separated by 24px is a lot of scrolling past
+     * nothing on a 360px screen.
+     */
+    <div className="flex flex-col gap-4 sm:gap-6">
       <CatalogHeader
         resultCount={filtered.length}
         activeCount={counts.active}
