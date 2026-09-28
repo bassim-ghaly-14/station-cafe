@@ -16,12 +16,24 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 /**
  * A form label. It REQUIRES `htmlFor`: a label with no control is not a label,
  * it is unassociated text that a screen reader reads twice.
+ *
+ * `htmlFor` is destructured rather than left in the rest-spread on purpose. The
+ * association is the one attribute this component exists to get right, so it is
+ * named at the element instead of arriving invisibly through a spread — which
+ * also means a future edit cannot quietly drop it.
  */
 export function Label({
   className,
+  htmlFor,
   ...props
 }: LabelHTMLAttributes<HTMLLabelElement> & { readonly htmlFor: string }) {
-  return <label className={cn('text-base font-bold text-foreground-muted', className)} {...props} />
+  return (
+    <label
+      htmlFor={htmlFor}
+      className={cn('text-base font-bold text-foreground-muted', className)}
+      {...props}
+    />
+  )
 }
 
 /**
