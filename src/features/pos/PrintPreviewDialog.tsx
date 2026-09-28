@@ -70,6 +70,22 @@ type PreviewState =
   | { status: 'empty'; docType: string }
   | { status: 'error'; reason: string | null }
 
+/**
+ * The print command for a document that can be reprinted.
+ *
+ * A reprintable target is a persisted document, never the live order — an order
+ * is printed once, from checkout, and re-printing it here would produce a
+ * second copy of a ticket the customer already has. `order` and `wash_ticket`
+ * share `order_id` and reach the same ticket command, which is why the final
+ * branch covers both rather than naming a fifth case.
+ */
+function reprintRequest(target: PrintPreviewTarget): Promise<PrintOutcome> {
+  if (target.kind === 'invoice') return api.printInvoice(target.invoice_id)
+  if (target.kind === 'shift_report') return api.printShift(target.shift_id)
+  if (target.kind === 'day_report') return api.printDay(target.day_id)
+  return api.printTicket(target.order_id)
+}
+
 export function PrintPreviewDialog({
   target,
   onClose,
@@ -152,14 +168,7 @@ export function PrintPreviewDialog({
   const reprint = () => {
     if (!canReprint) return
     setPrinting(true)
-    const request: Promise<PrintOutcome> =
-      target.kind === 'invoice'
-        ? api.printInvoice(target.invoice_id)
-        : target.kind === 'shift_report'
-          ? api.printShift(target.shift_id)
-          : target.kind === 'day_report'
-            ? api.printDay(target.day_id)
-            : api.printTicket(target.order_id)
+    const request: Promise<PrintOutcome> = reprintRequest(target)
     request
       .then((outcome) =>
         toast(
