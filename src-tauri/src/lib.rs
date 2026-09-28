@@ -211,6 +211,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::status::db_status,
+            commands::status::local_access_qr,
             commands::auth::login,
             commands::auth::logout,
             commands::auth::me,

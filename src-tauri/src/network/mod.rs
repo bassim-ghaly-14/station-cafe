@@ -17,4 +17,5 @@
 pub mod api;
 pub mod config;
 pub mod mdns;
+pub mod qr;
 pub mod server;

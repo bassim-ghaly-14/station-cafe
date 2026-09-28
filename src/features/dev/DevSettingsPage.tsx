@@ -40,6 +40,7 @@ import {
 } from '@/lib/formatting'
 import { useSession } from '@/features/auth/useSession'
 import { ChartColorsCard } from './ChartColorsCard'
+import { LocalAccessCard } from './LocalAccessCard'
 import { FormattingPreview } from './FormattingPreview'
 
 /** Shared control styling for the formatting selects. */
@@ -497,6 +498,7 @@ export default function DevSettingsPage() {
 
       {/* Chart bar colours — one card, one store, every chart in the app. */}
       <ChartColorsCard />
+      <LocalAccessCard />
 
       {/* Global display formatting */}
       <Card>

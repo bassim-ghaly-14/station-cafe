@@ -25,6 +25,15 @@ tauri = { version = "2.11.6", features = [] }
 tauri-plugin-log = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 tauri-plugin-process = "2.3.1"
+# QR generation for local access, rendered in Rust.
+#
+# The payload is a bare address and nothing else, so it is assembled next to
+# the code that knows the real port and the machine's real IP — not
+# reassembled from scattered frontend state where a token could creep in.
+# Rendering here also keeps it deterministic and unit-testable, and avoids
+# pulling a QR dependency into the React bundle for one image.
+# MIT OR Apache-2.0.
+qrcode = "0.14.1"
 # mDNS/DNS-SD advertisement so a manager's phone can find Station by name.
 #
 # Pure Rust, cross-platform (Windows 10/11 and macOS), no Bonjour and no system

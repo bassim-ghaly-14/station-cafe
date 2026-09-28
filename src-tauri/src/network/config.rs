@@ -82,6 +82,15 @@ pub fn set(conn: &Db, actor: &User, cfg: &NetworkConfig) -> AppResult<()> {
     if cfg.bind.trim() == ANY_INTERFACE || cfg.bind.trim() == "::" {
         return Err(AppError::validation("network.bind_not_permitted"));
     }
+    // A loopback bind is equally useless: nothing on the LAN can reach it, and
+    // the access QR would encode an address that resolves to the scanning
+    // device itself. Refused here so it can never be configured in the first
+    // place.
+    if let Ok(ip) = cfg.bind.trim().parse::<std::net::IpAddr>() {
+        if ip.is_loopback() || ip.is_unspecified() {
+            return Err(AppError::validation("network.bind_not_permitted"));
+        }
+    }
 
     let json = serde_json::to_string(cfg)
         .map_err(|e| AppError::internal(format!("serialize network config: {e}")))?;
@@ -166,10 +175,11 @@ mod tests {
 
     #[test]
     fn binding_every_interface_is_refused() {
-        // 0.0.0.0 would publish the API on every adapter the machine has.
+        // 0.0.0.0 would publish the API on every adapter the machine has, and a
+        // loopback bind is unreachable from the LAN while still producing a QR.
         let conn = fresh();
         let mgr = login_as(&conn, "manager");
-        for bind in ["0.0.0.0", "::"] {
+        for bind in ["0.0.0.0", "::", "127.0.0.1", "::1"] {
             let err = set(
                 &conn,
                 &mgr,
