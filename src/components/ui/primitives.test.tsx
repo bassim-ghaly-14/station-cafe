@@ -6,7 +6,7 @@ import { EmployeeAvatar } from './employee-avatar'
 import { getRoleVisual } from '@/lib/roles'
 import { Loader } from './loader'
 import { Skeleton } from './skeleton'
-import { Switch } from './input'
+import { Switch, Field, Input } from './input'
 import { invoiceBadgeVariant, printJobBadgeVariant, tableBadgeVariant } from '@/lib/status-badge'
 
 describe('Badge', () => {
@@ -187,4 +187,53 @@ describe('semantic badge mappings', () => {
     ['OPEN', 'info'],
     ['OCCUPIED', 'success'],
   ])('maps table %s to %s', (status, expected) => expect(tableBadgeVariant(status)).toBe(expected))
+})
+
+describe('Field', () => {
+  it('associates its label with the control even when the caller names no id', () => {
+    render(
+      <Field label="المبلغ المستلم">
+        <Input data-testid="amount" />
+      </Field>,
+    )
+    const input = screen.getByTestId('amount')
+    // The label points at the control, so clicking it focuses the input and a
+    // screen reader announces the pair as one thing.
+    expect(input.getAttribute('id')).toBeTruthy()
+    expect(screen.getByText('المبلغ المستلم')).toHaveAttribute(
+      'for',
+      input.getAttribute('id') ?? '',
+    )
+  })
+
+  it('keeps a caller-supplied id instead of replacing it', () => {
+    render(
+      <Field label="ملاحظة">
+        <Input id="my-note" data-testid="note" />
+      </Field>,
+    )
+    expect(screen.getByTestId('note')).toHaveAttribute('id', 'my-note')
+    expect(screen.getByText('ملاحظة')).toHaveAttribute('for', 'my-note')
+  })
+
+  it('honours an explicit htmlFor for a control rendered elsewhere', () => {
+    render(
+      <>
+        <Field label="الاسم" htmlFor="outside-control">
+          <span>controlled elsewhere</span>
+        </Field>
+        <input id="outside-control" />
+      </>,
+    )
+    expect(screen.getByText('الاسم')).toHaveAttribute('for', 'outside-control')
+  })
+
+  it('leaves a non-control child exactly as passed', () => {
+    const { container } = render(
+      <Field label="مجمّع">
+        <div data-testid="group">anything</div>
+      </Field>,
+    )
+    expect(container.querySelector('div[data-testid="group"]')).toBeTruthy()
+  })
 })

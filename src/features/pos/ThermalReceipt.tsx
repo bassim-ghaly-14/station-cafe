@@ -49,6 +49,20 @@ function textStyle(op: PreviewTextOp): CSSProperties {
 
 const LOGO_MM = 31
 
+/**
+ * A stable key for each op in the print IR.
+ *
+ * The ops are an ordered document, not a re-orderable list: nothing is ever
+ * inserted, removed or moved within one render, so the op's own position IS its
+ * identity and is what React needs. The key is stated in terms of the op rather
+ * than a bare loop counter so that reordering the switch can never silently pair
+ * a key with the wrong op, and repeated identical ops (two separators, say)
+ * still get distinct keys because the position is part of it.
+ */
+function opKey(op: { kind: string }, position: number): string {
+  return `${op.kind}-${position}`
+}
+
 export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPreview }>) {
   const { t } = useTranslation()
   let separatorIndex = 0
@@ -79,40 +93,41 @@ export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPr
     >
       <div data-testid="receipt-canvas" className="receipt-content" style={canvas}>
         {preview.ops.map((op, index) => {
+          const key = opKey(op, index)
           switch (op.kind) {
             case 'logo':
-              return <ScreenLogo key={index} align={op.align} />
+              return <ScreenLogo key={key} align={op.align} />
             case 'item':
               // The column header is emitted by the first item only. Assigning it
               // as its own statement keeps the render pure and readable.
               if (!itemHeaderShown) {
                 itemHeaderShown = true
                 return (
-                  <div key={index}>
+                  <div key={key}>
                     <ItemColumnHeader />
                     <ItemRow op={op} />
                   </div>
                 )
               }
               return (
-                <div key={index}>
+                <div key={key}>
                   <ItemRow op={op} />
                 </div>
               )
             case 'financial':
-              return <FinancialRow key={index} op={op} />
+              return <FinancialRow key={key} op={op} />
             case 'meta':
-              return <MetaRow key={index} op={op} />
+              return <MetaRow key={key} op={op} />
             case 'text': {
               if (/^-{20,}$/.test(op.text)) {
                 const current = separatorIndex
                 separatorIndex += 1
                 // The printer's first rule repeats the header edge. The screen
                 // keeps the three rules that communicate document structure.
-                if (current === 0) return <div key={index} className="h-0.5" aria-hidden />
+                if (current === 0) return <div key={key} className="h-0.5" aria-hidden />
                 return (
                   <hr
-                    key={index}
+                    key={key}
                     className="my-[1.5mm] h-px border-0 border-t border-dashed border-print-rule"
                   />
                 )
@@ -120,7 +135,7 @@ export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPr
               const arabic = /^[\p{Script=Arabic}\s]/u.test(op.text)
               return (
                 <p
-                  key={index}
+                  key={key}
                   dir={arabic ? 'rtl' : 'ltr'}
                   data-preview-text-size={`${op.width}x${op.height}`}
                   className="m-0 whitespace-pre-wrap wrap-break-words"
@@ -135,10 +150,10 @@ export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPr
             }
             case 'feed':
               return (
-                <div key={index} aria-hidden style={{ height: `${op.lines * CELL_PX * 1.28}px` }} />
+                <div key={key} aria-hidden style={{ height: `${op.lines * CELL_PX * 1.28}px` }} />
               )
             case 'cut':
-              return <PaperCut key={index} />
+              return <PaperCut key={key} />
           }
         })}
       </div>

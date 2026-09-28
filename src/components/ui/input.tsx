@@ -1,5 +1,6 @@
-import { cn } from '@/lib/utils'
+import { cloneElement, isValidElement, useId, useState } from 'react'
 import type { InputHTMLAttributes, LabelHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import { cn } from '@/lib/utils'
 
 const base =
   'w-full rounded-md border border-border-strong bg-surface-input px-3 py-2 text-base text-foreground placeholder:text-placeholder-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus disabled:border-border disabled:bg-surface-muted disabled:text-foreground-disabled disabled:opacity-70'
@@ -12,11 +13,27 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return <textarea className={cn(base, 'min-h-20', className)} {...props} />
 }
 
-export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
+/**
+ * A form label. It REQUIRES `htmlFor`: a label with no control is not a label,
+ * it is unassociated text that a screen reader reads twice.
+ */
+export function Label({
+  className,
+  ...props
+}: LabelHTMLAttributes<HTMLLabelElement> & { readonly htmlFor: string }) {
   return <label className={cn('text-base font-bold text-foreground-muted', className)} {...props} />
 }
 
-/** Form field with label, optional hint and error (Arabic messages). */
+/**
+ * Form field with label, optional hint and error (Arabic messages).
+ *
+ * The label is always associated with the control. When the caller does not
+ * name the control itself, a stable id is generated here and applied to both the
+ * label and the single child control, so clicking the label focuses the input
+ * and assistive technology announces the pair together. A caller that already
+ * sets an id — or passes `htmlFor` for a control rendered elsewhere — keeps
+ * exactly what it declared.
+ */
 export function Field({
   label,
   error,
@@ -31,10 +48,18 @@ export function Field({
   readonly children: React.ReactNode
   readonly htmlFor?: string
 }) {
+  const generatedId = useId()
+  // Only a single element child can take an id. Anything else (a fragment, a
+  // wrapper the caller controls) is left exactly as it was passed in.
+  const control = isValidElement<{ id?: string }>(children) ? children : null
+  const id = htmlFor ?? control?.props.id ?? generatedId
+
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
+      <Label htmlFor={id}>{label}</Label>
+      {control && control.props.id === undefined && !htmlFor
+        ? cloneElement(control, { id })
+        : children}
       {hint && !error ? <p className="text-caption">{hint}</p> : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
@@ -49,7 +74,6 @@ export function Field({
  * Password input with an accessible visibility toggle (eye / eye-off).
  * RTL-friendly: the toggle sits at the inline-end edge; layout is untouched.
  */
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff } from './icon'
 
