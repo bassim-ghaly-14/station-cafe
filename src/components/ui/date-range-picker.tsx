@@ -8,6 +8,7 @@
  * while each date value keeps its own locale-correct ordering.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { isRtl } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
@@ -34,6 +35,17 @@ export interface DateRange {
 
 const NAV_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground active:bg-surface-active'
+
+/**
+ * The name a day carries when it is one end of the draft range, or null when it
+ * is an ordinary day. Both ends are announced, so the label is what tells a
+ * screen reader which end it is on.
+ */
+function edgeLabelFor(iso: string, draft: DateRange, t: TFunction): string | null {
+  if (iso === draft.from) return t('dateRange.start')
+  if (iso === draft.to) return t('dateRange.end')
+  return null
+}
 
 /** Visible month for an ISO date (falls back to the Station business month). */
 function viewMonthOf(iso: string): { year: number; month: number } {
@@ -253,12 +265,7 @@ export function DateRangePicker({
                 )
               }
               const isEdge = cell.iso === draft.from || cell.iso === draft.to
-              const edgeLabel =
-                cell.iso === draft.from
-                  ? t('dateRange.start')
-                  : cell.iso === draft.to
-                    ? t('dateRange.end')
-                    : null
+              const edgeLabel = edgeLabelFor(cell.iso, draft, t)
               const dateLabel = formatIsoDateLong(cell.iso, locale)
               return (
                 <button

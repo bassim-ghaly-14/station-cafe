@@ -257,16 +257,22 @@ function Money({
   )
 }
 
+/**
+ * How the logo is justified inside the receipt, per the op's own alignment.
+ *
+ * The three values are the only ones the print IR can carry, and they map onto
+ * the three flex justifications, so the mapping is stated once here.
+ */
+function screenLogoJustify(align: 'left' | 'center' | 'right'): CSSProperties['justifyContent'] {
+  if (align === 'center') return 'center'
+  if (align === 'right') return 'flex-end'
+  return 'flex-start'
+}
+
 /** The canonical 1254px source is used for screens; ESC/POS still uses its raster. */
 function ScreenLogo({ align }: Readonly<{ readonly align: 'left' | 'center' | 'right' }>) {
   return (
-    <div
-      className="mb-[3mm] flex"
-      style={{
-        justifyContent:
-          align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
-      }}
-    >
+    <div className="mb-[3mm] flex" style={{ justifyContent: screenLogoJustify(align) }}>
       <img
         data-testid="print-logo"
         src="/station-print.png"

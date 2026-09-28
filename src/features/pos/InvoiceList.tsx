@@ -145,26 +145,36 @@ function InvoiceTime({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
   )
 }
 
+/**
+ * Where the order was placed: the `TW-` external number for a takeaway, the
+ * table label for a table order.
+ *
+ * The takeaway number is Latin text inside an RTL row, so it keeps its own
+ * `dir="ltr"` isolate and tabular figures. A takeaway with no number still says
+ * so in words, and a table order with no label still says which kind it was.
+ */
+function OrderContext({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
+  const { t } = useTranslation()
+  if (invoice.order_type === 'TAKEAWAY') {
+    if (typeof invoice.takeaway_no !== 'number') return t('pos.orderType.TAKEAWAY')
+    return (
+      <span dir="ltr" className="tabular-nums">
+        TW-{invoice.takeaway_no}
+      </span>
+    )
+  }
+  return invoice.table_label ?? t('pos.orderType.TABLE')
+}
+
 /** Invoice number as the row's anchor, with the external-order number beside it. */
 function InvoiceIdentity({ invoice }: Readonly<{ readonly invoice: InvoiceRow }>) {
-  const { t } = useTranslation()
   return (
     <span className="block min-w-0">
       <span className="block truncate text-body font-bold text-foreground-strong" dir="ltr">
         #{invoice.invoice_no}
       </span>
       <span className="mt-0.5 block truncate text-caption">
-        {invoice.order_type === 'TAKEAWAY' ? (
-          typeof invoice.takeaway_no === 'number' ? (
-            <span dir="ltr" className="tabular-nums">
-              TW-{invoice.takeaway_no}
-            </span>
-          ) : (
-            t('pos.orderType.TAKEAWAY')
-          )
-        ) : (
-          (invoice.table_label ?? t('pos.orderType.TABLE'))
-        )}
+        <OrderContext invoice={invoice} />
       </span>
     </span>
   )

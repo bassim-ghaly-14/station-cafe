@@ -27,7 +27,7 @@ import { CustomerDialog, type CustomerDialogMode } from './CustomerDialog'
 import { CustomerFilters } from './CustomerFilters'
 import { CustomerKpiBand } from './CustomerKpiBand'
 import { CustomerTable } from './CustomerTable'
-import { useCustomerList, useCustomerOverview } from './useCustomerData'
+import { useCustomerList, useCustomerOverview, type CustomerOverviewState } from './useCustomerData'
 import { customersApi } from '@/services/customersApi'
 import type { CustomerRow } from '@/services/customersApi'
 
@@ -41,6 +41,26 @@ const NO_RANGE = { from: '', to: '' }
  * financial record, so no click may ever remove one.
  */
 type PendingDelete = { customer: CustomerRow } | null
+
+/**
+ * The analytics band in its two states: a failed load with nothing to show, or
+ * the KPI band itself.
+ *
+ * An error is only shown when there is genuinely nothing to fall back on. A
+ * stale overview from a previous range still renders, so a failed refresh never
+ * blanks figures the user was already reading.
+ */
+function CustomerOverviewBand({
+  overview,
+}: Readonly<{ readonly overview: CustomerOverviewState }>) {
+  const { t } = useTranslation()
+  if (overview.error && !overview.overview) {
+    return (
+      <ErrorState message={overview.error} onRetry={overview.reload} retryLabel={t('app.retry')} />
+    )
+  }
+  return <CustomerKpiBand overview={overview.overview} loading={overview.loading} />
+}
 
 /**
  * The customer list in its four states: failed, loading, empty, and the table
@@ -240,17 +260,7 @@ export default function CustomersPage() {
       />
 
       {/* The analytics band is mounted only for a role that may have it. */}
-      {canSeeAnalytics ? (
-        overview.error && !overview.overview ? (
-          <ErrorState
-            message={overview.error}
-            onRetry={overview.reload}
-            retryLabel={t('app.retry')}
-          />
-        ) : (
-          <CustomerKpiBand overview={overview.overview} loading={overview.loading} />
-        )
-      ) : null}
+      {canSeeAnalytics ? <CustomerOverviewBand overview={overview} /> : null}
 
       {/* Four distinct situations, four distinct presentations. */}
       <CustomerListSection

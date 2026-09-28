@@ -29,6 +29,18 @@ const STAMP = '2026-09-25T14:35:27'
 const MORNING_STAMP = '2026-09-25T09:56:00'
 const DATE_ONLY = '2026-09-25'
 
+/**
+ * The currency-placement preview, as the three words the row can show.
+ *
+ * A hidden currency has no placement, so it reads OFF; otherwise the position
+ * is the one the draft asks for.
+ */
+function currencyPositionPreview(money: FormattingPreferences['money']): string {
+  if (!money.showCurrency) return 'OFF'
+  if (money.currencyPosition === 'before') return 'BEFORE'
+  return 'AFTER'
+}
+
 /** One labelled line. The value is bidi-isolated, so it is never reordered. */
 function Row({
   label,
@@ -170,13 +182,7 @@ export function FormattingPreview({ draft }: Readonly<{ readonly draft: Formatti
             <code className="text-xs">{draft.money.useThousandsSeparator ? '1,000' : '1000'}</code>
           </Row>
           <Row label={t('dev.previewCurrency')}>
-            <code className="text-xs">
-              {!draft.money.showCurrency
-                ? 'OFF'
-                : draft.money.currencyPosition === 'before'
-                  ? 'BEFORE'
-                  : 'AFTER'}
-            </code>
+            <code className="text-xs">{currencyPositionPreview(draft.money)}</code>
           </Row>
           <Row label={t('dev.previewCompact')}>
             <code className="text-xs">
