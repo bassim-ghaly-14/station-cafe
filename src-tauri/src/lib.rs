@@ -23,6 +23,9 @@ mod deletion_test;
 #[cfg(test)]
 mod employees_test;
 mod error;
+mod network;
+#[cfg(test)]
+mod network_test;
 #[cfg(test)]
 mod expense_categories_test;
 mod expenses_analytics_test;
@@ -46,15 +49,62 @@ mod workflow_test;
 pub mod time;
 mod wash_tickets_test;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 /// Shared application state: connection pool is a single connection
 /// (SQLite is file-based; serialize access through a mutex).
+///
+/// The connection is behind an `Arc` because the local HTTP API thread shares
+/// THE SAME connection rather than opening its own. One connection, one mutex,
+/// one set of transactions: the network surface cannot interleave with the POS
+/// any differently from a second desktop command.
 pub struct AppState {
-    pub conn: Mutex<db::Db>,
+    pub conn: Arc<Mutex<db::Db>>,
     /// One-time, non-persistent authorization for the mandated clear→seed flow.
     pub developer_seed_grant: Mutex<Option<(String, services::auth::User)>>,
+    /// The running local API listener, if the owner enabled it. `None` means no
+    /// port is open. Dropping the app closes it.
+    pub api: Mutex<Option<network::server::ServerHandle>>,
+}
+
+/// Start the local HTTP API if the owner enabled it.
+///
+/// Returns `None` — never an error the caller must handle — because no network
+/// condition is a reason to refuse to run a till. The reason is logged, so the
+/// condition stays diagnosable rather than silent.
+fn start_local_api(conn: &Arc<Mutex<db::Db>>) -> Option<network::server::ServerHandle> {
+    let cfg = {
+        let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
+        network::config::get(&guard).unwrap_or_default()
+    };
+
+    if !cfg.enabled {
+        log::info!("local api: disabled by configuration");
+        return None;
+    }
+
+    let ip = match network::api::resolve_bind_address(&cfg.bind) {
+        Ok(ip) => ip,
+        Err(e) => {
+            log::error!("local api: cannot resolve bind address ({e}); the POS is unaffected");
+            return None;
+        }
+    };
+    let addr = std::net::SocketAddr::new(ip, cfg.port);
+
+    match network::server::start(addr, Arc::clone(conn)) {
+        Ok(handle) => {
+            log::info!("local api: listening on http://{}", handle.local_addr());
+            Some(handle)
+        }
+        Err(e) => {
+            // Most often: the port is already taken by another program, or the
+            // interface disappeared. Neither may stop the POS.
+            log::error!("local api: not started ({e}); the POS is unaffected");
+            None
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -90,11 +140,36 @@ pub fn run() {
             // it is deterministic and safe to re-run.
             seed::run_if_empty(&conn)?;
 
+            // The local API shares the POS's own connection, so it competes
+            // for the lock exactly as a desktop command does and can never
+            // observe or mutate a different copy of the business data.
+            let conn = Arc::new(Mutex::new(conn));
+
+            // Starting the network is OPTIONAL. Every failure below is
+            // reported and swallowed on purpose: a cafe whose port is taken,
+            // or whose LAN address cannot be resolved, must still open its
+            // till in the morning. Station is a local POS first.
+            let api = start_local_api(&conn);
+
             app.manage(AppState {
-                conn: Mutex::new(conn),
+                conn,
                 developer_seed_grant: Mutex::new(None),
+                api: Mutex::new(api),
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window ends the session: stop accepting connections
+            // and release the port rather than leaving a listener behind.
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    if let Ok(mut guard) = state.api.lock() {
+                        if let Some(handle) = guard.take() {
+                            handle.stop();
+                        }
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::status::db_status,
