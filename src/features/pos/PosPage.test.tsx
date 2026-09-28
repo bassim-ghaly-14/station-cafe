@@ -251,7 +251,7 @@ describe('TableCard lifecycle UX', () => {
       </ToastProvider>,
     )
 
-    fireEvent.click(screen.getByTestId('table-card-1'))
+    fireEvent.click(screen.getByTestId('table-card-select-1'))
 
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(mocks.openTable).not.toHaveBeenCalled()

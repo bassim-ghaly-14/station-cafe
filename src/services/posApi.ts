@@ -188,7 +188,7 @@ export interface PreviewLogoOp {
   width_dots: number
   height_dots: number
   bits_hex: string
-  align: 'left' | 'center' | 'right'
+  align: PreviewTextAlign
 }
 
 export interface PreviewFeedOp {
@@ -203,7 +203,7 @@ export interface PreviewItemOp {
   quantity: string
   unit_price: string
   line_total: string
-  align: 'left' | 'center' | 'right'
+  align: PreviewTextAlign
 }
 
 /** Authoritative financial fields formatted by the backend template. */
@@ -212,7 +212,7 @@ export interface PreviewFinancialOp {
   label: string
   value: string
   total: boolean
-  align: 'left' | 'center' | 'right'
+  align: PreviewTextAlign
 }
 
 /**
@@ -229,7 +229,7 @@ export interface PreviewMetaOp {
   value: string
   /** Print emphasis — the document's own moment is set apart by weight. */
   emphasis: boolean
-  align: 'left' | 'center' | 'right'
+  align: PreviewTextAlign
 }
 
 export interface PreviewCutOp {

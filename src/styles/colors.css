@@ -38,13 +38,9 @@
   --palette-brand-800: #5e3f25;
   --palette-brand-900: #432d1c;
   --palette-brand-950: #2b1d12;
-}
 
-/* ---------------------------------------------------------------------------
- * 2. Semantic tokens — LIGHT theme (default).
- * ------------------------------------------------------------------------- */
-:root {
-  /* Backgrounds & surfaces (hierarchy: background < surface < card < overlay). */
+  /* 2. Semantic tokens — LIGHT theme (default).
+     Backgrounds & surfaces (hierarchy: background < surface < card < overlay). */
   --background: #faf6f0; /* page / app background */
   --surface: #fffdf9; /* base raised panels: sidebar, header, cards, controls */
   --surface-muted: #f4ede3; /* subdued panels, totals, metric boxes */

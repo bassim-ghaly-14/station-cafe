@@ -27,8 +27,8 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
   const token = sessionToken()
   try {
     return await invoke<T>(cmd, { token, ...args })
-  } catch (raw) {
-    throw toApiError(raw)
+  } catch (error_) {
+    throw toApiError(error_)
   }
 }
 
@@ -36,8 +36,8 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
 export async function callPublic<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(cmd, args ?? {})
-  } catch (raw) {
-    throw toApiError(raw)
+  } catch (error_) {
+    throw toApiError(error_)
   }
 }
 

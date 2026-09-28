@@ -767,17 +767,7 @@ export function TableCard({
 
   return (
     <article
-      role="button"
-      aria-label={`${tv.label} — ${statusLabel}`}
       aria-current={selected ? true : undefined}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onSelect()
-        }
-      }}
-      tabIndex={0}
       data-testid={`table-card-${tv.id}`}
       className={[
         'group relative flex min-h-56 cursor-pointer flex-col overflow-hidden',
@@ -792,6 +782,19 @@ export function TableCard({
             : 'border-border-strong bg-transparent hover:border-border-accent-hover hover:bg-surface-hover',
       ].join(' ')}
     >
+      {/* Selecting the table is a real <button> stretched across the whole card
+          surface. The card itself cannot be a button: it contains other buttons,
+          which HTML forbids inside a <button>. The informational blocks below are
+          pointer-transparent so a click anywhere on the card lands on this
+          button, and the action row sits above it in the stacking order. */}
+      <button
+        type="button"
+        aria-label={`${tv.label} — ${statusLabel}`}
+        onClick={onSelect}
+        data-testid={`table-card-select-${tv.id}`}
+        className="absolute inset-0 z-0 cursor-pointer"
+      />
+
       {/* Status accent */}
       <span
         aria-hidden
@@ -808,7 +811,7 @@ export function TableCard({
       />
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-3">
+      <div className="pointer-events-none flex items-start justify-between gap-3">
         <p className="min-w-0 truncate text-lg font-bold leading-tight text-foreground-strong">
           {tv.label}
         </p>
@@ -819,7 +822,7 @@ export function TableCard({
       </div>
 
       {/* Main information */}
-      <div className="mt-4 flex min-h-16 flex-1 flex-col justify-center">
+      <div className="pointer-events-none mt-4 flex min-h-16 flex-1 flex-col justify-center">
         {isEmpty ? (
           <>
             <p className="text-xs font-medium text-foreground-subtle">{t('pos.items')}</p>
@@ -846,7 +849,7 @@ export function TableCard({
       </div>
 
       {/* Daily counters */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="pointer-events-none mt-3 grid grid-cols-2 gap-2">
         <div className="min-w-0 rounded-md border border-border bg-surface-muted px-2.5 py-2">
           <p className="truncate text-[10px] font-medium leading-tight text-foreground-subtle">
             {t('pos.opensToday')}
@@ -869,7 +872,7 @@ export function TableCard({
       </div>
 
       {/* State-dependent actions */}
-      <div className="mt-3 flex min-h-9 items-center gap-2">
+      <div className="relative z-10 mt-3 flex min-h-9 items-center gap-2">
         {isEmpty ? (
           <Button
             size="sm"
