@@ -159,7 +159,6 @@ export function DateRangePicker({
   const edgeA = previewEnd ?? draft.from
   const edgeB = draft.to || previewEnd || ''
   const [lo, hi] = edgeA < edgeB ? [edgeA, edgeB] : [edgeB, edgeA]
-  const cells = monthCells(view.year, view.month, weekStart)
   const arrowProps = {
     size: 14,
     'aria-hidden': true,
@@ -207,84 +206,152 @@ export function DateRangePicker({
       </div>
 
       {open && !disabled ? (
-        <div
-          ref={popRef}
-          role="dialog"
-          aria-modal="false"
-          aria-label={labelText}
-          className="absolute inset-s-0 z-40 mt-2 w-88 max-w-[calc(100vw-2rem)] rounded-lg border border-border-strong bg-surface-popover p-3 shadow-lg"
-        >
-          {/* Draft summary — an unfinished range is visible before it is applied. */}
-          <div className="mb-2 flex flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2">
-            <RangeRow label={t('dateRange.start')} value={draft.from} locale={locale} />
-            <RangeRow label={t('dateRange.end')} value={draft.to} locale={locale} />
-          </div>
-
-          <div className="mb-1 flex items-center justify-between gap-1">
-            <button
-              type="button"
-              aria-label={t('dateRange.prevMonth')}
-              onClick={() => setView((v) => addMonths(v.year, v.month, -1))}
-              className={NAV_BUTTON}
-            >
-              {rtl ? <ChevronRight size={16} aria-hidden /> : <ChevronLeft size={16} aria-hidden />}
-            </button>
-            <p className="text-body font-bold text-foreground-strong">
-              {formatMonthTitle(view.year, view.month, locale)}
-            </p>
-            <button
-              type="button"
-              aria-label={t('dateRange.nextMonth')}
-              onClick={() => setView((v) => addMonths(v.year, v.month, 1))}
-              className={NAV_BUTTON}
-            >
-              {rtl ? <ChevronLeft size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
-            </button>
-          </div>
-
-          {/* Day names are decorative here: every day button carries its full date. */}
-          <div aria-hidden className="grid grid-cols-7 text-xs text-foreground-subtle">
-            {weekdayLabels(locale, weekStart).map((day, i) => (
-              <span key={`${day}-${i}`} className="flex h-7 items-center justify-center">
-                {day}
-              </span>
-            ))}
-          </div>
-
-          <DayGrid
-            cells={cells}
-            draft={draft}
-            lo={lo}
-            hi={hi}
-            today={today}
-            locale={locale}
-            onSelect={select}
-            onHover={setHover}
-          />
-
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-border-subtle pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setDraft({ from: today, to: today })
-                setView(viewMonthOf(today))
-              }}
-            >
-              {t('dateRange.today')}
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={clear}>
-                {t('dateRange.clear')}
-              </Button>
-              <Button type="button" size="sm" disabled={!draft.from && !draft.to} onClick={apply}>
-                {t('dateRange.apply')}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <DateRangePopover
+          popRef={popRef}
+          label={labelText}
+          draft={draft}
+          lo={lo}
+          hi={hi}
+          view={view}
+          onViewChange={setView}
+          weekStart={weekStart}
+          locale={locale}
+          rtl={rtl}
+          today={today}
+          onSelect={select}
+          onHover={setHover}
+          onToday={() => {
+            setDraft({ from: today, to: today })
+            setView(viewMonthOf(today))
+          }}
+          onClear={clear}
+          onApply={apply}
+        />
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The popover: the draft summary, the month navigation, the day grid and the
+ * three deliberate actions.
+ *
+ * It is ONE component because these are one decision surface — everything
+ * between opening the popover and applying or abandoning a range — and because
+ * every rule it must not break lives together here: the arrows follow the
+ * layout direction, the day values keep their own locale-correct ordering, the
+ * draft is never reported upward until Apply, and the popover is explicitly
+ * non-modal so it never traps the keyboard.
+ */
+function DateRangePopover({
+  popRef,
+  label,
+  draft,
+  lo,
+  hi,
+  view,
+  onViewChange,
+  weekStart,
+  locale,
+  rtl,
+  today,
+  onSelect,
+  onHover,
+  onToday,
+  onClear,
+  onApply,
+}: {
+  readonly popRef: React.RefObject<HTMLDivElement | null>
+  readonly label: string
+  readonly draft: DateRange
+  /** The interior of the range, EXCLUSIVE, so a hover preview never fills the ends. */
+  readonly lo: string
+  readonly hi: string
+  readonly view: { year: number; month: number }
+  readonly onViewChange: (view: { year: number; month: number }) => void
+  readonly weekStart: number
+  readonly locale: string
+  /** The ARROWS follow the layout direction; the dates never do. */
+  readonly rtl: boolean
+  readonly today: string
+  readonly onSelect: (day: string) => void
+  readonly onHover: (day: string | null) => void
+  readonly onToday: () => void
+  readonly onClear: () => void
+  readonly onApply: () => void
+}) {
+  const { t } = useTranslation()
+  const step = (offset: -1 | 1) => onViewChange(addMonths(view.year, view.month, offset))
+
+  return (
+    <div
+      ref={popRef}
+      role="dialog"
+      aria-modal="false"
+      aria-label={label}
+      className="absolute inset-s-0 z-40 mt-2 w-88 max-w-[calc(100vw-2rem)] rounded-lg border border-border-strong bg-surface-popover p-3 shadow-lg"
+    >
+      {/* Draft summary — an unfinished range is visible before it is applied. */}
+      <div className="mb-2 flex flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2">
+        <RangeRow label={t('dateRange.start')} value={draft.from} locale={locale} />
+        <RangeRow label={t('dateRange.end')} value={draft.to} locale={locale} />
+      </div>
+
+      <div className="mb-1 flex items-center justify-between gap-1">
+        <button
+          type="button"
+          aria-label={t('dateRange.prevMonth')}
+          onClick={() => step(-1)}
+          className={NAV_BUTTON}
+        >
+          {rtl ? <ChevronRight size={16} aria-hidden /> : <ChevronLeft size={16} aria-hidden />}
+        </button>
+        <p className="text-body font-bold text-foreground-strong">
+          {formatMonthTitle(view.year, view.month, locale)}
+        </p>
+        <button
+          type="button"
+          aria-label={t('dateRange.nextMonth')}
+          onClick={() => step(1)}
+          className={NAV_BUTTON}
+        >
+          {rtl ? <ChevronLeft size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+        </button>
+      </div>
+
+      {/* Day names are decorative here: every day button carries its full date. */}
+      <div aria-hidden className="grid grid-cols-7 text-xs text-foreground-subtle">
+        {weekdayLabels(locale, weekStart).map((day, i) => (
+          <span key={`${day}-${i}`} className="flex h-7 items-center justify-center">
+            {day}
+          </span>
+        ))}
+      </div>
+
+      <DayGrid
+        cells={monthCells(view.year, view.month, weekStart)}
+        draft={draft}
+        lo={lo}
+        hi={hi}
+        today={today}
+        locale={locale}
+        onSelect={onSelect}
+        onHover={onHover}
+      />
+
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border-subtle pt-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onToday}>
+          {t('dateRange.today')}
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onClear}>
+            {t('dateRange.clear')}
+          </Button>
+          <Button type="button" size="sm" disabled={!draft.from && !draft.to} onClick={onApply}>
+            {t('dateRange.apply')}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

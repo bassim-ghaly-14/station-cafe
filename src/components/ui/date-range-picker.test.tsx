@@ -146,6 +146,72 @@ describe('DateRangePicker', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('is explicitly non-modal, so it never traps the keyboard', () => {
+    render(<DateRangePicker from="" to="" onChange={() => {}} />)
+    // `aria-modal="false"` is what tells assistive tech the rest of the page is
+    // still reachable; a popover that claims to be modal would swallow Tab.
+    expect(openPicker(/اختر الفترة/)).toHaveAttribute('aria-modal', 'false')
+  })
+
+  it('orders a backwards pick as a range rather than a mistake', () => {
+    const onChange = vi.fn()
+    render(<DateRangePicker from="" to="" onChange={onChange} />)
+    const dialog = openPicker(/اختر الفترة/)
+
+    // The later day is picked FIRST; ISO strings compare lexicographically, so
+    // the earlier day must become the start instead of producing from > to.
+    fireEvent.click(within(dialog).getByRole('button', { name: cellName(end) }))
+    fireEvent.click(within(dialog).getByRole('button', { name: cellName(start) }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+
+    expect(onChange).toHaveBeenCalledWith({ from: start, to: end })
+  })
+
+  it('previews nothing from a hover: only a click may complete the draft', () => {
+    const onChange = vi.fn()
+    render(<DateRangePicker from="" to="" onChange={onChange} />)
+    const dialog = openPicker(/اختر الفترة/)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: cellName(start) }))
+    // A day announces itself on hover AND on focus, but neither completes the
+    // range: only a click does, and only a click may report upward.
+    fireEvent.focus(within(dialog).getByRole('button', { name: cellName(end) }))
+
+    expect(within(dialog).getByRole('button', { name: cellName(middle) })).not.toHaveClass(
+      'bg-accent',
+    )
+    expect(within(dialog).getByText('—')).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+    expect(onChange).toHaveBeenCalledWith({ from: start, to: '' })
+  })
+
+  it('offers neither opening nor clearing while disabled', () => {
+    const onChange = vi.fn()
+    render(<DateRangePicker from={start} to={end} onChange={onChange} disabled />)
+
+    const trigger = screen.getByRole('button', { name: dayName(start) })
+    expect(trigger).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'مسح' })).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('abandons the draft on an outside press without reporting anything', () => {
+    const onChange = vi.fn()
+    render(<DateRangePicker from={start} to="" onChange={onChange} />)
+    openPicker(dayName(start))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: cellName(third) }))
+
+    fireEvent.mouseDown(document.body)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('formats the control for the active (LTR) locale', async () => {
     await act(async () => {
       await i18n.changeLanguage('en-US')
