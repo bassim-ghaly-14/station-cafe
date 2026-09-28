@@ -102,9 +102,26 @@ select:focus-visible {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Sheet motion - the mobile counterpart of the drawer motion above.
+ * The panel rises along the BLOCK axis, which is direction-agnostic, so the
+ * same rules serve LTR and RTL alike. A sheet is the one place where a nested
+ * scroll is deliberate: the panel scrolls INSIDE itself so the page behind it
+ * cannot move out from under the menu.
+ * ------------------------------------------------------------------------- */
+@keyframes sheet-panel-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [class*='drawer-panel-in'],
-  [class*='drawer-scrim-in'] {
+  [class*='drawer-scrim-in'],
+  [class*='sheet-panel-in'] {
     animation: none;
   }
 }

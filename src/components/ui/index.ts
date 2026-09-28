@@ -44,6 +44,7 @@ export {
 export { Dialog } from './dialog'
 export { ConfirmDialog } from './confirm-dialog'
 export { Drawer } from './drawer'
+export { Sheet } from './sheet'
 export { AmountAutoFill } from './amount-auto-fill'
 export { ThemeToggle } from './theme-toggle'
 export { DateRangePicker, type DateRange } from './date-range-picker'

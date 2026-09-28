@@ -45,6 +45,7 @@ export {
   Lock,
   LogOut,
   Minus,
+  Menu,
   MoreHorizontal,
   MoreVertical,
   Package,
