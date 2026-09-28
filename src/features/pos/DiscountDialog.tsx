@@ -121,11 +121,8 @@ export function DiscountDialog({
             <>
               <p className="text-sm text-foreground-muted">{t('pos.discountQuickPicks')}</p>
 
-              <div
-                className="grid grid-cols-2 gap-2"
-                role="group"
-                aria-label={t('pos.discountQuickPicks')}
-              >
+              <fieldset className="grid grid-cols-2 gap-2 border-0 p-0">
+                <legend className="sr-only">{t('pos.discountQuickPicks')}</legend>
                 {amounts.map((option) => (
                   <Button
                     key={option}
@@ -139,7 +136,7 @@ export function DiscountDialog({
                     <MoneyDisplay amount={option} className="font-bold" />
                   </Button>
                 ))}
-              </div>
+              </fieldset>
             </>
           ) : null}
 

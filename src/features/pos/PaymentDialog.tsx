@@ -133,7 +133,8 @@ export function PaymentDialog({
         </output>
       )}
 
-      <div className="mb-3 grid grid-cols-3 gap-2" role="group" aria-label={t('pay.methodLabel')}>
+      <fieldset className="mb-3 grid grid-cols-3 gap-2 border-0 p-0">
+        <legend className="sr-only">{t('pay.methodLabel')}</legend>
         {(['CASH', 'CARD', 'CREDIT'] as const).map((m) => (
           <Button
             key={m}
@@ -144,7 +145,7 @@ export function PaymentDialog({
             {t(`pay.method.${m}`)}
           </Button>
         ))}
-      </div>
+      </fieldset>
 
       {method === 'CASH' ? (
         <>

@@ -78,11 +78,8 @@ export function TopItemsTable({
           <p className="mt-0.5 text-caption text-foreground-subtle">{t('sales.items.hint')}</p>
         </div>
         {/* Two orderings, both resolved by the backend — never a client sort. */}
-        <div
-          className="flex items-center gap-2"
-          role="group"
-          aria-label={t('sales.items.sortLabel')}
-        >
+        <fieldset className="flex items-center gap-2 border-0 p-0">
+          <legend className="sr-only">{t('sales.items.sortLabel')}</legend>
           <SortToggle
             active={sort === 'revenue'}
             label={t('sales.items.sortRevenue')}
@@ -93,7 +90,7 @@ export function TopItemsTable({
             label={t('sales.items.sortQuantity')}
             onClick={() => onSortChange('quantity')}
           />
-        </div>
+        </fieldset>
       </div>
 
       {items.length === 0 ? (
