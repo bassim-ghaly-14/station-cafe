@@ -142,4 +142,53 @@ describe('Station Excel reports', () => {
     expect(bold('A9')).toBe(false)
     expect(bold('A8')).toBe(true)
   })
+
+  it('types every written cell so a total column stays summable', () => {
+    // cellType is now the single decision behind every cell the writer emits.
+    // If a number were ever written as a string, Excel would refuse to sum the
+    // total column, and if a date were written as text the number format would
+    // silently not apply — both are export bugs a user only sees in Excel.
+    const css = document.documentElement.style
+    css.setProperty('--palette-brand-900', '#2b1d12')
+    css.setProperty('--palette-brand-800', '#5e3f25')
+    css.setProperty('--palette-brand-600', '#96673a')
+    css.setProperty('--print-paper', '#fffdf9')
+    css.setProperty('--print-total-bg', '#f4eee4')
+    css.setProperty('--print-border', '#d8cbb8')
+    css.setProperty('--print-ink', '#211c17')
+    css.setProperty('--print-ink-muted', '#5c5146')
+
+    const { sheet } = createStationReportSheet({
+      title: 'الأنواع',
+      description: 'وصف',
+      period: '01/09/2026 — 25/09/2026',
+      columns,
+      rows: [['المغسلة', 2000, 0.5]],
+      total: ['الإجمالي', 2000, 1],
+      sheetName: 'التقرير',
+      labels: {
+        period: 'الفترة:',
+        generated: 'تاريخ التصدير:',
+        summary: 'ملخص التقرير',
+        details: 'تفاصيل التقرير',
+        total: 'الإجمالي',
+      },
+    })
+
+    // Row 1 banner (string), row 2 title (string), row 6 summary value
+    // (number), row 7 first data row: text / number / number, row 8 total.
+    // Layout with no summary block: row 1 banner, row 2 title, row 3 meta,
+    // row 4 period/generated (C4 is the generated-at Date), row 5 the details
+    // section label, row 7 the table header, row 8 the data, row 9 the total.
+    expect(sheet.A1?.t).toBe('s')
+    expect(sheet.A2?.t).toBe('s')
+    expect(sheet.C4?.t).toBe('d')
+    expect(sheet.A7?.t).toBe('s')
+    expect(sheet.A8?.t).toBe('s')
+    expect(sheet.B8?.t).toBe('n')
+    expect(sheet.C8?.t).toBe('n')
+    expect(sheet.B9?.t).toBe('n')
+    // The SUM formula is what makes the total column work at all.
+    expect(sheet.B9?.f).toBe('SUM(B8:B8)')
+  })
 })

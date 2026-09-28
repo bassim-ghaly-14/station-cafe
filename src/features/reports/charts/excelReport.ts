@@ -179,13 +179,33 @@ function cellStyle(
       wrapText: true,
       readingOrder: align === 'right' ? 2 : 1,
     },
-    border: ROLE_SEPARATED[role]
-      ? { bottom: { style: 'medium', color: { rgb: palette.border.replace(/^#/, '') } } }
-      : role === 'header'
-        ? border(palette.headerText, false)
-        : {},
+    border: cellBorder(role, palette),
     ...(format ? { numFmt: format } : {}),
   }
+}
+
+/**
+ * The SheetJS cell type for a value.
+ *
+ * A Date is a date cell, a number is numeric, and everything else is a string.
+ * This is the single place that decision is made: the header block, the table
+ * body and the total row all write cells, and all three must agree, because a
+ * cell Excel reads as text cannot be summed in a total column.
+ */
+function cellType(value: ReportCell): 'd' | 'n' | 's' {
+  if (value instanceof Date) return 'd'
+  if (typeof value === 'number') return 'n'
+  return 's'
+}
+
+function cellBorder(role: CellRole, palette: StationReportPalette) {
+  if (ROLE_SEPARATED[role]) {
+    return { bottom: { style: 'medium', color: { rgb: palette.border.replace(/^#/, '') } } }
+  }
+  // The table header keeps its own light rule so the column captions read as a
+  // band rather than dissolving into the rows below.
+  if (role === 'header') return border(palette.headerText, false)
+  return {}
 }
 
 function formatFor(format: ReportColumn['format']): string | undefined {
@@ -251,7 +271,7 @@ function put(
   const address = utils.encode_cell({ r: row, c: column })
   sheet[address] = {
     v: value,
-    t: value instanceof Date ? 'd' : typeof value === 'number' ? 'n' : 's',
+    t: cellType(value),
     ...(z ? { z } : {}),
     s: style,
   }
@@ -344,7 +364,7 @@ export function createStationReportSheet({
       const address = utils.encode_cell({ r: totalRow, c: columnIndex })
       const cell: Record<string, unknown> = {
         v: value,
-        t: value instanceof Date ? 'd' : typeof value === 'number' ? 'n' : 's',
+        t: cellType(value),
         ...(z ? { z } : {}),
         s: cellStyle(palette, 'total', column.align ?? defaultAlignment()),
       }
