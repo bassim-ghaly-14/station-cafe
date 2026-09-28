@@ -3,6 +3,7 @@
  * movement history. Not a warehouse system; the backend owns the rules.
  */
 import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import {
@@ -151,38 +152,11 @@ export default function InventoryPage() {
         {t('nav.inventory')}
       </h1>
 
-      {stock === null ? (
-        stockErr ? (
-          <ErrorState message={stockErr} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <ListRowsSkeleton rows={5} />
-        )
-      ) : stock.length === 0 ? (
-        <EmptyState title={t('inventory.empty')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('inventory.stock')} subtitle={t('inventory.stockHint')} />
-          <div className="flex flex-col divide-y divide-border-subtle">
-            <StockRows rows={stock} onAdjust={setAdjusting} />
-          </div>
-        </Card>
-      )}
+      <StockSection rows={stock} error={stockErr} onRetry={load} onAdjust={setAdjusting} />
 
       <Card>
         <CardHeader title={t('inventory.movements')} />
-        {movements === null ? (
-          movErr ? (
-            <ErrorState message={movErr} onRetry={load} retryLabel={t('app.retry')} />
-          ) : (
-            <ListRowsSkeleton rows={4} />
-          )
-        ) : movements.length === 0 ? (
-          <EmptyState title={t('inventory.noMovements')} />
-        ) : (
-          <div className="flex flex-col divide-y divide-border-subtle">
-            <MovementRows rows={movements} />
-          </div>
-        )}
+        <MovementsSection rows={movements} error={movErr} onRetry={load} />
       </Card>
 
       {adjusting ? (
@@ -273,5 +247,100 @@ function AdjustStockDialog({
         </div>
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * The three states every independently-loaded list on this page is in: not
+ * loaded yet (error or skeleton), loaded and empty, or loaded with rows.
+ *
+ * The stock list and the movement list differ only in their copy, their
+ * skeleton size and their rows, so the precedence is stated once here instead
+ * of written twice — and a failed load is never presented as an empty list.
+ */
+function LoadedList<T>({
+  rows,
+  error,
+  onRetry,
+  skeletonRows,
+  emptyTitle,
+  children,
+}: Readonly<{
+  rows: readonly T[] | null
+  error: string | null
+  onRetry: () => void
+  skeletonRows: number
+  emptyTitle: string
+  children: (rows: readonly T[]) => ReactNode
+}>) {
+  const { t } = useTranslation()
+  if (rows === null) {
+    if (error) {
+      return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+    }
+    return <ListRowsSkeleton rows={skeletonRows} />
+  }
+  if (rows.length === 0) return <EmptyState title={emptyTitle} />
+  return <>{children(rows)}</>
+}
+
+/** The stock card, with its own header, subtitle and adjust action. */
+function StockSection({
+  rows,
+  error,
+  onRetry,
+  onAdjust,
+}: Readonly<{
+  rows: readonly StockRow[] | null
+  error: string | null
+  onRetry: () => void
+  onAdjust: (row: StockRow) => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <LoadedList
+      rows={rows}
+      error={error}
+      onRetry={onRetry}
+      skeletonRows={5}
+      emptyTitle={t('inventory.empty')}
+    >
+      {(loaded) => (
+        <Card>
+          <CardHeader title={t('inventory.stock')} subtitle={t('inventory.stockHint')} />
+          <div className="flex flex-col divide-y divide-border-subtle">
+            <StockRows rows={loaded} onAdjust={onAdjust} />
+          </div>
+        </Card>
+      )}
+    </LoadedList>
+  )
+}
+
+/** The movement list, which sits inside the movements card. */
+function MovementsSection({
+  rows,
+  error,
+  onRetry,
+}: Readonly<{
+  rows: readonly MovementRow[] | null
+  error: string | null
+  onRetry: () => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <LoadedList
+      rows={rows}
+      error={error}
+      onRetry={onRetry}
+      skeletonRows={4}
+      emptyTitle={t('inventory.noMovements')}
+    >
+      {(loaded) => (
+        <div className="flex flex-col divide-y divide-border-subtle">
+          <MovementRows rows={loaded} />
+        </div>
+      )}
+    </LoadedList>
   )
 }

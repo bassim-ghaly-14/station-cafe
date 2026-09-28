@@ -1,5 +1,6 @@
 /** Live order panel: lines, product pad, discount, customer/car, wash ticket. */
 import { useCallback, useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, MoneyDisplay, useToast } from '@/components/ui'
 import { Trash2 } from '@/components/ui/icon'
@@ -172,13 +173,7 @@ export function OrderPanel({
   return (
     <Card>
       <CardHeader
-        title={
-          order.order_type === 'TAKEAWAY' && typeof order.takeaway_no === 'number'
-            ? `${t('pos.takeaway')} #${order.takeaway_no} · ${t('pos.order')} ${order.id}`
-            : order.order_type === 'TAKEAWAY'
-              ? `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
-              : `${t('pos.order')} ${order.id}`
-        }
+        title={orderPanelTitle(order, t)}
         subtitle={
           // Table identity comes from the authoritative order row (backend
           // join) — never from a UI selection. Takeaways show no fake table.
@@ -321,4 +316,19 @@ function LineList({
       ))}
     </ul>
   )
+}
+
+/**
+ * The panel title: what kind of order this is, and the ticket number.
+ *
+ * A takeaway leads with its external `TW-` number when the backend sent one,
+ * because that is the number the customer will be called by; without one it
+ * still says it is a takeaway. A table order has no external number at all, so
+ * the title is the ticket alone.
+ */
+function orderPanelTitle(order: PosOrder, t: TFunction): string {
+  if (order.order_type !== 'TAKEAWAY') return `${t('pos.order')} ${order.id}`
+  if (typeof order.takeaway_no !== 'number')
+    return `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
+  return `${t('pos.takeaway')} #${order.takeaway_no} · ${t('pos.order')} ${order.id}`
 }
