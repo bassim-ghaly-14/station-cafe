@@ -112,33 +112,7 @@ export function ProductBrowser({
       ) : null}
 
       {department === null ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {byDepartment.map((group) => (
-            <button
-              key={group.value}
-              type="button"
-              onClick={() => setDepartment(group.value)}
-              className="flex min-h-24 items-center gap-3 rounded-lg border border-border-strong bg-transparent p-3 text-start transition-colors hover:border-border-accent-hover hover:bg-surface-hover active:bg-accent"
-            >
-              <span
-                aria-hidden
-                className="flex size-11 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-strong"
-              >
-                {group.value === 'CAFE' ? <Coffee size={22} /> : <Droplets size={22} />}
-              </span>
-
-              <span className="min-w-0">
-                <span className="block text-base font-bold text-foreground-strong">
-                  {t(`pos.${group.value.toLowerCase()}`)}
-                </span>
-
-                <span className="mt-0.5 block text-xs text-foreground-subtle">
-                  {t('pos.itemTypesCount', { count: group.items.length })}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <DepartmentGrid departments={byDepartment} onPick={setDepartment} />
       ) : activeCategory === null ? (
         categories.length === 0 ? (
           <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noCategories')}</p>
@@ -181,5 +155,51 @@ export function ProductBrowser({
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * The first question the browser asks: which area is this order for.
+ *
+ * Each area carries its own glyph and the number of item types behind it, so a
+ * cashier can tell the two apart before reading any text. The grid is the only
+ * place the two departments are compared, which is why it is its own component.
+ */
+function DepartmentGrid({
+  departments,
+  onPick,
+}: Readonly<{
+  departments: readonly { value: Department; items: Product[] }[]
+  onPick: (value: Department) => void
+}>) {
+  const { t } = useTranslation()
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {departments.map((group) => (
+        <button
+          key={group.value}
+          type="button"
+          onClick={() => onPick(group.value)}
+          className="flex min-h-24 items-center gap-3 rounded-lg border border-border-strong bg-transparent p-3 text-start transition-colors hover:border-border-accent-hover hover:bg-surface-hover active:bg-accent"
+        >
+          <span
+            aria-hidden
+            className="flex size-11 shrink-0 items-center justify-center rounded-md bg-surface-muted text-foreground-strong"
+          >
+            {group.value === 'CAFE' ? <Coffee size={22} /> : <Droplets size={22} />}
+          </span>
+
+          <span className="min-w-0">
+            <span className="block text-base font-bold text-foreground-strong">
+              {t(`pos.${group.value.toLowerCase()}`)}
+            </span>
+
+            <span className="mt-0.5 block text-xs text-foreground-subtle">
+              {t('pos.itemTypesCount', { count: group.items.length })}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
   )
 }

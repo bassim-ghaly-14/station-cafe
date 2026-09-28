@@ -113,25 +113,45 @@ export function PrintStatusPanel() {
         </Button>
       </div>
 
-      {jobs === null ? (
-        loadError ? (
-          <ErrorState message={loadError} onRetry={load} retryLabel={t('app.retry')} />
-        ) : (
-          <TableSkeleton rows={5} columns={3} />
-        )
-      ) : jobs.length === 0 ? (
-        <EmptyState title={t('print.empty')} />
-      ) : (
-        <Card>
-          <CardHeader title={t('print.statusTitle')} subtitle={t('print.statusSubtitle')} />
-          <div className="flex flex-col divide-y divide-border-subtle">
-            {jobs.map((job) => (
-              <PrintJobItem key={job.id} job={job} />
-            ))}
-          </div>
-        </Card>
-      )}
+      <PrintJobsBody jobs={jobs} loadError={loadError} onRetry={load} />
     </div>
+  )
+}
+
+/**
+ * The job list in its three states: not loaded yet (error or skeleton), loaded
+ * and empty, or loaded with rows.
+ *
+ * `jobs === null` means "no list yet" — a first load that failed shows the
+ * error, and one still in flight shows the skeleton, so a failure is never
+ * presented as an empty queue.
+ */
+function PrintJobsBody({
+  jobs,
+  loadError,
+  onRetry,
+}: Readonly<{
+  jobs: PrintJobRow[] | null
+  loadError: string | null
+  onRetry: () => void
+}>) {
+  const { t } = useTranslation()
+  if (jobs === null) {
+    if (loadError) {
+      return <ErrorState message={loadError} onRetry={onRetry} retryLabel={t('app.retry')} />
+    }
+    return <TableSkeleton rows={5} columns={3} />
+  }
+  if (jobs.length === 0) return <EmptyState title={t('print.empty')} />
+  return (
+    <Card>
+      <CardHeader title={t('print.statusTitle')} subtitle={t('print.statusSubtitle')} />
+      <div className="flex flex-col divide-y divide-border-subtle">
+        {jobs.map((job) => (
+          <PrintJobItem key={job.id} job={job} />
+        ))}
+      </div>
+    </Card>
   )
 }
 
@@ -186,12 +206,25 @@ function PrintJobItem({ job }: Readonly<{ readonly job: PrintJobRow }>) {
           </span>
         </p>
 
-        {message ? (
-          <p className="mt-1 text-sm font-medium text-destructive">{message}</p>
-        ) : status.hintKey ? (
-          <p className="text-caption mt-1">{t(status.hintKey)}</p>
-        ) : null}
+        <PrintJobNote message={message} hintKey={status.hintKey} />
       </div>
     </div>
   )
+}
+
+/**
+ * The one line under a job's metadata: the failure reason if there is one,
+ * otherwise the status hint, otherwise nothing.
+ *
+ * A failure always wins over a hint, so a job never shows both a red reason and
+ * a quiet suggestion about what to do next.
+ */
+function PrintJobNote({
+  message,
+  hintKey,
+}: Readonly<{ readonly message: string | null; readonly hintKey: string | null }>) {
+  const { t } = useTranslation()
+  if (message) return <p className="mt-1 text-sm font-medium text-destructive">{message}</p>
+  if (hintKey) return <p className="text-caption mt-1">{t(hintKey)}</p>
+  return null
 }

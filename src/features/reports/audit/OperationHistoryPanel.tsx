@@ -71,34 +71,17 @@ export function OperationHistoryPanel() {
         <OperationHistoryFilters rows={rows} filters={filters} onChange={setFilters} />
       ) : null}
 
-      {initialLoading ? (
-        <OperationRowsSkeleton />
-      ) : error ? (
-        <ErrorState message={error} onRetry={reload} retryLabel={t('app.retry')} />
-      ) : rows.length === 0 ? (
-        <OperationEmptyState variant="no-data" />
-      ) : visible.length === 0 ? (
-        <OperationEmptyState
-          variant="no-results"
-          total={rows.length}
-          onReset={() => setFilters(NO_FILTERS)}
-        />
-      ) : (
-        <Card className="overflow-hidden p-0">
-          <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
-            <p className="text-caption tabular-nums" aria-live="polite">
-              {t('audit.filters.summary', { shown: visible.length, total: rows.length })}
-            </p>
-            {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-          </div>
-          <OperationHistoryTable
-            rows={visible}
-            onOpen={setSelected}
-            busy={refreshing}
-            canViewTechnical={canViewTechnical}
-          />
-        </Card>
-      )}
+      <OperationHistoryBody
+        rows={rows}
+        visible={visible}
+        initialLoading={initialLoading}
+        refreshing={refreshing}
+        error={error}
+        onRetry={reload}
+        onResetFilters={() => setFilters(NO_FILTERS)}
+        onOpen={setSelected}
+        canViewTechnical={canViewTechnical}
+      />
 
       {selected ? (
         <OperationDetails
@@ -108,6 +91,60 @@ export function OperationHistoryPanel() {
         />
       ) : null}
     </section>
+  )
+}
+
+/**
+ * The log body in the five states the panel's own doc comment names, in the same
+ * precedence: first load, request failed, log empty, filters exclude
+ * everything, populated.
+ *
+ * Extracted so the precedence reads as a list of guards that can be checked
+ * against that comment, rather than a chain of else-branches in the markup.
+ */
+function OperationHistoryBody({
+  rows,
+  visible,
+  initialLoading,
+  refreshing,
+  error,
+  onRetry,
+  onResetFilters,
+  onOpen,
+  canViewTechnical,
+}: Readonly<{
+  rows: AuditEntry[]
+  visible: AuditEntry[]
+  initialLoading: boolean
+  refreshing: boolean
+  error: string | null
+  onRetry: () => void
+  onResetFilters: () => void
+  onOpen: (entry: AuditEntry) => void
+  canViewTechnical: boolean
+}>) {
+  const { t } = useTranslation()
+  if (initialLoading) return <OperationRowsSkeleton />
+  if (error) return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+  if (rows.length === 0) return <OperationEmptyState variant="no-data" />
+  if (visible.length === 0) {
+    return <OperationEmptyState variant="no-results" total={rows.length} onReset={onResetFilters} />
+  }
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+        <p className="text-caption tabular-nums" aria-live="polite">
+          {t('audit.filters.summary', { shown: visible.length, total: rows.length })}
+        </p>
+        {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+      </div>
+      <OperationHistoryTable
+        rows={visible}
+        onOpen={onOpen}
+        busy={refreshing}
+        canViewTechnical={canViewTechnical}
+      />
+    </Card>
   )
 }
 
