@@ -62,6 +62,83 @@ jobs:
         env:
           STATION_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
 
+      - name: Verify updater signing key (diagnostics only)
+        # Tauri reports a bad key, a bad password and a malformed secret with
+        # the SAME "failed to decode secret key" error, so a red CI run says
+        # nothing about WHICH layer broke. This step fingerprints each layer
+        # separately, so the next failure names its own cause.
+        #
+        # It never prints the key or the password. Only lengths, a one-way
+        # SHA-256 and structural booleans are logged, so nothing secret can
+        # reach the log or an artifact. The fingerprint is a checksum of a
+        # 348-byte random key: it identifies WHICH key is deployed and is not
+        # reversible into the key itself.
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # SHA-256 of the exact bytes of ~/.tauri/station-cafe.key (the one
+          # whose public half is committed as plugins.updater.pubkey).
+          # If the key is ever rotated on purpose, update this AND the pubkey
+          # in the same commit.
+          EXPECTED_KEY_SHA256=83b4ad8d1e878e688e950759be5a9a3b4d63a83b1f2ba37c17b728e27da0b195
+          EXPECTED_KEY_LENGTH=348
+
+          echo "runner: $RUNNER_OS $(uname -m) | tauri-cli: $(node -p "require('./node_modules/@tauri-apps/cli/package.json').version")"
+
+          key="${TAURI_SIGNING_PRIVATE_KEY:-}"
+          if [ -z "$key" ]; then
+            echo "::error::LAYER 1 (secret missing): TAURI_SIGNING_PRIVATE_KEY is empty or unset. The build would abort rather than publish an unsigned update."
+            exit 1
+          fi
+
+          # printf '%s' avoids adding a newline, so this hashes the value
+          # exactly as the build consumes it - no whitespace normalisation.
+          key_len=${#key}
+          key_sha=$(printf '%s' "$key" | sha256sum | cut -d' ' -f1)
+          echo "key: present=yes length=$key_len sha256=$key_sha"
+
+          # Structure is checked BEFORE the fingerprint, so a mangled secret is
+          # reported as the specific corruption it is ("not base64", "lost
+          # comment", "CRLF") rather than being flattened into a generic
+          # "wrong key". The fingerprint is the final catch-all for a
+          # well-formed key that simply is not the committed one.
+          if ! decoded=$(printf '%s' "$key" | base64 -d 2>/dev/null); then
+            echo "::error::LAYER 3 (not base64): the secret is not valid base64. Set it from the raw file, not from a copy/paste of its decoded form."
+            exit 1
+          fi
+          case "$decoded" in
+            "untrusted comment: "*)
+              echo "keybox: comment line present=yes" ;;
+            *)
+              echo "::error::LAYER 4 (missing comment): the decoded key has no 'untrusted comment:' line - a partial paste. Re-set it from the raw file."
+              exit 1 ;;
+          esac
+          if printf '%s' "$key" | grep -q $'\r'; then
+            echo "::error::LAYER 5 (CRLF): the secret contains CR characters. Re-set it from the raw file; do not paste it through an editor."
+            exit 1
+          fi
+          echo "keybox: base64=yes comment=yes crlf=no"
+
+          if [ "$key_len" -ne "$EXPECTED_KEY_LENGTH" ] || [ "$key_sha" != "$EXPECTED_KEY_SHA256" ]; then
+            echo "::error::LAYER 2 (wrong key): the secret is well-formed but is not the key whose public half is committed as plugins.updater.pubkey. Re-set it with: gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/station-cafe.key"
+            exit 1
+          fi
+
+          # The password is reported as state and length ONLY. GitHub masks the
+          # value, and this never prints it.
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD+x}" ]; then
+            echo "password: variable not exported (Tauri will use an empty password)"
+          else
+            echo "password: variable exported, length=${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD} (value never printed)"
+          fi
+
+          # The trust anchor the release will be checked against at runtime.
+          echo "pubkey: $(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey" | head -c 44)... (fingerprint only)"
+
       - name: Build Tauri app (Windows)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:

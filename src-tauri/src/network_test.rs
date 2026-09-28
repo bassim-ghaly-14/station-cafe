@@ -5,7 +5,285 @@
 //! actual behaviour rather than the shape of the code. A separate module (as
 //! with `workflow_test`) keeps the feature's tests together and readable.
 
-#![cfg(test)]
+#[cfg(test)]
+mod runtime_tests {
+    //! Regression tests for the defect that made the local API permanently
+    //! unreachable: the setting could be stored by NOTHING, and the server was
+    //! only ever started once, at application startup. Enabling it therefore
+    //! did nothing, and the UI showed an address for a service that had never
+    //! bound a socket.
+    //!
+    //! These drive the real `apply` lifecycle against a real database and a
+    //! real listener — no mocked server objects.
+
+    use crate::network::config::{NetworkConfig, DEFAULT_PORT};
+    use crate::network::runtime;
+    use crate::services::auth;
+    use rusqlite::Connection;
+    use std::net::SocketAddr;
+    use std::sync::{Arc, Mutex};
+
+    fn fresh() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::seed::run_if_empty(&conn).unwrap();
+        conn
+    }
+
+    /// An AppState backed by an in-memory database, exactly as the app builds it.
+    fn state(conn: Arc<Mutex<Connection>>) -> crate::AppState {
+        crate::AppState {
+            conn,
+            developer_seed_grant: Mutex::new(None),
+            api: Mutex::new(None),
+            discovery: Mutex::new(None),
+        }
+    }
+
+    fn manager(conn: &Connection) -> auth::User {
+        auth::login(
+            conn,
+            &auth::LoginInput {
+                name: "manager".into(),
+                password: "manager123".into(),
+            },
+        )
+        .unwrap()
+        .user
+    }
+
+    /// An enabled configuration bound to loopback, which is a REAL socket we
+    /// can drive deterministically. Production uses the classified LAN
+    /// address; the lifecycle being tested is identical.
+    fn enabled_on(port: u16) -> NetworkConfig {
+        NetworkConfig {
+            enabled: true,
+            bind: "127.0.0.1".to_string(),
+            port,
+        }
+    }
+
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    // ---- startup ----------------------------------------------------------
+
+    #[test]
+    fn a_disabled_api_does_not_start() {
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let status = runtime::apply(&s, &NetworkConfig::default());
+        assert!(!status.enabled);
+        assert!(!status.running, "a disabled API must not open a socket");
+        assert_eq!(status.error.as_deref(), Some(runtime::ERR_DISABLED));
+        assert!(s.api.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn an_enabled_api_starts_on_initialization() {
+        // THE defect: `enabled` was readable but nothing could ever act on it.
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let status = runtime::apply(&s, &enabled_on(free_port()));
+        assert!(status.running, "an enabled API must bind: {status:?}");
+        assert!(status.address.is_some());
+        runtime::stop(&s);
+    }
+
+    // ---- toggle -----------------------------------------------------------
+
+    #[test]
+    fn enabling_starts_the_server_and_disabling_stops_it() {
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let port = free_port();
+
+        let off = runtime::save_and_apply(
+            &s,
+            &manager(&conn.lock().unwrap()),
+            &NetworkConfig::default(),
+        )
+        .unwrap();
+        assert!(!off.running);
+
+        let on =
+            runtime::save_and_apply(&s, &manager(&conn.lock().unwrap()), &enabled_on(port))
+                .unwrap();
+        assert!(on.running, "enabling must actually start it");
+        let bound = on.address.expect("a bound address");
+
+        let off_again = runtime::save_and_apply(
+            &s,
+            &manager(&conn.lock().unwrap()),
+            &NetworkConfig::default(),
+        )
+        .unwrap();
+        assert!(!off_again.running, "disabling must stop it");
+
+        // The port is genuinely released, so the same port can be reused.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut rebound = None;
+        while std::time::Instant::now() < deadline {
+            match runtime::save_and_apply(
+                &s,
+                &manager(&conn.lock().unwrap()),
+                &enabled_on(port),
+            ) {
+                Ok(status) if status.running => {
+                    rebound = Some(status);
+                    break;
+                }
+                _ => std::thread::sleep(std::time::Duration::from_millis(100)),
+            }
+        }
+        let again = rebound.expect("the port must be reusable after disable");
+        assert_eq!(again.address, Some(bound));
+        runtime::stop(&s);
+    }
+
+    // ---- bind failure -----------------------------------------------------
+
+    #[test]
+    fn a_failed_bind_yields_unavailable_while_staying_enabled() {
+        // The core distinction the UI depends on: CONFIGURED is not RUNNING.
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let port = free_port();
+
+        // Occupy the port so the real bind must fail.
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+
+        let status = runtime::apply(&s, &enabled_on(port));
+        assert!(status.enabled, "the SETTING is still enabled");
+        assert!(!status.running, "but it is not running");
+        assert_eq!(status.error.as_deref(), Some(runtime::ERR_BIND_FAILED));
+        assert!(status.address.is_none(), "no address may be claimed");
+        assert!(s.api.lock().unwrap().is_none(), "no listener is held");
+
+        drop(blocker);
+    }
+
+    #[test]
+    fn a_failed_bind_does_not_advertise_mdns() {
+        // mDNS must never point a manager at a service that does not exist.
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let port = free_port();
+        let blocker = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+
+        let status = runtime::apply(&s, &enabled_on(port));
+        assert!(!status.running);
+        // A service that never bound must not be advertised.
+        assert!(
+            s.discovery.lock().unwrap().is_none(),
+            "a service that never bound must not be advertised"
+        );
+        assert!(s.discovery.lock().unwrap().is_none());
+
+        drop(blocker);
+    }
+
+    #[test]
+    fn an_unusable_bind_address_fails_safely() {
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        // 0.0.0.0 is refused by the classifier even when configured directly.
+        let status = runtime::apply(
+            &s,
+            &NetworkConfig {
+                enabled: true,
+                bind: "0.0.0.0".into(),
+                port: free_port(),
+            },
+        );
+        assert!(!status.running);
+        assert!(status.error.is_some());
+        assert!(s.api.lock().unwrap().is_none());
+    }
+
+    // ---- real socket ------------------------------------------------------
+
+    #[test]
+    fn the_bound_socket_actually_answers_health_and_stops_answering() {
+        // The end-to-end proof, over a real socket: start, request, stop,
+        // then confirm the port is no longer served and can be reused.
+        use std::io::{Read, Write};
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let port = free_port();
+        let status = runtime::apply(&s, &enabled_on(port));
+        assert!(status.running, "{status:?}");
+        let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+
+        let request = |addr: SocketAddr| -> std::io::Result<(u16, String)> {
+            let mut stream = std::net::TcpStream::connect(addr)?;
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+            stream.write_all(
+                b"GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+            )?;
+            let mut raw = String::new();
+            stream.read_to_string(&mut raw)?;
+            let code = raw.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+            Ok((code, raw))
+        };
+
+        // 1. The health endpoint really listens and returns 200.
+        let (code, raw) = request(addr).expect("must answer over the real socket");
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.contains("station-cafe"), "{raw}");
+
+        // 2. Stopping the service makes the endpoint unreachable.
+        runtime::stop(&s);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if request(addr).is_err() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the endpoint must stop answering after stop()"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // 3. And the port can be bound again.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut rebound = false;
+        while std::time::Instant::now() < deadline {
+            if runtime::apply(&s, &enabled_on(port)).running {
+                rebound = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(rebound, "the port must be reusable after stop");
+        runtime::stop(&s);
+    }
+
+    #[test]
+    fn applying_the_same_configuration_twice_is_safe() {
+        // Idempotent: no second listener is left fighting for the port.
+        let conn = Arc::new(Mutex::new(fresh()));
+        let s = state(Arc::clone(&conn));
+        let port = free_port();
+        assert!(runtime::apply(&s, &enabled_on(port)).running);
+        assert!(runtime::apply(&s, &enabled_on(port)).running);
+        assert!(s.api.lock().unwrap().is_some());
+        runtime::stop(&s);
+    }
+
+    #[test]
+    fn the_default_port_is_the_documented_one() {
+        assert_eq!(DEFAULT_PORT, 47821);
+    }
+}
+
 
 use crate::network::api::{self, ApiRequest};
 use crate::services::auth;

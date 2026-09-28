@@ -14,8 +14,10 @@
 //! SQLite connection. There is no SQL in this module, and no endpoint that
 //! bypasses `auth::require_role`.
 
+pub mod address;
 pub mod api;
 pub mod config;
 pub mod mdns;
 pub mod qr;
+pub mod runtime;
 pub mod server;

@@ -50,9 +50,31 @@ key. Set it with:
 gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/station-cafe.key
 ```
 
-The key on this machine was generated **without a password**, so
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is set to an empty string. If you
-regenerate the key with `-p <password>`, set that secret too.
+The key on this machine is stored in minisign's **encrypted** format, but its
+password is the **empty string**. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` must
+therefore exist as an **empty** secret:
+
+```bash
+# empty password -- the key on this machine uses none
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ''
+```
+
+> **Do not omit this secret, and do not give it some other value.** Because
+> the key is in the _encrypted_ format, Tauri always performs a decrypt.
+> The older note here that the key was "generated without a password" is what
+> made this ambiguous: an _encrypted_ key with an empty password is not an
+> _unencrypted_ key. Supplying a wrong password, or supplying none at all
+> (which makes Tauri prompt and then fail in CI), produce the same opaque
+> `failed to decode secret key` error. If you regenerate the key with
+> `-p <password>`, set that secret to that same password.
+
+To confirm which key GitHub actually holds — without revealing it — compare
+the SHA-256 printed by the workflow's `Verify updater signing key` step with
+the local file:
+
+```bash
+shasum -a 256 ~/.tauri/station-cafe.key   # must equal the sha256 in the CI log
+```
 
 If `TAURI_SIGNING_PRIVATE_KEY` is absent, the release build **fails loudly**
 rather than publishing an unsigned update — verified locally. It will not

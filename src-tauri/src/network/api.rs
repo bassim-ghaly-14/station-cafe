@@ -276,8 +276,12 @@ pub type Handled = Result<ApiResponse, ApiError>;
 pub fn resolve_bind_address(bind: &str) -> Result<std::net::IpAddr, String> {
     let bind = bind.trim();
     if bind.is_empty() || bind == crate::network::config::LAN_INTERFACE {
-        return local_ip_address::local_ip()
-            .map_err(|e| format!("no LAN address available: {e}"));
+        // Classified selection, not a bare `local_ip()`: a cafe PC also has
+        // VPN/hotspot/AirDrop interfaces and link-local IPv6, and binding
+        // whichever happened to be listed first is how the API ends up on an
+        // address no other device can reach.
+        return crate::network::address::select_lan_address()
+            .ok_or_else(|| "no usable LAN address is available on this machine".to_string());
     }
     bind.parse::<std::net::IpAddr>()
         .map_err(|_| format!("invalid bind address: {bind}"))

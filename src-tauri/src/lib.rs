@@ -71,67 +71,6 @@ pub struct AppState {
     pub discovery: Mutex<Option<network::mdns::Advertisement>>,
 }
 
-/// Start the local HTTP API if the owner enabled it.
-///
-/// Returns `None` — never an error the caller must handle — because no network
-/// condition is a reason to refuse to run a till. The reason is logged, so the
-/// condition stays diagnosable rather than silent.
-fn start_local_api(conn: &Arc<Mutex<db::Db>>) -> Option<network::server::ServerHandle> {
-    let cfg = {
-        let guard = conn.lock().unwrap_or_else(|e| e.into_inner());
-        network::config::get(&guard).unwrap_or_default()
-    };
-
-    if !cfg.enabled {
-        log::info!("local api: disabled by configuration");
-        return None;
-    }
-
-    let ip = match network::api::resolve_bind_address(&cfg.bind) {
-        Ok(ip) => ip,
-        Err(e) => {
-            log::error!("local api: cannot resolve bind address ({e}); the POS is unaffected");
-            return None;
-        }
-    };
-    let addr = std::net::SocketAddr::new(ip, cfg.port);
-
-    match network::server::start(addr, Arc::clone(conn)) {
-        Ok(handle) => {
-            log::info!("local api: listening on http://{}", handle.local_addr());
-            Some(handle)
-        }
-        Err(e) => {
-            // Most often: the port is already taken by another program, or the
-            // interface disappeared. Neither may stop the POS.
-            log::error!("local api: not started ({e}); the POS is unaffected");
-            None
-        }
-    }
-}
-
-/// Advertise Station over mDNS, if discovery is possible.
-///
-/// Returns `None` on any failure. Multicast being blocked, a missing
-/// interface or a name conflict are all recoverable conditions for a POS: the
-/// API keeps serving and the manager reaches it by IP.
-fn start_discovery(bound: std::net::SocketAddr) -> Option<network::mdns::Advertisement> {
-    let version = env!("CARGO_PKG_VERSION");
-    match network::mdns::Advertisement::register(bound.ip(), bound.port(), version) {
-        Ok(ad) => {
-            log::info!(
-                "local discovery: advertising {} as {} on {bound}",
-                network::mdns::INSTANCE_NAME,
-                network::mdns::SERVICE_TYPE
-            );
-            Some(ad)
-        }
-        Err(e) => {
-            log::error!("local discovery: not advertised ({e}); the API and POS are unaffected");
-            None
-        }
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -170,26 +109,34 @@ pub fn run() {
             // for the lock exactly as a desktop command does and can never
             // observe or mutate a different copy of the business data.
             let conn = Arc::new(Mutex::new(conn));
+            let stored = network::config::get(&conn.lock().unwrap_or_else(|e| e.into_inner()))
+                .unwrap_or_default();
 
-            // Starting the network is OPTIONAL. Every failure below is
-            // reported and swallowed on purpose: a cafe whose port is taken,
-            // or whose LAN address cannot be resolved, must still open its
-            // till in the morning. Station is a local POS first.
-            let api = start_local_api(&conn);
+            // Startup and the settings toggle go through the SAME `apply`
+            // verb, so a service started by launching Station and a service
+            // started by switching it on cannot behave differently.
+            //
+            // Failure is never fatal: `apply` reports it in the returned
+            // status and Station carries on. A cafe whose port is taken must
+            // still open its till.
+            let api = {
+                let state = AppState {
+                    conn: Arc::clone(&conn),
+                    developer_seed_grant: Mutex::new(None),
+                    api: Mutex::new(None),
+                    discovery: Mutex::new(None),
+                };
+                let status = network::runtime::apply(&state, &stored);
+                log::info!(
+                    "local api: configured={} running={} {}",
+                    status.enabled,
+                    status.running,
+                    status.error.as_deref().unwrap_or("")
+                );
+                state
+            };
 
-            // Discovery is advertised ONLY if the API actually came up, and a
-            // discovery failure can never affect the API or the POS. There is
-            // no point announcing a service that is not listening.
-            let discovery = api
-                .as_ref()
-                .and_then(|h| start_discovery(h.local_addr()));
-
-            app.manage(AppState {
-                conn,
-                developer_seed_grant: Mutex::new(None),
-                api: Mutex::new(api),
-                discovery: Mutex::new(discovery),
-            });
+            app.manage(api);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -198,20 +145,16 @@ pub fn run() {
             // a listener behind or a phantom service on the cafe network.
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = window.app_handle().try_state::<AppState>() {
-                    if let Ok(mut guard) = state.discovery.lock() {
-                        guard.take();
-                    }
-                    if let Ok(mut guard) = state.api.lock() {
-                        if let Some(handle) = guard.take() {
-                            handle.stop();
-                        }
-                    }
+                    network::runtime::stop(&state);
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::status::db_status,
             commands::status::local_access_qr,
+            commands::status::get_network_config,
+            commands::status::set_network_config,
+            commands::status::local_api_status,
             commands::auth::login,
             commands::auth::logout,
             commands::auth::me,

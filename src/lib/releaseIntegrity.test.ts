@@ -25,6 +25,7 @@ import tauriConfRaw from '../../src-tauri/tauri.conf.json?raw'
 import packageRaw from '../../package.json?raw'
 import cargoToml from '../../src-tauri/Cargo.toml?raw'
 import workflow from '../../.github/workflows/windows-build.yml?raw'
+import releasingDoc from '../../docs/RELEASING.md?raw'
 import libRs from '../../src-tauri/src/lib.rs?raw'
 import capabilitiesRaw from '../../src-tauri/capabilities/default.json?raw'
 
@@ -226,6 +227,47 @@ describe('updater build infrastructure', () => {
     // in the tree.
     expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.')
     expect(workflow).toContain('TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.')
+  })
+
+  it('fingerprints each signing layer before building', () => {
+    // Tauri reports a missing key, a wrong key, a non-base64 key, a lost
+    // comment line and a rejected password with ONE indistinguishable error
+    // ("failed to decode secret key"). That is how this pipeline failed with
+    // no way to tell which layer broke. The pre-build diagnostic must
+    // therefore still exist and still distinguish those layers, or the next
+    // regression is just as opaque.
+    expect(workflow).toContain('Verify updater signing key')
+    for (const layer of ['LAYER 1', 'LAYER 2', 'LAYER 3', 'LAYER 4', 'LAYER 5']) {
+      expect(workflow).toContain(layer)
+    }
+    // The fingerprint is a checksum of the deployed key, so a wrong-but-valid
+    // key is caught before the (slow) Windows build rather than after.
+    expect(workflow).toMatch(/EXPECTED_KEY_SHA256=[0-9a-f]{64}/)
+  })
+
+  it('never echoes a signing secret into the CI log', () => {
+    // The diagnostic exists to be safe to run on every build, so it must stay
+    // safe: lengths, a one-way SHA-256 and booleans only. Echoing the key or
+    // the password would put the updater signing key in a build log, which is
+    // world-readable for public repositories.
+    const echoLines = workflow
+      .split('\n')
+      .filter((l) => /^\s*echo\b/.test(l) || /\becho\b/.test(l))
+      .join('\n')
+    // No echo may reference the secret variables or the decoded key material.
+    expect(echoLines).not.toMatch(/\$TAURI_SIGNING_PRIVATE_KEY_PASSWORD\b/)
+    expect(echoLines).not.toMatch(/echo[^#]*\$\{?TAURI_SIGNING_PRIVATE_KEY\}?["']?\s*$/)
+    expect(echoLines).not.toMatch(/echo[^#]*\$decoded/)
+    expect(echoLines).not.toMatch(/echo[^#]*\$key\b/)
+  })
+
+  it('documents the encrypted-key empty password accurately', () => {
+    // The key is in minisign's ENCRYPTED format with an empty password, so
+    // the password secret must exist and be empty. The previous wording
+    // ("generated without a password") is what led to the secret being set
+    // incorrectly, and it must not come back.
+    expect(releasingDoc).toContain('gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD')
+    expect(releasingDoc).not.toMatch(/generated \*\*without a password\*\*/)
   })
 
   it('implements no update UI or install flow yet', () => {

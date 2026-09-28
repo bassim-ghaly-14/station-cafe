@@ -9,21 +9,50 @@
 import { call } from './ipc'
 
 export interface LocalAccess {
-  /** The URL encoded in the QR. Protocol, host, port and a real path — nothing else. */
-  url: string
-  /** The QR as an SVG document. */
-  svg: string
-  port: number
-  host: string
-  /** Other usable addresses on this machine, as an IP fallback. */
-  otherHosts: string[]
-  /** Whether mDNS advertised Station, so the hostname may also work. */
-  discoveryActive: boolean
-  /** Whether the API is actually listening right now. */
+  /**
+   * The URL encoded in the QR, or `null` when nothing is listening.
+   *
+   * Nullable on purpose: the backend only produces a URL when a listener
+   * actually exists, so a stopped service can never be displayed as though it
+   * were reachable.
+   */
+  url: string | null
+  /** The QR as an SVG document, or `null` when the service is not running. */
+  svg: string | null
+  /** Whether the API is actually LISTENING — not whether it is enabled. */
   apiRunning: boolean
+  /** Stable key explaining why it is not running, when it is not. */
+  error: string | null
+  port: number
+  host: string | null
+  otherHosts: string[]
+  discoveryActive: boolean
+}
+
+export interface NetworkConfig {
+  enabled: boolean
+  bind: string
+  port: number
+}
+
+/** Observed runtime state. `enabled` is intent; `running` is fact. */
+export interface RuntimeStatus {
+  enabled: boolean
+  running: boolean
+  address: string | null
+  error: string | null
 }
 
 export const localAccessApi = {
   /** MANAGER+; the backend enforces the role, the UI only reflects it. */
   load: () => call<LocalAccess>('local_access_qr'),
+  getConfig: () => call<NetworkConfig>('get_network_config'),
+  /**
+   * Persists the configuration AND starts or stops the service immediately.
+   *
+   * This is the call that was missing: without it `enabled` could be stored by
+   * nothing, so the API could never actually be switched on.
+   */
+  save: (config: NetworkConfig) => call<RuntimeStatus>('set_network_config', { config }),
+  status: () => call<RuntimeStatus>('local_api_status'),
 }
