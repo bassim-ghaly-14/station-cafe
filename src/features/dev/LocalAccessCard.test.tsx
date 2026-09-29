@@ -86,7 +86,12 @@ describe('LocalAccessCard', () => {
     vi.mocked(localAccessApi.getConfig).mockResolvedValue(disabled)
     renderCard()
     // Configured off: a clear instruction, not a failure message.
-    await screen.findByText('الخدمة متوقفة. فعّلها لعرض رمز الوصول.')
+    const message = await screen.findByText('الخدمة متوقفة. فعّلها لعرض رمز الوصول.')
+    expect(message).toBeInTheDocument()
+    // The distinction under test: "off" must never read as "failed".
+    expect(
+      screen.queryByText('مفعّمة لكنها لم تبدأ. تحقق من المنفذ ثم أعد المحاولة.'),
+    ).not.toBeInTheDocument()
   })
 
   it('reports a failure when enabled but not running', async () => {
@@ -94,7 +99,10 @@ describe('LocalAccessCard', () => {
     vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
     renderCard()
     // `enabled: true` with `running: false` is reported honestly.
-    await screen.findByText('مفعّمة لكنها لم تبدأ. تحقق من المنفذ ثم أعد المحاولة.')
+    const failure = await screen.findByText('مفعّمة لكنها لم تبدأ. تحقق من المنفذ ثم أعد المحاولة.')
+    expect(failure).toBeInTheDocument()
+    // A failed bind is not the same message as "switched off".
+    expect(screen.queryByText('الخدمة متوقفة. فعّلها لعرض رمز الوصول.')).not.toBeInTheDocument()
   })
 
   it('enabling calls save so the backend actually starts the server', async () => {
