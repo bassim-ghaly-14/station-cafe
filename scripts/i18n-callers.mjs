@@ -235,14 +235,7 @@ function firstArg(argsSrc) {
   while (i < argsSrc.length) {
     const c = argsSrc[i]
     if (c === '"' || c === "'" || c === '`') {
-      const quote = c
-      i++
-      while (i < argsSrc.length) {
-        if (argsSrc[i] === '\\') i++
-        else if (argsSrc[i] === quote) break
-        i++
-      }
-      i++
+      i = endOfQuoted(argsSrc, i)
       continue
     }
     if (c === '{' || c === '[' || c === '(') nest++
