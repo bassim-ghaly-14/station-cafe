@@ -672,3 +672,242 @@ describe('DevSettingsPage chart bar colours', () => {
     })
   })
 })
+
+/**
+ * The amount rows `DevAmountList` renders for Service Charge and for Discount.
+ *
+ * THE RULE: a whole amount. The field is the one that already exists — the same
+ * `<input>` the page has always shown, with the same reorder and remove buttons
+ * beside it. No second field, no second set of controls, and the increment /
+ * decrement behaviour comes from the input's own `step={1}` arrows.
+ *
+ * THE REGRESSION THIS ALSO PINS: the row used to be keyed by the amount it
+ * displayed, so the one keystroke that changed the value also changed the key.
+ * React unmounted that row and mounted a fresh `<input>`, destroying the field
+ * the manager was typing into after exactly one character. The index is now the
+ * row's identity, so `100` goes in in one go.
+ */
+describe('DevAmountList whole-amount amounts', () => {
+  const SERVICE = 'رسوم الخدمة'
+  const DISCOUNT = 'مبالغ الخصم السريعة'
+
+  beforeEach(() => {
+    resetFormattingPreferences()
+    mocks.user.role = 'ADMIN'
+    // Every setting the page loads at mount, so the lists actually arrive: a
+    // mock left over from another suite would reject the whole Promise.all.
+    mocks.serviceCharge.mockReset().mockResolvedValue({ amounts: [1000, 3000, 5000] })
+    mocks.discountOptions.mockReset().mockResolvedValue({ amounts: [2000, 5000] })
+    mocks.discountAuthorization.mockReset().mockResolvedValue({ configured: false })
+    mocks.setDiscountOptions.mockReset().mockResolvedValue(undefined)
+    mocks.setServiceCharge.mockReset().mockResolvedValue(undefined)
+    mocks.credit
+      .mockReset()
+      .mockResolvedValue({ enabled: true, mode: 'LIST', allowed_customer_ids: [] })
+    mocks.tables.mockReset().mockResolvedValue([])
+    mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
+  })
+
+  /** The nth amount field of a list, addressed the way a screen reader reads it. */
+  const field = (label: string, index: number) =>
+    screen.getByLabelText(`${label} ${index}`) as HTMLInputElement
+
+  /**
+   * The input's own stepper arrows. jsdom implements `stepUp`/`stepDown` with
+   * the element's real `step`, and dispatches no `change` for them, so the event
+   * is fired here to reach React — the same sequence a real click produces.
+   */
+  function spin(input: HTMLInputElement, delta: 1 | -1, times = 1) {
+    for (let i = 0; i < times; i += 1) {
+      if (delta === 1) input.stepUp()
+      else input.stepDown()
+      fireEvent.change(input)
+    }
+  }
+
+  describe.each([
+    // [name, field label prefix, the first amount the backend hands back]
+    ['Service Charge', SERVICE, 10],
+    ['Discount', DISCOUNT, 20],
+  ])('%s amounts', (_name, label, loaded) => {
+    it('accepts the whole amounts a manager actually types', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      for (const amount of [10, 100, 500]) {
+        fireEvent.change(field(label, 1), { target: { value: '' } })
+        fireEvent.change(field(label, 1), { target: { value: String(amount) } })
+        expect(field(label, 1)).toHaveValue(amount)
+      }
+    })
+
+    it('refuses a decimal instead of rounding it', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      // 10.5 must not become 11 and 100.25 must not become 100: a rounded value
+      // is a different amount from the one that was typed. The field keeps
+      // whatever whole amount it was already showing.
+      fireEvent.change(field(label, 1), { target: { value: '10.5' } })
+      expect(field(label, 1)).toHaveValue(loaded)
+
+      fireEvent.change(field(label, 1), { target: { value: '100.25' } })
+      expect(field(label, 1)).toHaveValue(loaded)
+    })
+
+    it('refuses the numeric formats that are not integer input here', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      // `type="number"` holds all of these happily, which is exactly why the
+      // value has to be checked rather than trusted. A lone "+", a lone "-", a
+      // comma and hex are absent on purpose: the field sanitises those to "",
+      // which is indistinguishable from a deliberate clear, so they are stopped
+      // as keys in the test below instead.
+      for (const rejected of ['1e2', '1E2', '-10']) {
+        fireEvent.change(field(label, 1), { target: { value: rejected } })
+        expect(field(label, 1).value).not.toBe(rejected)
+        expect(field(label, 1)).toHaveValue(loaded)
+      }
+    })
+
+    it('stops a sign, a decimal point and an exponent as keystrokes', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+      const input = field(label, 1)
+      input.focus()
+
+      // A number field SANITISES a lone "+" or "-" to "", byte-for-byte what a
+      // deliberate clear reports, so the value rule above cannot catch it
+      // without making the field impossible to empty. The key is stopped while
+      // it is still identifiable; `fireEvent` returns false once prevented.
+      for (const key of ['.', ',', 'e', 'E', '+', '-', 'a']) {
+        expect(fireEvent.keyDown(input, { key })).toBe(false)
+      }
+
+      expect(input).toHaveValue(loaded)
+      // The guard stops the KEY, not the field: digits and the editing keys
+      // still work, so the amount stays typable and clearable.
+      expect(fireEvent.keyDown(input, { key: '5' })).toBe(true)
+      expect(fireEvent.keyDown(input, { key: 'Backspace' })).toBe(true)
+    })
+
+    it('increments a whole amount by exactly one', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      fireEvent.change(field(label, 1), { target: { value: '10' } })
+      spin(field(label, 1), 1)
+      // Never 10.1, and never the string "101" from `"10" + 1`.
+      expect(field(label, 1)).toHaveValue(11)
+      expect(field(label, 1).value).toBe('11')
+    })
+
+    it('decrements a whole amount by exactly one', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      fireEvent.change(field(label, 1), { target: { value: '10' } })
+      spin(field(label, 1), -1)
+      expect(field(label, 1)).toHaveValue(9)
+      expect(field(label, 1).value).toBe('9')
+    })
+
+    it('steps up and back down by one whole step each time', async () => {
+      page()
+      await waitFor(() => expect(field(label, 1)).toHaveValue(loaded))
+
+      fireEvent.change(field(label, 1), { target: { value: '10' } })
+      const input = field(label, 1)
+
+      spin(input, 1, 2)
+      expect(input).toHaveValue(12)
+
+      spin(input, -1)
+      expect(input).toHaveValue(11)
+
+      spin(input, -1)
+      expect(input).toHaveValue(10)
+      expect(input.value).toBe('10')
+    })
+
+    it('keeps the SAME DOM node and the focus across continuous typing', async () => {
+      page()
+      const originalNode = await screen.findByLabelText(`${label} 1`)
+      const input = originalNode as HTMLInputElement
+      input.focus()
+
+      // Start from empty, the way a manager does before typing a fresh amount.
+      fireEvent.change(input, { target: { value: '' } })
+
+      for (const char of '100') {
+        fireEvent.change(input, { target: { value: `${input.value}${char}` } })
+        // THE assertion that matters: still the same element, still focused.
+        expect(screen.getByLabelText(`${label} 1`)).toBe(originalNode)
+        expect(document.activeElement).toBe(originalNode)
+      }
+
+      expect(originalNode).toHaveValue(100)
+    })
+  })
+
+  it('adds a new amount row that is whole-amount only too', async () => {
+    page()
+    await waitFor(() => expect(field(SERVICE, 1)).toHaveValue(10))
+
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مبلغ خدمة' }))
+    const added = await screen.findByLabelText(`${SERVICE} 4`)
+    expect(added).toHaveValue(null)
+
+    fireEvent.change(added, { target: { value: '250' } })
+    expect(field(SERVICE, 4)).toHaveValue(250)
+
+    fireEvent.change(field(SERVICE, 4), { target: { value: '250.75' } })
+    expect(field(SERVICE, 4)).toHaveValue(250)
+  })
+
+  it('saves a typed whole amount, never a fraction', async () => {
+    page()
+    await waitFor(() => expect(field(SERVICE, 1)).toHaveValue(10))
+
+    fireEvent.change(field(SERVICE, 1), { target: { value: '10' } })
+    // The fraction typed straight after is refused, so 10 is what is saved.
+    fireEvent.change(field(SERVICE, 1), { target: { value: '10.5' } })
+    expect(field(SERVICE, 1)).toHaveValue(10)
+
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الإعدادات' }))
+    await waitFor(() =>
+      expect(mocks.setServiceCharge).toHaveBeenCalledWith({ amounts: [1000, 3000, 5000] }),
+    )
+  })
+
+  it('leaves the existing row controls exactly where they were', async () => {
+    page()
+    await waitFor(() => expect(field(SERVICE, 1)).toHaveValue(10))
+
+    const row = field(SERVICE, 1).closest('div') as HTMLElement
+    // One input, the two reorder buttons and the remove button — no second
+    // field and no duplicate +/- pair introduced by the whole-amount rule.
+    expect(row.querySelectorAll('input')).toHaveLength(1)
+    expect(within(row).getByLabelText('تحريك المبلغ للأعلى')).toBeInTheDocument()
+    expect(within(row).getByLabelText('تحريك المبلغ للأسفل')).toBeInTheDocument()
+    expect(within(row).getByLabelText('حذف مبلغ الخدمة')).toBeInTheDocument()
+
+    // The discount list is not reorderable, and that is unchanged.
+    const discountRow = field(DISCOUNT, 1).closest('div') as HTMLElement
+    expect(discountRow.querySelectorAll('input')).toHaveLength(1)
+    expect(within(discountRow).queryByLabelText('تحريك المبلغ للأعلى')).not.toBeInTheDocument()
+    expect(within(discountRow).getByLabelText('حذف مبلغ الخصم')).toBeInTheDocument()
+  })
+
+  it('leaves the table count presentation exactly as it was', async () => {
+    page()
+    // Still the read-only <output> with its own +/- buttons: the whole-amount
+    // rule is about the amount rows, not about this control.
+    const tableCount = await screen.findByLabelText('عدد الطاولات')
+    expect(tableCount.tagName).toBe('OUTPUT')
+    expect(tableCount).toHaveTextContent('0')
+    expect(screen.getByLabelText('زيادة')).toBeInTheDocument()
+    expect(screen.getByLabelText('إنقاص')).toBeInTheDocument()
+  })
+})
