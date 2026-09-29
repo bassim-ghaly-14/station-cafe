@@ -172,46 +172,19 @@ export function OrderPanel({
       .finally(() => setTicketBusy(false))
   }
 
-  // Three states, not two. `null` means this order has no wash line at all, so
-  // no ticket is offered. A handler that does nothing means there IS a wash
-  // line but a ticket is already being issued — the control stays visible and
-  // inert rather than disappearing under the cashier's finger mid-print.
-  const washTicketAction = !hasWash ? null : ticketBusy ? () => {} : issueTicket
+  const washTicketAction = washTicketHandler(hasWash, ticketBusy, issueTicket)
 
   return (
     <Card>
       <CardHeader
         title={orderPanelTitle(order, t)}
-        subtitle={
-          // Table identity comes from the authoritative order row (backend
-          // join) — never from a UI selection. Takeaways show no fake table.
-          order.order_type === 'TABLE' && order.table_label
-            ? `${order.table_label} · ${t('pos.state.' + order.status)}`
-            : t('pos.state.' + order.status)
-        }
+        subtitle={orderPanelSubtitle(order, t)}
         actions={
-          // The panel is the LAST place the rule can be honoured, so it decides
-          // for itself: even if a parent hands down a handler, a ticketed order
-          // is never rendered with an executable cancellation.
-          onDiscard && !cancelBlocked ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onDiscard}
-              disabled={discarding}
-              loading={discarding}
-              aria-label={t('pos.discardOrder')}
-            >
-              <Trash2 size={16} aria-hidden />
-              {t('pos.discardOrder')}
-            </Button>
-          ) : cancelBlocked ? (
-            // The action is gone because the rule forbids it, so the reason is
-            // stated rather than left to be guessed at.
-            <span className="max-w-56 text-end text-caption text-foreground-subtle">
-              {t('pos.cancelBlockedByTicket')}
-            </span>
-          ) : null
+          <DiscardAction
+            cancelBlocked={cancelBlocked}
+            discarding={discarding}
+            onDiscard={onDiscard}
+          />
         }
       />
       <LineList order={order} onChange={onChange} onRefreshTables={onRefreshTables} />
@@ -240,31 +213,81 @@ export function OrderPanel({
       ) : (
         <ProductBrowser products={products ?? []} qty={qty} onQtyChange={setQty} onAdd={addItem} />
       )}
+      <OrderDialogs
+        orderId={order.id}
+        discountOpen={discountOpen}
+        onDiscountClose={() => setDiscountOpen(false)}
+        discount={discount}
+        subtotal={preview?.subtotal ?? 0}
+        discountOptions={discountOptions}
+        onDiscountApply={(d, refreshed) => {
+          setDiscountOpen(false)
+          onDiscountChange(d)
+          if (refreshed) onChange(refreshed)
+        }}
+        customerOpen={customerOpen}
+        onCustomerClose={() => setCustomerOpen(false)}
+        onCustomerAttached={(o) => {
+          setCustomerOpen(false)
+          onChange(o)
+        }}
+      />
+    </Card>
+  )
+}
+
+/**
+ * The panel's two order-scoped dialogs.
+ *
+ * They are opened from the checkout summary and dismissed by their own
+ * callback, so the panel passes the open flag and the exact handlers instead
+ * of owning a second copy of either dialog's lifecycle.
+ */
+function OrderDialogs({
+  orderId,
+  discountOpen,
+  onDiscountClose,
+  discount,
+  subtotal,
+  discountOptions,
+  onDiscountApply,
+  customerOpen,
+  onCustomerClose,
+  onCustomerAttached,
+}: {
+  readonly orderId: number
+  readonly discountOpen: boolean
+  readonly onDiscountClose: () => void
+  readonly discount: DiscountSel
+  readonly subtotal: number
+  readonly discountOptions: number[]
+  readonly onDiscountApply: (d: DiscountSel, refreshed?: PosOrder) => void
+  readonly customerOpen: boolean
+  readonly onCustomerClose: () => void
+  readonly onCustomerAttached: (o: PosOrder) => void
+}) {
+  if (!discountOpen && !customerOpen) return null
+
+  return (
+    <>
       {discountOpen ? (
         <DiscountDialog
           initial={discount}
-          orderId={order.id}
-          subtotal={preview?.subtotal ?? 0}
+          orderId={orderId}
+          subtotal={subtotal}
           amounts={discountOptions}
-          onClose={() => setDiscountOpen(false)}
-          onApply={(d, refreshed) => {
-            setDiscountOpen(false)
-            onDiscountChange(d)
-            if (refreshed) onChange(refreshed)
-          }}
+          onClose={onDiscountClose}
+          onApply={onDiscountApply}
         />
       ) : null}
       {customerOpen ? (
         <CustomerPicker
-          orderId={order.id}
-          onClose={() => setCustomerOpen(false)}
-          onAttached={(o) => {
-            setCustomerOpen(false)
-            onChange(o)
-          }}
+          orderId={orderId}
+          onClose={onCustomerClose}
+          onAttached={onCustomerAttached}
         />
       ) : null}
-    </Card>
+    </>
   )
 }
 
@@ -366,4 +389,81 @@ function orderPanelTitle(order: PosOrder, t: TFunction): string {
   if (typeof order.takeaway_no !== 'number')
     return `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
   return `${t('pos.takeaway')} #${order.takeaway_no} · ${t('pos.order')} ${order.id}`
+}
+
+/**
+ * The panel subtitle: the table this order belongs to, plus its state.
+ *
+ * Table identity comes from the authoritative order row (backend join) — never
+ * from a UI selection. Takeaways have no table, so they show the state alone.
+ */
+function orderPanelSubtitle(order: PosOrder, t: TFunction): string {
+  if (order.order_type === 'TABLE' && order.table_label)
+    return `${order.table_label} · ${t('pos.state.' + order.status)}`
+  return t('pos.state.' + order.status)
+}
+
+/**
+ * The wash-ticket control offered by the checkout summary.
+ *
+ * Three states, not two. `null` means this order has no wash line at all, so no
+ * ticket is offered. A handler that does nothing means there IS a wash line but
+ * a ticket is already being issued — the control stays visible and inert rather
+ * than disappearing under the cashier's finger mid-print.
+ */
+function washTicketHandler(
+  hasWash: boolean,
+  ticketBusy: boolean,
+  issueTicket: () => void,
+): (() => void) | null {
+  if (!hasWash) return null
+  if (ticketBusy) return () => {}
+  return issueTicket
+}
+
+/**
+ * The panel's discard slot.
+ *
+ * The panel is the LAST place the cancellation rule can be honoured, so it
+ * decides for itself: even if a parent hands down a handler, a ticketed order
+ * is never rendered with an executable cancellation.
+ */
+function DiscardAction({
+  cancelBlocked,
+  discarding,
+  onDiscard,
+}: {
+  readonly cancelBlocked: boolean
+  readonly discarding?: boolean
+  readonly onDiscard?: () => void
+}) {
+  const { t } = useTranslation()
+
+  if (onDiscard && !cancelBlocked) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onDiscard}
+        disabled={discarding}
+        loading={discarding}
+        aria-label={t('pos.discardOrder')}
+      >
+        <Trash2 size={16} aria-hidden />
+        {t('pos.discardOrder')}
+      </Button>
+    )
+  }
+
+  // The action is gone because the rule forbids it, so the reason is stated
+  // rather than left to be guessed at.
+  if (cancelBlocked) {
+    return (
+      <span className="max-w-56 text-end text-caption text-foreground-subtle">
+        {t('pos.cancelBlockedByTicket')}
+      </span>
+    )
+  }
+
+  return null
 }
