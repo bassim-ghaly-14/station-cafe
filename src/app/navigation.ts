@@ -41,6 +41,24 @@ export interface NavItem {
   /** The weakest role that may see this destination. */
   readonly minRole: UserRole
   readonly labelKey: string
+  /**
+   * A shorter label for surfaces where a slot is a fraction of the screen —
+   * today the phone's bottom bar, where each destination owns a quarter of a
+   * 320–430px viewport at `text-xs`.
+   *
+   * It exists because a full Arabic destination name cannot fit that slot, and
+   * the two available outcomes were both bad: widening the slot squeezes the
+   * icons, and truncating the word mid-letter ("الأصناف والخدما…") is a
+   * half-finished-looking navigation. So the destination keeps its full name
+   * everywhere it has room — the desktop sidebar, the "More" sheet, the
+   * accessible name of the bar button itself — and the bar shows a short form
+   * that is still an accurate name for the same place.
+   *
+   * Optional: a destination whose full label already fits simply omits it, and
+   * the surface falls back to `labelKey`. Absent is always better than a
+   * shortened label nobody needs.
+   */
+  readonly mobileLabelKey?: string
   readonly icon: LucideIcon
   /**
    * Whether this destination earns one of the four permanent slots in the
@@ -66,13 +84,27 @@ export interface NavItem {
  */
 export const NAV: readonly NavItem[] = [
   { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store, primary: true },
-  { view: 'catalog', minRole: 'STAFF', labelKey: 'nav.catalog', icon: Package, primary: true },
+  // "الأصناف والخدمات" is 16 characters and cannot be shown whole in a quarter
+  // of a 360px screen; "الأصناف" is the same destination by the name the whole
+  // catalogue screen already uses (`catalog.description`).
+  {
+    view: 'catalog',
+    minRole: 'STAFF',
+    labelKey: 'nav.catalog',
+    mobileLabelKey: 'nav.catalogShort',
+    icon: Package,
+    primary: true,
+  },
   // The customer workspace is operational: every role may list, search and
   // register customers. Its financial layer is gated by the backend, not here.
   {
     view: 'customers',
     minRole: 'STAFF',
     labelKey: 'nav.customers',
+    // "العملاء والسيارات" has the same problem as the catalogue, and the
+    // workspace is a customer list with a car field on each record, so
+    // "العملاء" names it exactly.
+    mobileLabelKey: 'nav.customersShort',
     icon: UserRound,
     primary: true,
   },

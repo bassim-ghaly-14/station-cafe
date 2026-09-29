@@ -16,7 +16,16 @@ import { DocumentPreviewState } from '@/components/states'
 import { useErrText } from '@/lib/err'
 import { printDocumentLabel } from '@/lib/print-presentation'
 import { api, isPrintPreview, type PrintOutcome, type PrintPreview } from '@/services/posApi'
+import { fitPreviewScale, useMeasuredWidth } from './preview-scale'
 import { ThermalReceipt } from './ThermalReceipt'
+
+/**
+ * The paper every Station template prints on, used for the hint line and for
+ * the display fit before a document has answered. The authoritative value is
+ * always the one the preview itself carries (`preview.paper_mm`); this is only
+ * what the dialog can say before then.
+ */
+const DEFAULT_PAPER_MM = 80
 
 /** A persisted document or the current read-only order snapshot. */
 export type PrintPreviewTarget =
@@ -87,26 +96,45 @@ function reprintRequest(target: PrintPreviewTarget): Promise<PrintOutcome> {
 }
 
 /**
- * What "expanded" means, in one place: a wider dialog, a larger display scale
- * and the label of the control that undoes it. The three readings can never
- * disagree, because they are one decision.
+ * What "expanded" means, in one place: the shell's own measurements, the
+ * largest display scale the document may be shown at, and the label of the
+ * control that undoes it. The three readings can never disagree, because they
+ * are one decision.
+ *
+ * Both shells are the shared `Dialog` — a phone sheet below `sm`, a centred
+ * card from `sm` up — and only the EXPANDED one stops being a sheet on a phone:
+ * full bleed to every edge, the top safe-area inset respected, no rounded
+ * corners and no border, because a surface that fills the screen has no edge to
+ * round. The desktop measurement is byte-for-byte what it always was, and the
+ * `sm:` prefix on each of those classes is what keeps it that way (the shared
+ * dialog declares its own `sm:max-h`, which a bare class would otherwise
+ * override at every width).
+ *
+ * `maxScale` is a CEILING, not the scale: the real scale is the largest one
+ * that still fits the measured width, so a phone shows the whole document
+ * instead of a cropped middle of it. See `./preview-scale`.
  */
 function expandedPresentation(expanded: boolean): {
   readonly sizeClass: string
-  readonly scale: number
+  readonly maxScale: number
   readonly toggleLabel: 'print.collapse' | 'print.expand'
 } {
   if (expanded) {
     return {
-      sizeClass: 'w-[min(calc(100vw-1rem),42rem)] max-h-[calc(100dvh-1rem)] max-w-2xl',
-      scale: 2,
+      sizeClass: [
+        'w-full max-w-none max-h-dvh rounded-none border-0 pt-[env(safe-area-inset-top)]',
+        'sm:w-[min(calc(100vw-1rem),42rem)] sm:max-w-2xl sm:max-h-[calc(100dvh-1rem)] sm:rounded-lg sm:border sm:pt-0',
+      ].join(' '),
+      maxScale: 2,
       toggleLabel: 'print.collapse',
     }
   }
 
   return {
+    // A near-full-width sheet with a real margin on each side, so the document
+    // is framed rather than bleeding off both edges of a 320px screen.
     sizeClass: 'w-[min(calc(100vw-1rem),30rem)] max-w-120',
-    scale: 1.3,
+    maxScale: 1.3,
     toggleLabel: 'print.expand',
   }
 }
@@ -117,15 +145,20 @@ function expandedPresentation(expanded: boolean): {
  * A presentational reading of the state: it renders the receipt, or the calm
  * loading / empty / failure view, and never touches the request. `onRetry` is
  * passed straight through, so a retry always runs the caller's own load.
+ *
+ * `measureRef` is the element the caller's display scale is fitted to: the
+ * centering row, whose width IS the space the document may occupy.
  */
 function PreviewContent({
   state,
   scale,
   onRetry,
+  measureRef,
 }: {
   readonly state: PreviewState
   readonly scale: number
   readonly onRetry: () => void
+  readonly measureRef: (element: HTMLDivElement | null) => void
 }) {
   if (state.status === 'error') {
     return <DocumentPreviewState variant="error" reason={state.reason} onRetry={onRetry} />
@@ -146,12 +179,29 @@ function PreviewContent({
     <div
       dir="ltr"
       data-testid="print-preview-viewer"
-      className="viewer w-full min-h-0 overflow-x-hidden overflow-y-auto rounded-md bg-surface-muted p-3 shadow-inner"
+      /*
+       * NOT a scroll container. The dialog body is the single scroll owner of
+       * this surface (that is the shared `Dialog`'s contract), and a second
+       * one here could only ever have scrolled in a phone-sized box inside a
+       * phone-sized box — two scrollbars for one document. The viewer is
+       * therefore just the paper's frame, as tall as the document.
+       *
+       * `overflow-x-hidden` is a rounding guard, not the fitting mechanism: the
+       * scale below is floored to the measured width, so the document is never
+       * wider than this box, and the guard only stops a sub-pixel rounding
+       * remainder from turning into a horizontal scrollbar on the dialog.
+       *
+       * The padding steps down on a phone (8px instead of 12px on each side):
+       * at 320px those 8 extra pixels are 5% of the width the document has to
+       * be shown in.
+       */
+      className="viewer w-full min-w-0 overflow-x-hidden rounded-md bg-surface-muted p-2 shadow-inner sm:p-3"
     >
       <div
+        ref={measureRef}
         data-testid="print-preview-centering"
         dir="ltr"
-        className="flex min-w-max justify-center"
+        className="flex w-full justify-center"
       >
         <div
           data-testid="print-preview-scaling"
@@ -242,8 +292,22 @@ export function PrintPreviewDialog({
 
   const canReprint = target.kind !== 'order'
   // The paper remains 80mm. This layer is the single display-scale boundary:
-  // CSS zoom reserves the complete scaled layout bounds for centering/scrolling.
+  // CSS zoom reserves the complete scaled layout bounds for centering.
   const presentation = expandedPresentation(expanded)
+  const preview = state.status === 'ready' ? state.preview : null
+  /*
+   * The scale is fitted to the width actually on screen, so the same dialog
+   * shows the whole document on a 320px phone and the desktop's full 1.3 / 2
+   * on a desktop. The ref points at the centering row, whose width is exactly
+   * the space the document may occupy; until it has been measured (and in a
+   * layout-less environment) the presentation's own scale is used.
+   */
+  const { ref: measureRef, width: availableWidth } = useMeasuredWidth()
+  const scale = fitPreviewScale(
+    presentation.maxScale,
+    availableWidth,
+    preview?.paper_mm ?? DEFAULT_PAPER_MM,
+  )
 
   const reprint = () => {
     if (!canReprint) return
@@ -260,44 +324,52 @@ export function PrintPreviewDialog({
       .finally(() => setPrinting(false))
   }
 
-  const preview = state.status === 'ready' ? state.preview : null
-
   return (
     <Dialog
       open
       onClose={onClose}
       title={t('print.previewTitle')}
       className={presentation.sizeClass}
-    >
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-xs text-foreground-subtle">
-          {t('print.previewHint', { paper: preview?.paper_mm ?? 80 })}
-          {preview ? (
-            <>
-              {' · '}
-              <span className="font-medium text-foreground-muted">
-                {printDocumentLabel(t, preview.doc_type)}
-              </span>
-            </>
-          ) : null}
-        </p>
+      /*
+       * The expand/collapse control lives in the sticky header, beside the
+       * close button, and not at the top of the scrolling body. On a phone the
+       * body is a long document: a control down there is a control the user has
+       * to scroll back to the top to reach, in the one presentation where the
+       * document is taller than the screen. The title is `min-w-0` and this is
+       * `shrink-0`, so an Arabic title shrinks rather than pushing either
+       * control past the edge of a 320px screen.
+       */
+      headerActions={
         <Button
           variant="ghost"
           size="icon-sm"
+          className="shrink-0"
           aria-label={t(presentation.toggleLabel)}
           title={t(presentation.toggleLabel)}
           onClick={() => setExpanded((value) => !value)}
         >
           <Maximize2 size={16} aria-hidden />
         </Button>
-      </div>
+      }
+    >
+      <p className="mb-3 text-xs text-foreground-subtle">
+        {t('print.previewHint', { paper: preview?.paper_mm ?? DEFAULT_PAPER_MM })}
+        {preview ? (
+          <>
+            {' · '}
+            <span className="font-medium text-foreground-muted">
+              {printDocumentLabel(t, preview.doc_type)}
+            </span>
+          </>
+        ) : null}
+      </p>
       {/* The one state vocabulary for every document preview in the app: the
           POS order, an invoice, a wash ticket, a shift report, a day report.
           `onRetry` is the single reload entry point, so a retry always runs
           exactly one request for the CURRENT target — the callback is rebuilt
           whenever the target changes, and the request token discards answers
           that belong to a target that is no longer on screen. */}
-      <PreviewContent state={state} scale={presentation.scale} onRetry={load} />
+      <PreviewContent state={state} scale={scale} onRetry={load} measureRef={measureRef} />
 
       <DialogActions className="mt-4">
         <Button variant="outline" onClick={onClose}>

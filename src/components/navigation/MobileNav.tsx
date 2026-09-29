@@ -20,6 +20,17 @@
  * else lives behind "More". Both surfaces read the SAME list, so a destination
  * can never exist in one and be missing from the other.
  *
+ * Why a bar label is shorter than a destination name
+ * --------------------------------------------------
+ * A bar slot is a quarter of a 320–430px viewport, and a full Arabic
+ * destination name does not fit one at `text-xs`: "الأصناف والخدمات" was cut to
+ * "الأصناف والخدما…", which reads as a bug rather than a design. So the bar
+ * shows the destination's `mobileLabelKey` — a short form that is still an
+ * accurate name for the same place — while the desktop sidebar, the "More"
+ * sheet and the button's own accessible name all keep the full one. The short
+ * form is declared per destination in `@/app/navigation` and translated like
+ * every other string; nothing here is hardcoded Arabic.
+ *
  * Direction, insets and the keyboard
  * ----------------------------------
  * The bar uses logical properties only, so it mirrors correctly in Arabic RTL
@@ -77,7 +88,12 @@ export function MobileNav() {
               <li key={item.view} className="min-w-0 flex-1">
                 <NavButton
                   icon={Icon}
-                  label={t(item.labelKey)}
+                  // The short form is a PRESENTATION choice for a slot that is a
+                  // quarter of the screen. The full name is still what the
+                  // control is called (see `accessibleName`) and what the
+                  // "More" sheet below lists, so nothing is lost but pixels.
+                  label={t(item.mobileLabelKey ?? item.labelKey)}
+                  accessibleName={t(item.labelKey)}
                   active={active}
                   onClick={() => navigate(item.view)}
                 />
@@ -147,16 +163,30 @@ export function MobileNav() {
  * distinguishes three text glyphs that are otherwise easy to confuse. The
  * target is comfortably above the 44px minimum because this is the primary
  * navigation on a phone held in one hand.
+ *
+ * Two details make the label survive a narrow screen:
+ *
+ *  - `label` is the SHORT form the destination declares for this surface, and
+ *    `accessibleName` is its full name. The visible text is a subset of the
+ *    accessible name, which is what WCAG's "label in name" asks for, so a
+ *    screen-reader user hears "الأصناف والخدمات" for a tab that reads "الأصناف".
+ *  - `truncate` stays as a guard, NOT as the design. The labels are sized to fit
+ *    a quarter of a 320px screen, so it never fires; it exists so that a
+ *    destination added tomorrow with a long name degrades to an ellipsis rather
+ *    than pushing its neighbours out of the bar.
  */
 function NavButton({
   icon: Icon,
   label,
+  accessibleName,
   active,
   expanded,
   onClick,
 }: {
   readonly icon: LucideIcon
   readonly label: string
+  /** The destination's full name; omitted when it is the visible label. */
+  readonly accessibleName?: string
   readonly active: boolean
   /** For a control that opens a panel rather than navigating. */
   readonly expanded?: boolean
@@ -168,13 +198,16 @@ function NavButton({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       aria-expanded={expanded}
+      aria-label={accessibleName}
       className={cn(
         'flex min-h-14 w-full flex-col items-center justify-center gap-0.5 px-1 py-1.5 transition-colors',
         active ? 'text-primary' : 'text-foreground-muted active:bg-surface-active',
       )}
     >
       <Icon size={22} aria-hidden />
-      <span className="max-w-full truncate text-xs font-medium leading-tight">{label}</span>
+      <span className="max-w-full truncate text-center text-xs font-medium leading-tight">
+        {label}
+      </span>
     </button>
   )
 }

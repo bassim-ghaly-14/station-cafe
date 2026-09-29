@@ -34,6 +34,16 @@ export function Dialog({
   children,
   className,
   wide,
+  /**
+   * Extra controls rendered in the sticky header, before the close button.
+   *
+   * The header is the one part of the dialog that never scrolls away, so a
+   * control the user must be able to reach while reading a long body belongs
+   * here rather than inside `children`. `shrink-0` keeps it from being
+   * compressed by a long title, and the title itself is `min-w-0`, so a wide
+   * Arabic title shrinks instead of pushing the controls off the dialog.
+   */
+  headerActions,
 }: {
   readonly open: boolean
   readonly onClose: () => void
@@ -41,6 +51,7 @@ export function Dialog({
   readonly children: ReactNode
   readonly className?: string
   readonly wide?: boolean
+  readonly headerActions?: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
@@ -54,8 +65,16 @@ export function Dialog({
   useEffect(() => {
     if (!open) return
     const el = ref.current
+    /*
+     * The close control is named explicitly rather than left to "first
+     * focusable in DOM order": a caller that puts a control in `headerActions`
+     * would otherwise change where focus lands on every opening. The close
+     * button is the dialog's own dismiss control, so it stays the default
+     * target whatever else the header carries.
+     */
     const target =
       el?.querySelector<HTMLElement>('[data-dialog-autofocus]') ??
+      el?.querySelector<HTMLElement>('[data-dialog-close]') ??
       el?.querySelector<HTMLElement>(FOCUSABLE)
     target?.focus()
     const onKey = (e: KeyboardEvent) => {
@@ -115,10 +134,12 @@ export function Dialog({
          */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 bg-surface-dialog px-4 pt-4 pb-3 sm:px-5 sm:pt-5">
           <h2 className="min-w-0 text-base font-bold text-foreground-strong">{title}</h2>
+          {headerActions}
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
+            data-dialog-close=""
             onClick={onClose}
             aria-label={t('app.close')}
           >

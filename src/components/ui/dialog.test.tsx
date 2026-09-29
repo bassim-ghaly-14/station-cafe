@@ -75,6 +75,39 @@ describe('Dialog focus lifecycle', () => {
     expect(screen.getByRole('button', { name: 'إغلاق' })).toHaveFocus()
   })
 
+  it('keeps close as the initial focus when the header carries its own control', () => {
+    // A caller-provided header control sits BEFORE the close button in the DOM
+    // (that is the order the header lays out in), so "first focusable" alone
+    // would hand initial focus to it on every opening. The dialog's own dismiss
+    // control is named explicitly, so adding a header action cannot move where
+    // focus lands.
+    render(
+      <Dialog
+        open
+        onClose={() => undefined}
+        title="عنوان"
+        headerActions={<button type="button">إجراء</button>}
+      >
+        <input aria-label="amount" />
+      </Dialog>,
+    )
+    expect(screen.getByRole('button', { name: 'إغلاق' })).toHaveFocus()
+  })
+
+  it('still honours an explicitly marked control over the header', () => {
+    render(
+      <Dialog
+        open
+        onClose={() => undefined}
+        title="عنوان"
+        headerActions={<button type="button">إجراء</button>}
+      >
+        <input aria-label="amount" data-dialog-autofocus="" />
+      </Dialog>,
+    )
+    expect(screen.getByLabelText('amount')).toHaveFocus()
+  })
+
   it('does not re-focus a control the user moved focus to', async () => {
     render(<Harness />)
     const close = screen.getByRole('button', { name: 'إغلاق' })

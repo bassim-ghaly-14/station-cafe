@@ -17,6 +17,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { NAV, isNavViewActive, primaryNav, visibleNav } from './navigation'
+import i18n from '@/lib/i18n'
 import { roleRank, type UserRole } from '@/lib/roles'
 
 const views = (role: UserRole | undefined) => visibleNav(role).map((n) => n.view)
@@ -42,6 +43,33 @@ describe('navigation configuration', () => {
     for (const item of NAV) {
       expect(item.labelKey, item.view).toMatch(/^nav\./)
       expect(item.icon, item.view).toBeDefined()
+      // The optional short form is a navigation key like any other, and a
+      // destination must never name a DIFFERENT place than its full label does.
+      if (item.mobileLabelKey) expect(item.mobileLabelKey, item.view).toMatch(/^nav\./)
+    }
+  })
+
+  it('shortens a bar label only where the full name cannot fit a slot', () => {
+    /*
+     * A bar slot is a quarter of a 320–430px viewport at `text-xs`. Anything
+     * past roughly a dozen Arabic characters is cut mid-word there, so the
+     * destinations long enough to need a short form must DECLARE one — and the
+     * short forms must be genuinely short, not the same long word again.
+     */
+    const short = i18n.t.bind(i18n)
+    for (const item of primaryNav('ADMIN')) {
+      const label = short(item.labelKey)
+      if (label.length <= 12) {
+        expect(item.mobileLabelKey, item.view).toBeUndefined()
+        continue
+      }
+      expect(item.mobileLabelKey, `${item.view} needs a bar label`).toBeDefined()
+      const mobile = short(item.mobileLabelKey as string)
+      expect(mobile.length, `${item.view} bar label`).toBeLessThan(label.length)
+      // And it is a prefix of the full name, so the bar's visible text is
+      // contained in the accessible name (WCAG "label in name") and the tab
+      // still names the same place.
+      expect(label.startsWith(mobile), `${item.view} bar label`).toBe(true)
     }
   })
 

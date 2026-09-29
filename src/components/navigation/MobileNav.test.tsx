@@ -140,6 +140,34 @@ describe('MobileNav bottom bar', () => {
     }
   })
 
+  it('shortens a destination name that cannot fit a quarter of the screen', () => {
+    renderNav('ADMIN')
+    const staffBar = within(bar())
+
+    // The defect this prevents: "الأصناف والخدمات" is 16 characters and a bar
+    // slot at `text-xs` holds about nine, so the label was cut mid-word to
+    // "الأصناف والخدما…". The tab now carries the short form the destination
+    // declares for this surface, which is a whole word and the same place.
+    expect(staffBar.getByRole('button', { name: 'الأصناف والخدمات' })).toHaveTextContent('الأصناف')
+    // The full name is not thrown away: it is still the control's accessible
+    // name, so a screen reader announces the complete destination.
+    expect(staffBar.getByRole('button', { name: 'الأصناف والخدمات' })).toHaveAccessibleName(
+      'الأصناف والخدمات',
+    )
+    // And it must be a LABEL, not an ellipsis of one.
+    expect(staffBar.queryByText(/…/)).not.toBeInTheDocument()
+  })
+
+  it('keeps a short destination name exactly as the navigation already writes it', () => {
+    renderNav('ADMIN')
+    const staffBar = within(bar())
+
+    // "نقطة البيع" fits a slot, so it is shown whole and the visible text is the
+    // accessible name — the short form is not applied where it is not needed.
+    const pos = staffBar.getByRole('button', { name: 'نقطة البيع' })
+    expect(pos).toHaveTextContent('نقطة البيع')
+  })
+
   it('never puts a privileged destination in a STAFF bar', () => {
     renderNav('STAFF')
 

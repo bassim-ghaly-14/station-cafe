@@ -5,7 +5,7 @@
  *  - nothing is created or mutated, reprint is blocked while printing,
  *  - backend errors surface with a retry.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@/components/ui'
 import '@/lib/i18n'
@@ -404,7 +404,7 @@ describe('PrintPreviewDialog', () => {
   })
 
   it('drops an in-flight answer when the dialog is closed', async () => {
-    let release: (value: unknown) => void = () => {}
+    let release: (value: unknown) => void = () => undefined
     mocks.printPreviewInvoice.mockReturnValue(
       new Promise((resolve) => {
         release = resolve
@@ -422,5 +422,122 @@ describe('PrintPreviewDialog', () => {
     // Nothing may be written into a closed dialog.
     release(preview('CAFE_INVOICE', 'فاتورة رقم 1001'))
     await waitFor(() => expect(mocks.printPreviewInvoice).toHaveBeenCalledTimes(1))
+  })
+})
+
+/**
+ * The preview's RESPONSIVE contract — the shell it is shown in, the single
+ * scroll owner, and the fit between a fixed 80mm paper and a phone's width.
+ *
+ * These are the assertions that were missing when the document was drawn at a
+ * constant 1.3 (2 expanded) inside a box that can offer it ~280px on a 360px
+ * phone: the paper overflowed and the viewer clipped it, so both sides of every
+ * invoice were unreachable rather than merely scrolled.
+ */
+describe('PrintPreviewDialog on a narrow viewport', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.printPreviewInvoice.mockResolvedValue(preview('CAFE_INVOICE', 'فاتورة رقم 1001'))
+  })
+
+  /** The dialog shell: the element that owns the dialog's own measurements. */
+  async function shell() {
+    render(
+      <ToastProvider>
+        <PrintPreviewDialog target={{ kind: 'invoice', invoice_id: 1001 }} onClose={vi.fn()} />
+      </ToastProvider>,
+    )
+    await screen.findByText('فاتورة رقم 1001')
+    return screen.getByRole('dialog')
+  }
+
+  it('is a near-full-width sheet with real margins, not a fixed pixel width', async () => {
+    const dialog = await shell()
+
+    // `w-[min(calc(100vw-1rem),30rem)]`: the width is derived from the viewport
+    // and capped, so a 320px phone and a desktop both get a sensible dialog and
+    // no hardcoded measurement can push it past the screen edge.
+    expect(dialog.className).toContain('w-[min(calc(100vw-1rem),30rem)]')
+    // The shared dialog's own phone sheet behaviour, including `dvh` rather than
+    // `vh`, is still what bounds it.
+    expect(dialog.className).toContain('max-h-[92dvh]')
+    expect(dialog.className).not.toContain('100vh')
+  })
+
+  it('makes fullscreen a true viewport-filling surface on a phone', async () => {
+    const dialog = await shell()
+    fireEvent.click(screen.getByRole('button', { name: 'توسيع المعاينة' }))
+
+    // Below `sm` the surface stops being a sheet: no side margin, no rounded
+    // top, no border, and the full dynamic viewport height…
+    expect(dialog.className).toContain('max-w-none')
+    expect(dialog.className).toContain('max-h-dvh')
+    expect(dialog.className).toContain('rounded-none')
+    expect(dialog.className).toContain('border-0')
+    // …with the top safe-area inset respected, so the header clears a notch.
+    expect(dialog.className).toContain('pt-[env(safe-area-inset-top)]')
+    // …and the desktop measurement is explicitly restored from `sm` up, so the
+    // fullscreen feature on a desktop is untouched by the phone treatment.
+    expect(dialog.className).toContain('sm:max-w-2xl')
+    expect(dialog.className).toContain('sm:max-h-[calc(100dvh-1rem)]')
+    expect(dialog.className).toContain('sm:rounded-lg')
+  })
+
+  it('has exactly one scroll owner: the dialog, not the document frame', async () => {
+    await shell()
+    const viewer = screen.getByTestId('print-preview-viewer')
+
+    // The viewer used to declare itself a scroll container with no height to
+    // scroll in, inside a dialog that already scrolls — two owners for one
+    // document. It is a frame now, and the clipping is a rounding guard only.
+    expect(viewer.className).not.toContain('overflow-y-auto')
+    expect(viewer.className).toContain('overflow-x-hidden')
+    expect(viewer.className).toContain('min-w-0')
+    // The dialog is the single owner, exactly as every other dialog in the app.
+    expect(screen.getByRole('dialog').className).toContain('overflow-y-auto')
+  })
+
+  it('keeps close and expand reachable in the header while the document scrolls', async () => {
+    await shell()
+
+    // Both controls are in the sticky header — the one part of the dialog that
+    // does not scroll away — and neither can be squeezed by the Arabic title.
+    // Scoped to the header, because the footer carries a "close" action too and
+    // only the header's is the always-reachable one.
+    const heading = screen.getByRole('heading', { name: 'معاينة الطباعة' })
+    const header = within(heading.parentElement as HTMLElement)
+    const expand = header.getByRole('button', { name: 'توسيع المعاينة' })
+    const close = header.getByRole('button', { name: 'إغلاق' })
+    expect(expand.className).toContain('shrink-0')
+    expect(heading.className).toContain('min-w-0')
+    // Focus behaviour is unchanged by the control moving: the dialog's own
+    // dismiss control is still where focus lands on opening.
+    expect(close).toHaveFocus()
+    // …and the control is still operable by keyboard from there.
+    expand.focus()
+    fireEvent.click(expand)
+    expect(header.getByRole('button', { name: 'تصغير المعاينة' })).toBeInTheDocument()
+  })
+
+  it('fits the fixed 80mm paper into the width actually on screen', async () => {
+    // jsdom has no layout, so the measured width is stubbed the way a 360px
+    // phone's centering row would report it. The scale has to follow it —
+    // otherwise the document is drawn wider than the box and clipped.
+    const available = 280
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(available)
+    try {
+      await shell()
+      const scaling = screen.getByTestId('print-preview-scaling')
+      const paper = screen.getByLabelText('معاينة الإيصال الحراري')
+
+      // The paper is STILL 80mm — the fit scales the document, it never resizes
+      // the paper or anything the printer is told.
+      expect(paper.style.width).toBe('80mm')
+      const scale = Number(scaling.getAttribute('data-preview-scale'))
+      expect(scale).toBeLessThan(1.3)
+      expect(80 * (96 / 25.4) * scale).toBeLessThanOrEqual(available)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
