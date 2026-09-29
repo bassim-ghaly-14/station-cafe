@@ -33,6 +33,7 @@ import {
   type DiscountSel,
   type OrderPreview,
   type PosOrder,
+  type PrintOutcome,
   type TableView,
   type TakeawayView,
 } from '@/services/posApi'
@@ -40,7 +41,8 @@ import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { tableBadgeVariant } from '@/lib/status-badge'
 import { cn } from '@/lib/utils'
 import { atLeast, useSession } from '@/features/auth/useSession'
-import { useRouter } from '@/app/router'
+import type { UserRole } from '@/lib/roles'
+import { useRouter, type View } from '@/app/router'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
 import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
@@ -140,13 +142,13 @@ export default function PosPage() {
 
   if (!shiftState.day || !shiftState.my_shift) {
     return (
-      <div className="space-y-4">
-        {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
-          <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
-        ) : null}
-
-        <ShiftGate state={shiftState} onReady={() => void refresh()} />
-      </div>
+      <PosShiftGateView
+        canCloseDay={dayClosingDay(user?.role, shiftState.day) !== null}
+        state={shiftState}
+        revision={revision}
+        onDone={refresh}
+        onReady={() => void refresh()}
+      />
     )
   }
 
@@ -309,12 +311,8 @@ export default function PosPage() {
    */
   const hasWorkspace = activeOrder !== null || selected !== null
 
-  const counts = {
-    empty: tables.filter((tv) => tv.status === 'EMPTY').length,
-    open: tables.filter((tv) => tv.status === 'OPEN').length,
-    occupied: tables.filter((tv) => tv.status === 'OCCUPIED' || tv.status === 'READY_TO_PAY')
-      .length,
-  }
+  const layout = workspaceLayout(hasWorkspace)
+  const counts = tableCounts(tables)
 
   return (
     /*
@@ -329,128 +327,34 @@ export default function PosPage() {
         and history ("فواتير اليوم") belongs with operations — never next to the
         new-order actions it would compete with.
       */}
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-heading">{t('nav.pos')}</h1>
+      <PosHeader state={shiftState} onNavigate={navigate} />
 
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-foreground-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <Clock size={14} aria-hidden />
-              {shiftState.my_shift
-                ? `${t('pos.shiftRunning')} · ${t('pos.openedAt')} ${formatDateTime(shiftState.my_shift.opened_at)}`
-                : t('pos.noShiftOpen')}
-            </span>
-
-            {shiftState.day ? (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays size={14} aria-hidden />
-                {t('pos.businessDay')} {formatDate(shiftState.day.day_date)}
-              </span>
-            ) : null}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* History is its own page now, not a dialog stacked over the POS.
-              The two daily records are siblings: the day's invoices and the
-              day's wash tickets, reachable from the same place. */}
-          <Button variant="outline" size="sm" onClick={() => navigate('today-invoices')}>
-            <Receipt size={16} aria-hidden />
-            {t('pos.todayInvoices')}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate('today-wash-tickets')}>
-            <Ticket size={16} aria-hidden />
-            {t('pos.todayWashTickets')}
-          </Button>
-        </div>
-      </header>
-
-      {/*
-       * The selling workspace.
-       *
-       * Desktop: tables on the inline-start, the order panel in a 460px column
-       * at the inline-end. Unchanged.
-       *
-       * Phone: the SAME two elements in the OPPOSITE order. With an order open
-       * the order panel is what the cashier is working on — it holds the
-       * product pad, the running total and the pay action — so putting it
-       * first means the products and the pay button are reachable without
-       * scrolling past every table card first. Before this, adding an item to
-       * an order on a phone meant: scroll down past the whole table grid,
-       * scroll back up to the order panel, repeat on every single item.
-       *
-       * The switch is `order-*` classes rather than a reordered DOM, so the
-       * reading order and the desktop layout are both untouched.
-       */}
-      <div
-        className={
-          hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4'
-        }
-      >
-        <Card
-          aria-label={t('pos.tables')}
-          className={cn(hasWorkspace ? 'min-w-0' : 'w-full', hasWorkspace && 'order-2 xl:order-1')}
-        >
-          <CardHeader title={t('pos.tables')} subtitle={t('pos.tablesLegend', counts)} />
-
-          {takeaways && takeaways.length > 0 ? (
-            <OpenTakeaways
-              items={takeaways}
-              activeOrderId={activeOrder?.id ?? null}
-              onOpen={(orderId) => void reopenTakeaway(orderId)}
-            />
-          ) : null}
-
-          <div
-            className={
-              hasWorkspace
-                ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
-                : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5'
-            }
-          >
-            {/* Takeaway action card — always first */}
-            <TakeawayCard busy={busy === 'takeaway'} onStart={() => void startTakeaway()} />
-
-            {tables.map((tv) => (
-              <TableCard
-                key={tv.id}
-                tv={tv}
-                selected={selectedTableId === tv.id}
-                active={activeOrder?.id === tv.order_id && !!tv.order_id}
-                busy={busy}
-                onSelect={() => selectTable(tv)}
-                onOpen={() => void openSelectedTable(tv)}
-                onStartOrder={() => void startOrderFor(tv)}
-                onOpenOrder={() => void openOrderFor(tv)}
-                onCloseEmpty={() => setCloseTarget(tv)}
-              />
-            ))}
-          </div>
-
-          <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
-        </Card>
+      {/* The selling workspace: its responsive class set is described on
+          `workspaceLayout`, and the DOM order below is deliberately tables
+          first. */}
+      <div className={layout.grid}>
+        <TablesCard
+          layout={layout}
+          tables={tables}
+          counts={counts}
+          takeaways={takeaways}
+          activeOrderId={activeOrder?.id ?? null}
+          selectedTableId={selectedTableId}
+          busy={busy}
+          onStartTakeaway={() => void startTakeaway()}
+          onReopenTakeaway={(orderId) => void reopenTakeaway(orderId)}
+          onSelectTable={selectTable}
+          onOpenTable={openSelectedTable}
+          onStartOrder={startOrderFor}
+          onOpenOrder={openOrderFor}
+          onCloseEmpty={setCloseTarget}
+        />
 
         {/* The counterpart to the tables card's `order-2`: first on a phone. */}
-        <div className={cn(hasWorkspace && 'order-1 min-w-0 xl:order-2')}>
+        <div className={layout.orderColumn}>
           {activeOrder ? (
             <>
-              {takeawayActive ? (
-                <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
-                  <Badge variant="info" size="sm" icon={ShoppingBag} dot>
-                    {t('pos.takeawayActive')}
-                  </Badge>
-
-                  {typeof activeOrder.takeaway_no === 'number' ? (
-                    <span>
-                      {t('pos.takeawayNo')}: <span dir="ltr">#{activeOrder.takeaway_no}</span>
-                    </span>
-                  ) : (
-                    <span className="font-medium text-foreground-subtle">
-                      {t('pos.takeawayHint')}
-                    </span>
-                  )}
-                </p>
-              ) : null}
+              {takeawayActive ? <TakeawayActiveBanner order={activeOrder} /> : null}
 
               <OrderPanel
                 order={activeOrder}
@@ -495,76 +399,392 @@ export default function PosPage() {
         </div>
       </div>
 
-      {/*
-        Operational controls last. Shift/day closing are end-of-period actions:
-        they keep the polished closing cards untouched, but sit BELOW the
-        selling workspace so they inform the shift state without competing with
-        taking an order.
-      */}
-      <section aria-label={t('pos.operationalControls')} className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-section">{t('pos.operationalControls')}</h2>
+      <OperationalControls
+        shift={shiftState.my_shift}
+        day={dayClosingDay(user?.role, shiftState.day)}
+        revision={revision}
+        onShiftClosed={async () => {
+          toast(t('shift.closedSuccess'), 'success')
+          await refresh()
+        }}
+        onShiftRefresh={refresh}
+        onDayDone={refresh}
+      />
 
-          <p className="mt-0.5 text-caption text-foreground-subtle">
-            {t('pos.operationalControlsHint')}
-          </p>
-        </div>
+      <PosDialogs
+        activeOrder={activeOrder}
+        payOpen={payOpen}
+        discount={discount}
+        serviceCharge={serviceCharge}
+        closeTarget={closeTarget}
+        busy={busy}
+        onPayClose={() => setPayOpen(false)}
+        onPaid={(invoiceId, outcome) => {
+          setPayOpen(false)
+          setActiveOrder(null)
+          setDiscount({ mode: null, value: null })
+          // The charge was snapshotted onto the invoice; the checkout
+          // selection is now spent and must not leak into the next order.
+          setServiceCharge(0)
+          void refresh()
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <CurrentShiftPanel
-            shift={shiftState.my_shift}
-            onClosed={async () => {
-              toast(t('shift.closedSuccess'), 'success')
-              await refresh()
-            }}
-            onRefresh={refresh}
+          if (outcome?.duplicate_suppressed) {
+            toast(t('print.duplicateSuppressed'), 'info')
+          } else {
+            toast(t('pos.paidMessage', { no: invoiceId }), 'success')
+          }
+        }}
+        onCloseEmptyCancel={() => setCloseTarget(null)}
+        onCloseEmptyConfirm={() => void confirmCloseEmpty()}
+      />
+    </div>
+  )
+}
+
+/**
+ * The open day, but only for a manager.
+ *
+ * Day closing is a manager action, so a cashier never sees the closing card and
+ * the shift gate below it is the whole screen. `null` means "no closing card",
+ * which is what both the gate and the operational-controls row ask for.
+ */
+function dayClosingDay(
+  role: UserRole | undefined,
+  day: DayShiftState['day'],
+): DayShiftState['day'] | null {
+  return atLeast(role, 'MANAGER') && day ? day : null
+}
+
+/** The legend numbers under the tables card title. */
+function tableCounts(tables: TableView[]): { empty: number; open: number; occupied: number } {
+  return {
+    empty: tables.filter((tv) => tv.status === 'EMPTY').length,
+    open: tables.filter((tv) => tv.status === 'OPEN').length,
+    occupied: tables.filter((tv) => tv.status === 'OCCUPIED' || tv.status === 'READY_TO_PAY')
+      .length,
+  }
+}
+
+/**
+ * The selling workspace's responsive class set.
+ *
+ * Desktop: tables on the inline-start, the order panel in a 460px column at the
+ * inline-end. Unchanged.
+ *
+ * Phone: the SAME two elements in the OPPOSITE order. With an order open the
+ * order panel is what the cashier is working on — it holds the product pad, the
+ * running total and the pay action — so putting it first means the products and
+ * the pay button are reachable without scrolling past every table card first.
+ * Before this, adding an item to an order on a phone meant: scroll down past
+ * the whole table grid, scroll back up to the order panel, repeat on every
+ * single item.
+ *
+ * The switch is `order-*` classes rather than a reordered DOM, so the reading
+ * order and the desktop layout are both untouched — and the grid gets denser as
+ * it grows, which is why a workspace with five open tables fits without
+ * scrolling while the idle grid stays comfortable.
+ */
+function workspaceLayout(hasWorkspace: boolean): WorkspaceLayout {
+  return {
+    grid: hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4',
+    tablesCard: hasWorkspace ? 'min-w-0' : 'w-full',
+    tablesOrder: hasWorkspace ? 'order-2 xl:order-1' : undefined,
+    tablesGrid: hasWorkspace
+      ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
+      : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5',
+    orderColumn: hasWorkspace ? 'order-1 min-w-0 xl:order-2' : '',
+  }
+}
+
+interface WorkspaceLayout {
+  readonly grid: string
+  readonly tablesCard: string
+  readonly tablesOrder: string | undefined
+  readonly tablesGrid: string
+  readonly orderColumn: string
+}
+
+/**
+ * The tables side of the selling workspace: open takeaways, the takeaway
+ * action card and every table card.
+ *
+ * It only reads what the page owns — selection, the active order id and the busy
+ * label — and hands every mutation back to the page's own commands, so no
+ * table/takeaway rule lives in here.
+ */
+function TablesCard({
+  layout,
+  tables,
+  counts,
+  takeaways,
+  activeOrderId,
+  selectedTableId,
+  busy,
+  onStartTakeaway,
+  onReopenTakeaway,
+  onSelectTable,
+  onOpenTable,
+  onStartOrder,
+  onOpenOrder,
+  onCloseEmpty,
+}: {
+  readonly layout: WorkspaceLayout
+  readonly tables: TableView[]
+  readonly counts: { empty: number; open: number; occupied: number }
+  readonly takeaways: TakeawayView[] | null
+  readonly activeOrderId: number | null
+  readonly selectedTableId: number | null
+  readonly busy: string | null
+  readonly onStartTakeaway: () => void
+  readonly onReopenTakeaway: (orderId: number) => void
+  readonly onSelectTable: (tv: TableView) => void
+  readonly onOpenTable: (tv: TableView) => void
+  readonly onStartOrder: (tv: TableView) => void
+  readonly onOpenOrder: (tv: TableView) => void
+  readonly onCloseEmpty: (tv: TableView) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <Card aria-label={t('pos.tables')} className={cn(layout.tablesCard, layout.tablesOrder)}>
+      <CardHeader title={t('pos.tables')} subtitle={t('pos.tablesLegend', counts)} />
+
+      {takeaways && takeaways.length > 0 ? (
+        <OpenTakeaways items={takeaways} activeOrderId={activeOrderId} onOpen={onReopenTakeaway} />
+      ) : null}
+
+      <div className={layout.tablesGrid}>
+        {/* Takeaway action card — always first */}
+        <TakeawayCard busy={busy === 'takeaway'} onStart={onStartTakeaway} />
+
+        {tables.map((tv) => (
+          <TableCard
+            key={tv.id}
+            tv={tv}
+            selected={selectedTableId === tv.id}
+            active={activeOrderId === tv.order_id && !!tv.order_id}
+            busy={busy}
+            onSelect={() => onSelectTable(tv)}
+            onOpen={() => onOpenTable(tv)}
+            onStartOrder={() => onStartOrder(tv)}
+            onOpenOrder={() => onOpenOrder(tv)}
+            onCloseEmpty={() => onCloseEmpty(tv)}
           />
+        ))}
+      </div>
 
-          {atLeast(user?.role, 'MANAGER') && shiftState.day ? (
-            <DayClosingPanel dayId={shiftState.day.id} revision={revision} onDone={refresh} />
+      <p className="mt-3 text-xs text-foreground-subtle">{t('pos.emptyTablesHint')}</p>
+    </Card>
+  )
+}
+
+/**
+ * The page header: shift/session state and the two daily records.
+ *
+ * Shift state is the first thing a cashier must read, and history belongs with
+ * operations — never next to the new-order actions it would compete with.
+ */
+function PosHeader({
+  state,
+  onNavigate,
+}: {
+  readonly state: DayShiftState
+  readonly onNavigate: (view: View) => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-heading">{t('nav.pos')}</h1>
+
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-foreground-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <Clock size={14} aria-hidden />
+            {state.my_shift
+              ? `${t('pos.shiftRunning')} · ${t('pos.openedAt')} ${formatDateTime(state.my_shift.opened_at)}`
+              : t('pos.noShiftOpen')}
+          </span>
+
+          {state.day ? (
+            <span className="inline-flex items-center gap-1.5">
+              <CalendarDays size={14} aria-hidden />
+              {t('pos.businessDay')} {formatDate(state.day.day_date)}
+            </span>
           ) : null}
-        </div>
-      </section>
+        </p>
+      </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {/* History is its own page now, not a dialog stacked over the POS.
+            The two daily records are siblings: the day's invoices and the
+            day's wash tickets, reachable from the same place. */}
+        <Button variant="outline" size="sm" onClick={() => onNavigate('today-invoices')}>
+          <Receipt size={16} aria-hidden />
+          {t('pos.todayInvoices')}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => onNavigate('today-wash-tickets')}>
+          <Ticket size={16} aria-hidden />
+          {t('pos.todayWashTickets')}
+        </Button>
+      </div>
+    </header>
+  )
+}
+
+/**
+ * Everything the POS shows before a day and a shift are both open.
+ *
+ * A manager who has to open the day also gets the closing card — closing is the
+ * other half of that decision, and hiding it would mean a manager opening the
+ * day in one place and closing it somewhere else.
+ */
+function PosShiftGateView({
+  canCloseDay,
+  state,
+  revision,
+  onDone,
+  onReady,
+}: {
+  readonly canCloseDay: boolean
+  readonly state: DayShiftState
+  readonly revision: number
+  readonly onDone: () => Promise<void>
+  readonly onReady: () => void
+}) {
+  return (
+    <div className="space-y-4">
+      {canCloseDay && state.day ? (
+        <DayClosingPanel dayId={state.day.id} revision={revision} onDone={onDone} />
+      ) : null}
+
+      <ShiftGate state={state} onReady={onReady} />
+    </div>
+  )
+}
+
+/**
+ * Operational controls last. Shift/day closing are end-of-period actions: they
+ * keep the polished closing cards untouched, but sit BELOW the selling
+ * workspace so they inform the shift state without competing with taking an
+ * order.
+ */
+function OperationalControls({
+  shift,
+  day,
+  revision,
+  onShiftClosed,
+  onShiftRefresh,
+  onDayDone,
+}: {
+  readonly shift: NonNullable<DayShiftState['my_shift']>
+  readonly day: DayShiftState['day'] | null
+  readonly revision: number
+  readonly onShiftClosed: () => Promise<void>
+  readonly onShiftRefresh: () => Promise<void>
+  readonly onDayDone: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <section aria-label={t('pos.operationalControls')} className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-section">{t('pos.operationalControls')}</h2>
+
+        <p className="mt-0.5 text-caption text-foreground-subtle">
+          {t('pos.operationalControlsHint')}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CurrentShiftPanel shift={shift} onClosed={onShiftClosed} onRefresh={onShiftRefresh} />
+
+        {day ? <DayClosingPanel dayId={day.id} revision={revision} onDone={onDayDone} /> : null}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * The banner above the order panel while a takeaway order is open.
+ *
+ * A takeaway is called by its external number, so that number is what the
+ * banner leads with; when the backend has not issued one yet the cashier gets
+ * the hint instead.
+ */
+function TakeawayActiveBanner({ order }: { readonly order: PosOrder }) {
+  const { t } = useTranslation()
+
+  return (
+    <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
+      <Badge variant="info" size="sm" icon={ShoppingBag} dot>
+        {t('pos.takeawayActive')}
+      </Badge>
+
+      {typeof order.takeaway_no === 'number' ? (
+        <span>
+          {t('pos.takeawayNo')}: <span dir="ltr">#{order.takeaway_no}</span>
+        </span>
+      ) : (
+        <span className="font-medium text-foreground-subtle">{t('pos.takeawayHint')}</span>
+      )}
+    </p>
+  )
+}
+
+/** The POS's two modal commands: payment for the active order, close-empty. */
+function PosDialogs({
+  activeOrder,
+  payOpen,
+  discount,
+  serviceCharge,
+  closeTarget,
+  busy,
+  onPayClose,
+  onPaid,
+  onCloseEmptyCancel,
+  onCloseEmptyConfirm,
+}: {
+  readonly activeOrder: PosOrder | null
+  readonly payOpen: boolean
+  readonly discount: DiscountSel
+  readonly serviceCharge: number
+  readonly closeTarget: TableView | null
+  readonly busy: string | null
+  readonly onPayClose: () => void
+  readonly onPaid: (invoiceId: number, outcome: PrintOutcome | null) => void
+  readonly onCloseEmptyCancel: () => void
+  readonly onCloseEmptyConfirm: () => void
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <>
       {activeOrder && payOpen ? (
         <PaymentDialog
           orderId={activeOrder.id}
           discount={discount}
           serviceCharge={serviceCharge}
           order={activeOrder}
-          onClose={() => setPayOpen(false)}
-          onDone={(invoiceId, outcome) => {
-            setPayOpen(false)
-            setActiveOrder(null)
-            setDiscount({ mode: null, value: null })
-            // The charge was snapshotted onto the invoice; the checkout
-            // selection is now spent and must not leak into the next order.
-            setServiceCharge(0)
-            void refresh()
-
-            if (outcome?.duplicate_suppressed) {
-              toast(t('print.duplicateSuppressed'), 'info')
-            } else {
-              toast(t('pos.paidMessage', { no: invoiceId }), 'success')
-            }
-          }}
+          onClose={onPayClose}
+          onDone={onPaid}
         />
       ) : null}
 
       {closeTarget ? (
-        <Dialog open onClose={() => setCloseTarget(null)} title={t('pos.closeEmptyTitle')}>
+        <Dialog open onClose={onCloseEmptyCancel} title={t('pos.closeEmptyTitle')}>
           <p className="mb-4 text-sm text-foreground-muted">
             {t('pos.closeEmptyBody', { label: closeTarget.label })}
           </p>
 
           <DialogActions>
-            <Button variant="outline" onClick={() => setCloseTarget(null)}>
+            <Button variant="outline" onClick={onCloseEmptyCancel}>
               {t('app.cancel')}
             </Button>
 
             <Button
               variant="destructive"
-              onClick={() => void confirmCloseEmpty()}
+              onClick={onCloseEmptyConfirm}
               loading={busy === `close-${closeTarget.id}`}
             >
               <DoorClosed size={16} aria-hidden />
@@ -573,7 +793,7 @@ export default function PosPage() {
           </DialogActions>
         </Dialog>
       ) : null}
-    </div>
+    </>
   )
 }
 
