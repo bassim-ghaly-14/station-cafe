@@ -147,6 +147,7 @@ dependencies = [
  "tauri-plugin-updater",
  "thiserror 2.0.20",
  "tiny_http",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

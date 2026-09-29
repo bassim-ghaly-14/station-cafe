@@ -293,4 +293,12 @@ export const opsApi = {
   closedBusinessDays: (from?: string, to?: string) =>
     call<ClosedBusinessDay[]>('list_closed_business_days', { from: from ?? null, to: to ?? null }),
   printTest: () => call<PrintOutcome>('print_test'),
+  /**
+   * MANAGER+ printer configuration — the existing `set_print_config` command.
+   *
+   * The printing service is the only thing that reads `target`, so this writes
+   * the same setting on both transports (Tauri and the browser) with no second
+   * code path: the value is validated and audited server-side either way.
+   */
+  setPrintConfig: (config: PrintConfig) => call<void>('set_print_config', { config }),
 }

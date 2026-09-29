@@ -25,6 +25,7 @@ import {
   printerIsConfigured,
 } from '@/lib/print-presentation'
 import { opsApi, type PrintConfig, type PrintJobRow } from '@/services/opsApi'
+import { PrinterSettings } from './PrinterSettings'
 
 /** Recent jobs shown; the printing service clamps the limit to 1..200. */
 const RECENT_JOBS_LIMIT = 30
@@ -92,6 +93,11 @@ export function PrintStatusPanel() {
           </div>
         </div>
       ) : null}
+
+      {/* Configuration is where a printer is actually SET UP, so it lives with
+          the printing surface and not in a second place. It renders itself only
+          for MANAGER+, which is also who the backend accepts the write from. */}
+      {printer ? <PrinterSettings config={printer} onChanged={setPrinter} /> : null}
 
       {/* Existing operations only: send the test page, reload the recorded
           jobs. No per-job retry exists in the printing service, so none is

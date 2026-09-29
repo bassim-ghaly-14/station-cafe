@@ -68,6 +68,19 @@ sha2 = "0.10"
 chrono = { version = "0.4.45", features = ["clock"] }
 chrono-tz = "0.10.4"
 
+# The Xprinter transport on Windows: a RAW job to the print queue, through the
+# documented printer-handle sequence (OpenPrinterW → StartDocPrinterW →
+# StartPagePrinter → WritePrinter → EndPagePrinter → EndDocPrinter →
+# ClosePrinter). `windows-sys` is a thin FFI binding — no runtime, no installer
+# and no WebView2 — and it is target-gated so a macOS development build never
+# pulls any of it in.
+#
+# `Win32_Graphics_Gdi` is required by the printing bindings themselves: it is
+# what `OpenPrinterW` and `PRINTER_DEFAULTSW` are declared behind.
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.61.2"
+features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Printing"]
+
 # Used only by `examples/gen_previews.rs` (static PDF previews), not the shipped
 # app binary.
 [dev-dependencies]
