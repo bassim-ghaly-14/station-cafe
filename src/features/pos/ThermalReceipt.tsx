@@ -9,6 +9,7 @@ import type {
   PreviewFinancialOp,
   PreviewItemOp,
   PreviewMetaOp,
+  PreviewOp,
   PreviewTextOp,
   PrintPreview,
 } from '@/services/posApi'
@@ -63,10 +64,39 @@ function opKey(op: { kind: string }, position: number): string {
   return `${op.kind}-${position}`
 }
 
+/**
+ * Which separator op is the printer's header rule.
+ *
+ * A rule is a run of 20+ dashes in a `text` op, and the printer's FIRST rule only
+ * repeats the header edge, so it is dropped on screen. The remaining rules are
+ * what communicate the document's structure.
+ *
+ * The screen keeps the three rules that communicate document structure, so this
+ * maps an op's position to its separator ordinal — 0 for the dropped header
+ * rule, 1+ for the rules that are actually drawn.
+ */
+function separatorOrdinals(ops: readonly PreviewOp[]): Map<number, number> {
+  const ordinals = new Map<number, number>()
+  let seen = 0
+  ops.forEach((op, index) => {
+    if (op.kind === 'text' && /^-{20,}$/.test(op.text)) {
+      ordinals.set(index, seen)
+      seen += 1
+    }
+  })
+  return ordinals
+}
+
 export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPreview }>) {
   const { t } = useTranslation()
-  let separatorIndex = 0
-  let itemHeaderShown = false
+
+  // Positions are resolved ONCE, before any JSX is built, so the render itself
+  // reads a finished document instead of mutating counters as it walks the ops.
+  // Deriving these up front is what keeps the render pure: a counter mutated
+  // inside the map below would be a per-render side effect, and a re-render or a
+  // discarded render pass could observe a different one.
+  const separators = separatorOrdinals(preview.ops)
+  const firstItemIndex = preview.ops.findIndex((op) => op.kind === 'item')
 
   // The one printable-width model of the whole document. The paper is
   // physically 80mm, but what a document can actually print is `width_chars`
@@ -98,10 +128,9 @@ export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPr
             case 'logo':
               return <ScreenLogo key={key} align={op.align} />
             case 'item':
-              // The column header is emitted by the first item only. Assigning it
-              // as its own statement keeps the render pure and readable.
-              if (!itemHeaderShown) {
-                itemHeaderShown = true
+              // The column header is emitted by the first item only, resolved
+              // above rather than by a flag flipped as the map walks the ops.
+              if (index === firstItemIndex) {
                 return (
                   <div key={key}>
                     <ItemColumnHeader />
@@ -119,12 +148,11 @@ export function ThermalReceipt({ preview }: Readonly<{ readonly preview: PrintPr
             case 'meta':
               return <MetaRow key={key} op={op} />
             case 'text': {
-              if (/^-{20,}$/.test(op.text)) {
-                const current = separatorIndex
-                separatorIndex += 1
+              const ordinal = separators.get(index)
+              if (ordinal !== undefined) {
                 // The printer's first rule repeats the header edge. The screen
                 // keeps the three rules that communicate document structure.
-                if (current === 0) return <div key={key} className="h-0.5" aria-hidden />
+                if (ordinal === 0) return <div key={key} className="h-0.5" aria-hidden />
                 return (
                   <hr
                     key={key}

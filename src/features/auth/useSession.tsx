@@ -33,15 +33,15 @@ interface LoginResponse {
 
 export function SessionProvider({ children }: Readonly<{ readonly children: ReactNode }>) {
   const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  // A session is only "loading" when there is a stored token to resolve. With no
+  // token there is nothing to wait for, so the initial value already knows that
+  // and the effect below never has to correct it with a synchronous setState.
+  const [loading, setLoading] = useState(() => sessionToken() !== null)
 
   useEffect(() => {
     let cancelled = false
     const token = sessionToken()
-    if (!token) {
-      setLoading(false)
-      return
-    }
+    if (!token) return
     call<User>('me')
       .then((u) => !cancelled && setUser(u))
       .catch(() => !cancelled && setSessionToken(null))

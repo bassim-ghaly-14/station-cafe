@@ -323,6 +323,9 @@ export function EmployeeDetailsDrawer({
   // the dialog from this value is what keeps its draft pinned to ONE day.
   const [overriding, setOverriding] = useState<AttendanceDay | null>(null)
 
+  // `period` is memoized by the page (see EmployeesPage), so depending on the
+  // object is the same trigger as depending on its two bounds, and it cannot
+  // re-issue the read on an unrelated render.
   const load = useCallback(() => {
     if (employeeId === null) return
     let active = true
@@ -343,7 +346,7 @@ export function EmployeeDetailsDrawer({
     return () => {
       active = false
     }
-  }, [employeeId, period.from, period.to, errText])
+  }, [employeeId, period, errText])
 
   useEffect(load, [load])
 

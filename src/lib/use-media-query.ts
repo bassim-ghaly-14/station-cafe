@@ -11,25 +11,36 @@
  * a bare test environment), which keeps the wide/desktop layout as the safe
  * baseline rather than a blank screen.
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
+
+/** False whenever `matchMedia` cannot answer, which is the safe wide-layout default. */
+function readMatches(query: string): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return window.matchMedia(query).matches
+}
+
+function subscribeToQuery(query: string, onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function')
+    return () => undefined
+  const list = window.matchMedia(query)
+  list.addEventListener('change', onChange)
+  return () => list.removeEventListener('change', onChange)
+}
 
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-    return window.matchMedia(query).matches
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const list = window.matchMedia(query)
-    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches)
-    // Re-syncing only on a real change avoids a pointless render on mount.
-    if (list.matches !== matches) setMatches(list.matches)
-    list.addEventListener('change', onChange)
-    return () => list.removeEventListener('change', onChange)
-  }, [query, matches])
-
-  return matches
+  // `matchMedia` is an EXTERNAL system, so it is read through
+  // `useSyncExternalStore` — the same subscribe/notify shape this app already
+  // uses for the formatting and category-visibility stores. That keeps the read
+  // in sync with the browser at all times without a mirroring copy of the value
+  // in state, and therefore without a "re-sync on mount" pass that would set
+  // state during an effect and start a second render for a value that is
+  // already correct.
+  const subscribe = useCallback(
+    (onChange: () => void) => subscribeToQuery(query, onChange),
+    [query],
+  )
+  const getSnapshot = useCallback(() => readMatches(query), [query])
+  return useSyncExternalStore(subscribe, getSnapshot, () => false)
 }
 
 /** The `md` breakpoint of the shared Tailwind scale (768px). */

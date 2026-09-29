@@ -6,7 +6,7 @@
  * and "بدون عميل" is a first-class, intentional choice rather than missing
  * data: it is exactly what the invoice will be recorded as.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog, useToast } from '@/components/ui'
 import { Car, Plus, UserX } from '@/components/ui/icon'
@@ -30,15 +30,26 @@ export function CustomerPicker({
   const [busy, setBusy] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
 
-  const report = (e: unknown) =>
-    toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
+  // Stable identity, so the load-once effect below can depend on it honestly
+  // instead of closing over a fresh closure every render.
+  const report = useCallback(
+    (e: unknown) =>
+      toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error'),
+    [t, toast],
+  )
 
   // The full registered list is loaded once when the picker opens, so browsing
   // is instant and typing never waits for a round trip.
   useEffect(() => {
-    api.customers('').then(setAll).catch(report)
+    let active = true
+    api.customers('').then((rows) => {
+      if (active) setAll(rows)
+    }, report)
     // Loaded once per opening: this dialog remounts on every open.
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [report])
 
   const searching = query.trim().length > 0
   const results = useMemo(() => {
