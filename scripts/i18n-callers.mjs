@@ -102,56 +102,44 @@ for (const [key, byLocale] of contracts) {
   }
 }
 
-// Extract the top-level property names of the interpolation argument.
-// Returns:
-//   { kind: 'object', keys: string[], opaque: boolean }
-//   { kind: 'unknown' }
-// `keys` are the literal top-level property names; `opaque` is true when the
-// object also spreads or computes its keys, so the static audit skips it.
-function optionKeys(argsSrc, keyText) {
-  const afterKey = argsSrc
-    .slice(keyText.length)
-    .replace(/^\s*,\s*/, '')
-    .trimStart()
-  if (afterKey === '') return { kind: 'object', keys: [], opaque: false }
-  if (afterKey[0] !== '{') return { kind: 'unknown' }
+// Index just past the string/template literal that starts at `start`.
+// An escape consumes the following character, so `\"` never closes a string.
+function endOfQuoted(src, start) {
+  const quote = src[start]
+  let i = start + 1
+  while (i < src.length) {
+    if (src[i] === '\\') i += 2
+    else if (src[i] === quote) return i + 1
+    else i++
+  }
+  return i
+}
+
+// Index of the `}` closing an object literal that starts at index 0, or -1.
+function endOfObjectLiteral(src) {
   let depth = 0
-  let end = -1
-  for (let i = 0; i < afterKey.length; i++) {
-    const c = afterKey[i]
-    if (c === '{') depth++
-    else if (c === '}') {
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] === '{') depth++
+    else if (src[i] === '}') {
       depth--
-      if (depth === 0) {
-        end = i
-        break
-      }
+      if (depth === 0) return i
     }
   }
-  if (end === -1) return { kind: 'unknown' }
-  const body = afterKey.slice(1, end)
+  return -1
+}
 
-  // Split the body on top-level commas only, ignoring strings/templates and
-  // any nested `{...}`, `[...]` or `(...)`.
+// Split an object body on top-level commas only, ignoring commas inside
+// strings/templates and any nested `{...}`, `[...]` or `(...)`.
+function splitTopLevelMembers(body) {
   const parts = []
   let current = ''
   let nest = 0
   for (let i = 0; i < body.length; i++) {
     const c = body[i]
     if (c === "'" || c === '"' || c === '`') {
-      const quote = c
-      current += c
-      i++
-      while (i < body.length) {
-        current += body[i]
-        if (body[i] === '\\') {
-          current += body[i + 1] ?? ''
-          i += 2
-          continue
-        }
-        if (body[i] === quote) break
-        i++
-      }
+      const end = endOfQuoted(body, i)
+      current += body.slice(i, end)
+      i = end - 1
       continue
     }
     if (c === '{' || c === '[' || c === '(') {
@@ -172,29 +160,57 @@ function optionKeys(argsSrc, keyText) {
     current += c
   }
   if (current.trim()) parts.push(current)
+  return parts
+}
 
+// The property name an object member declares, or null when it declares none
+// that is statically knowable (computed key, spread, destructuring, …).
+function staticMemberKey(text) {
+  const m = text.match(/^([A-Za-z_$][\w$]*|"[^"]*"|'[^']*'|`[^`]*`)\s*:/)
+  if (!m) {
+    // Shorthand (`{ count }`) still names a known key; anything else does not.
+    const shorthand = text.match(/^([A-Za-z_$][\w$]*)$/)
+    return shorthand ? shorthand[1] : null
+  }
+  return m[1].replace(/^["'`](.*)["'`]$/, '$1')
+}
+
+// Read an object body's members into the set of literal top-level property
+// names, reporting whether a spread or computed key makes the object opaque.
+function classifyObjectMembers(body) {
   const keys = new Set()
   let opaque = false
-  for (const part of parts) {
+  for (const part of splitTopLevelMembers(body)) {
     const text = part.trim()
     if (!text) continue
     if (text.startsWith('...')) {
       opaque = true
       continue
     }
-    const m = text.match(/^([A-Za-z_$][\w$]*|"[^"]*"|'[^']*'|`[^`]*`)\s*:/)
-    if (!m) {
-      // Shorthand (`{ count }`) or a computed key — treat shorthand as known.
-      const shorthand = text.match(/^([A-Za-z_$][\w$]*)$/)
-      if (shorthand) keys.add(shorthand[1])
-      else opaque = true
-      continue
-    }
-    const name = m[1].replace(/^["'`](.*)["'`]$/, '$1')
-    if (/^[A-Za-z_$][\w$]*$/.test(name)) keys.add(name)
+    const name = staticMemberKey(text)
+    if (name === null) opaque = true
+    else if (/^[A-Za-z_$][\w$]*$/.test(name)) keys.add(name)
     else opaque = true
   }
-  return { kind: 'object', keys: [...keys], opaque }
+  return { keys: [...keys], opaque }
+}
+
+// Extract the top-level property names of the interpolation argument.
+// Returns:
+//   { kind: 'object', keys: string[], opaque: boolean }
+//   { kind: 'unknown' }
+// `keys` are the literal top-level property names; `opaque` is true when the
+// object also spreads or computes its keys, so the static audit skips it.
+function optionKeys(argsSrc, keyText) {
+  const afterKey = argsSrc
+    .slice(keyText.length)
+    .replace(/^\s*,\s*/, '')
+    .trimStart()
+  if (afterKey === '') return { kind: 'object', keys: [], opaque: false }
+  if (afterKey[0] !== '{') return { kind: 'unknown' }
+  const end = endOfObjectLiteral(afterKey)
+  if (end === -1) return { kind: 'unknown' }
+  return { kind: 'object', ...classifyObjectMembers(afterKey.slice(1, end)) }
 }
 
 // Balanced-paren arguments of a call starting at `(`.
