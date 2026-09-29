@@ -61,6 +61,27 @@ export function seriesValue(datum: MonthlyComparisonDatum, key: string): number 
   return Number.isFinite(value) ? value : 0
 }
 
+/**
+ * Whether a monthly series has anything worth drawing at all.
+ *
+ * "No data" means exactly what it means for the reports charts: the period
+ * produced no measurable value (`has_data: total > 0` in the analytics report).
+ * It is deliberately NOT a per-month test. A month that is merely QUIET is a
+ * fact, not a gap — a period where one month carries a value and its neighbours
+ * are zero still plots, and every month still appears on the axis. Only when
+ * the WHOLE configured window is valueless is there nothing to visualise.
+ *
+ * This also covers the case where the months exist but no series does: a window
+ * with trading months but no expense categories has rows and no bars, which is
+ * the same "nothing to plot" fact rather than a chart full of empty space.
+ */
+export function hasMonthlyValues(
+  data: readonly MonthlyComparisonDatum[],
+  series: readonly MonthlySeriesConfig[],
+): boolean {
+  return data.some((datum) => monthTotal(datum, series) !== 0)
+}
+
 /** The sum of every configured series for one month — the month's total. */
 export function monthTotal(
   datum: MonthlyComparisonDatum,

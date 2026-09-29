@@ -28,7 +28,7 @@ import { ErrorState } from '@/components/states'
 import { Card, ChartCardSkeleton } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import { MonthlyComparisonBarChart } from '@/components/charts/MonthlyComparisonBarChart'
-import { monthTotal } from '@/components/charts/monthlyComparison'
+import { hasMonthlyValues, monthTotal } from '@/components/charts/monthlyComparison'
 import {
   exportBarChartExcel,
   exportBarChartPng,
@@ -89,7 +89,11 @@ export function SalesMonthlyRevenueChart({ className }: Readonly<{ readonly clas
       </div>
     )
   }
-  if (data.length === 0) {
+  // "No data" is the WHOLE configured window being valueless, not one quiet
+  // month: the backend keeps a trading month as a zero row, so `data` is never
+  // empty on its own. A month with no invoices is also kept — one such month is
+  // a fact that still plots, and only a period with nothing in it has no chart.
+  if (!hasMonthlyValues(data, series)) {
     return (
       <Card className={className} data-testid="monthly-chart-empty">
         <h2 className="text-section text-foreground-strong">{title}</h2>

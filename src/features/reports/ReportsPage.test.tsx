@@ -660,6 +660,116 @@ describe('ReportsPage monthly comparison section', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows the sales empty state for a window whose months are all zero', async () => {
+    // The backend's month spine KEEPS a trading month that has no invoice, so a
+    // window with no sales at all still arrives with rows — every one of them
+    // zero. That is "no data for the period", not a chart full of flat bars.
+    mocks.monthly.mockResolvedValue({
+      from: '2026-01-01',
+      to: '2026-09-26',
+      months: [
+        { month: '2026-08', invoices_count: 0, total_sales: 0, cafe_sales: 0, wash_sales: 0 },
+        { month: '2026-09', invoices_count: 0, total_sales: 0, cafe_sales: 0, wash_sales: 0 },
+      ],
+    })
+    await openCharts()
+
+    expect(
+      await screen.findByRole('heading', { name: 'لا توجد شهور لتحليلها بعد' }),
+    ).toBeInTheDocument()
+    // The sales copy, not the expenses one.
+    expect(
+      screen.getByText(
+        'لم تُسجَّل أي فواتير ضمن الشهور المشمولة، أو أن البيانات المحفوظة أقدم من هذه الفترة.',
+      ),
+    ).toBeInTheDocument()
+    // The expenses chart still has spend, so it must NOT be emptied with it.
+    expect(screen.getByRole('heading', { name: 'المصروفات الشهرية حسب النوع' })).toBeInTheDocument()
+  })
+
+  it('keeps plotting the sales chart when only ONE month is quiet', async () => {
+    // A single zero month is a fact on the axis, not a reason to hide the chart.
+    mocks.monthly.mockResolvedValue({
+      from: '2026-01-01',
+      to: '2026-09-26',
+      months: [
+        { month: '2026-08', invoices_count: 0, total_sales: 0, cafe_sales: 0, wash_sales: 0 },
+        {
+          month: '2026-09',
+          invoices_count: 2,
+          total_sales: 25_000,
+          cafe_sales: 15_000,
+          wash_sales: 10_000,
+        },
+      ],
+    })
+    await openCharts()
+
+    // The populated chart, not the empty state.
+    expect(await screen.findByTestId('monthly-chart-sales-monthly-cafe-wash')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'لا توجد شهور لتحليلها بعد' })).toBeNull()
+  })
+
+  it('shows the expenses empty state for a window with months but no spend', async () => {
+    // The expenses spine keeps the months and the backend sends NO category,
+    // because a category with no spend is deliberately not a series. Rows with
+    // no bars to draw is the same "nothing to plot" fact as no rows at all.
+    mocks.expensesMonthly.mockResolvedValue({
+      from: '2026-01-01',
+      to: '2026-03-31',
+      report: {
+        categories: [],
+        months: [
+          { month: '2026-01', category: '', category_name: '', count: 0, amount: 0 },
+          { month: '2026-02', category: '', category_name: '', count: 0, amount: 0 },
+        ],
+      },
+    })
+    await openCharts()
+
+    expect(
+      await screen.findByRole('heading', { name: 'لا توجد شهور لتحليلها بعد' }),
+    ).toBeInTheDocument()
+    // The expenses copy, not the sales one.
+    expect(
+      screen.getByText(
+        'لم تُسجَّل أي مصروفات ضمن الشهور المشمولة، أو أن البيانات المحفوظة أقدم من هذه الفترة.',
+      ),
+    ).toBeInTheDocument()
+    // The sales chart still has revenue, so it must NOT be emptied with it.
+    expect(
+      screen.getByRole('heading', { name: 'الإيرادات الشهرية: الكافيه مقابل المغسلة' }),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps plotting the expenses chart when one month has no spend', async () => {
+    // One category-less month beside a month that does spend: the quiet month
+    // stays on the axis as a zero, and the chart is still the chart.
+    mocks.expensesMonthly.mockResolvedValue({
+      from: '2026-01-01',
+      to: '2026-03-31',
+      report: {
+        categories: [{ code: 'SALARY', name_ar: 'رواتب', total: 10_000 }],
+        months: [
+          { month: '2026-01', category: '', category_name: '', count: 0, amount: 0 },
+          {
+            month: '2026-02',
+            category: 'SALARY',
+            category_name: 'رواتب',
+            count: 1,
+            amount: 10_000,
+          },
+        ],
+      },
+    })
+    await openCharts()
+
+    expect(
+      await screen.findByTestId('monthly-chart-expenses-monthly-by-category'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'لا توجد شهور لتحليلها بعد' })).toBeNull()
+  })
+
   it('reports a monthly read failure with the shared error state', async () => {
     mocks.expensesMonthly.mockRejectedValue(new Error('internal_error'))
     await openCharts()
