@@ -86,6 +86,86 @@ function reprintRequest(target: PrintPreviewTarget): Promise<PrintOutcome> {
   return api.printTicket(target.order_id)
 }
 
+/**
+ * What "expanded" means, in one place: a wider dialog, a larger display scale
+ * and the label of the control that undoes it. The three readings can never
+ * disagree, because they are one decision.
+ */
+function expandedPresentation(expanded: boolean): {
+  readonly sizeClass: string
+  readonly scale: number
+  readonly toggleLabel: 'print.collapse' | 'print.expand'
+} {
+  if (expanded) {
+    return {
+      sizeClass: 'w-[min(calc(100vw-1rem),42rem)] max-h-[calc(100dvh-1rem)] max-w-2xl',
+      scale: 2,
+      toggleLabel: 'print.collapse',
+    }
+  }
+
+  return {
+    sizeClass: 'w-[min(calc(100vw-1rem),30rem)] max-w-120',
+    scale: 1.3,
+    toggleLabel: 'print.expand',
+  }
+}
+
+/**
+ * The preview body for one state of the discriminated union.
+ *
+ * A presentational reading of the state: it renders the receipt, or the calm
+ * loading / empty / failure view, and never touches the request. `onRetry` is
+ * passed straight through, so a retry always runs the caller's own load.
+ */
+function PreviewContent({
+  state,
+  scale,
+  onRetry,
+}: {
+  readonly state: PreviewState
+  readonly scale: number
+  readonly onRetry: () => void
+}) {
+  if (state.status === 'error') {
+    return <DocumentPreviewState variant="error" reason={state.reason} onRetry={onRetry} />
+  }
+
+  /* The command succeeded and the document carries nothing printable.
+     Every Station template emits a header, so this is a defensive state,
+     not a routine one — it is a calm "nothing here", visibly distinct from
+     the failure above, and re-reading the document is the only meaningful
+     next step. */
+  if (state.status === 'empty') {
+    return <DocumentPreviewState variant="empty" docType={state.docType} onRetry={onRetry} />
+  }
+
+  if (state.status === 'loading') return <DocumentPreviewState variant="loading" />
+
+  return (
+    <div
+      dir="ltr"
+      data-testid="print-preview-viewer"
+      className="viewer w-full min-h-0 overflow-x-hidden overflow-y-auto rounded-md bg-surface-muted p-3 shadow-inner"
+    >
+      <div
+        data-testid="print-preview-centering"
+        dir="ltr"
+        className="flex min-w-max justify-center"
+      >
+        <div
+          data-testid="print-preview-scaling"
+          data-preview-scale={scale}
+          className="receipt-scaling-layer shrink-0"
+          style={{ zoom: scale }}
+        >
+          <ThermalReceipt preview={state.preview} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PrintPreviewDialog({
   target,
   onClose,
@@ -163,7 +243,7 @@ export function PrintPreviewDialog({
   const canReprint = target.kind !== 'order'
   // The paper remains 80mm. This layer is the single display-scale boundary:
   // CSS zoom reserves the complete scaled layout bounds for centering/scrolling.
-  const previewScale = expanded ? 2 : 1.3
+  const presentation = expandedPresentation(expanded)
 
   const reprint = () => {
     if (!canReprint) return
@@ -187,11 +267,7 @@ export function PrintPreviewDialog({
       open
       onClose={onClose}
       title={t('print.previewTitle')}
-      className={
-        expanded
-          ? 'w-[min(calc(100vw-1rem),42rem)] max-h-[calc(100dvh-1rem)] max-w-2xl'
-          : 'w-[min(calc(100vw-1rem),30rem)] max-w-120'
-      }
+      className={presentation.sizeClass}
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs text-foreground-subtle">
@@ -208,8 +284,8 @@ export function PrintPreviewDialog({
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={t(expanded ? 'print.collapse' : 'print.expand')}
-          title={t(expanded ? 'print.collapse' : 'print.expand')}
+          aria-label={t(presentation.toggleLabel)}
+          title={t(presentation.toggleLabel)}
           onClick={() => setExpanded((value) => !value)}
         >
           <Maximize2 size={16} aria-hidden />
@@ -221,39 +297,7 @@ export function PrintPreviewDialog({
           exactly one request for the CURRENT target — the callback is rebuilt
           whenever the target changes, and the request token discards answers
           that belong to a target that is no longer on screen. */}
-      {state.status === 'error' ? (
-        <DocumentPreviewState variant="error" reason={state.reason} onRetry={load} />
-      ) : state.status === 'empty' ? (
-        /* The command succeeded and the document carries nothing printable.
-           Every Station template emits a header, so this is a defensive state,
-           not a routine one — it is a calm "nothing here", visibly distinct from
-           the failure above, and re-reading the document is the only meaningful
-           next step. */
-        <DocumentPreviewState variant="empty" docType={state.docType} onRetry={load} />
-      ) : state.status === 'loading' ? (
-        <DocumentPreviewState variant="loading" />
-      ) : (
-        <div
-          dir="ltr"
-          data-testid="print-preview-viewer"
-          className="viewer w-full min-h-0 overflow-x-hidden overflow-y-auto rounded-md bg-surface-muted p-3 shadow-inner"
-        >
-          <div
-            data-testid="print-preview-centering"
-            dir="ltr"
-            className="flex min-w-max justify-center"
-          >
-            <div
-              data-testid="print-preview-scaling"
-              data-preview-scale={previewScale}
-              className="receipt-scaling-layer shrink-0"
-              style={{ zoom: previewScale }}
-            >
-              <ThermalReceipt preview={state.preview} />
-            </div>
-          </div>
-        </div>
-      )}
+      <PreviewContent state={state} scale={presentation.scale} onRetry={load} />
 
       <DialogActions className="mt-4">
         <Button variant="outline" onClick={onClose}>
