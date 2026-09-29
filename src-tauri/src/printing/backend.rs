@@ -191,10 +191,15 @@ impl PrinterBackend for WindowsRawBackend {
         // A stable job name so a manager can find the job in the Windows print
         // queue; it carries no business data beyond what is already on paper.
         let mut doc_name = wide("Station");
-        // "RAW" — the documented datatype for printer-ready data. Copied out of
-        // the read-only literal into a local buffer because `DOC_INFO_1W` takes
-        // mutable pointers; Windows only ever reads it.
-        let mut datatype: [u16; 4] = *windows_sys::core::w!("RAW");
+        // "RAW" — the documented datatype for printer-ready data, built by the
+        // same `wide` helper as every other string handed to the spooler, so it
+        // is a NUL-terminated, caller-owned `Vec<u16>` that outlives the
+        // `StartDocPrinterW` call. (It is deliberately NOT built from
+        // `windows_sys::core::w!`: in windows-sys 0.61 that macro expands to
+        // `OUTPUT.as_ptr()`, a `*const u16` into a `'static` array, which is
+        // neither a `[u16; 4]` to copy out of nor a mutable `PWSTR` for
+        // `DOC_INFO_1W`.)
+        let mut datatype = wide("RAW");
 
         // SAFETY: every call below is one step of Microsoft's documented RAW
         // sequence (OpenPrinterW → StartDocPrinterW → StartPagePrinter →
@@ -359,22 +364,76 @@ fn named_queue(raw: &str) -> AppResult<PrinterTarget> {
     Ok(PrinterTarget::Queue(raw.to_string()))
 }
 
-/// Reduce a configured queue to the Windows printer/queue name.
+/// Reduce a configured queue to the name `OpenPrinterW` accepts.
 ///
-/// Windows addresses printers by NAME, so a path written next to the machine —
-/// `\\localhost\Xprinter`, `\\localhost\Xprinter$`, `\\*\Xprinter` — has to lose
-/// everything up to and including the last separator. The trailing `$` is the
-/// share convention and is not part of a printer name. A plain name is returned
-/// unchanged, so an existing correct setting keeps working.
+/// Windows addresses a printer by exactly two documented forms:
 ///
-/// Only the LAST segment is ever used, so this can never turn a setting into a
-/// path, a device or a command: it reduces a path to a name, nothing more.
+/// - a LOCAL queue, named by its bare queue name (`Xprinter XP-80`);
+/// - a REMOTE or shared queue, named by a UNC path (`\\SERVER\PrinterName`,
+///   or `\\SERVER\Share\PrinterName` on a print server).
+///
+/// So a LOCAL path written down next to the machine (`\\localhost\Xprinter`,
+/// `\\127.0.0.1\Xprinter`, `\\*\Xprinter`, the `\\localhost\Xprinter$` share
+/// convention) must lose everything up to and including the last separator,
+/// because a local queue has no server to qualify it, and the trailing `$` is a
+/// share convention rather than part of a local printer name.
+///
+/// A UNC path naming a REAL server is left intact. Stripping `\\SERVER\Share`
+/// down to `Share` would ask Windows for a *local* queue called `Share`, which
+/// does not exist, so a shared printer would fail as if it were switched off.
+/// Only a local machine is ever reduced; a remote one is a printer genuinely
+/// somewhere else, and reaching it is the whole point of naming it.
+///
+/// A plain name is returned unchanged, so an existing correct setting keeps
+/// working. The result is always a printer NAME: the reduction can never
+/// introduce a drive letter, a device path or a command.
 pub fn spool_queue_name(raw: &str) -> String {
     let trimmed = raw.trim().trim_end_matches(['\\', '/']);
-    let last = trimmed.rsplit(['\\', '/']).next().unwrap_or("").trim();
-    last.trim_end_matches('$').trim().to_string()
+    let unc = match trimmed.strip_prefix("\\\\") {
+        Some(rest) => Some(rest),
+        None => trimmed.strip_prefix("//"),
+    };
+    if let Some(unc) = unc {
+        let (server, tail) = match unc.find(['\\', '/']) {
+            Some(i) => (&unc[..i], &unc[i + 1..]),
+            None => (unc, ""),
+        };
+        // A local machine — or the `\\*\` "any server" form, which is a
+        // discovery wildcard and is never a usable OpenPrinterW name — is not a
+        // real server, so only its last segment names the local queue.
+        if is_local_server(server) {
+            return local_queue_name(tail);
+        }
+        // A real server: the UNC path IS the printer name, so it is preserved.
+        let server = server.trim();
+        let tail = tail.trim_matches(['\\', '/']).trim();
+        return if tail.is_empty() {
+            format!("\\\\{server}")
+        } else {
+            format!("\\\\{server}\\{tail}")
+        };
+    }
+    local_queue_name(trimmed)
 }
 
+/// Is this UNC server component the local machine, or a discovery wildcard?
+fn is_local_server(server: &str) -> bool {
+    matches!(
+        server.trim().to_ascii_lowercase().as_str(),
+        "" | "." | "*" | "localhost" | "127.0.0.1" | "::1"
+    )
+}
+
+/// A LOCAL queue name: the last segment, without the trailing share `$`.
+fn local_queue_name(path: &str) -> String {
+    path.rsplit(['\\', '/'])
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_end_matches('$')
+        .trim()
+        .to_string()
+}
 
 /// Build the backend for the configured target string:
 /// - `file:/path/to/out.prn`  → FileBackend (diagnostics)
@@ -454,39 +513,95 @@ mod tests {
 
     /// Windows addresses printers by NAME. A path written next to the machine
     /// must be reduced to that name — and to nothing else, ever.
+    /// A LOCAL queue is addressed by its bare name, so a local path written
+    /// next to the machine must be reduced to exactly that name.
     #[test]
-    fn a_windows_share_path_reduces_to_the_printer_name() {
+    fn a_local_share_path_reduces_to_the_printer_name() {
         for (configured, queue) in [
             ("XP80", "XP80"),
             ("Xprinter XP-80", "Xprinter XP-80"),
             ("  XP80  ", "XP80"),
             (r"\\localhost\XP80", "XP80"),
             (r"\\localhost\XP80$", "XP80"),
-            (r"\\*\XP80", "XP80"),
-            (r"\\localhost\Xprinter XP-80", "Xprinter XP-80"),
             (r"\\localhost\XP80\", "XP80"),
+            (r"\\*\XP80", "XP80"),
+            (r"\\127.0.0.1\XP80", "XP80"),
+            (r"\\LOCALHOST\XP80", "XP80"),
+            (r"\\localhost\Xprinter XP-80", "Xprinter XP-80"),
         ] {
             assert_eq!(spool_queue_name(configured), queue, "{configured}");
         }
     }
 
-    /// The reduction can only ever REMOVE a prefix. It must never turn a setting
-    /// into something with a separator in it, which is what would let a
-    /// configured value address anything other than a printer.
+    /// A SHARED or remote printer keeps its server. `OpenPrinterW` takes
+    /// `\\SERVER\PrinterName` for exactly this case, and reducing it to
+    /// `PrinterName` would ask Windows for a LOCAL queue of that name, which
+    /// does not exist, so the reduction must not touch a real server.
     #[test]
-    fn the_reduced_queue_never_contains_a_path_separator() {
+    fn a_remote_share_path_keeps_its_server() {
+        for (configured, queue) in [
+            (r"\\SERVER\Xprinter XP-80", r"\\SERVER\Xprinter XP-80"),
+            (r"\\print01\XP80", r"\\print01\XP80"),
+            // A print server's nested share form is the printer name too.
+            (r"\\SERVER\Share\PrinterName", r"\\SERVER\Share\PrinterName"),
+            (r"\\SERVER\XP80\", r"\\SERVER\XP80"),
+            // A remote administrative share keeps its `$`: it is part of the
+            // name on the server, unlike the local `\\localhost\X$` convention.
+            (r"\\SERVER\XP80$", r"\\SERVER\XP80$"),
+        ] {
+            assert_eq!(spool_queue_name(configured), queue, "{configured}");
+        }
+    }
+
+    /// The reduction is a name transformation and nothing more: it can never
+    /// introduce a drive letter, a device path, or anything a spooler call
+    /// would read as a file. What reaches `OpenPrinterW` is a printer name.
+    #[test]
+    fn the_reduced_queue_is_always_a_printer_name() {
         for configured in [
             r"\\localhost\XP80",
             r"\\localhost\Xprinter\sub\XP80",
-            r"\\server\share\printer$",
+            r"\\SERVER\share\printer$",
+            r"\\SERVER\Share\PrinterName",
             "\\\\",
+            "//localhost/XP80",
         ] {
             let queue = spool_queue_name(configured);
-            assert!(
-                !queue.contains(['\\', '/', ':']),
-                "{configured} reduced to {queue}"
-            );
+            assert!(!queue.contains(':'), "{configured} reduced to {queue}");
+            // A local queue is a single segment; a remote one is exactly the
+            // documented `\\SERVER[\Share\Printer]` form, never anything deeper.
+            if queue.starts_with("\\\\") {
+                assert!(
+                    queue[2..].split('\\').count() <= 3,
+                    "{configured} reduced to {queue}"
+                );
+            } else {
+                assert!(
+                    !queue.contains(['\\', '/']),
+                    "{configured} reduced to {queue}"
+                );
+            }
         }
+    }
+
+    /// The RAW datatype and every other string handed to the Windows spooler
+    /// must be a NUL-terminated UTF-16 buffer, or `OpenPrinterW` reads past the
+    /// end of it. This is the property the `w!` misuse broke: it produced a
+    /// pointer into a `'static` array, which can never be the mutable `PWSTR`
+    /// `DOC_INFO_1W` needs, so the datatype was not a buffer at all.
+    #[cfg(windows)]
+    #[test]
+    fn the_wide_helper_produces_a_nul_terminated_utf16_buffer() {
+        for value in ["RAW", "Station", "Xprinter XP-80", ""] {
+            let wide = wide(value);
+            assert_eq!(wide.len(), value.encode_utf16().count() + 1, "{value}");
+            assert_eq!(*wide.last().unwrap(), 0, "{value} must be NUL-terminated");
+            for (i, unit) in value.encode_utf16().enumerate() {
+                assert_eq!(wide[i], unit, "{value}");
+            }
+        }
+        // The exact datatype a RAW job is submitted with.
+        assert_eq!(wide("RAW"), vec![b'R' as u16, b'A' as u16, b'W' as u16, 0]);
     }
 
     /// A disabled target keeps its exact existing behaviour: a typed printer

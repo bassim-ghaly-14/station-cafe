@@ -37,13 +37,32 @@ pub const CMD_PREFIX: &str = "/cmd";
 /// `{kind, message, code}` shape the UI translates. Reusing THAT (rather than
 /// the older bespoke `{error:{code,message}}` envelope) is what lets
 /// `src/services/ipc.ts` behave identically on both transports.
+///
+/// The status code is still the one [`from_app_error`] computes — only the BODY
+/// comes from the error itself. That distinction is the whole point: mapping a
+/// domain error down to an opaque `INTERNAL` before it crosses the boundary
+/// would discard the stable machine key (`printer.open_failed`, and so on) and
+/// leave the browser with nothing to translate but "an error happened", which is
+/// exactly the generic toast this surface must never show.
 fn out<T: serde::Serialize>(result: crate::error::AppResult<T>) -> Result<ApiResponse, ApiError> {
     match result {
         Ok(value) => Ok(ApiResponse {
             status: 200,
             body: serde_json::to_value(value).unwrap_or(Value::Null),
         }),
-        Err(err) => Err(from_app_error(&err)),
+        Err(err) => {
+            // The technical detail (a win32 code, a queue name) is logged here,
+            // on the machine that owns the printer, and only the stable key
+            // travels to the client.
+            let boundary = from_app_error(&err);
+            if boundary.status >= 500 {
+                log::error!("command error [{}]: {}", err.kind().as_str(), err);
+            }
+            Ok(ApiResponse {
+                status: boundary.status,
+                body: serde_json::to_value(&err).unwrap_or(Value::Null),
+            })
+        }
     }
 }
 
@@ -280,5 +299,80 @@ fn dispatch(
             "set_network_config" => out(crate::commands::status::set_network_config(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
             "local_api_status" => out(crate::commands::status::local_api_status(state.clone(), token.to_owned())),
         _ => Err(ApiError::not_found()),
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The defect this pins: a printer failure was mapped down to an opaque
+    /// `INTERNAL` before it crossed the HTTP boundary, so the browser received
+    /// a generic "an error happened" instead of the stable `printer.*` key it
+    /// needs to show an actionable Arabic message. The status must stay a
+    /// failure, and the BODY must be the same `{kind, message, code}` shape the
+    /// Tauri IPC layer produces — that is what lets `ipc.ts` behave identically
+    /// on both transports.
+    #[test]
+    fn a_printer_failure_keeps_its_stable_code_across_the_boundary() {
+        for detail in [
+            "printer.not_configured",
+            "printer.open_failed: win32=1801",
+            "printer.spool_failed: start_doc win32=5",
+            "printer.write_failed: win32=2",
+        ] {
+            let ApiResponse { status, body } = out::<()>(Err(AppError::printer(detail)))
+                .expect("a response, not a transport error");
+
+            assert!(status >= 400, "{detail} must not report success");
+            assert_eq!(body["kind"], "printer", "{detail}");
+            // Only the stable prefix travels: the `win32=` detail stays on the
+            // machine that owns the printer, in the log.
+            assert_eq!(body["message"], detail.split(':').next().unwrap(), "{detail}");
+            assert!(
+                !body.to_string().contains("win32"),
+                "{detail} leaked a raw win32 code to the client"
+            );
+        }
+    }
+
+    /// Each distinct failure boundary keeps its OWN code, so the UI can tell a
+    /// missing configuration from an unreachable queue from a rejected job.
+    #[test]
+    fn each_printer_failure_keeps_its_own_code() {
+        for code in [
+            "printer.not_configured",
+            "printer.unavailable",
+            "printer.open_failed",
+            "printer.spool_failed",
+            "printer.write_failed",
+            "printer.flush_failed",
+        ] {
+            let ApiResponse { body, .. } = out::<()>(Err(AppError::printer(code))).unwrap();
+            assert_eq!(body["message"], code);
+        }
+    }
+
+    /// A non-printer domain error keeps its kind too — the fix is about the
+    /// error's own serialization, not about special-casing printing.
+    #[test]
+    fn a_business_failure_keeps_its_kind_and_code() {
+        let ApiResponse { status, body } =
+            out::<()>(Err(AppError::business("shift.already_open")))
+                .expect("a response, not a transport error");
+        assert_eq!(status, 422);
+        assert_eq!(body["kind"], "business_rule");
+        assert_eq!(body["message"], "shift.already_open");
+    }
+
+    /// An authorization refusal is still a real 403 (and a session loss is still
+    /// a 401): the status mapping this bridge computes is unchanged.
+    #[test]
+    fn authorization_statuses_are_unchanged() {
+        let forbidden = out::<()>(Err(AppError::unauthorized("auth.forbidden"))).unwrap();
+        assert_eq!(forbidden.status, 403);
+        let expired = out::<()>(Err(AppError::unauthorized("auth.session_expired"))).unwrap();
+        assert_eq!(expired.status, 401);
     }
 }

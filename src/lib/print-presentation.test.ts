@@ -175,6 +175,29 @@ describe('printer errors', () => {
     expect(printErrorText(t, { message: 'not.a.real.code' })).toBe('حدث خطأ أثناء الطباعة.')
     expect(printErrorText(t, new Error('boom'))).toBe('حدث خطأ أثناء الطباعة.')
   })
+
+  // The end-to-end regression: a printer failure crossing the LAN boundary
+  // reaches the browser as `{kind, message, code}`. When the boundary collapsed
+  // it to an opaque `INTERNAL`, the toast could only ever be the generic
+  // message, which is exactly what the manager was seeing instead of an
+  // actionable reason. Each failure boundary must now name its own Arabic
+  // message, and none of them may fall back to the generic one.
+  it('turns every printer failure the LAN bridge can send into its own message', () => {
+    const expected: Record<string, string> = {
+      'printer.not_configured': 'لم يتم إعداد الطابعة بعد',
+      'printer.unavailable': 'الطابعة غير متاحة حاليًا',
+      'printer.open_failed': 'تعذر الوصول إلى الطابعة',
+      'printer.spool_failed': 'تعذر إرسال مهمة الطباعة إلى قائمة الطباعة',
+      'printer.write_failed': 'تعذر إرسال البيانات إلى الطابعة',
+      'printer.flush_failed': 'تعذر إتمام إرسال البيانات إلى الطابعة',
+    }
+    for (const [code, message] of Object.entries(expected)) {
+      // Exactly the shape `AppError::serialize` produces and `ipc.ts` forwards.
+      const overHttp = { kind: 'printer', message: code, code: 'printer' }
+      expect(printErrorText(t, overHttp)).toBe(message)
+      expect(printErrorText(t, overHttp)).not.toBe('حدث خطأ أثناء الطباعة.')
+    }
+  })
 })
 
 describe('printer configuration', () => {
