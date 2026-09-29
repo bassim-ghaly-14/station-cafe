@@ -60,6 +60,48 @@ pub enum Route<'a> {
 /// The application shell, as the asset key Tauri stores it.
 pub const INDEX: &str = "/index.html";
 
+/// The frontend files that genuinely live at the ROOT of the embedded bundle.
+///
+/// Vite copies everything in `public/` to the root of `dist/` verbatim: it does
+/// not fingerprint those files and does not move them into `/assets/`. So the
+/// application references them by a root-relative URL — `/station-cafe.png` in
+/// `Logo.tsx` and in the favicon, `/station-print.png` in the receipt preview,
+/// `/site.webmanifest` in the install manifest.
+///
+/// Tauri's own protocol serves all of these to the desktop webview. This
+/// listener does not: [`asset_key`] accepts only `/assets/`, and a root file
+/// with an extension falls through to `NotFound`. The result is that the whole
+/// application works on a phone and every root asset is a 404 — which is why
+/// the station logo was missing from the browser while it was present on the
+/// till.
+///
+/// This list is deliberately EXPLICIT rather than a prefix or a directory walk.
+/// Three named files are the entire requirement; the alternative — serving
+/// whatever happens to sit at the root of `dist/` — would republish every
+/// bundled file by path, which is precisely the surface the rest of this module
+/// refuses to open. Adding a file to `public/` does NOT make it reachable here;
+/// it has to be added to this list on purpose, with its name stated.
+///
+/// The bytes still come from the one existing lookup ([`super::server`]'s
+/// `embedded_asset`), so there is no second asset-loading system here, and a
+/// name listed but absent from the bundle still answers an honest 404.
+pub const ROOT_ASSETS: [&str; 3] = [
+    "/station-cafe.png",
+    "/station-print.png",
+    "/site.webmanifest",
+];
+
+/// Resolve a request path against [`ROOT_ASSETS`].
+///
+/// Exact, case-sensitive equality against the listed names. A path can only
+/// match by being character-for-character one of them, so this admits no
+/// traversal, no subdirectory, no alternate spelling and no wildcard: anything
+/// not written out in full above returns `None` and is handled as it was
+/// before, which means a clean 404.
+pub fn root_asset_key(path: &str) -> Option<&str> {
+    ROOT_ASSETS.contains(&path).then_some(path)
+}
+
 /// Resolve a request path against the Station frontend.
 ///
 /// The path must already be free of its query string. Matching is exact and
@@ -69,6 +111,13 @@ pub fn route(path: &str) -> Route<'_> {
         return Route::Index;
     }
     if let Some(key) = asset_key(path) {
+        return Route::Asset(key);
+    }
+    // The named root assets, and only those. This is checked BEFORE the
+    // file-like-path rule below, which would otherwise claim every one of them
+    // (they all carry an extension) and 404 them. It sits AFTER the `/assets/`
+    // test so that namespace keeps its own strict handling untouched.
+    if let Some(key) = root_asset_key(path) {
         return Route::Asset(key);
     }
     // Anything under `/assets/` that is not a safe key is a bad request, never
@@ -152,6 +201,109 @@ mod tests {
             route("/assets/index-abc123.js"),
             Route::Asset("/assets/index-abc123.js")
         );
+    }
+
+    #[test]
+    fn the_named_root_assets_are_served() {
+        // The application references these three by a root-relative URL, because
+        // Vite copies `public/` to the root of the bundle without fingerprinting
+        // it. They must reach the SAME embedded lookup as `/assets/`, not a
+        // second one — hence `Route::Asset` with the request path as the key.
+        for path in [
+            "/station-cafe.png",
+            "/station-print.png",
+            "/site.webmanifest",
+        ] {
+            assert_eq!(route(path), Route::Asset(path), "{path}");
+            assert_eq!(root_asset_key(path), Some(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_root_asset_list_is_exactly_what_the_application_asks_for() {
+        // The list is a closed set, asserted rather than trusted: a fourth entry
+        // is a deliberate decision that has to be made here on purpose.
+        assert_eq!(
+            ROOT_ASSETS,
+            [
+                "/station-cafe.png",
+                "/station-print.png",
+                "/site.webmanifest"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_arbitrary_root_file_is_still_a_404() {
+        // The point of the allow-list. A root file that is real in the bundle but
+        // not listed must NOT become reachable just because it exists, and must
+        // not be answered with the shell either.
+        for path in [
+            "/foo.png",
+            "/secret.txt",
+            "/index.html.bak",
+            "/.env",
+            "/package.json",
+            "/vite.config.ts",
+        ] {
+            assert!(root_asset_key(path).is_none(), "{path} must not resolve");
+            assert_eq!(route(path), Route::NotFound, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_root_asset_name_is_matched_exactly() {
+        // No prefix, subdirectory, case-folding or extension tricks: a match
+        // requires the full name, character for character.
+        for path in [
+            "/station-cafe.PNG",
+            "/Station-Cafe.png",
+            "/station-cafe.png.bak",
+            "/assets/../station-cafe.png",
+            "/station-cafe.png/extra",
+            "/sub/station-cafe.png",
+            "//station-cafe.png",
+            "/",
+        ] {
+            assert!(root_asset_key(path).is_none(), "{path} must not resolve");
+        }
+    }
+
+    #[test]
+    fn a_root_asset_cannot_smuggle_a_traversal() {
+        // None of these equals a listed name, so the closed set refuses them
+        // before they can reach the resolver. The invariant asserted here is the
+        // one that matters: a crafted path NEVER becomes an `Asset` key, so no
+        // lookup is ever performed on its behalf. Where it lands afterwards is
+        // the pre-existing behaviour of a non-matching path (the extension rule
+        // or the SPA fallback), which this change deliberately does not alter.
+        for attempt in [
+            "/station-cafe.png/../../../etc/passwd",
+            "/site.webmanifest/../secret",
+            "/assets/../station-print.png",
+            "/station-print.png/..",
+        ] {
+            assert!(root_asset_key(attempt).is_none(), "{attempt}");
+            assert!(
+                !matches!(route(attempt), Route::Asset(_)),
+                "{attempt} must never resolve to an asset"
+            );
+        }
+        // `/assets/` keeps its own strict rule regardless of the root list.
+        assert_eq!(route("/assets/../station-print.png"), Route::NotFound);
+    }
+
+    #[test]
+    fn the_shell_and_api_routing_are_unchanged_by_the_root_assets() {
+        // Adding three asset names must not have moved the boundary between the
+        // three surfaces.
+        assert_eq!(route("/"), Route::Index);
+        assert_eq!(route("/index.html"), Route::Index);
+        assert_eq!(route("/pos"), Route::Spa);
+        assert_eq!(route("/reports"), Route::Spa);
+        assert!(is_api_path("/api/v1/health"));
+        assert!(!is_api_path("/station-cafe.png"));
+        assert!(!is_api_path("/assets/app.js"));
     }
 
     #[test]

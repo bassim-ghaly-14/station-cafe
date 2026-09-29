@@ -849,6 +849,64 @@ mod web_tests {
     }
 
     #[test]
+    fn the_named_root_assets_reach_the_frontend() {
+        // The regression this pins: Vite copies `public/` to the ROOT of the
+        // bundle, so the application asks for these three by a root-relative
+        // URL. They were 404ing on every phone, which is why the station logo
+        // was missing from the LAN browser while working on the till.
+        for path in [
+            "/station-cafe.png",
+            "/station-print.png",
+            "/site.webmanifest",
+        ] {
+            assert_eq!(web::route(path), Route::Asset(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn an_unlisted_root_file_stays_unreachable() {
+        // The allow-list is closed. A root file must not become fetchable merely
+        // by existing in the bundle, and must not be answered with the shell.
+        for path in [
+            "/foo.png",
+            "/secret.txt",
+            "/index.html.bak",
+            "/package.json",
+            "/vite.config.ts",
+            "/.env",
+        ] {
+            assert_eq!(web::route(path), Route::NotFound, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_root_asset_name_must_match_in_full() {
+        // Exact equality only: no case folding, no extension tricks, no
+        // subdirectory, and no traversal back into a listed name. A crafted
+        // path must never become an `Asset` key, so no lookup is ever done for it.
+        for path in [
+            "/station-cafe.PNG",
+            "/Station-Cafe.png",
+            "/station-cafe.png.bak",
+            "/assets/../station-cafe.png",
+            "/sub/station-print.png",
+        ] {
+            assert_eq!(web::route(path), Route::NotFound, "{path}");
+        }
+        // Extensionless traversal lands on the pre-existing SPA fallback rather
+        // than the shell by name — the point is that it is not an asset.
+        for path in [
+            "/station-cafe.png/../../../etc/passwd",
+            "/site.webmanifest/../secret",
+        ] {
+            assert!(
+                !matches!(web::route(path), Route::Asset(_)),
+                "{path} must never resolve to an asset"
+            );
+        }
+    }
+
+    #[test]
     fn the_api_namespace_is_decided_by_one_prefix_test() {
         use crate::network::server::command_name;
         for path in ["/api/v10/health", "/api/v", "/apixyz", "/", "/assets/app.js"] {
