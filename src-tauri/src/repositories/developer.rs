@@ -103,6 +103,21 @@ pub fn clear_all(
              VALUES (?1, NULL, 'ADMIN', ?2, 0)",
             [developer_username, developer_password_hash],
         )?;
+        // The developer admin needs an EMPLOYEE record too, exactly like every
+        // login the starter seed creates. A `users` row on its own is not a
+        // person: authentication resolves the actor's employee, so a preserved
+        // login with no employee row would be refused as suspended and the
+        // developer could never regain the ADMIN access this reset exists to
+        // guarantee. `employee_type = 'CASHIER'` is forced by the schema CHECK
+        // for a login-holding employee, and 'ACTIVE' is the state a reset means.
+        tx.execute(
+            "INSERT INTO employees (user_id, name, phone, employee_type, status, base_salary)
+             VALUES (
+                 (SELECT id FROM users WHERE name = ?1),
+                 ?1, NULL, 'CASHIER', 'ACTIVE', 0
+             )",
+            [developer_username],
+        )?;
         Ok(())
     })();
 

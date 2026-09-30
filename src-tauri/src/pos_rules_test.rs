@@ -477,6 +477,22 @@ fn the_discount_pin_is_one_global_shared_credential() {
     )
     .unwrap()
     .unwrap();
+    // A login is only half a person: authentication resolves the actor's
+    // EMPLOYEE record, so a `users` row created without one is not a usable
+    // account. The employee is created BEFORE signing in, exactly as the
+    // starter seed does for every login it creates.
+    crate::repositories::employees::insert(
+        &conn,
+        &crate::repositories::employees::NewEmployee {
+            name: "second-cashier",
+            phone: None,
+            employee_type: "CASHIER",
+            base_salary: 0,
+            notes: None,
+            user_id: Some(second),
+        },
+    )
+    .unwrap();
     let other_cashier = login(&conn, "second-cashier", "staff123");
     assert_eq!(other_cashier.id, second);
     settings::authorize_discount(&conn, &other_cashier, order_id, 500, Some("4820")).unwrap();

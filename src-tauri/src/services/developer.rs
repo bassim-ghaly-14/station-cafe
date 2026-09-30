@@ -105,7 +105,16 @@ mod tests {
 
     fn assert_empty_except_developer(conn: &Connection) {
         for table in developer::APPLICATION_DATA_TABLES {
-            let expected = if *table == "users" { 1 } else { 0 };
+            // `users` keeps the preserved developer login and `employees` keeps
+            // the matching employee record, because authentication resolves the
+            // actor's employee: a login without one could not sign in, and the
+            // reset exists precisely so the developer CAN sign back in. Every
+            // other application table is genuinely empty.
+            let expected = match *table {
+                "users" => 1,
+                "employees" => 1,
+                _ => 0,
+            };
             assert_eq!(count(conn, table), expected, "{table} row count");
         }
         assert_eq!(

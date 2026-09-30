@@ -183,6 +183,23 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
 
     assert!(staff_id > 0);
 
+    // A login is only half a person: authentication resolves the actor's
+    // EMPLOYEE record, so a `users` row created without one is not a usable
+    // account. The employee is created BEFORE signing in, exactly as the starter
+    // seed does for every login it creates.
+    crate::repositories::employees::insert(
+        &conn,
+        &crate::repositories::employees::NewEmployee {
+            name: "hassan",
+            phone: Some("01000000001"),
+            employee_type: "CASHIER",
+            base_salary: 0,
+            notes: None,
+            user_id: Some(staff_id),
+        },
+    )
+    .unwrap();
+
     let staff = login(&conn, "hassan", "staff123");
     assert_eq!(staff.role, "STAFF");
 
