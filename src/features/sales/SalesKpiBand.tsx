@@ -19,7 +19,7 @@
  * supporting figures, instead of a wall of identical cards.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, MoneyDisplay, Skeleton } from '@/components/ui'
+import { Card, KpiGrid, KpiTile, MoneyDisplay, Skeleton } from '@/components/ui'
 import {
   Coffee,
   Droplets,
@@ -34,18 +34,10 @@ import {
 import { cn } from '@/lib/utils'
 import type { SalesSummary } from '@/services/salesApi'
 
-/**
- * 1 → 2 (from 360px) → 3 → 4.
- *
- * The strip never squeezes a tile into illegibility, and the phone step is the
- * same decision the other bands make: one column made a four-tile summary
- * ~400px of scrolling on a phone before the analysis it summarises. Two columns
- * from 360px up costs each tile ~150px, which still fits the icon, the
- * truncated label and the figure. 320px stays at one column, where two ~140px
- * tiles would truncate an Arabic label to nothing.
- */
-const STRIP_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-
+/* The band's grid is the SHARED KPI rule (`KpiGrid`): one tile per row on a
+   phone, then the same 2 → 3 → 4 progression the desktop already had. The
+   phone step used to be two columns from 360px up, which is what truncated an
+   Arabic label to nothing on a 360px phone. */
 function StatTile({
   icon: Icon,
   label,
@@ -58,18 +50,9 @@ function StatTile({
   readonly children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-border-subtle bg-surface-card p-3">
-      <div className="flex items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-accent text-primary">
-          <Icon size={13} aria-hidden />
-        </span>
-        <p className="min-w-0 truncate text-caption">{label}</p>
-      </div>
-      <p className="text-lg leading-tight font-bold text-foreground-strong tabular-nums">
-        {children}
-      </p>
-      {hint ? <p className="truncate text-caption text-foreground-subtle">{hint}</p> : null}
-    </div>
+    <KpiTile icon={<Icon size={13} aria-hidden />} label={label} hint={hint}>
+      {children}
+    </KpiTile>
   )
 }
 
@@ -95,14 +78,14 @@ export function SalesKpiBand({
           <Skeleton variant="text" className="h-3 w-32" accessibilityLabel="" />
           <Skeleton variant="text" className="h-8 w-56" accessibilityLabel="" />
         </Card>
-        <div className={STRIP_GRID}>
+        <KpiGrid>
           {Array.from({ length: 8 }, (_, index) => (
             <Card key={index} className="flex flex-col gap-2 p-3">
               <Skeleton variant="text" className="h-3 w-20" accessibilityLabel="" />
               <Skeleton variant="text" className="h-5 w-24" accessibilityLabel="" />
             </Card>
           ))}
-        </div>
+        </KpiGrid>
         <span className="sr-only">{t('sales.kpi.loading')}</span>
       </output>
     )
@@ -159,7 +142,7 @@ export function SalesKpiBand({
       </Card>
 
       {/* The supporting figures. Every one of them is a real aggregate. */}
-      <div className={STRIP_GRID}>
+      <KpiGrid>
         <StatTile icon={Percent} label={t('sales.kpi.discounts')}>
           <MoneyDisplay amount={summary.discounts} variant="auto" />
         </StatTile>
@@ -181,7 +164,7 @@ export function SalesKpiBand({
         <StatTile icon={Droplets} label={t('sales.kpi.wash')}>
           <MoneyDisplay amount={summary.wash_sales} variant="auto" />
         </StatTile>
-      </div>
+      </KpiGrid>
     </div>
   )
 }

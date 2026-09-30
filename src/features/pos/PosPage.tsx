@@ -11,6 +11,8 @@ import {
   Dialog,
   DialogActions,
   DisplayTime,
+  KpiGrid,
+  KpiTile,
   Loader,
   MoneyDisplay,
   useToast,
@@ -21,6 +23,7 @@ import {
   Clock,
   DoorClosed,
   DoorOpen,
+  Inbox,
   Receipt,
   ShoppingBag,
   Ticket,
@@ -48,6 +51,7 @@ import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
 import { PaymentDialog } from './PaymentDialog'
 import { ShiftGate } from './ShiftGate'
+import { canOpenDailyRecords } from './posAccess'
 
 /**
  * Shared visual treatment for explicit "start/open" actions.
@@ -144,10 +148,12 @@ export default function PosPage() {
     return (
       <PosShiftGateView
         canCloseDay={dayClosingDay(user?.role, shiftState.day) !== null}
+        showDailyRecords={canOpenDailyRecords(user?.role)}
         state={shiftState}
         revision={revision}
         onDone={refresh}
         onReady={() => void refresh()}
+        onNavigate={navigate}
       />
     )
   }
@@ -455,13 +461,38 @@ function dayClosingDay(
   return atLeast(role, 'MANAGER') && day ? day : null
 }
 
-/** The legend numbers under the tables card title. */
-function tableCounts(tables: TableView[]): { empty: number; open: number; occupied: number } {
+/**
+ * The legend numbers under the tables card title.
+ *
+ * The four states are the ones the cards themselves show, so the header can
+ * never claim a state the grid does not have:
+ *
+ *  - `empty`     — EMPTY: no session, no order.
+ *  - `open`      — OPEN: a session is open, nothing ordered yet.
+ *  - `occupied`  — OCCUPIED + READY_TO_PAY: the table has an order on it. The
+ *                  two order states are ONE state here, exactly as they were
+ *                  before, because "بها طلب" is what a cashier needs to know.
+ *  - `closed`    — the sessions closed empty TODAY, summed from the same
+ *                  `closed_empty_today` counter each card already prints. This
+ *                  is deliberately a presentation of a figure the backend
+ *                  already returns, NOT a fifth table status: no table row is
+ *                  ever "closed", a session is, and inventing a status here
+ *                  would make the header disagree with the grid.
+ */
+type TableCounts = {
+  empty: number
+  open: number
+  occupied: number
+  closed: number
+}
+
+function tableCounts(tables: TableView[]): TableCounts {
   return {
     empty: tables.filter((tv) => tv.status === 'EMPTY').length,
     open: tables.filter((tv) => tv.status === 'OPEN').length,
     occupied: tables.filter((tv) => tv.status === 'OCCUPIED' || tv.status === 'READY_TO_PAY')
       .length,
+    closed: tables.reduce((total, tv) => total + tv.closed_empty_today, 0),
   }
 }
 
@@ -483,6 +514,15 @@ function tableCounts(tables: TableView[]): { empty: number; open: number; occupi
  * order and the desktop layout are both untouched — and the grid gets denser as
  * it grows, which is why a workspace with five open tables fits without
  * scrolling while the idle grid stays comfortable.
+ *
+ * The phone step is ONE table per row. The grid used to start at `grid-cols-2`,
+ * which put two table cards side by side on a 360px phone: each card was then
+ * ~150px wide, and a card carries a label, a status badge, a figure, two daily
+ * counters and an action — so the two-up layout truncated all of it and made the
+ * action buttons a cramped target. `grid-cols-1` below `sm` gives each card the
+ * full row it needs, and the columns from `sm` up keep the existing
+ * tablet/desktop density. No fixed width and no horizontal scroll is involved:
+ * the grid simply has one column until there is room for another.
  */
 function workspaceLayout(hasWorkspace: boolean): WorkspaceLayout {
   return {
@@ -490,8 +530,8 @@ function workspaceLayout(hasWorkspace: boolean): WorkspaceLayout {
     tablesCard: hasWorkspace ? 'min-w-0' : 'w-full',
     tablesOrder: hasWorkspace ? 'order-2 xl:order-1' : undefined,
     tablesGrid: hasWorkspace
-      ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 2xl:grid-cols-4'
-      : 'grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5',
+      ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4'
+      : 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5',
     orderColumn: hasWorkspace ? 'order-1 min-w-0 xl:order-2' : '',
   }
 }
@@ -502,6 +542,48 @@ interface WorkspaceLayout {
   readonly tablesOrder: string | undefined
   readonly tablesGrid: string
   readonly orderColumn: string
+}
+
+/**
+ * The tables KPI header: the four states the grid can be in, as four tiles.
+ *
+ * It renders through the SHARED KPI rule (`KpiGrid`), so it behaves like every
+ * other band in the app: four tiles in one row on a desktop, ONE tile per row
+ * on a phone. That is the same contract the sales/expenses/customers/employees
+ * bands now follow, so the tables section is not a special case.
+ *
+ * The tiles are the compact ones rather than the banded `Card` tiles: this sits
+ * inside the tables card itself, directly above the grid, and must not compete
+ * with the cards it summarises.
+ */
+function TablesKpiBand({ counts }: { readonly counts: TableCounts }) {
+  const { t } = useTranslation()
+
+  return (
+    <section aria-label={t('pos.tablesKpi.label')} className="mb-3">
+      {/* Four states, four tiles: `lg={4}` keeps them on ONE row from a
+          1024px desktop, so the band never reads as three tiles and a stray
+          fourth. */}
+      <KpiGrid lg={4}>
+        <KpiTile icon={<Inbox size={13} aria-hidden />} label={t('pos.tablesKpi.empty')}>
+          {counts.empty}
+        </KpiTile>
+        <KpiTile icon={<DoorOpen size={13} aria-hidden />} label={t('pos.tablesKpi.open')}>
+          {counts.open}
+        </KpiTile>
+        <KpiTile icon={<ClipboardList size={13} aria-hidden />} label={t('pos.tablesKpi.occupied')}>
+          {counts.occupied}
+        </KpiTile>
+        <KpiTile
+          icon={<DoorClosed size={13} aria-hidden />}
+          label={t('pos.tablesKpi.closed')}
+          hint={t('pos.tablesKpi.closedHint')}
+        >
+          {counts.closed}
+        </KpiTile>
+      </KpiGrid>
+    </section>
+  )
 }
 
 /**
@@ -530,7 +612,7 @@ function TablesCard({
 }: {
   readonly layout: WorkspaceLayout
   readonly tables: TableView[]
-  readonly counts: { empty: number; open: number; occupied: number }
+  readonly counts: TableCounts
   readonly takeaways: TakeawayView[] | null
   readonly activeOrderId: number | null
   readonly selectedTableId: number | null
@@ -547,7 +629,8 @@ function TablesCard({
 
   return (
     <Card aria-label={t('pos.tables')} className={cn(layout.tablesCard, layout.tablesOrder)}>
-      <CardHeader title={t('pos.tables')} subtitle={t('pos.tablesLegend', counts)} />
+      <CardHeader title={t('pos.tables')} />
+      <TablesKpiBand counts={counts} />
 
       {takeaways && takeaways.length > 0 ? (
         <OpenTakeaways items={takeaways} activeOrderId={activeOrderId} onOpen={onReopenTakeaway} />
@@ -615,20 +698,39 @@ function PosHeader({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {/* History is its own page now, not a dialog stacked over the POS.
-            The two daily records are siblings: the day's invoices and the
-            day's wash tickets, reachable from the same place. */}
-        <Button variant="outline" size="sm" onClick={() => onNavigate('today-invoices')}>
-          <Receipt size={16} aria-hidden />
-          {t('pos.todayInvoices')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onNavigate('today-wash-tickets')}>
-          <Ticket size={16} aria-hidden />
-          {t('pos.todayWashTickets')}
-        </Button>
-      </div>
+      <DailyRecordsActions onNavigate={onNavigate} />
     </header>
+  )
+}
+
+/**
+ * The two daily records: فواتير اليوم and تذاكر المغسلة اليوم.
+ *
+ * History is its own page now, not a dialog stacked over the POS, and the two
+ * are siblings: the day's invoices and the day's wash tickets, reachable from
+ * the same place.
+ *
+ * It is ONE component with two call sites on purpose. It used to live only in
+ * the selling workspace's header, which meant it existed only once the shift
+ * gate had been passed — so a manager who had not opened a till, and therefore
+ * never sees the workspace at all, had no way into either page. Rendering the
+ * same component on the gate screen is what makes a manager's access depend on
+ * their ROLE rather than on their SHIFT; see `canOpenDailyRecords`.
+ */
+function DailyRecordsActions({ onNavigate }: { readonly onNavigate: (view: View) => void }) {
+  const { t } = useTranslation()
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" onClick={() => onNavigate('today-invoices')}>
+        <Receipt size={16} aria-hidden />
+        {t('pos.todayInvoices')}
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => onNavigate('today-wash-tickets')}>
+        <Ticket size={16} aria-hidden />
+        {t('pos.todayWashTickets')}
+      </Button>
+    </div>
   )
 }
 
@@ -638,22 +740,44 @@ function PosHeader({
  * A manager who has to open the day also gets the closing card — closing is the
  * other half of that decision, and hiding it would mean a manager opening the
  * day in one place and closing it somewhere else.
+ *
+ * The day's two records belong here too, and are gated by ROLE only: reading
+ * the day's invoices or wash tickets is not selling, so it must not disappear
+ * for a manager who has no open till. The shift gate below is about opening a
+ * till, and stays exactly as strict as it was.
  */
 function PosShiftGateView({
   canCloseDay,
+  showDailyRecords,
   state,
   revision,
   onDone,
   onReady,
+  onNavigate,
 }: {
   readonly canCloseDay: boolean
+  readonly showDailyRecords: boolean
   readonly state: DayShiftState
   readonly revision: number
   readonly onDone: () => Promise<void>
   readonly onReady: () => void
+  readonly onNavigate: (view: View) => void
 }) {
+  const { t } = useTranslation()
+
   return (
     <div className="space-y-4">
+      {showDailyRecords ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-heading">{t('nav.pos')}</h1>
+            <p className="mt-1 text-caption text-foreground-muted">{t('pos.noShiftOpen')}</p>
+          </div>
+
+          <DailyRecordsActions onNavigate={onNavigate} />
+        </div>
+      ) : null}
+
       {canCloseDay && state.day ? (
         <DayClosingPanel dayId={state.day.id} revision={revision} onDone={onDone} />
       ) : null}
@@ -1043,7 +1167,11 @@ export function TableCard({
       aria-current={selected ? true : undefined}
       data-testid={`table-card-${tv.id}`}
       className={[
-        'group relative flex min-h-56 cursor-pointer flex-col overflow-hidden',
+        // One full-width row on a phone (see `workspaceLayout`), where a card
+        // needs no extra height to sit beside another one — so the phone step
+        // is the compact one and the multi-column steps keep the roomier
+        // desktop card.
+        'group relative flex min-h-48 cursor-pointer flex-col overflow-hidden sm:min-h-56',
         'rounded-lg border p-4 text-start',
         'transition-[border-color,background-color,box-shadow]',
         'duration-200',

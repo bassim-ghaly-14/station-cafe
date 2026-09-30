@@ -25,27 +25,17 @@
  * phone stacks them. No card is squeezed into illegibility.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, MoneyDisplay, Skeleton } from '@/components/ui'
+import { Card, KpiGrid, MoneyDisplay, Skeleton } from '@/components/ui'
 import { CalendarClock, Clock, Coffee, TrendingUp, Users } from '@/components/ui/icon'
 import type { LucideIcon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { EmployeeOverview, Leader } from '@/services/employeesApi'
 
-/**
- * 2 from `min-[360px]`, then 2 → 3 → 5.
- *
- * The phone step is the interesting one. A single column made every band five
- * full-width cards, which on a 360px phone is roughly 500px of scrolling before
- * the roster the band exists to summarise is even on screen — the band became
- * the page. Two columns from 360px up costs each tile ~150px, which still fits
- * its icon, its truncated label and its figure, and it halves the scroll.
- *
- * 320px keeps ONE column deliberately: two tiles there would be ~140px each,
- * narrow enough that an Arabic label truncates to nothing and the figure
- * crowds it. A tile that says less is worse than a tile that is lower.
+/** The band's grid is the SHARED KPI rule (`KpiGrid`): one tile per row on a
+ * phone, then the same 2 → 3 → 5 progression the desktop already had. The
+ * phone step used to be two columns from 360px up, which is what truncated an
+ * Arabic label to nothing on a 360px phone.
  */
-const BAND_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
-
 /** One tile: label, value, and an optional second line of context. */
 function KpiTile({
   icon: Icon,
@@ -109,10 +99,12 @@ export function EmployeeKpiBand({
 
   if (loading && !overview) {
     return (
-      <output
+      <KpiGrid
+        as="output"
+        xl={5}
+        className={className}
         aria-busy="true"
         aria-label={t('employees.kpi.loading')}
-        className={cn('block', BAND_GRID, className)}
       >
         {Array.from({ length: 5 }, (_, index) => (
           <Card key={index} className="flex flex-col gap-2 border-border-subtle p-3.5">
@@ -124,7 +116,7 @@ export function EmployeeKpiBand({
           </Card>
         ))}
         <span className="sr-only">{t('employees.kpi.loading')}</span>
-      </output>
+      </KpiGrid>
     )
   }
 
@@ -133,7 +125,7 @@ export function EmployeeKpiBand({
   const topHours = overview.top_hours?.value ?? 0
 
   return (
-    <div className={cn(BAND_GRID, className)} aria-busy={loading || undefined}>
+    <KpiGrid xl={5} className={className} aria-busy={loading || undefined}>
       <KpiTile
         icon={Users}
         label={t('employees.kpi.total')}
@@ -183,6 +175,6 @@ export function EmployeeKpiBand({
       >
         <MoneyDisplay amount={overview.top_cafe_revenue?.value ?? 0} variant="auto" />
       </KpiTile>
-    </div>
+    </KpiGrid>
   )
 }

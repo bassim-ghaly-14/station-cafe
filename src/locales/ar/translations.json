@@ -908,6 +908,14 @@
     "operationalControls": "إجراءات التشغيل والتقفيل",
     "operationalControlsHint": "تقفيل الوردية ويوم العمل — متاحة بعد إنهاء الحركة",
     "tablesLegend": "{{empty}} فارغة · {{open}} مفتوحة · {{occupied}} بها طلب",
+    "tablesKpi": {
+      "label": "حالات الطاولات",
+      "empty": "فارغة",
+      "open": "مفتوحة",
+      "occupied": "بها طلب",
+      "closed": "مغلق",
+      "closedHint": "إغلاق فارغ اليوم"
+    },
     "tableStatusHint": "اضغط على البطاقة لعرض إجراءاتها",
     "todayInvoices": "فواتير اليوم",
     "todayWashTickets": "تذاكر المغسلة اليوم",

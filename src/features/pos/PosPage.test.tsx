@@ -22,6 +22,27 @@ import type {
   TakeawayView,
 } from '@/services/posApi'
 
+/**
+ * The session the transport answers `me` with.
+ *
+ * `null` is the honest default: no suite below stores a token, so nothing is
+ * resolved and the page sees no user — exactly the anonymous case.
+ */
+const session = vi.hoisted(() => ({ user: null as Record<string, unknown> | null }))
+
+vi.mock('@/services/ipc', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/ipc')>()),
+  // The session read only. Every other command in this suite is mocked at the
+  // service layer, so nothing else reaches the transport.
+  call: vi.fn(async (cmd: string) => {
+    if (cmd === 'me') {
+      if (!session.user) throw new Error('no session')
+      return session.user
+    }
+    throw new Error(`unexpected command: ${cmd}`)
+  }),
+}))
+
 const mocks = vi.hoisted(() => ({
   tables: vi.fn(),
   serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
@@ -242,6 +263,28 @@ function renderPage() {
       </SessionProvider>
     </ToastProvider>,
   )
+}
+
+/**
+ * A session for a given role.
+ *
+ * `SessionProvider` resolves the signed-in user through the ONE transport
+ * (`ipc.call('me')`), so a role-gated screen is exercised by giving the
+ * transport a user rather than by mocking the session hook itself — the
+ * production path, not a shortcut around it. With no token stored (the default
+ * for every other suite here) nothing is resolved and the page sees no user.
+ */
+function signInAs(role: 'ADMIN' | 'MANAGER' | 'STAFF') {
+  session.user = {
+    id: 5,
+    name: 'مدير',
+    phone: null,
+    role,
+    status: 'ACTIVE',
+    created_at: '',
+    updated_at: '',
+  }
+  localStorage.setItem('station.session.token', 'test-token')
 }
 
 describe('TableCard lifecycle UX', () => {
@@ -689,6 +732,155 @@ describe('POS page hierarchy (operation vs. selling workflow)', () => {
     renderPage()
 
     expect(await screen.findByText(/وردية مفتوحة/)).toBeInTheDocument()
+  })
+})
+
+describe('daily records access (الفواتير / تذاكر المغسلة)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    session.user = null
+    localStorage.clear()
+
+    mocks.tables.mockResolvedValue([table()])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.preview.mockResolvedValue(previewOf())
+  })
+
+  afterEach(() => {
+    session.user = null
+    localStorage.clear()
+  })
+
+  // The fault this fixes: both entry points lived in the selling workspace's
+  // header, so they existed only AFTER the shift gate — a manager with no open
+  // till never saw the workspace and therefore never saw either button.
+  it('shows a MANAGER both records with no open shift of their own', async () => {
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, any_active_shift: false })
+    signInAs('MANAGER')
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+  })
+
+  it('shows a MANAGER both records with no open business day either', async () => {
+    mocks.state.mockResolvedValue({ day: null, my_shift: null, any_active_shift: false })
+    signInAs('MANAGER')
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+  })
+
+  it('keeps showing both records to a CASHIER with an active shift', async () => {
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 4 }, any_active_shift: true })
+    signInAs('STAFF')
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+  })
+
+  // Reading the day's records is not selling, so it is not gated on a till: the
+  // backend serves both reads to any STAFF regardless of who raised the invoice
+  // or the ticket, and the UI must not contradict that.
+  it('does not hide the records from a cashier whose colleague owns them', async () => {
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, any_active_shift: true })
+    signInAs('STAFF')
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+  })
+
+  it('navigates to the routed page rather than opening a dialog', async () => {
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 4 } })
+    signInAs('MANAGER')
+
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'فواتير اليوم' }))
+
+    // The router is the single source of truth for the current view, so the URL
+    // is what proves the entry point really leads to the page.
+    await waitFor(() => expect(window.location.pathname).toBe('/pos/invoices'))
+  })
+})
+
+describe('tables KPI header and the one-table-per-row phone grid', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    session.user = null
+    localStorage.clear()
+
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.preview.mockResolvedValue(previewOf())
+  })
+
+  it('states all four table states, with the closed count from the sessions closed today', async () => {
+    mocks.tables.mockResolvedValue([
+      table({ id: 1, status: 'EMPTY' }),
+      table({ id: 2, status: 'EMPTY' }),
+      table({ id: 3, status: 'OPEN', session_id: 7 }),
+      table({ id: 4, status: 'OCCUPIED', order_id: 9 }),
+      table({ id: 5, status: 'READY_TO_PAY', order_id: 10 }),
+      table({ id: 6, status: 'EMPTY', closed_empty_today: 2 }),
+    ])
+
+    renderPage()
+
+    const band = await screen.findByLabelText('حالات الطاولات')
+
+    // The four labels, in the order a manager reads the floor.
+    expect(within(band).getByText('فارغة')).toBeInTheDocument()
+    expect(within(band).getByText('مفتوحة')).toBeInTheDocument()
+    expect(within(band).getByText('بها طلب')).toBeInTheDocument()
+    expect(within(band).getByText('مغلق')).toBeInTheDocument()
+
+    // 3 empty · 1 open · 2 with an order (OCCUPIED and READY_TO_PAY are one
+    // state here) · 2 sessions closed empty today.
+    expect(
+      within(band)
+        .getAllByText(/^\d+$/)
+        .map((node) => node.textContent),
+    ).toEqual(['3', '1', '2', '2'])
+  })
+
+  it('follows the shared KPI rule: one tile per row on a phone, four across on a desktop', async () => {
+    mocks.tables.mockResolvedValue([table()])
+
+    renderPage()
+
+    const grid = (await screen.findByLabelText('حالات الطاولات')).firstElementChild as HTMLElement
+
+    // Mobile first: a single column, and no ad-hoc pixel breakpoint that would
+    // put two tiles side by side on a 360px phone.
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).not.toMatch(/min-\[/)
+    // Desktop last: the four states share one row, from a 1024px desktop up.
+    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.className).toContain('xl:grid-cols-4')
+  })
+
+  it('lays the table cards out one per row on a phone, with no fixed widths', async () => {
+    mocks.tables.mockResolvedValue([table({ id: 1 }), table({ id: 2 }), table({ id: 3 })])
+
+    renderPage()
+
+    const grid = (await screen.findByTestId('table-card-1')).parentElement as HTMLElement
+
+    // One column below `sm`, then the existing multi-column steps from `sm` up.
+    // Nothing here is a pixel width, so the grid can never force a sideways
+    // scrollbar on a phone.
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).toContain('sm:grid-cols-2')
+    expect(grid.className).not.toMatch(/\d+px/)
+    expect(grid.className).not.toContain('overflow-x')
   })
 })
 

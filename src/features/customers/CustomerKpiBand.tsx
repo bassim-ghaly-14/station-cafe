@@ -20,7 +20,7 @@
  * illegibility, and no sixth tile is invented to fill a row.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, MoneyDisplay, Skeleton } from '@/components/ui'
+import { Card, KpiGrid, MoneyDisplay, Skeleton } from '@/components/ui'
 import {
   Coffee,
   Droplets,
@@ -36,17 +36,10 @@ import type { LucideIcon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { CustomerOverview } from '@/services/customersApi'
 
-/**
- * 1 → 2 (from 360px) → 3 → 5.
- *
- * The phone step is the interesting one, and it is the same decision the
- * employees band makes: a single column turned a five-tile summary into ~500px
- * of scrolling before the customer list it summarises. Two columns from 360px
- * up costs each tile ~150px, which still fits its icon, its truncated label and
- * its figure. 320px keeps ONE column, because two ~140px tiles there would
- * truncate an Arabic label to nothing.
- */
-const BAND_GRID = 'grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
+/** The band's grid is the SHARED KPI rule (`KpiGrid`): one tile per row on a
+ * phone, then the same 2 → 3 → 5 progression the desktop already had. The
+ * phone step used to be two columns from 360px up, which is what truncated an
+ * Arabic label to nothing on a 360px phone. */
 
 /** One tile: label, value, and an optional second line of context. */
 function KpiTile({
@@ -106,8 +99,10 @@ export function CustomerKpiBand({
 
   if (loading && !overview) {
     return (
-      <output
-        className={cn('block', BAND_GRID, className)}
+      <KpiGrid
+        as="output"
+        xl={5}
+        className={className}
         aria-busy="true"
         aria-label={t('customers.kpi.loading')}
       >
@@ -121,14 +116,14 @@ export function CustomerKpiBand({
           </Card>
         ))}
         <span className="sr-only">{t('customers.kpi.loading')}</span>
-      </output>
+      </KpiGrid>
     )
   }
 
   if (!overview) return null
 
   return (
-    <div className={cn(BAND_GRID, className)} aria-busy={loading || undefined}>
+    <KpiGrid xl={5} className={className} aria-busy={loading || undefined}>
       <KpiTile icon={Users} label={t('customers.kpi.total')}>
         <Count value={overview.total_customers} />
       </KpiTile>
@@ -208,6 +203,6 @@ export function CustomerKpiBand({
       >
         <Count value={overview.takeaway_orders} />
       </KpiTile>
-    </div>
+    </KpiGrid>
   )
 }

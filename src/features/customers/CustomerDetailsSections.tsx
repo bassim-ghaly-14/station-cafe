@@ -11,7 +11,7 @@
 import { useTranslation } from 'react-i18next'
 import type { ReactNode } from 'react'
 
-import { Badge, MoneyDisplay } from '@/components/ui'
+import { Badge, KpiGrid, MoneyDisplay } from '@/components/ui'
 import { DisplayDate, DisplayDateTime } from '@/components/ui/display-datetime'
 import { CalendarClock, Car, Coffee, Droplets, Receipt, ShoppingBag } from '@/components/ui/icon'
 import type { LucideIcon } from '@/components/ui/icon'
@@ -185,7 +185,10 @@ export function CustomerStatsSection({ details }: { readonly details: CustomerDe
 
   return (
     <Section title={t('customers.drawer.performance')}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {/* A stat summary group, so it follows the shared KPI rule: one block per
+          row on a phone, where two half-width blocks truncated their Arabic
+          labels, then two and three columns once there is room. */}
+      <KpiGrid xl={3} className="gap-2">
         <StatBlock label={t('customers.stats.orders')}>
           <span className="tabular-nums">{details.stats.invoices_count}</span>
         </StatBlock>
@@ -209,7 +212,7 @@ export function CustomerStatsSection({ details }: { readonly details: CustomerDe
         <StatBlock label={t('customers.stats.serviceCharges')}>
           <MoneyDisplay amount={details.stats.service_charges} variant="auto" />
         </StatBlock>
-      </div>
+      </KpiGrid>
 
       {/* The remaining aggregates stay as a quiet two-column ledger
                 under the blocks, so the panel keeps every figure the backend

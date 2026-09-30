@@ -23,9 +23,76 @@ import { ActionMenu } from './action-menu'
 import { Dialog } from './dialog'
 import { DialogActions } from './dialog-actions'
 import { Button } from './button'
+import { KpiGrid, KpiTile } from './kpi'
 import { FilterBar, ToolbarSearch } from './toolbar'
 import { RecordList, RecordListItem, RecordListActions } from './data-table'
-import { Trash2 } from './icon'
+import { Receipt, Trash2 } from './icon'
+
+describe('KpiGrid — the project-wide KPI rule', () => {
+  it('puts one tile per row on a phone and never a two-column phone grid', () => {
+    const { container } = render(
+      <KpiGrid>
+        <KpiTile icon={<Receipt size={13} aria-hidden />} label="فارغة">
+          3
+        </KpiTile>
+        <KpiTile icon={<Receipt size={13} aria-hidden />} label="مفتوحة">
+          1
+        </KpiTile>
+      </KpiGrid>,
+    )
+    const grid = container.firstElementChild as HTMLElement
+
+    // ONE column is the phone rule. The old bands stepped to two columns at an
+    // ad-hoc `min-[360px]`, which is what truncated an Arabic KPI label on a
+    // 360px phone; the shared scale's own `sm` is the first multi-column step.
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).toContain('sm:grid-cols-2')
+    expect(grid.className).not.toMatch(/min-\[/)
+    // ... and the desktop row is untouched: four tiles in one line.
+    expect(grid.className).toContain('lg:grid-cols-3')
+    expect(grid.className).toContain('xl:grid-cols-4')
+  })
+
+  it('lets a band state its own widest row without restating the phone rule', () => {
+    const { container } = render(
+      <KpiGrid xl={5}>
+        <div />
+      </KpiGrid>,
+    )
+    const grid = container.firstElementChild as HTMLElement
+
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).toContain('xl:grid-cols-5')
+  })
+
+  it('can hold a small band on one desktop row from `lg`', () => {
+    // The tables band has exactly four tiles: at `lg` it must be four across,
+    // not three plus a stray fourth on a line of its own.
+    const { container } = render(
+      <KpiGrid lg={4}>
+        <div />
+      </KpiGrid>,
+    )
+    const grid = container.firstElementChild as HTMLElement
+
+    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.className).toContain('xl:grid-cols-4')
+  })
+
+  it('never truncates a KPI label, because a phone tile owns the full row', () => {
+    render(
+      <KpiTile icon={<Receipt size={13} aria-hidden />} label="إجمالي الخصومات">
+        1,250.00
+      </KpiTile>,
+    )
+
+    // An ellipsis in a KPI label is a figure the reader cannot trust they are
+    // looking at, so the shared tile does not truncate its label at all.
+    const label = screen.getByText('إجمالي الخصومات')
+    expect(label.className).not.toContain('truncate')
+    expect(label.className).not.toContain('text-ellipsis')
+  })
+})
 
 describe('DialogActions', () => {
   it('stacks full width on a phone and stays a trailing row on a desktop', () => {
