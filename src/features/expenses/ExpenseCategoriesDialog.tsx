@@ -71,10 +71,6 @@ export function ExpenseCategoriesDialog({
     }
   }, [errText, toast])
 
-  // Each time the dialog OPENS it clears the previous add/rename/delete draft and
-  // re-reads the category table. All of it is keyed on `open` arriving from the
-  // parent's click handler; a fresh dialog must never inherit a stale draft.
-  // oxlint-disable-next-line react/set-state-in-effect -- per-open reset + read.
   useEffect(() => {
     if (!open) return
     // oxlint-disable-next-line react/set-state-in-effect -- per-open reset + read.

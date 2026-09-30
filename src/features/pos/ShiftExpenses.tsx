@@ -36,11 +36,6 @@ export function ShiftExpenseDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Each time the dialog OPENS it re-reads the backend category table (so a
-  // category can never be offered here that the service would reject) and
-  // clears the previous failure. Both are keyed on `open` arriving from the
-  // parent's click handler — an external read plus a per-open reset.
-  // oxlint-disable-next-line react/set-state-in-effect -- per-open reset + read.
   useEffect(() => {
     if (!open) return
     // oxlint-disable-next-line react/set-state-in-effect -- per-open reset + read.

@@ -104,12 +104,6 @@ export function EmployeeDialog({
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Re-seed the form whenever the dialog opens for a different record. This is a
-  // prop-change reset (category F): `mode` is the dialog's identity and arrives
-  // from the parent's click handler. Lifting the fields to the parent to remove
-  // this would move the whole form's state, which is a larger change than the
-  // lint rule justifies.
-  // oxlint-disable-next-line react/set-state-in-effect -- form re-seed on open.
   useEffect(() => {
     if (!mode) return
     // oxlint-disable-next-line react/set-state-in-effect -- form re-seed on open.
