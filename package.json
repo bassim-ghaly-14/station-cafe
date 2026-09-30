@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "version:check": "node scripts/check-version.mjs",
     "typecheck": "tsc -b --noEmit",
-    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm i18n:audit && pnpm version:check && pnpm test"
+    "check": "pnpm build && pnpm typecheck && pnpm lint && pnpm format:check && pnpm i18n:audit && pnpm version:check && pnpm test"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

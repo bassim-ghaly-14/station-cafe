@@ -47,6 +47,20 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build frontend
+        # `tests/lanContract.test.ts` audits the REAL production artifact in
+        # `dist/` — the same directory `tauri.conf.json` embeds and the Rust LAN
+        # listener serves. `dist/` is gitignored, so a clean checkout has none,
+        # and the only build in this workflow used to happen later, inside the
+        # `tauri-action` step, AFTER the tests had already run. The suite then
+        # read no manifest at all and `JSON.parse('')` failed.
+        #
+        # This step exists so the artifact exists before it is audited. The
+        # build is unchanged: it is the same `pnpm build` that
+        # `beforeBuildCommand` runs, so the audited bundle is byte-identical to
+        # the shipped one.
+        run: pnpm build
+
       - name: Typecheck & test
         run: pnpm typecheck && pnpm lint && pnpm test
 
