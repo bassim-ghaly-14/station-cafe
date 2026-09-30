@@ -1470,12 +1470,32 @@ fn a_rejected_payroll_write_leaves_nothing_behind() {
 fn payroll_derives_no_deduction_from_an_absence() {
     let conn = fresh();
     let manager = login(&conn, "manager");
-    let cashier = login(&conn, "cashier");
-    let id = employee_of(&conn, &cashier);
-    emp::set_base_salary(&conn, &manager, id, 200_000).unwrap();
-    emp::record_attendance(&conn, &manager, id, AttendanceAction::Absent, None).unwrap();
+    // A person CREATED here rather than taken from the demo fixture, so the month
+    // under test holds exactly the one attendance day this test files and not one
+    // extra absence the seeder happened to roll for somebody.
+    let id = emp::create_employee(
+        &conn,
+        &manager,
+        &EmployeeInput {
+            name: "نجوى".into(),
+            phone: None,
+            employee_type: emp::CASHIER.into(),
+            base_salary: Some(200_000),
+            notes: None,
+            user_id: None,
+            role: None,
+            password: Some("nogha123".into()),
+        },
+    )
+    .unwrap();
+    let day = emp::record_attendance(&conn, &manager, id, AttendanceAction::Absent, None).unwrap();
+    // An absence is filed against TODAY's business date, so the period under test
+    // is read back from the record itself. A hardcoded month would put the day
+    // outside the window the moment the clock crossed into the next one, and the
+    // preview would then correctly report no absence at all.
+    let period = day.business_date[..7].to_string();
 
-    let preview = emp::payroll_preview(&conn, &manager, id, "2026-09").unwrap();
+    let preview = emp::payroll_preview(&conn, &manager, id, &period).unwrap();
     assert_eq!(preview.absence_days, 1);
     // Station documents no attendance-based penalty, so the net is untouched by
     // the absence — it is REPORTED, not priced.
