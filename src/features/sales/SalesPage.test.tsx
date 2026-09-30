@@ -175,8 +175,13 @@ function applyPeriod(from: string, to: string) {
   // The collapsed trigger is named by the period it currently holds.
   fireEvent.click(screen.getByRole('button', { name: new RegExp(formatIsoDate(today, 'ar-EG')) }))
   const dialog = screen.getByRole('dialog')
+  // The day cells of a range edge are named "<date> — من/إلى تاريخ" (the edge
+  // tells a screen reader which end it is), so the date is matched as a RegExp
+  // here exactly as the picker, Reports and Expenses tests match it.
   for (const day of [from, to]) {
-    fireEvent.click(within(dialog).getByRole('button', { name: formatIsoDateLong(day, 'ar-EG') }))
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: new RegExp(formatIsoDateLong(day, 'ar-EG')) }),
+    )
   }
   fireEvent.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
 }
