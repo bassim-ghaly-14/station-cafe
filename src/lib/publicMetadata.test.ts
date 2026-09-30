@@ -24,6 +24,11 @@
  *
  * Files are read as raw text through Vite rather than with `node:fs`, matching
  * `releaseIntegrity.test.ts`, so the bundle's type boundary is preserved.
+ *
+ * AND, for the same reason the LAN experience is load-bearing, the resource
+ * this file also constrains is the WEB MANIFEST — which, unlike `og:image`, the
+ * BROWSER fetches from the cafe's own origin at runtime. See the manifest test
+ * below for why that distinction is not cosmetic.
  */
 import { describe, expect, it } from 'vitest'
 import indexHtml from '../../index.html?raw'
@@ -147,18 +152,43 @@ describe('public / Telegram branding metadata', () => {
     }
   })
 
-  it('declares a manifest whose icons are the canonical logo', () => {
-    // An installed / standalone web app is one of the ways Station reaches a
-    // phone, and its icon has the same absolute-URL requirement.
+  it('declares a manifest whose icons the LAN can actually fetch', () => {
+    /*
+     * The manifest is a RUNTIME resource, not crawler metadata.
+     *
+     * `<link rel="manifest">` makes the BROWSER fetch `/site.webmanifest` from
+     * the cafe's own origin over the LAN listener (`web::ROOT_ASSETS` serves it),
+     * and the browser then fetches every icon it names. Those two requests are
+     * bound by the same `default-src 'self'` CSP as the rest of the page.
+     *
+     * It previously named the Cloudinary URL here, which was a category error:
+     * the reasoning that makes `og:image` absolute (a crawler resolves it
+     * against TELEGRAM's host, so it must be absolute and public) does NOT apply
+     * to a manifest, because a manifest is only ever read from the origin that
+     * serves it. On a cafe LAN with no internet it produced a failed icon fetch
+     * for every install of the web app — and the CSP would have blocked it even
+     * with internet. The icons are now the local asset, which is already listed
+     * in `web::ROOT_ASSETS` and is guaranteed to exist in the embedded bundle.
+     */
     expect(indexHtml).toContain('rel="manifest"')
 
     const manifest = JSON.parse(manifestRaw) as {
-      icons?: { src?: string; sizes?: string }[]
+      icons?: { src?: string; sizes?: string; purpose?: string }[]
     }
     expect(manifest.icons?.length).toBeGreaterThan(0)
     for (const icon of manifest.icons ?? []) {
-      expect(icon.src).toBe(CANONICAL_LOGO_URL)
-      expect(icon.src).toMatch(/^https:\/\//)
+      expect(icon.src, 'a manifest icon must resolve on the LAN origin').toBe('/station-cafe.png')
+      // No remote origin may appear anywhere in a runtime-fetched resource.
+      expect(icon.src).not.toMatch(/^(https?:)?\/\//i)
+    }
+
+    // The manifest must not smuggle a remote reference through another field
+    // (screenshots, shortcuts, share targets all cause fetches too).
+    for (const [key, value] of Object.entries(manifest as Record<string, unknown>)) {
+      if (key === 'description' || key === 'name' || key === 'short_name') continue
+      expect(JSON.stringify(value), `manifest.${key} must name no remote URL`).not.toMatch(
+        /https?:\/\//i,
+      )
     }
   })
 

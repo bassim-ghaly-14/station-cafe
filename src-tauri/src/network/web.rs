@@ -60,6 +60,100 @@ pub enum Route<'a> {
 /// The application shell, as the asset key Tauri stores it.
 pub const INDEX: &str = "/index.html";
 
+/// `Cache-Control` for a fingerprint-free asset that must never be cached.
+///
+/// The shell and the `public/` root files are NOT fingerprinted by Vite: their
+/// URL is stable across builds, so a cached copy could outlive the build that
+/// produced it and pin a phone to an application the till has already moved on
+/// from. They must therefore be revalidated on every use.
+pub const REVALIDATE: &str = "no-cache";
+
+/// `Cache-Control` for a Vite-fingerprinted bundle under `/assets/`.
+///
+/// Vite names these `name-<8 char hash>.<ext>` and rewrites the name whenever the
+/// CONTENT changes, which makes the URL a stable, correct cache key: the bytes
+/// behind a given hash can never differ between two builds. A phone therefore
+/// downloads the multi-megabyte application bundle ONCE and reuses it on every
+/// subsequent load and refresh, which is the single largest LAN performance
+/// factor in the whole path.
+///
+/// `immutable` is what stops the browser revalidating even so, and it is safe
+/// precisely because of the fingerprint. `must-revalidate` is deliberately NOT
+/// used: it would force a conditional request on every load and give back the
+/// round trip this exists to remove.
+///
+/// This must never be applied to the shell or a root asset. A cache-poisoning
+/// risk only exists where the URL is stable, so the decision is made by
+/// [`is_fingerprinted_asset`] rather than by hand at each call site.
+pub const FINGERPRINTED: &str = "public, max-age=31536000, immutable";
+
+/// Whether this path is a content-fingerprinted bundle file.
+///
+/// The test is deliberately narrow and structural, matching Vite's emitted
+/// `/assets/<name>-<hash>.<ext>` shape exactly:
+///
+/// - it must live under `/assets/` — which is the only namespace Vite
+///   fingerprints, and the only one whose contents are build output;
+/// - the last path segment must contain an extension, so this can never match a
+///   route or the shell;
+/// - the stem's final `-`-separated component must be a hash of at least
+///   [`VITE_HASH_MIN`] characters drawn from Vite's base64url alphabet.
+///
+/// Requiring the alphabet as well as the length is what keeps a plausible
+/// hand-written name such as `/assets/vendor-jquery.js` out: `jquery` is five
+/// characters, but more importantly it is not a hash-shaped token. A false
+/// negative here is merely a missed optimisation; a false positive would cache a
+/// file whose URL can change, so the rule stays conservative.
+const VITE_HASH_MIN: usize = 8;
+
+/// Whether the query is a safe `/assets/` key. Mirrors [`asset_key`] and exists
+/// so the caching rule can never be applied to a path the resolver would refuse.
+fn is_assets_key(path: &str) -> bool {
+    asset_key(path).is_some()
+}
+
+/// Whether a path names a fingerprinted bundle file under `/assets/`.
+pub fn is_fingerprinted_asset(path: &str) -> bool {
+    if !is_assets_key(path) {
+        return false;
+    }
+    let Some(name) = path.rsplit('/').next() else {
+        return false;
+    };
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    // No extension, or an empty stem, is not a bundle file.
+    if ext.is_empty() || stem.is_empty() {
+        return false;
+    }
+    // Vite always emits `<name>-<hash>.<ext>`, so the part before the final
+    // dash must be a real name. Requiring it stops a bare `-<hash>` segment
+    // from qualifying on the strength of its tail alone.
+    let Some((base, hash)) = stem.rsplit_once('-') else {
+        return false;
+    };
+    if base.is_empty() {
+        return false;
+    }
+    hash.len() >= VITE_HASH_MIN
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// The `Cache-Control` value for a frontend asset response.
+///
+/// This is the ONE place the caching policy is decided, so the fingerprint rule
+/// and the value that expresses it cannot drift apart.
+pub fn cache_control(path: &str) -> &'static str {
+    if is_fingerprinted_asset(path) {
+        FINGERPRINTED
+    } else {
+        REVALIDATE
+    }
+}
+
 /// The frontend files that genuinely live at the ROOT of the embedded bundle.
 ///
 /// Vite copies everything in `public/` to the root of `dist/` verbatim: it does
@@ -409,5 +503,102 @@ mod tests {
         assert!(is_api_path("/api/v1"));
         assert!(!is_api_path("/api/v10/health"));
         assert!(!is_api_path("/pos"));
+    }
+
+    // ---- the caching policy ----------------------------------------------
+
+    /// The shapes Vite ACTUALLY emits, not invented ones. These are the two
+    /// files every Station build produces, named exactly as the bundler names
+    /// them, so the rule is pinned against real output rather than a guess.
+    #[test]
+    fn a_real_vite_bundle_is_cacheable_and_the_shell_is_not() {
+        // Fingerprinted build output: cacheable forever, because the hash IS
+        // the content. This is the multi-megabyte file, so this single rule is
+        // what decides whether a phone downloads it once or on every load.
+        assert!(is_fingerprinted_asset("/assets/index-Buux1o88.js"));
+        assert!(is_fingerprinted_asset("/assets/index-CBykrMD0.css"));
+        // The shell and the public/ root files keep stable URLs across builds,
+        // so a cached copy could outlive the build that produced it.
+        assert!(!is_fingerprinted_asset(INDEX));
+        assert!(!is_fingerprinted_asset("/station-cafe.png"));
+        assert!(!is_fingerprinted_asset("/site.webmanifest"));
+        assert!(!is_fingerprinted_asset("/station-print.png"));
+    }
+
+    #[test]
+    fn the_cache_header_follows_the_fingerprint_and_nothing_else() {
+        assert_eq!(cache_control("/assets/index-Buux1o88.js"), FINGERPRINTED);
+        assert_eq!(cache_control("/assets/index-CBykrMD0.css"), FINGERPRINTED);
+        assert_eq!(cache_control(INDEX), REVALIDATE);
+        for path in ROOT_ASSETS {
+            assert_eq!(cache_control(path), REVALIDATE, "{path}");
+        }
+    }
+
+    #[test]
+    fn no_path_that_can_change_content_is_ever_marked_immutable() {
+        /*
+         * The one direction that matters. Marking a STABLE url `immutable`
+         * would pin a phone to a stale application after a rebuild, so every
+         * plausible non-fingerprinted path must fall back to revalidation.
+         */
+        for path in [
+            "/index.html",
+            "/",
+            "/pos",
+            "/pos/invoices",
+            "/assets/index.js",        // no fingerprint at all
+            "/assets/vendor-jquery.js", // a real word, not a hash
+            "/assets/index.js.map",
+            "/assets/.js",
+            "/assets/x-.js",
+            "/assets/-Buux1o88.js",
+            "/assets/foo-bar.js",       // hash-shaped tail, but not under /assets/
+            "/Buux1o88.js",
+            "/station-cafe.png",
+            "/site.webmanifest",
+        ] {
+            assert!(
+                !is_fingerprinted_asset(path),
+                "{path} must not be treated as immutable"
+            );
+            assert_eq!(cache_control(path), REVALIDATE, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_traversal_never_reaches_the_caching_rule() {
+        // `cache_control` is applied to whatever `route_with` classified as an
+        // asset, so it must refuse an unsafe key exactly as the resolver does.
+        // A false positive here would attach a long-lived cache header to a
+        // request that was never an asset at all.
+        for attempt in [
+            "/assets/../../etc/passwd",
+            "/assets/..%2f..%2fsecret",
+            "/assets//x",
+            "/assets/./x",
+        ] {
+            assert!(!is_fingerprinted_asset(attempt), "{attempt}");
+            assert_eq!(cache_control(attempt), REVALIDATE, "{attempt}");
+        }
+    }
+
+    #[test]
+    fn a_nested_fingerprinted_asset_is_still_recognised() {
+        // Vite emits nested asset directories for some inputs; the rule must not
+        // depend on the bundle being flat.
+        assert!(is_fingerprinted_asset("/assets/charts/Daily-Buux1o88.js"));
+        assert!(is_fingerprinted_asset("/assets/vendor/lib-Ab12Cd34.js"));
+    }
+
+    #[test]
+    fn the_immutable_policy_actually_says_immutable() {
+        // A typo in the policy string would silently degrade every request to a
+        // revalidation round trip while the tests above still passed, because
+        // they only compare against the same constants.
+        assert!(FINGERPRINTED.contains("immutable"));
+        assert!(FINGERPRINTED.contains("max-age=31536000"));
+        assert!(!REVALIDATE.contains("immutable"));
+        assert!(!REVALIDATE.contains("max-age"));
     }
 }

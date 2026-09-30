@@ -31,11 +31,18 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    // The second pattern covers the LOCAL WEB surface in /web — the standalone
-    // browser app served to a phone. It is deliberately outside `src`: it is
-    // not part of the Tauri desktop bundle, pulls in no Tauri dependency, and
-    // is shipped verbatim to the browser. It is still plain ES modules, so the
-    // same runner and the same jsdom environment exercise it unchanged.
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'web/**/*.{test,spec}.js'],
+    // There is deliberately only ONE frontend in this repository: `src/`. The
+    // LAN browser app served to a phone is the SAME bundle the till runs — it
+    // is the embedded `dist/` that the Rust listener hands out, not a separate
+    // app — so there is no second application test surface here. A previous
+    // version of this comment described a standalone `web/` directory that does
+    // not exist; the include patterns below are therefore `src/` and `tests/`.
+    //
+    // `tests/` holds the ONE suite that must inspect the real build output on
+    // disk. It cannot live under `src/`, because `tsconfig.app.json` withholds
+    // Node types from the application bundle on purpose and this suite reads
+    // `dist/` directly. It runs in the same jsdom environment as everything else:
+    // it does no DOM work, and jsdom keeps the runner uniform.
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'tests/**/*.{test,spec}.{ts,tsx}'],
   },
 })

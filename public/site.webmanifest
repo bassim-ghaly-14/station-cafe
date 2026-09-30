@@ -12,19 +12,19 @@
   "theme_color": "#b07f47",
   "icons": [
     {
-      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "src": "/station-cafe.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "src": "/station-cafe.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/paihc5qx/image/upload/v1790005045/station-cafe_u4oj0a.png",
+      "src": "/station-cafe.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -442,7 +442,7 @@ fn web_response(req: &ApiRequest, app: &tauri::AppHandle) -> ResponseBox {
             // 404 instead of a 200 carrying a whole HTML document — which the
             // browser would report as a baffling JavaScript parse error.
             match embedded_asset(app, key) {
-                Some((mime, bytes)) => asset_response(200, &mime, &bytes),
+                Some((mime, bytes)) => asset_response(200, &mime, &bytes, web::cache_control(key)),
                 None => error_response(&ApiError::not_found()),
             }
         }
@@ -453,7 +453,7 @@ fn web_response(req: &ApiRequest, app: &tauri::AppHandle) -> ResponseBox {
 /// The Station application shell.
 fn shell(app: &tauri::AppHandle) -> ResponseBox {
     match embedded_asset(app, web::INDEX) {
-        Some((mime, bytes)) => asset_response(200, &mime, &bytes),
+        Some((mime, bytes)) => asset_response(200, &mime, &bytes, web::cache_control(web::INDEX)),
         // The shell must never be faked. If the asset set is unavailable we say
         // so honestly instead of returning a page that cannot boot.
         None => error_response(&ApiError::internal()),
@@ -477,20 +477,33 @@ fn embedded_asset(app: &tauri::AppHandle, key: &str) -> Option<(String, Vec<u8>)
     if !name.starts_with('/') || name.contains("..") || name.contains('\\') {
         return None;
     }
-    if !app
-        .asset_resolver()
+    // ONE traversal, not two.
+    //
+    // This used to run a full `iter().any(...)` existence scan and THEN a
+    // separate `.get()` lookup, walking the embedded map twice for every single
+    // asset request — and `web_response` calls this function once to classify
+    // the route and again to read the bytes, so a page load walked it four times
+    // instead of twice.
+    //
+    // `iter()` yields the key together with the bytes, so a single `find` both
+    // proves existence and returns the content. The one thing it does not yield
+    // is the MIME type, which is why this derives it from the same
+    // `MimeType::parse` call Tauri's own `AssetResolver::get` uses internally —
+    // so the type served is byte-for-byte the one the desktop webview gets, and
+    // the exactness that the resolver's `index.html` fallback would have broken
+    // is preserved without paying for a second walk.
+    app.asset_resolver()
         .iter()
-        .any(|(existing, _)| {
+        .find(|(existing, _)| {
             // `existing` is a `Cow<AssetKey>`; `AssetKey` derefs to `str`.
             let existing: &str = existing.as_ref();
             existing == name
         })
-    {
-        return None;
-    }
-    app.asset_resolver()
-        .get(name.to_string())
-        .map(|asset| (asset.mime_type.to_string(), asset.bytes.to_vec()))
+        .map(|(_, bytes)| {
+            let bytes = bytes.into_owned();
+            let mime = tauri::utils::mime_type::MimeType::parse(&bytes, name);
+            (mime, bytes)
+        })
 }
 
 /// Write a frontend asset.
@@ -498,7 +511,12 @@ fn embedded_asset(app: &tauri::AppHandle, key: &str) -> Option<(String, Vec<u8>)
 /// The security headers are the same ones the API sends, plus the strict CSP:
 /// this content is HTML and JavaScript executing in a browser on the same LAN
 /// as the till, so it is held to at least the same standard.
-fn asset_response(status: u16, content_type: &str, body: &[u8]) -> ResponseBox {
+fn asset_response(
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+    cache_control: &str,
+) -> ResponseBox {
     let mut response = Response::from_data(body.to_vec()).with_status_code(status);
     if let Ok(h) = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()) {
         response.add_header(h);
@@ -509,9 +527,16 @@ fn asset_response(status: u16, content_type: &str, body: &[u8]) -> ResponseBox {
         // manager's phone.
         ("X-Frame-Options", "DENY"),
         ("Content-Security-Policy", web::CSP),
+        // `cache_control` is the fingerprint-aware policy from `web`, NOT a
+        // blanket `no-store`. It used to be `no-store` for every response,
+        // which forced a phone to re-download the entire multi-megabyte
+        // fingerprinted bundle on every single page load and refresh — the
+        // dominant cost in the LAN experience. The shell and the root assets
+        // are still revalidated on every use, and no API or business response
+        // ever passes through here: those keep their own `no-store`.
+        ("Cache-Control", cache_control),
         // Nothing on this origin should ever be indexed, cached by a shared
         // phone, or leaked to a third party through a Referer header.
-        ("Cache-Control", "no-store"),
         ("Referrer-Policy", "no-referrer"),
     ] {
         if let Ok(h) = Header::from_bytes(name.as_bytes(), value.as_bytes()) {
