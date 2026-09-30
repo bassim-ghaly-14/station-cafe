@@ -55,21 +55,35 @@ fn require_manager_user(state: &State<'_, AppState>, token: &str) -> AppResult<c
     Ok(actor)
 }
 
-/// The local-access QR, for the manager's phone.
+/// The local-access QR, for any signed-in Station user.
 ///
-/// MANAGER+ because opening a network listener and showing its address is a
-/// management action, enforced by the same `auth::require_role` the desktop
-/// surfaces use.
+/// AUTHENTICATED, not MANAGER+: the QR Code page is a destination every role may
+/// open, so a cashier can show the code at the till. That is safe precisely
+/// because of what the payload is — `network::qr` assembles an ADDRESS and
+/// nothing else: no token, no session, no PIN, no data. A QR is a sticker on a
+/// counter that anyone nearby can photograph, so nothing secret can be in it,
+/// and the user still signs in on their own account after scanning.
 ///
-/// The payload is an ADDRESS and nothing more, assembled in `network::qr`. It
-/// carries no token: the URL is built from exactly four parts and has no code
-/// path that appends a query string or credential.
+/// This relaxation is deliberately NARROW. It applies to reading the code and
+/// to nothing else: `get_network_config` stays MANAGER+ and
+/// `set_network_config` still activates and deactivates the service behind
+/// `auth::require_role`, so the Dev Settings surface and every control on it
+/// keep exactly the authorization they had.
 #[tauri::command(rename_all = "snake_case")]
 pub fn local_access_qr(
     state: State<'_, AppState>,
     token: String,
 ) -> AppResult<crate::network::qr::LocalAccess> {
-    let cfg = require_manager(&state, &token)?;
+    let cfg = {
+        let conn = state
+            .conn
+            .lock()
+            .map_err(|_| AppError::internal("database lock poisoned"))?;
+        // Any valid session may read the code; the CONFIGURATION it reflects
+        // stays a manager's business, which is why only the read is relaxed.
+        crate::services::auth::require_user(&conn, &token)?;
+        crate::network::config::get(&conn)?
+    };
     // Read the LIVE listener address. A `url` is only produced when a listener
     // actually exists, so a stopped service can never be shown as reachable.
     let running = state

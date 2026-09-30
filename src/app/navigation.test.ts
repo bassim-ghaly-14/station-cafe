@@ -36,6 +36,7 @@ describe('navigation configuration', () => {
       'inventory',
       'reports',
       'dev-settings',
+      'qr-code',
     ])
   })
 
@@ -82,7 +83,9 @@ describe('navigation configuration', () => {
 
 describe('role-based navigation', () => {
   it('shows a STAFF the operational workspaces and nothing more', () => {
-    expect(views('STAFF')).toEqual(['pos', 'catalog', 'customers', 'employees'])
+    // The QR code is operational, not managerial: a cashier shows it at the
+    // till, so it is part of what a STAFF sees.
+    expect(views('STAFF')).toEqual(['pos', 'catalog', 'customers', 'employees', 'qr-code'])
   })
 
   it('gives a MANAGER the financial workspaces but not settings', () => {
@@ -95,6 +98,7 @@ describe('role-based navigation', () => {
       'sales',
       'inventory',
       'reports',
+      'qr-code',
     ])
   })
 
@@ -133,6 +137,8 @@ describe('role-based navigation', () => {
   it('never widens a destination above the role the desktop sidebar used', () => {
     // A direct comparison against the original per-destination floors. If this
     // fails, the mobile pass has granted something the desktop never did.
+    // `qr-code` is the one entry with no predecessor: it is a NEW destination,
+    // declared STAFF because the code carries an address and nothing else.
     const original: Record<string, UserRole> = {
       pos: 'STAFF',
       catalog: 'STAFF',
@@ -143,9 +149,45 @@ describe('role-based navigation', () => {
       inventory: 'MANAGER',
       reports: 'MANAGER',
       'dev-settings': 'ADMIN',
+      'qr-code': 'STAFF',
     }
     for (const item of NAV) {
       expect(item.minRole, item.view).toBe(original[item.view])
+    }
+  })
+
+  it('offers the QR code to every role, immediately after Settings', () => {
+    // The requirement, asserted on the single list both surfaces render from:
+    // ADMIN, MANAGER and STAFF all see it, and it is the LAST entry — directly
+    // BELOW the settings entry for an ADMIN, and directly below the last
+    // destination a MANAGER or STAFF can open. A destination of its own, never
+    // a Settings submenu.
+    for (const role of ['ADMIN', 'MANAGER', 'STAFF'] as const) {
+      const list = views(role)
+      expect(list, role).toContain('qr-code')
+      expect(list[list.length - 1], `${role}: QR Code is the last entry`).toBe('qr-code')
+    }
+
+    const admin = views('ADMIN')
+    expect(admin.indexOf('qr-code')).toBe(admin.indexOf('dev-settings') + 1)
+  })
+
+  it('keeps the QR page out of the ADMIN-only development surface', () => {
+    // The two concepts stay distinct: Settings and its activation controls are
+    // still ADMIN-only, and the QR entry grants none of them.
+    expect(views('MANAGER')).not.toContain('dev-settings')
+    expect(views('STAFF')).not.toContain('dev-settings')
+  })
+
+  it('does not give the QR code a permanent bottom-bar slot', () => {
+    // A shared till phone keeps its four slots for POS, catalogue and
+    // customers; the code is reached through "More" like every other
+    // non-permanent destination.
+    for (const role of ['ADMIN', 'MANAGER', 'STAFF'] as const) {
+      expect(
+        primaryNav(role).map((n) => n.view),
+        role,
+      ).not.toContain('qr-code')
     }
   })
 })

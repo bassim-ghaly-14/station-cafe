@@ -1168,3 +1168,124 @@ mod web_tests {
         (status, raw)
     }
 }
+
+#[cfg(test)]
+mod qr_access_tests {
+    //! Who may READ the Station QR code, and who may still not touch the service.
+    //!
+    //! The QR Code page is a destination every signed-in role can open, so
+    //! `local_access_qr` authenticates rather than requiring MANAGER. That
+    //! relaxation is deliberately narrow, and these tests exist to keep it
+    //! narrow: the CODE becomes readable by a STAFF and nothing else about the
+    //! local service changes — reading its configuration and activating or
+    //! deactivating the listener stay MANAGER+ exactly as before.
+
+    use crate::error::{AppError, AppResult};
+    use crate::services::auth;
+    use rusqlite::Connection;
+
+    fn fresh() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        crate::db::migrate(&conn).unwrap();
+        crate::seed::run_if_empty(&conn).unwrap();
+        conn
+    }
+
+    fn token_for(conn: &Connection, name: &str) -> String {
+        auth::login(
+            conn,
+            &auth::LoginInput {
+                name: name.into(),
+                password: format!("{name}123"),
+            },
+        )
+        .unwrap()
+        .token
+    }
+
+    /// The read path the QR Code page uses, minus the Tauri `State` wrapper: an
+    /// authenticated session resolves, and the code is assembled from the
+    /// stored configuration exactly as the command does.
+    fn read_qr(conn: &Connection, token: &str) -> AppResult<crate::network::qr::LocalAccess> {
+        auth::require_user(conn, token)?;
+        let cfg = crate::network::config::get(conn)?;
+        // No listener is running in a unit test, so the honest answer is "not
+        // running" — which is itself part of what the page must render.
+        crate::network::qr::local_access(&cfg, None, false).map_err(AppError::internal)
+    }
+
+    #[test]
+    fn a_staff_session_may_read_the_qr_code() {
+        // The feature: any authenticated Station user can be shown the code.
+        let conn = fresh();
+        let access = read_qr(&conn, &token_for(&conn, "cashier")).expect("STAFF must read the QR");
+        assert!(!access.api_running, "no listener is bound in this test");
+        // A stopped service produces no address and no code, never a stale one.
+        assert!(access.url.is_none());
+        assert!(access.svg.is_none());
+    }
+
+    #[test]
+    fn a_manager_and_an_admin_may_read_the_qr_code_too() {
+        let conn = fresh();
+        for name in ["manager", "admin"] {
+            assert!(
+                read_qr(&conn, &token_for(&conn, name)).is_ok(),
+                "{name} must read the QR"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unauthenticated_caller_is_refused_the_qr_code() {
+        // Relaxing the ROLE floor never relaxed the AUTHENTICATION floor.
+        let conn = fresh();
+        let err = read_qr(&conn, "not-a-real-token").unwrap_err();
+        assert!(
+            matches!(err, AppError::Unauthorized(_)),
+            "an invalid session must be refused, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_staff_session_may_still_not_configure_or_activate_the_service() {
+        // The boundary the new page must not have moved. `config::set` is the
+        // single place activation and configuration are authorized, and it still
+        // demands MANAGER — the same `require_role` it always used.
+        let conn = fresh();
+        let staff = auth::require_user(&conn, &token_for(&conn, "cashier")).unwrap();
+        let err =
+            crate::network::config::set(&conn, &staff, &crate::network::config::NetworkConfig {
+                enabled: true,
+                bind: crate::network::config::LAN_INTERFACE.to_string(),
+                port: crate::network::config::DEFAULT_PORT,
+            })
+            .unwrap_err();
+        assert!(
+            matches!(err, AppError::Unauthorized(_)),
+            "STAFF must not activate the service, got {err:?}"
+        );
+
+        // And the stored configuration is untouched by the attempt.
+        assert!(!crate::network::config::get(&conn).unwrap().enabled);
+    }
+
+    #[test]
+    fn the_qr_payload_still_carries_no_credential() {
+        // The reason the read is safe to widen at all, pinned so a future change
+        // cannot quietly turn the code into a key: the URL is scheme, host, port
+        // and the app root, and nothing else.
+        let cfg = crate::network::config::NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".to_string(),
+            port: crate::network::config::DEFAULT_PORT,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:47821".parse().unwrap();
+        let access = crate::network::qr::local_access(&cfg, Some(addr), false).unwrap();
+        let url = access.url.expect("a running service has a URL");
+        assert_eq!(url, "http://192.168.1.50:47821/");
+        assert!(!url.contains('?') && !url.contains('#') && !url.contains('@'));
+    }
+}
+

@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, CardHeader, Loader } from '@/components/ui'
+import { StationQrCode } from '@/components/qr/StationQrCode'
 import { useToast } from '@/components/ui/toast'
 import { localAccessApi, type LocalAccess, type NetworkConfig } from '@/services/localAccessApi'
 import { useErrText } from '@/lib/err'
@@ -99,13 +100,15 @@ export function LocalAccessCard() {
 
           {showQr && access?.url && access?.svg && (
             <div className="flex flex-col gap-4 md:flex-row md:items-start" dir="ltr">
-              {/* A real endpoint response, rendered inline. `data:` is already
-                  permitted by the production CSP (img-src). */}
-              <img
-                src={`data:image/svg+xml;utf8,${encodeURIComponent(access.svg)}`}
+              {/* The SAME presentational component the QR Code page renders, so
+                  the two surfaces cannot drift and the code is encoded, sized
+                  and quieted in exactly one place. `data:` is already permitted
+                  by the production CSP (img-src). */}
+              <StationQrCode
+                svg={access.svg}
                 alt={t('dev.localAccessQrAlt')}
-                className="h-48 w-48 shrink-0 rounded-lg bg-white p-1"
-                data-testid="dev-local-access-qr"
+                className="w-full max-w-48 shrink-0 md:w-48"
+                testId="dev-local-access-qr"
               />
 
               <div className="flex flex-col gap-2 text-start">

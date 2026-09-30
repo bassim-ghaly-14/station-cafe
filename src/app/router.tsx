@@ -18,6 +18,7 @@ export type View =
   | 'sales'
   | 'reports'
   | 'dev-settings'
+  | 'qr-code'
 
 interface RouterCtx {
   view: View
@@ -39,6 +40,7 @@ const VIEW_PATHS: Record<View, string> = {
   sales: '/sales',
   reports: '/reports',
   'dev-settings': '/dev-settings',
+  'qr-code': '/qr-code',
 }
 
 const PATH_VIEWS: Record<string, View> = Object.fromEntries(

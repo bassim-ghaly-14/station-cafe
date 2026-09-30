@@ -26,6 +26,7 @@ import SalesPage from '@/features/sales/SalesPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import ReportsPage from '@/features/reports/ReportsPage'
 import DevSettingsPage from '@/features/dev/DevSettingsPage'
+import QrCodePage from '@/features/qr/QrCodePage'
 import { TodayInvoicesPage } from '@/features/pos/TodayInvoicesPage'
 import { TodayWashTicketsPage } from '@/features/pos/TodayWashTicketsPage'
 
@@ -53,6 +54,8 @@ function RoutedViews() {
       return <ReportsPage />
     case 'dev-settings':
       return <DevSettingsPage />
+    case 'qr-code':
+      return <QrCodePage />
     case 'pos':
       return <PosPage />
     case 'today-invoices':

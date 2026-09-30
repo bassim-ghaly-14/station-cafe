@@ -54,6 +54,7 @@ export {
   Plus,
   Power,
   Printer,
+  QrCode,
   Tag,
   Receipt,
   RefreshCw,

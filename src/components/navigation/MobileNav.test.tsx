@@ -25,6 +25,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import type { UserRole } from '@/lib/roles'
 import { RouterProvider, useRouter } from '@/app/router'
+import { visibleNav } from '@/app/navigation'
 import { MobileNav } from './MobileNav'
 
 /*
@@ -199,18 +200,23 @@ describe('MobileNav "More" sheet', () => {
     renderNav('ADMIN')
     const sheet = openMore()
 
-    // All nine destinations, so the sheet is the full navigation rather than
-    // a mobile-only subset that could drift from the desktop sidebar. The
-    // sheet's own close button lives in the dialog too, so the list items are
-    // what is counted.
-    expect(sheet.getAllByRole('listitem')).toHaveLength(9)
+    // Every destination the ADMIN may open, so the sheet is the full navigation
+    // rather than a mobile-only subset that could drift from the desktop
+    // sidebar. The count is asserted against the configuration itself rather
+    // than a hardcoded number, so adding a destination cannot silently break
+    // this or quietly make the assertion a lie. The sheet's own close button
+    // lives in the dialog too, so the list items are what is counted.
+    expect(sheet.getAllByRole('listitem')).toHaveLength(visibleNav('ADMIN').length)
   })
 
-  it('lists exactly the four operational destinations for a STAFF', () => {
+  it('lists the QR code for a STAFF, last, and still no settings', () => {
     renderNav('STAFF')
     const sheet = openMore()
 
-    expect(sheet.getAllByRole('listitem')).toHaveLength(4)
+    // Five destinations now: the four operational workspaces plus the code,
+    // which every role may open. Settings remains absent.
+    expect(sheet.getAllByRole('listitem')).toHaveLength(visibleNav('STAFF').length)
+    expect(sheet.getByRole('button', { name: /رمز Station/ })).toBeInTheDocument()
     for (const name of [/المصروفات/, /المبيعات/, /المخزون/, /التقارير/, /الإعدادات/]) {
       expect(sheet.queryByRole('button', { name })).not.toBeInTheDocument()
     }

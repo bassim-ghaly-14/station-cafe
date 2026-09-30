@@ -773,7 +773,15 @@
     "menu": "التنقل",
     "settings": "الإعدادات",
     "sales": "المبيعات",
-    "employees": "الموظفون"
+    "employees": "الموظفون",
+    "qrCode": "رمز Station"
+  },
+  "qrCode": {
+    "title": "رمز Station",
+    "subtitle": "اعرض هذا الرمز لأي زائر ليجرّبه على هاتفه.",
+    "cardTitle": "رمز Station للوصول",
+    "cardDescription": "امسح الرمز من هاتف على نفس شبكة الكافيه لفتح واجهة Station.",
+    "loading": "جارٍ تحميل رمز Station"
   },
   "customers": {
     "subtitle": "إدارة بيانات العملاء وسياراتهم ونشاطهم على الكافيه والمغسلة",

@@ -26,6 +26,7 @@ import {
   Boxes,
   HandCoins,
   Package,
+  QrCode,
   Receipt,
   Settings,
   Store,
@@ -81,6 +82,7 @@ export interface NavItem {
  * 1. نقطة البيع        2. الأصناف والخدمات   3. العملاء والسيارات
  * 4. الموظفون          5. المصروفات         6. المبيعات
  * 7. المخزون           8. التقارير          9. الإعدادات
+ * 10. رمز Station
  */
 export const NAV: readonly NavItem[] = [
   { view: 'pos', minRole: 'STAFF', labelKey: 'nav.pos', icon: Store, primary: true },
@@ -128,6 +130,28 @@ export const NAV: readonly NavItem[] = [
     minRole: 'ADMIN',
     labelKey: 'nav.settings',
     icon: Settings,
+    primary: false,
+  },
+  // The Station QR code, directly BELOW Settings and outside it.
+  //
+  // STAFF, not MANAGER: the code is a phone number for the building that any
+  // signed-in user may need to show a customer at the till, and it carries an
+  // address and nothing else — the backend still authenticates the read, and
+  // the user signs in with their own account after scanning. It is a
+  // destination of its own, not a Settings submenu, which is why it sits after
+  // Settings instead of inside it: the ADMIN-gated Dev Settings surface above it
+  // still owns service activation and configuration, and this entry exposes
+  // none of that.
+  //
+  // `primary: false` follows the same rule every other shared destination obeys:
+  // the bottom bar is for what a user reaches many times a shift, and the code
+  // is reached through "More", so a shared till phone does not grow a tab for
+  // it.
+  {
+    view: 'qr-code',
+    minRole: 'STAFF',
+    labelKey: 'nav.qrCode',
+    icon: QrCode,
     primary: false,
   },
 ]
