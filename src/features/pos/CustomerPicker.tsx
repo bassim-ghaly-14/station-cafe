@@ -64,17 +64,23 @@ export function CustomerPicker({
     })
   }, [all, query])
 
-  const attach = (customerId: number | null, plate: string | null = null) => {
+  const attach = async (customerId: number | null, plate: string | null = null) => {
     setBusy(true)
-    const done = () => api.getOrder(orderId).then(onAttached)
-    const request =
-      customerId === null
-        ? api.detachCustomer(orderId).then(done)
-        : api
-            .attachCustomer({ order_id: orderId, customer_id: customerId, car_plate: plate })
-            .then(done)
 
-    request.catch(report).finally(() => setBusy(false))
+    try {
+      if (customerId === null) {
+        await api.detachCustomer(orderId)
+      } else {
+        await api.attachCustomer({ order_id: orderId, customer_id: customerId, car_plate: plate })
+      }
+
+      // The mutation only acknowledges; the caller works from the persisted row.
+      onAttached(await api.getOrder(orderId))
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -99,7 +105,7 @@ export function CustomerPicker({
         {/* An explicit, intentional choice — not a fallback for missing data. */}
         <button
           type="button"
-          onClick={() => attach(null)}
+          onClick={() => void attach(null)}
           disabled={busy}
           className="flex min-h-12 items-center gap-2 rounded-md border border-border-strong px-3 text-start text-sm transition-colors hover:border-border-accent-hover hover:bg-surface-hover disabled:opacity-60"
         >
@@ -132,7 +138,7 @@ export function CustomerPicker({
             // Refresh the browsable list so the new customer is selectable at
             // once, then attach it to this order.
             void api.customers(query.trim()).then(setAll).catch(report)
-            attach(id)
+            void attach(id)
           }}
         />
       ) : null}

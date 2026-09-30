@@ -46,6 +46,7 @@ pub const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
 // single line the business supplied it on, instead of reflowing long tuples.
 #[rustfmt::skip]
 const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
+
     // ============================================================
     // HOT DRINKS (مشروبات ساخنة)
     // ============================================================
@@ -122,13 +123,16 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     ("شوكليت كيك", "PRODUCT", "CAFE", 85, "ديزارت", None),
     ("لوتس كيك", "PRODUCT", "CAFE", 89, "ديزارت", None),
     ("سينابون", "PRODUCT", "CAFE", 120, "ديزارت", None),
-    ("كوب لوتس", "PRODUCT", "CAFE", 75, "ديزارت", None),
-    ("كوب بستاشيو", "PRODUCT", "CAFE", 80, "ديزارت", None),
-    ("ميني تورتة روشيه", "PRODUCT", "CAFE", 80, "ديزارت", None),
     ("ديزرت مع نسكافيه", "PRODUCT", "CAFE", 100, "ديزارت", None),
     ("ديزرت مع كاتر", "PRODUCT", "CAFE", 100, "ديزارت", None),
-    ("كاب ريد فيلفت", "PRODUCT", "CAFE", 75, "ديزارت", None),
-    ("كاب نوتيلا", "PRODUCT", "CAFE", 80, "ديزارت", None),
+    ("فشار", "PRODUCT", "CAFE", 30, "ديزارت", None),
+    ("وافل شوكليت", "PRODUCT", "CAFE", 80, "ديزارت", None),
+    ("وافل وايت شوكليت", "PRODUCT", "CAFE", 85, "ديزارت", None),
+    ("وافل نوتيلا", "PRODUCT", "CAFE", 95, "ديزارت", None),
+    ("وافل لوتس", "PRODUCT", "CAFE", 95, "ديزارت", None),
+    ("وافل كراميل", "PRODUCT", "CAFE", 80, "ديزارت", None),
+    ("وافل بستاشيو", "PRODUCT", "CAFE", 100, "ديزارت", None),
+    ("وافل ميكس", "PRODUCT", "CAFE", 135, "ديزارت", None),
 
     // ============================================================
     // FRESH JUICES (عصائر فريشات)
@@ -144,48 +148,29 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     ("ليمون", "PRODUCT", "CAFE", 69, "عصائر فريشات", None),
     ("ليمون نعناع", "PRODUCT", "CAFE", 85, "عصائر فريشات", None),
     ("مانجو", "PRODUCT", "CAFE", 89, "عصائر فريشات", None),
-    ("كيوي", "PRODUCT", "CAFE", 50, "عصائر فريشات", None),
-    ("تين شوكي", "PRODUCT", "CAFE", 75, "عصائر فريشات", None),
     ("فريش ميكس", "PRODUCT", "CAFE", 110, "عصائر فريشات", None),
-    ("ليمون (عرض)", "PRODUCT", "CAFE", 20, "عصائر فريشات", Some(0)),
-    ("بطيخ (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("تفاح أخضر (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("أناناس (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("جوافة بالنعناع (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("سمورى بطيخ (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("سمورى تفاح أخضر (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("سمورى أناناس (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("سمورى جوافة نعناع (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("سمورى بلوبيري (عرض)", "PRODUCT", "CAFE", 30, "عصائر فريشات", Some(0)),
-    ("عصير رمان", "PRODUCT", "CAFE", 50, "عصائر فريشات", None),
-    ("فلوريدا", "PRODUCT", "CAFE", 75, "عصائر فريشات", None),
     ("مانجا باشون فروت", "PRODUCT", "CAFE", 120, "عصائر فريشات", None),
 
     // ============================================================
-    // SMOOTHIE (اسموري)
+    // SMOOTHIE (اسموزي)
     // ============================================================
-    ("اسموري جوافة نعناع", "PRODUCT", "CAFE", 65, "اسموري", None),
-    ("اسموري تفاح أخضر", "PRODUCT", "CAFE", 79, "اسموري", None),
-    ("اسموري توت", "PRODUCT", "CAFE", 65, "اسموري", None),
-    ("اسموري خوخ", "PRODUCT", "CAFE", 65, "اسموري", None),
-    ("اسموري جوافة", "PRODUCT", "CAFE", 60, "اسموري", None),
-    ("اسموري رمان", "PRODUCT", "CAFE", 50, "اسموري", None),
-    ("اسموري باشون فروت", "PRODUCT", "CAFE", 99, "اسموري", None),
-    ("اسموري فراولة نعناع", "PRODUCT", "CAFE", 50, "اسموري", None),
-    ("اسموري بطيخ", "PRODUCT", "CAFE", 90, "اسموري", None),
-    ("اسموري مانجو", "PRODUCT", "CAFE", 90, "اسموري", None),
-    ("اسموري بطيخ نعناع", "PRODUCT", "CAFE", 70, "اسموري", None),
-    ("اسموري كيوي", "PRODUCT", "CAFE", 50, "اسموري", None),
-    ("اسموري ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموري", None),
-    ("سبانيش لاتيه (اسموري)", "PRODUCT", "CAFE", 60, "اسموري", None),
-    ("اسموري ميكس", "PRODUCT", "CAFE", 90, "اسموري", None),
-    ("موهيتو بلوبيري", "PRODUCT", "CAFE", 87, "موهيتو", None),
-    ("بلوبيري", "PRODUCT", "CAFE", 88, "موهيتو", None),
-    ("سموري ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموري", None),
-    ("مانجا باشون", "PRODUCT", "CAFE", 120, "موهيتو", None),
-    ("سموري فراولة", "PRODUCT", "CAFE", 87, "اسموري", None),
-    ("اسموري بلوبيري", "PRODUCT", "CAFE", 88, "اسموري", None),
-    ("اسموري مور باللبن", "PRODUCT", "CAFE", 90, "اسموري", None),
+    ("اسموزي بطيخ (عرض)", "PRODUCT", "CAFE", 30, "اسموزي", None),
+    ("اسموزي جوافة نعناع", "PRODUCT", "CAFE", 65, "اسموزي", None),
+    ("اسموزي تفاح أخضر", "PRODUCT", "CAFE", 79, "اسموزي", None),
+    ("اسموزي توت", "PRODUCT", "CAFE", 65, "اسموزي", None),
+    ("اسموزي خوخ", "PRODUCT", "CAFE", 65, "اسموزي", None),
+    ("اسموزي جوافة", "PRODUCT", "CAFE", 60, "اسموزي", None),
+    ("اسموزي باشون فروت", "PRODUCT", "CAFE", 99, "اسموزي", None),
+    ("اسموزي بطيخ", "PRODUCT", "CAFE", 90, "اسموزي", None),
+    ("اسموزي مانجو", "PRODUCT", "CAFE", 90, "اسموزي", None),
+    ("اسموزي بطيخ نعناع", "PRODUCT", "CAFE", 70, "اسموزي", None),
+    ("اسموزي ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموزي", None),
+    ("سبانيش لاتيه (اسموري)", "PRODUCT", "CAFE", 60, "اسموزي", None),
+    ("اسموزي ميكس", "PRODUCT", "CAFE", 90, "اسموزي", None),
+    ("سموري ليمون نعناع", "PRODUCT", "CAFE", 69, "اسموزي", None),
+    ("سموري فراولة", "PRODUCT", "CAFE", 87, "اسموزي", None),
+    ("اسموزي بلوبيري", "PRODUCT", "CAFE", 88, "اسموزي", None),
+    ("اسموزي موز باللبن", "PRODUCT", "CAFE", 90, "اسموزي", None),
 
     // ============================================================
     // ICE CREAM (آيس كريم)
@@ -213,14 +198,13 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     // ============================================================
     // MILK SHAKE (ميلك شيك)
     // ============================================================
+    ("بلوبيري", "PRODUCT", "CAFE", 88, "ميلك شيك", None),
+    ("مانجا باشون", "PRODUCT", "CAFE", 120, "ميلك شيك", None),
     ("ميلك شيك فانيليا", "PRODUCT", "CAFE", 87, "ميلك شيك", None),
     ("ميلك شيك موكا", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
-    ("بانا سيلايت", "PRODUCT", "CAFE", 75, "ميلك شيك", None),
     ("ميلك شيك أوريو", "PRODUCT", "CAFE", 97, "ميلك شيك", None),
-    ("شوكليت موكنسيو", "PRODUCT", "CAFE", 65, "ميلك شيك", None),
     ("ميلك شيك فراولة", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
     ("ميلك شيك مانجا", "PRODUCT", "CAFE", 90, "ميلك شيك", None),
-    ("ميلك شيك", "PRODUCT", "CAFE", 75, "ميلك شيك", None),
     ("ميلك شيك بلوبيري", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
     ("ميلك شيك هوهور", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
     ("ميلك شيك نسكافيه", "PRODUCT", "CAFE", 85, "ميلك شيك", None),
@@ -228,135 +212,101 @@ const DEFAULT_PRODUCTS: &[(&str, &str, &str, i64, &str, Option<i64>)] = &[
     ("ميلك شيك بستاشيو", "PRODUCT", "CAFE", 99, "ميلك شيك", None),
 
     // ============================================================
-    // FRIDGE & REFRESHMENTS (ثلاجة ومشروبات غازية)
+    // FRIDGE (ثلاجة)
     // ============================================================
     ("مياه", "PRODUCT", "CAFE", 10, "ثلاجة", Some(0)),
-    ("دبل دير", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
-    ("موس ديو", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
     ("بريل", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
-    ("بربيكان", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("موسى", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("فيروز", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
-    ("سبايدر", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
     ("ريد بول", "PRODUCT", "CAFE", 90, "ثلاجة", Some(0)),
-    ("سيبيح", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
-    ("شوببس", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
-    ("سيسي", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("كولا", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
-    ("ميرندا", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
     ("كاتر مناسبات", "PRODUCT", "CAFE", 25, "ثلاجة", Some(0)),
-    ("امسنل", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
     ("ميرندا تفاح", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
     ("نوبست", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
     ("فروتر", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
     ("فيروز", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("سبرايت", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
     ("فاينا", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
     ("في سفن", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
-    ("ساسس", "PRODUCT", "CAFE", 30, "ثلاجة", Some(0)),
-    ("راني", "PRODUCT", "CAFE", 35, "ثلاجة", Some(0)),
     ("فاينا برتقال", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("باور هورس مشروب طاقة", "PRODUCT", "CAFE", 60, "ثلاجة", Some(0)),
     ("سفن أب", "PRODUCT", "CAFE", 40, "ثلاجة", Some(0)),
-    ("أسس كولا", "PRODUCT", "CAFE", 25, "ثلاجة", Some(0)),
 
     // ============================================================
-    // MARKET & ACCESSORIES (ماركت)
+    // WASH MARKET (ماركت مغسلة)
     // ============================================================
-    ("حافظة 2 في 3", "PRODUCT", "WASH", 55, "ماركت", None),
-    ("لحاف فيبر", "PRODUCT", "WASH", 50, "ماركت", None),
-    ("عرض غسلة", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("عرض غسلة مع قهوة فري", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("عرض غسلة عرض", "PRODUCT", "WASH", 120, "ماركت", None),
-    ("عرض غسلة", "PRODUCT", "WASH", 120, "ماركت", None),
-    ("تلميع باب", "PRODUCT", "WASH", 200, "ماركت", None),
-    ("راسبين ملاكي", "PRODUCT", "WASH", 110, "ماركت", None),
-    ("عرض 400", "PRODUCT", "WASH", 400, "ماركت", None),
-    ("كسوة طارة جلد", "PRODUCT", "WASH", 300, "ماركت", None),
-    ("ثلاثة إم طفاية", "PRODUCT", "WASH", 200, "ماركت", None),
-    ("وصلة صوت", "PRODUCT", "WASH", 220, "ماركت", None),
-    ("طفاية كربون", "PRODUCT", "WASH", 220, "ماركت", None),
-    ("وصلة إس إيه 45", "PRODUCT", "WASH", 175, "ماركت", None),
-    ("وصلة أول إس", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("رأس شاحن دبليو 105", "PRODUCT", "WASH", 450, "ماركت", None),
-    ("رأس شاحن دبليو 30", "PRODUCT", "WASH", 350, "ماركت", None),
-    ("وصلة لينو صوت", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("رأس شاحن 45", "PRODUCT", "WASH", 450, "ماركت", None),
-    ("كابل بطارية", "PRODUCT", "WASH", 450, "ماركت", None),
-    ("ريشة نظافة", "PRODUCT", "WASH", 250, "ماركت", None),
-    ("لمع تابلوه كبير", "PRODUCT", "WASH", 125, "ماركت", None),
-    ("لمع تابلوه صغير", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("معطر إيري بخاخ", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("معطر علبة باكت", "PRODUCT", "WASH", 275, "ماركت", None),
-    ("إيريون فواحات جديدة", "PRODUCT", "WASH", 75, "ماركت", None),
-    ("مبدلنا جلد جديدة", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("بارك بيج كود", "PRODUCT", "WASH", 120, "ماركت", None),
-    ("حامل موبايل", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("حامل موبايل بيتشحن", "PRODUCT", "WASH", 180, "ماركت", None),
-    ("بادة", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("فجوة باب", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("كسوة طارة في علبة", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("طعم ناره", "PRODUCT", "WASH", 15, "ماركت", None),
-    ("كسوة عربية 2 كرسي", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("فوطة", "PRODUCT", "WASH", 45, "ماركت", None),
-    ("فواحة 30", "PRODUCT", "WASH", 30, "ماركت", None),
-    ("كار كبر صالون قماش", "PRODUCT", "WASH", 750, "ماركت", None),
-    ("دواسات أكياس", "PRODUCT", "WASH", 20, "ماركت", None),
-    ("كود العربات", "PRODUCT", "WASH", 250, "ماركت", None),
-    ("طقم صالون شفاف", "PRODUCT", "WASH", 50, "ماركت", None),
-    ("طقم صالون قماش", "PRODUCT", "WASH", 100, "ماركت", None),
-    ("بادة عربية", "PRODUCT", "WASH", 150, "ماركت", None),
-    ("كابل صوت إم", "PRODUCT", "WASH", 220, "ماركت", None),
-    ("صالون كار كبر جلد", "PRODUCT", "WASH", 600, "ماركت", None),
+    ("لحاف فيبر", "PRODUCT", "WASH", 50, "ماركت مغسلة", None),
+    ("تلميع باب", "PRODUCT", "WASH", 200, "ماركت مغسلة", None),
+    ("عرض 400", "PRODUCT", "WASH", 400, "ماركت مغسلة", None),
+    ("كسوة طارة جلد", "PRODUCT", "WASH", 300, "ماركت مغسلة", None),
+    ("ثلاثة إم طفاية", "PRODUCT", "WASH", 200, "ماركت مغسلة", None),
+    ("وصلة صوت", "PRODUCT", "WASH", 220, "ماركت مغسلة", None),
+    ("طفاية كربون", "PRODUCT", "WASH", 220, "ماركت مغسلة", None),
+    ("وصلة أول إس", "PRODUCT", "WASH", 150, "ماركت مغسلة", None),
+    ("رأس شاحن دبليو 105", "PRODUCT", "WASH", 450, "ماركت مغسلة", None),
+    ("رأس شاحن دبليو 30", "PRODUCT", "WASH", 350, "ماركت مغسلة", None),
+    ("وصلة لينو صوت", "PRODUCT", "WASH", 150, "ماركت مغسلة", None),
+    ("رأس شاحن 45", "PRODUCT", "WASH", 450, "ماركت مغسلة", None),
+    ("كابل بطارية", "PRODUCT", "WASH", 450, "ماركت مغسلة", None),
+    ("ريشة نظافة", "PRODUCT", "WASH", 250, "ماركت مغسلة", None),
+    ("لمع تابلوه كبير", "PRODUCT", "WASH", 125, "ماركت مغسلة", None),
+    ("لمع تابلوه صغير", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("معطر إيري بخاخ", "PRODUCT", "WASH", 150, "ماركت مغسلة", None),
+    ("معطر علبة باكت", "PRODUCT", "WASH", 275, "ماركت مغسلة", None),
+    ("إيريون فواحات جديدة", "PRODUCT", "WASH", 75, "ماركت مغسلة", None),
+    ("مبدلنا جلد جديدة", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("بارك بيج كود", "PRODUCT", "WASH", 120, "ماركت مغسلة", None),
+    ("حامل موبايل", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("حامل موبايل بيتشحن", "PRODUCT", "WASH", 180, "ماركت مغسلة", None),
+    ("بادة", "PRODUCT", "WASH", 150, "ماركت مغسلة", None),
+    ("فجوة باب", "PRODUCT", "WASH", 150, "ماركت مغسلة", None),
+    ("كسوة طارة في علبة", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("كسوة عربية 2 كرسي", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("فوطة", "PRODUCT", "WASH", 45, "ماركت مغسلة", None),
+    ("كار كبر صالون قماش", "PRODUCT", "WASH", 750, "ماركت مغسلة", None),
+    ("دواسات أكياس", "PRODUCT", "WASH", 20, "ماركت مغسلة", None),
+    ("كود العربات", "PRODUCT", "WASH", 250, "ماركت مغسلة", None),
+    ("طقم صالون شفاف", "PRODUCT", "WASH", 50, "ماركت مغسلة", None),
+    ("طقم صالون قماش", "PRODUCT", "WASH", 100, "ماركت مغسلة", None),
+    ("كابل صوت إم", "PRODUCT", "WASH", 220, "ماركت مغسلة", None),
+    ("صالون كار كبر جلد", "PRODUCT", "WASH", 600, "ماركت مغسلة", None),
 
     // ============================================================
-    // CAR WASH & CARE SERVICES (خدمات غسيل السيارات)
+    // CAR WASH SERVICES (غسيل السيارات)
     // ============================================================
-    ("غسيل داخلي خارجي سيدان", "SERVICE", "WASH", 85, "خدمات غسيل السيارات", None),
-    ("تلميع مرحلة واحدة", "SERVICE", "WASH", 1200, "خدمات غسيل السيارات", None),
-    ("تلميع مرحلتين", "SERVICE", "WASH", 1800, "خدمات غسيل السيارات", None),
-    ("تلميع 3 مراحل", "SERVICE", "WASH", 2000, "خدمات غسيل السيارات", None),
-    ("كار كبر داخلي كامل", "SERVICE", "WASH", 1000, "خدمات غسيل السيارات", None),
-    ("كار كبر كامل مانور + شنطة + 4 حيوط", "SERVICE", "WASH", 1500, "خدمات غسيل السيارات", None),
-    ("حبط كار كبر", "SERVICE", "WASH", 80, "خدمات غسيل السيارات", None),
-    ("كرسي كار كبر", "SERVICE", "WASH", 150, "خدمات غسيل السيارات", None),
-    ("سقف كار كبر", "SERVICE", "WASH", 350, "خدمات غسيل السيارات", None),
-    ("باب كار كبر", "SERVICE", "WASH", 60, "خدمات غسيل السيارات", None),
-    ("شنطة كار كبر", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
-    ("أرضية كار كبر", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
-    ("مانور كيماوي", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
-    ("فواحة كبيرة", "SERVICE", "WASH", 45, "خدمات غسيل السيارات", None),
-    ("فواحة صغيرة", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
-    ("مليكة معطر خو", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
-    ("غسيل كامل نصف نقل", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
-    ("غسيل غطاء السيارة", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
-    ("دواسة 2", "SERVICE", "WASH", 10, "خدمات غسيل السيارات", None),
-    ("غسيل سكوتر", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
-    ("غسيل كامل (شركة)", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
-    ("تلميع فانوس", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
-    ("فوطة", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
-    ("كسوة كاملة كار كبر", "SERVICE", "WASH", 300, "خدمات غسيل السيارات", None),
-    ("غسيل موتوسيكل", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
-    ("غسيل كامل (S.U.V)", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
-    ("متر سجاد", "SERVICE", "WASH", 20, "خدمات غسيل السيارات", None),
-    ("غسيل كامل (V.I.P)", "SERVICE", "WASH", 250, "خدمات غسيل السيارات", None),
-    ("نانو تابلوه", "SERVICE", "WASH", 200, "خدمات غسيل السيارات", None),
-    ("فواحة رحاج", "SERVICE", "WASH", 60, "خدمات غسيل السيارات", None),
-    ("غسلة مجانية", "SERVICE", "WASH", 0, "خدمات غسيل السيارات", None),
-    ("ميدلنا معدن", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
-    ("سكانة", "SERVICE", "WASH", 100, "خدمات غسيل السيارات", None),
-    ("واكس خارجي", "SERVICE", "WASH", 150, "خدمات غسيل السيارات", None),
-    ("عرض غسيل خارجي في", "SERVICE", "WASH", 95, "خدمات غسيل السيارات", None),
-    ("غسيل كامل سيدان", "SERVICE", "WASH", 175, "خدمات غسيل السيارات", None),
-    ("فواحة ك 45", "SERVICE", "WASH", 45, "خدمات غسيل السيارات", None),
-    ("فواحة 25", "SERVICE", "WASH", 25, "خدمات غسيل السيارات", None),
-    ("فواحة 15", "SERVICE", "WASH", 15, "خدمات غسيل السيارات", None),
-    ("كوفر طارة", "SERVICE", "WASH", 20, "خدمات غسيل السيارات", None),
-    ("بطانية أطفال", "SERVICE", "WASH", 75, "خدمات غسيل السيارات", None),
-    ("تلميع شنطة", "SERVICE", "WASH", 300, "خدمات غسيل السيارات", None),
-    ("تلميع", "SERVICE", "WASH", 400, "خدمات غسيل السيارات", None),
-    ("تنظيف شنطة عادي", "SERVICE", "WASH", 50, "خدمات غسيل السيارات", None),
-    ("بطانية", "SERVICE", "WASH", 90, "خدمات غسيل السيارات", None),
+    ("غسيل داخلي خارجي سيدان", "SERVICE", "WASH", 85, "غسيل السيارات", None),
+    ("تلميع مرحلة واحدة", "SERVICE", "WASH", 1200, "غسيل السيارات", None),
+    ("تلميع مرحلتين", "SERVICE", "WASH", 1800, "غسيل السيارات", None),
+    ("تلميع 3 مراحل", "SERVICE", "WASH", 2000, "غسيل السيارات", None),
+    ("كار كبر داخلي كامل", "SERVICE", "WASH", 1000, "غسيل السيارات", None),
+    ("كار كبر كامل مانور + شنطة + 4 حيوط", "SERVICE", "WASH", 1500, "غسيل السيارات", None),
+    ("حبط كار كبر", "SERVICE", "WASH", 80, "غسيل السيارات", None),
+    ("كرسي كار كبر", "SERVICE", "WASH", 150, "غسيل السيارات", None),
+    ("سقف كار كبر", "SERVICE", "WASH", 350, "غسيل السيارات", None),
+    ("باب كار كبر", "SERVICE", "WASH", 60, "غسيل السيارات", None),
+    ("شنطة كار كبر", "SERVICE", "WASH", 100, "غسيل السيارات", None),
+    ("أرضية كار كبر", "SERVICE", "WASH", 100, "غسيل السيارات", None),
+    ("مانور كيماوي", "SERVICE", "WASH", 100, "غسيل السيارات", None),
+    ("فواحة كبيرة", "SERVICE", "WASH", 45, "غسيل السيارات", None),
+    ("مليكة معطر خو", "SERVICE", "WASH", 90, "غسيل السيارات", None),
+    ("غسيل كامل نصف نقل", "SERVICE", "WASH", 200, "غسيل السيارات", None),
+    ("غسيل غطاء السيارة", "SERVICE", "WASH", 50, "غسيل السيارات", None),
+    ("دواسة 2", "SERVICE", "WASH", 10, "غسيل السيارات", None),
+    ("غسيل سكوتر", "SERVICE", "WASH", 50, "غسيل السيارات", None),
+    ("غسيل كامل (شركة)", "SERVICE", "WASH", 100, "غسيل السيارات", None),
+    ("كسوة كاملة كار كبر", "SERVICE", "WASH", 300, "غسيل السيارات", None),
+    ("غسيل موتوسيكل", "SERVICE", "WASH", 50, "غسيل السيارات", None),
+    ("غسيل كامل (S.U.V)", "SERVICE", "WASH", 200, "غسيل السيارات", None),
+    ("متر سجاد", "SERVICE", "WASH", 20, "غسيل السيارات", None),
+    ("غسيل كامل (V.I.P)", "SERVICE", "WASH", 250, "غسيل السيارات", None),
+    ("نانو تابلوه", "SERVICE", "WASH", 200, "غسيل السيارات", None),
+    ("فواحة رحاج", "SERVICE", "WASH", 60, "غسيل السيارات", None),
+    ("غسلة مجانية", "SERVICE", "WASH", 0, "غسيل السيارات", None),
+    ("ميدلنا معدن", "SERVICE", "WASH", 90, "غسيل السيارات", None),
+    ("سكانة", "SERVICE", "WASH", 100, "غسيل السيارات", None),
+    ("واكس خارجي", "SERVICE", "WASH", 150, "غسيل السيارات", None),
+    ("عرض غسيل خارجي في", "SERVICE", "WASH", 95, "غسيل السيارات", None),
+    ("غسيل كامل سيدان", "SERVICE", "WASH", 175, "غسيل السيارات", None),
+    ("فواحة ك 45", "SERVICE", "WASH", 45, "غسيل السيارات", None),
+    ("كوفر طارة", "SERVICE", "WASH", 20, "غسيل السيارات", None),
+    ("بطانية أطفال", "SERVICE", "WASH", 75, "غسيل السيارات", None),
+    ("تنظيف شنطة عادي", "SERVICE", "WASH", 50, "غسيل السيارات", None),
+    ("بطانية", "SERVICE", "WASH", 90, "غسيل السيارات", None),
 ];
 
 pub fn run_if_empty(conn: &Db) -> AppResult<()> {
@@ -706,15 +656,31 @@ mod tests {
     }
 
     /// Duplicates in the supplied catalog are intentional and must survive the
-    /// seed verbatim: "عرض غسلة", "فيروز" and "فوطة" each appear more than once
-    /// with different types, departments or prices.
+    /// seed verbatim: the current catalog contains names that appear more than
+    /// once with different types, departments or prices, and the seed keeps
+    /// every one of those rows instead of collapsing them.
     #[test]
     fn intentional_duplicate_names_are_preserved_not_deduplicated() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
 
-        for name in ["عرض غسلة", "فيروز", "فوطة"] {
+        // Every name the catalog lists more than once is checked generically,
+        // so the assertion follows the data instead of hardcoding entries.
+        let mut duplicated: Vec<&str> = DEFAULT_PRODUCTS.iter().map(|row| row.0).collect();
+        duplicated.sort_unstable();
+        let duplicated: Vec<&str> = duplicated
+            .windows(2)
+            .filter(|pair| pair[0] == pair[1])
+            .map(|pair| pair[0])
+            .collect();
+
+        assert!(
+            !duplicated.is_empty(),
+            "the catalog is expected to contain a duplicated name"
+        );
+
+        for name in duplicated {
             let seeded = DEFAULT_PRODUCTS.iter().filter(|row| row.0 == name).count() as i64;
             assert!(seeded > 1, "{name} is expected to appear more than once");
             let stored: i64 = conn
@@ -902,7 +868,13 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(water, (water.0, "ثلاجة".to_string(), 0));
+        // The opening stock is whatever the catalog lists for this name.
+        let expected_quantity: i64 = DEFAULT_PRODUCTS
+            .iter()
+            .find(|row| row.0 == "مياه")
+            .and_then(|row| row.5)
+            .expect("مياه carries an opening stock in the catalog");
+        assert_eq!(water, (water.0, "ثلاجة".to_string(), expected_quantity));
 
         let stock_visible: i64 = conn
             .query_row(
@@ -947,7 +919,12 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(category_name, "خدمات غسيل السيارات");
+        let expected_category: &str = DEFAULT_PRODUCTS
+            .iter()
+            .find(|row| row.0 == "كار كبر داخلي كامل")
+            .map(|row| row.4)
+            .expect("كار كبر داخلي كامل is part of the catalog");
+        assert_eq!(category_name, expected_category);
         assert!(hot_drink_category > 0);
     }
 
@@ -1020,6 +997,15 @@ mod tests {
                 1,
                 1
              )",
+            [],
+        )
+        .unwrap();
+
+        // The catalog carries opening stock, so the sync writes stock
+        // movements; those need an ADMIN user to attribute the movement to.
+        conn.execute(
+            "INSERT INTO users (name, role, password_hash)
+             VALUES ('seed-admin', 'ADMIN', 'x')",
             [],
         )
         .unwrap();
@@ -1107,6 +1093,15 @@ mod tests {
             "INSERT INTO app_settings (key, value)
              VALUES (?1, station_now())",
             [SEED_MARKER],
+        )
+        .unwrap();
+
+        // The catalog carries opening stock, so the sync writes stock
+        // movements; those need an ADMIN user to attribute the movement to.
+        conn.execute(
+            "INSERT INTO users (name, role, password_hash)
+             VALUES ('seed-admin', 'ADMIN', 'x')",
+            [],
         )
         .unwrap();
 
