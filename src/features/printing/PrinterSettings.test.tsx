@@ -76,27 +76,27 @@ beforeEach(() => {
 describe('PrinterSettings', () => {
   it('is offered to a manager and to an admin', () => {
     renderAs('MANAGER')
-    expect(screen.getByLabelText('اسم طابعة ويندوز')).toBeInTheDocument()
+    expect(screen.getByLabelText('الطابعة')).toBeInTheDocument()
     renderAs('ADMIN')
-    expect(screen.getAllByLabelText('اسم طابعة ويندوز')).toHaveLength(2)
+    expect(screen.getAllByLabelText('الطابعة')).toHaveLength(2)
   })
 
   it('is not offered to a cashier, who could not save it anyway', () => {
     // Presentation only: the backend refuses the write regardless, but a
     // cashier must never be shown a control that cannot work.
     renderAs('STAFF')
-    expect(screen.queryByLabelText('اسم طابعة ويندوز')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('الطابعة')).not.toBeInTheDocument()
   })
 
   it('claims nothing when the session cannot be resolved', () => {
     renderAs(null)
-    expect(screen.queryByLabelText('اسم طابعة ويندوز')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('الطابعة')).not.toBeInTheDocument()
   })
 
   it('sends the target exactly as typed, never a normalized form of it', async () => {
     const onChanged = vi.fn()
     renderAs('MANAGER', onChanged)
-    const target = screen.getByLabelText('اسم طابعة ويندوز')
+    const target = screen.getByLabelText('الطابعة')
 
     // Typed, not pasted-into-place: the save happens on blur, so a half-typed
     // name is never written over a working one.
@@ -116,7 +116,7 @@ describe('PrinterSettings', () => {
 
   it('keeps the existing values and only changes the one being edited', async () => {
     renderAs('MANAGER')
-    const mode = screen.getByLabelText('طريقة عرض العربية')
+    const mode = screen.getByLabelText('طريقة طباعة اللغة العربية')
 
     fireEvent.change(mode, { target: { value: 'LATIN' } })
     fireEvent.focusOut(mode)
@@ -130,7 +130,7 @@ describe('PrinterSettings', () => {
 
   it('saves nothing when a field is left exactly as it was', () => {
     renderAs('MANAGER')
-    const target = screen.getByLabelText('اسم طابعة ويندوز')
+    const target = screen.getByLabelText('الطابعة')
 
     fireEvent.focusOut(target)
 
@@ -139,25 +139,25 @@ describe('PrinterSettings', () => {
 
   it('confirms a saved setting', async () => {
     renderAs('MANAGER')
-    const target = screen.getByLabelText('اسم طابعة ويندوز')
+    const target = screen.getByLabelText('الطابعة')
 
     fireEvent.change(target, { target: { value: 'XP80' } })
     fireEvent.focusOut(target)
 
-    expect(await screen.findByText('تم حفظ إعداد الطابعة')).toBeInTheDocument()
+    expect(await screen.findByText('تم حفظ إعدادات الطابعة')).toBeInTheDocument()
   })
 
   it('reports a refusal and never claims the setting was saved', async () => {
     mocks.setPrintConfig.mockRejectedValue({ message: 'internal_error' })
     const onChanged = vi.fn()
     renderAs('MANAGER', onChanged)
-    const target = screen.getByLabelText('اسم طابعة ويندوز')
+    const target = screen.getByLabelText('الطابعة')
 
     fireEvent.change(target, { target: { value: 'XP80' } })
     fireEvent.focusOut(target)
 
     expect(await screen.findByText('حدث خطأ غير متوقع، حاول مرة أخرى')).toBeInTheDocument()
-    expect(screen.queryByText('تم حفظ إعداد الطابعة')).not.toBeInTheDocument()
+    expect(screen.queryByText('تم حفظ إعدادات الطابعة')).not.toBeInTheDocument()
     // The panel is told nothing, so it cannot display a value that was refused.
     expect(onChanged).not.toHaveBeenCalled()
   })

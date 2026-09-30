@@ -80,7 +80,7 @@ describe('PrintStatusPanel', () => {
     const { container } = renderPanel()
     expect(await screen.findByText('فاتورة كافيه')).toBeInTheDocument()
     expect(screen.getByText('تمت الطباعة')).toBeInTheDocument()
-    expect(screen.getByText('المحاولات:')).toBeInTheDocument()
+    expect(screen.getByText('عدد المحاولات:')).toBeInTheDocument()
     expect(container.textContent).not.toContain('CAFE_INVOICE')
     expect(container.textContent).not.toContain('PRINTED')
   })
@@ -213,7 +213,7 @@ describe('PrintStatusPanel printer configuration', () => {
 
     expect(await screen.findByText('لم يتم إعداد الطابعة بعد')).toBeInTheDocument()
     expect(
-      screen.getByText('لن تتم طباعة الفواتير والتذاكر من هذا الجهاز حتى يتم ضبط إعدادات الطابعة.'),
+      screen.getByText('اضبط الطابعة أولًا لتتمكن من طباعة الفواتير والتذاكر من هذا الجهاز.'),
     ).toBeInTheDocument()
     // The notice is a configuration fact, not a job result.
     expect(screen.getByText('لا توجد عمليات طباعة بعد')).toBeInTheDocument()
@@ -236,7 +236,7 @@ describe('PrintStatusPanel test print', () => {
     renderPanel()
     await screen.findByText('لا توجد عمليات طباعة بعد')
 
-    fireEvent.click(screen.getByRole('button', { name: /طباعة اختبار/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة تجريبية' }))
 
     expect(await screen.findByText('تم إرسال الطباعة')).toBeInTheDocument()
     expect(await screen.findByText('صفحة اختبار الطباعة')).toBeInTheDocument()
@@ -248,7 +248,7 @@ describe('PrintStatusPanel test print', () => {
     const { container } = renderPanel()
     await screen.findByText('لا توجد عمليات طباعة بعد')
 
-    fireEvent.click(screen.getByRole('button', { name: /طباعة اختبار/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة تجريبية' }))
 
     expect(await screen.findByText('لم يتم إعداد الطابعة بعد')).toBeInTheDocument()
     expect(container.textContent).not.toContain('printer.not_configured')
@@ -264,7 +264,7 @@ describe('PrintStatusPanel test print', () => {
     renderPanel()
     await screen.findByText('لا توجد عمليات طباعة بعد')
 
-    fireEvent.click(screen.getByRole('button', { name: /طباعة اختبار/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة تجريبية' }))
 
     expect(await screen.findByText('تم منع طباعة مكررة (نفس المستند)')).toBeInTheDocument()
   })
