@@ -49,6 +49,7 @@ import {
   DialogActions,
   Field,
   Input,
+  PasswordInput,
   Select,
   Textarea,
   useToast,
@@ -309,9 +310,8 @@ export function EmployeeDialog({
             error={errors.password ?? null}
             hint={t('employees.form.passwordHint')}
           >
-            <Input
+            <PasswordInput
               id="employee-password"
-              type="password"
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}

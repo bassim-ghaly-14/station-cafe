@@ -158,6 +158,85 @@ describe('EmployeeDialog — create, credentials', () => {
   })
 })
 
+/**
+ * The password visibility toggle is NOT a second design: the Add Employee form
+ * uses the SAME `PasswordInput` primitive the login screen does, so it inherits
+ * the eye / eye-off iconography, the `auth.showPassword` / `auth.hidePassword`
+ * labelling and the inline-end (RTL-safe) placement for free. These tests assert
+ * that contract rather than the pixels.
+ */
+describe('EmployeeDialog — password visibility toggle', () => {
+  const TOGGLE = 'إظهار كلمة المرور'
+  const TOGGLE_HIDE = 'إخفاء كلمة المرور'
+
+  function passwordField() {
+    return screen.getByLabelText('كلمة المرور') as HTMLInputElement
+  }
+
+  it('starts masked', () => {
+    renderCreate()
+    expect(passwordField()).toHaveAttribute('type', 'password')
+  })
+
+  it('reveals and re-masks the password, keeping its value', () => {
+    renderCreate()
+    fireEvent.change(passwordField(), { target: { value: 'secret123' } })
+
+    const toggle = screen.getByRole('button', { name: TOGGLE })
+    // An actual button — reachable by name, not a click handler on the icon.
+    expect(toggle).toHaveAttribute('type', 'button')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(toggle)
+    expect(passwordField()).toHaveAttribute('type', 'text')
+    // The label now offers the reverse action, and the control reports pressed.
+    const hide = screen.getByRole('button', { name: TOGGLE_HIDE })
+    expect(hide).toHaveAttribute('aria-pressed', 'true')
+    // Visibility is presentation only: the value is untouched.
+    expect(passwordField().value).toBe('secret123')
+
+    fireEvent.click(hide)
+    expect(passwordField()).toHaveAttribute('type', 'password')
+    expect(passwordField().value).toBe('secret123')
+  })
+
+  it('places the toggle at the inline-end edge so it mirrors in RTL', () => {
+    renderCreate()
+    const toggle = screen.getByRole('button', { name: TOGGLE })
+    // Logical, direction-agnostic positioning: the app is RTL, so this lands on
+    // the left of the field without any RTL-specific override.
+    expect(toggle.className).toContain('inset-e-2')
+    expect(toggle.className).not.toContain('left-')
+    expect(toggle.className).not.toContain('right-')
+    // The input reserves the same inline-end space for it.
+    expect(passwordField().className).toContain('pe-11')
+  })
+
+  it('still validates the revealed value and submits it unchanged', async () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'سعيد' } })
+    fireEvent.change(passwordField(), { target: { value: '123' } })
+    fireEvent.click(screen.getByRole('button', { name: TOGGLE }))
+
+    // Revealing a short password does not make it acceptable.
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+    expect(await screen.findByText('كلمة المرور يجب ألا تقل عن 6 حروف')).toBeInTheDocument()
+    expect(mocks.create).not.toHaveBeenCalled()
+
+    // Correcting it while visible submits exactly what was typed.
+    fireEvent.change(passwordField(), { target: { value: 'secret123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
+    expect(mocks.create.mock.calls[0][0].password).toBe('secret123')
+  })
+
+  it('offers no toggle where there is no password', () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('الدور'), { target: { value: 'WASH_WORKER' } })
+    expect(screen.queryByRole('button', { name: TOGGLE })).not.toBeInTheDocument()
+  })
+})
+
 describe('EmployeeDialog — edit', () => {
   it('offers exactly the four editable HR fields', () => {
     renderEdit()
