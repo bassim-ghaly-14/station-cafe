@@ -67,6 +67,9 @@ export function useSalesData(filter: SalesFilter, sort: SalesItemSort = 'revenue
 
   useEffect(() => {
     let active = true
+    // One filter object, BOTH reads: the in-flight flag is raised before they
+    // start so the KPIs, trend, items and invoice list never settle separately.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     // One filter object, sent to BOTH reads: the KPIs, the trend, the items and
     // the invoice list can never end up describing different windows.

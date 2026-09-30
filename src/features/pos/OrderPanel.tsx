@@ -76,6 +76,9 @@ export function OrderPanel({
   }, [t])
 
   useEffect(() => {
+    // The panel's initial read of the product pad. External async init, started
+    // after the first commit; deriving it during render would fetch from render.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     loadProducts()
   }, [loadProducts])
 

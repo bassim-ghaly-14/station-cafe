@@ -36,6 +36,10 @@ export function useMinimumBootDelayElapsed(from: number = bootStartedAt): boolea
   const [elapsed, setElapsed] = useState(() => remainingBootDelay(from) === 0)
   useEffect(() => {
     // A new epoch (retry) must re-arm even if a previous epoch elapsed.
+    // `from` is a boot epoch chosen by the caller, so this re-arms an external
+    // timer on an external change; deriving it during render cannot restart a
+    // timeout without also firing during render.
+    // oxlint-disable-next-line react/set-state-in-effect -- epoch re-arm.
     setElapsed(remainingBootDelay(from) === 0)
     const remaining = remainingBootDelay(from)
     if (remaining === 0) return

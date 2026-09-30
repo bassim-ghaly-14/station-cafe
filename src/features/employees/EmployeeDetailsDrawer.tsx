@@ -329,6 +329,10 @@ export function EmployeeDetailsDrawer({
   const load = useCallback(() => {
     if (employeeId === null) return
     let active = true
+    // The drawer's read of the manager-level employee KPI. External async read;
+    // `loading` is raised before the request so the drawer shows its skeleton
+    // rather than the previous employee's figures.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     employeesApi
       .details(employeeId, period)

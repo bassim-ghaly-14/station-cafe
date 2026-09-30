@@ -90,4 +90,7 @@ export {
 export type { LucideIcon } from 'lucide-react'
 
 /** Standard icon sizes — use these instead of ad-hoc pixel values. */
+// Barrel of icon re-exports plus the size table; splitting it would only
+// fragment the icon API.
+// oxlint-disable-next-line react/only-export-components
 export const iconSize = { sm: 14, md: 16, lg: 20 } as const

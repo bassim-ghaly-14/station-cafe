@@ -76,4 +76,6 @@ export function Button({
   )
 }
 
+// `buttonVariants` is the style source Button renders; this is its public path.
+// oxlint-disable-next-line react/only-export-components
 export { buttonVariants }

@@ -282,10 +282,16 @@ export function PrintPreviewDialog({
     )
   }, [target, businessReason, t])
 
+  // The dialog's initial read. External async init, started after the first
+  // commit; `busy` already starts true.
+  // oxlint-disable-next-line react/set-state-in-effect -- external async init.
   useEffect(() => {
     load()
-    // Invalidate anything still in flight when the dialog goes away.
+    // Invalidate anything still in flight when the dialog goes away: closing
+    // must guarantee nothing is set on an unmounted dialog, so the token has to
+    // be bumped in cleanup. This is deliberate, not an accidental ref read.
     return () => {
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- deliberate.
       requestId.current++
     }
   }, [load])

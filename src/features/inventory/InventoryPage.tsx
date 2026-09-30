@@ -151,6 +151,9 @@ export default function InventoryPage() {
   }, [toast, errText])
 
   useEffect(() => {
+    // The page's initial read of the stock rows and the recent movements.
+    // External async init, started after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     load()
   }, [load])
 

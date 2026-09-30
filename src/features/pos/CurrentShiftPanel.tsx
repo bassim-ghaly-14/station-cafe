@@ -254,9 +254,10 @@ export function CurrentShiftPanel({
     }
   }, [])
 
+  // The shift's expense rows on mount. A failed read is already handled inside
+  // `loadExpenses`, so there is no rejection left to swallow here.
   useEffect(() => {
-    // A failed read is already handled inside `loadExpenses`, so there is no
-    // rejection left to swallow here.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     loadExpenses()
   }, [loadExpenses])
 

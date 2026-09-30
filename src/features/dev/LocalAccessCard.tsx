@@ -50,6 +50,9 @@ export function LocalAccessCard() {
   }, [toast, errText])
 
   useEffect(() => {
+    // The page's initial read of the local-access state and configuration.
+    // External async init, started after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     void load()
   }, [load])
 

@@ -107,6 +107,9 @@ export default function PosPage() {
   }, [t])
 
   useEffect(() => {
+    // The screen's initial read of tables, takeaways and the open shift. This is an
+    // external system (Tauri IPC): the request starts only after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     void refresh()
   }, [refresh])
 
@@ -128,6 +131,10 @@ export default function PosPage() {
         .then(setPreview)
         .catch(() => setPreview(null))
     } else {
+      // With no active order there is nothing to preview. The read above is
+      // external; this branch only CLEARS a stale preview left by the previous
+      // order, which by definition can only be known after that order left.
+      // oxlint-disable-next-line react/set-state-in-effect -- stale-preview reset.
       setPreview(null)
     }
   }, [activeOrder, discount.mode, discount.value, serviceCharge])

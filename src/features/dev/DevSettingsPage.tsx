@@ -180,9 +180,13 @@ export default function DevSettingsPage() {
     setSavedMonthlyPeriod(monthlySalesPeriod.months)
   }, [])
 
+  // Dev Settings are ADMIN-only configuration and must be re-read whenever the
+  // resolved role changes, so the form can never show a manager what was loaded
+  // for a different role. External async init on role resolution.
   useEffect(() => {
     if (user?.role !== 'ADMIN') return
 
+    // oxlint-disable-next-line react/set-state-in-effect -- role-driven read.
     void loadSettings().catch((error) => toast(errText(error), 'error'))
   }, [user?.role, loadSettings, toast, errText])
 

@@ -89,6 +89,9 @@ export function useInvoiceList({ search, status, method }: InvoiceListQuery): In
   useEffect(() => {
     if (!dayResolved) return
     let active = true
+    // Gated on the resolved business day; `loading` is raised before the search
+    // starts so the list marks itself busy instead of blanking on every filter.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     api
       .invoices({

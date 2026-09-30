@@ -58,6 +58,9 @@ export function PrintStatusPanel() {
   }, [errText, toast])
 
   useEffect(() => {
+    // The panel's initial read of the jobs and of the printer configuration.
+    // External async init, started after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     load()
   }, [load])
 

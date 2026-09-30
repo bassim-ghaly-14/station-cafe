@@ -91,6 +91,8 @@ export function RouterProvider({ children }: Readonly<{ readonly children: React
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
+// The context hook ships with the provider that defines its context.
+// oxlint-disable-next-line react/only-export-components
 export function useRouter(): RouterCtx {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error('useRouter must be used inside RouterProvider')

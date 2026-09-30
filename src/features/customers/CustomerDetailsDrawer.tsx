@@ -131,14 +131,26 @@ export function CustomerDetailsDrawer({
         })
       : t('customers.drawer.allTimeNote')
 
+  // With no customer the drawer must show nothing at all: the KPI is manager-level
+  // and a closed drawer must never keep a customer's financial figures on
+  // screen. Clearing on close is a privacy/permission reset, not a reload.
+  // oxlint-disable-next-line react/set-state-in-effect -- closed-drawer reset.
   useEffect(() => {
     if (customerId === null) {
+      // With no customer the drawer must show nothing: the KPI is manager-level
+      // and a closed drawer must never keep a customer's financial figures on
+      // screen. Clearing on close is a privacy/permission reset, not a reload.
+      // oxlint-disable-next-line react/set-state-in-effect -- closed-drawer reset.
       setDetails(null)
       setError(null)
       setLoading(false)
       return
     }
     let active = true
+    // The drawer's initial/parameter-change read of the customer KPI. External
+    // async read; `loading` is raised before the request so the drawer shows its
+    // skeleton instead of the previous customer's numbers.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     customersApi
       .details(customerId, bounds)

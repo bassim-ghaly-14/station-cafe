@@ -40,10 +40,15 @@ export function CustomerDialog({
   const [error, setError] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
 
-  // Re-seed the form for each opening, so a previous entry never leaks in.
+  // Opening the dialog re-seeds the form so a previous entry never leaks in. This
+  // is a prop-change reset (category F): `mode` is the dialog's identity, and it
+  // arrives from the parent's click handler, not from render. Moving this into
+  // the open handler would need the parent to own the field values.
+  // oxlint-disable-next-line react/set-state-in-effect -- form re-seed on open.
   useEffect(() => {
     if (!mode) return
     const customer = mode.kind === 'edit' ? mode.customer : null
+    // oxlint-disable-next-line react/set-state-in-effect -- form re-seed on open.
     setName(customer?.name ?? '')
     setPhone(customer?.phone ?? '')
     setNotes(customer?.notes ?? '')

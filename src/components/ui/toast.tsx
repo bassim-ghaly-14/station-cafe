@@ -66,6 +66,9 @@ export function ToastProvider({ children }: Readonly<{ readonly children: ReactN
   )
 }
 
+// The consumer hook ships with its provider so `@/components/ui/toast` is one
+// import for every toast caller.
+// oxlint-disable-next-line react/only-export-components
 export function useToast() {
   const ctx = useContext(ToastCtx)
   if (!ctx) throw new Error('useToast must be used inside ToastProvider')

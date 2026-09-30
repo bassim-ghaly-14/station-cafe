@@ -37,6 +37,9 @@ export function useExpensesData(from: string, to: string): ExpensesDataState {
 
   useEffect(() => {
     let active = true
+    // One window, two reads; `loading` is the in-flight flag for BOTH and is
+    // raised before they start, so the pair can never settle half-refreshed.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     // One window, two reads. The overview is the aggregate; the list is the
     // page of records behind it — the totals are never re-summed in React.

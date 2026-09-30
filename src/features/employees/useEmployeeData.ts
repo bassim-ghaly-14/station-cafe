@@ -65,6 +65,10 @@ export function useEmployeeList(
 
   useEffect(() => {
     let active = true
+    // `loading` is the in-flight flag and must be raised before the request,
+    // not derived during render; deriving it would move the request into render
+    // and drop the `active` guard that discards stale answers.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     employeesApi
       .list(debouncedQuery, { from, to }, includeInactive)
@@ -118,6 +122,10 @@ export function useEmployeeOverview(
 
   useEffect(() => {
     if (!enabled) {
+      // When the session stops being manager-level the KPI must be
+      // DROPPED, not merely left in place while the request is skipped. A cashier
+      // must never hold a financial figure, so this is a security-relevant reset.
+      // oxlint-disable-next-line react/set-state-in-effect -- role gate.
       setOverview(null)
       setLoading(false)
       return
@@ -167,6 +175,9 @@ export function useMyAttendance(): MyAttendanceState {
 
   useEffect(() => {
     let active = true
+    // Same in-flight contract as the list above: raised before the request so a
+    // reload shows the loading state, and cleared only by a live answer.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     employeesApi
       .myAttendance()

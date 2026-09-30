@@ -43,6 +43,9 @@ export function useMonthlyRevenue(): MonthlyRevenueState {
 
   useEffect(() => {
     let active = true
+    // `loading` covers the settings read AND the report read; raising it before
+    // the chain starts is what makes a reload show the busy state.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     // The configured window decides how many month buckets come back. It is read
     // from the settings table, exactly like every other cafe configuration.

@@ -70,6 +70,8 @@ export const MULTIPLE_EXPENSES_FROM = 2
  * calm, related tone rather than a status colour: several expenses in one day is
  * a normal day's accounting, not a problem to be alarmed about.
  */
+// Pure mapping helper, exported for its unit tests beside the chart that draws it.
+// oxlint-disable-next-line react/only-export-components
 export function expensesBarColor(expenseCount: number | undefined): string | undefined {
   return typeof expenseCount === 'number' && expenseCount >= MULTIPLE_EXPENSES_FROM
     ? chartBarColor('expensesMultiple')
@@ -90,6 +92,8 @@ export function expensesBarColor(expenseCount: number | undefined): string | und
  * made for that day, which is how "a day of many small spends" is told apart
  * from "a day of one big spend".
  */
+// Pure mapping helper, exported for its unit tests beside the chart that draws it.
+// oxlint-disable-next-line react/only-export-components
 export function expensesDailyFigures(labels: { total: string; count: string; average: string }): {
   series: DailyBarSeries[]
   metrics: DailyTooltipMetric[]
@@ -119,6 +123,8 @@ export function expensesDailyFigures(labels: { total: string; count: string; ave
  * left off the day entirely and the tooltip prints no average row for it rather
  * than a `0.00` nobody measured.
  */
+// Pure DTO mapping, exported for its unit tests beside the chart that draws it.
+// oxlint-disable-next-line react/only-export-components
 export function toExpensesDailyData(
   rows: readonly ExpenseOverview['days'][number][],
 ): DailyBarDatum[] {

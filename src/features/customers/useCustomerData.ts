@@ -53,6 +53,10 @@ export function useCustomerList(query: string, from: string, to: string): Custom
 
   useEffect(() => {
     let active = true
+    // `loading` is the in-flight flag and must be raised before the request,
+    // not derived during render; deriving it would move the request into render
+    // and drop the `active` guard that discards stale answers.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     customersApi
       .list(debouncedQuery, { from, to })
@@ -106,6 +110,10 @@ export function useCustomerOverview(
 
   useEffect(() => {
     if (!enabled) {
+      // When the session stops being manager-level the KPI must be
+      // DROPPED, not merely left in place while the request is skipped. A cashier
+      // must never hold a financial figure, so this is a security-relevant reset.
+      // oxlint-disable-next-line react/set-state-in-effect -- role gate.
       setOverview(null)
       setLoading(false)
       return

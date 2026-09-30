@@ -265,6 +265,9 @@ export function PinInput({
 }
 
 /** Whether a string is a well-formed shared discount PIN (4 ASCII digits). */
+// The PIN validator belongs with the PIN input it validates, and shares its
+// length constant.
+// oxlint-disable-next-line react/only-export-components
 export function isValidDiscountPin(value: string): boolean {
   return new RegExp(String.raw`^\d{${DISCOUNT_PIN_LENGTH}}$`).test(value)
 }

@@ -41,6 +41,10 @@ export function useOperationHistory(): OperationHistoryState {
 
   useEffect(() => {
     let active = true
+    // `loading` is the in-flight flag for the log query and is raised before it
+    // starts; `setError(null)` below clears the previous failure so a retry
+    // shows busy rather than the old error next to a spinner.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     setError(null)
     opsApi

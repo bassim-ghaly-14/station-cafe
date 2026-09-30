@@ -123,6 +123,9 @@ export default function CatalogPage() {
   }, [errText, toast])
 
   useEffect(() => {
+    // The catalog's initial read of items and of the category list. External
+    // async init, started after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     load()
     loadCategories()
   }, [load, loadCategories])

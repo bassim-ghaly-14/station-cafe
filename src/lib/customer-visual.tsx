@@ -57,6 +57,8 @@ function hashId(id: number): number {
 }
 
 /** The palette tone for a customer ID. Same ID → same tone, always. */
+// Deterministic tone helper, exported for its unit tests beside the avatar.
+// oxlint-disable-next-line react/only-export-components
 export function customerAvatarTone(id: number): CustomerAvatarTone {
   return TONES[hashId(id) % TONES.length]
 }
@@ -71,6 +73,8 @@ const DIACRITICS = /[ً-ْـ]/g
  * as "أس"; a single-word name yields one letter, and a name made only of
  * spaces falls back to a neutral "؟" rather than an empty chip.
  */
+// Pure initials helper, exported for its unit tests beside the avatar.
+// oxlint-disable-next-line react/only-export-components
 export function customerInitials(name: string | null | undefined): string {
   const cleaned = (name ?? '').replace(DIACRITICS, '').trim()
   if (cleaned === '') return '؟'

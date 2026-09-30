@@ -119,6 +119,10 @@ export function useAnalyticsCharts(from = '', to = ''): AnalyticsReportState {
 
   useEffect(() => {
     let active = true
+    // `loading` is the in-flight flag for the report and is raised before it
+    // starts; `setError(null)` clears the previous failure so a range change
+    // shows busy rather than the old error beside the previous chart.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     setError(null)
     opsApi

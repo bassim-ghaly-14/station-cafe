@@ -58,6 +58,9 @@ export const AVERAGE_INVOICE_KEY = 'average_invoice'
  * for that day, and "many small tickets" against "one big ticket" is a real
  * distinction the manager opens this chart for.
  */
+// Pure series mapping, exported for its unit tests beside the chart that draws
+// it; splitting the module would separate the two halves of one definition.
+// oxlint-disable-next-line react/only-export-components
 export function salesDailySeries(labels: { revenue: string; invoices: string; average: string }): {
   series: DailyBarSeries[]
   metrics: DailyTooltipMetric[]
@@ -88,6 +91,8 @@ export function salesDailySeries(labels: { revenue: string; invoices: string; av
  * left off the day entirely and the tooltip prints no average row for it rather
  * than printing a `0.00` that was never measured.
  */
+// Pure DTO mapping, exported for its unit tests beside the chart that renders it.
+// oxlint-disable-next-line react/only-export-components
 export function toSalesDailyData(rows: readonly SalesDayRow[]): DailyBarDatum[] {
   return [...rows]
     .sort((left, right) => left.day_date.localeCompare(right.day_date))

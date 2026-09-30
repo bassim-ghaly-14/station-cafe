@@ -61,6 +61,9 @@ export default function QrCodePage() {
   }, [errText])
 
   useEffect(() => {
+    // The page's initial read of the single `local_access_qr` command. External
+    // async init, started after the first commit; `busy` already starts true.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     void load()
   }, [load])
 

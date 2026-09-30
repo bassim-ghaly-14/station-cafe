@@ -69,7 +69,11 @@ export function MobileNav() {
    * destination from "More" would navigate underneath a menu still covering the
    * screen - the most common way a mobile drawer gets stuck open.
    */
+  // `view` is read from the browser URL by the router, so this is synchronizing
+  // with an external system. The sheet's own open/close stays in the click
+  // handler; only the route-driven close belongs in an effect.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- route-change close.
     setMoreOpen(false)
   }, [view])
 

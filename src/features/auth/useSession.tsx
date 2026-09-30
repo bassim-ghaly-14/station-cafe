@@ -100,6 +100,8 @@ export function SessionProvider({ children }: Readonly<{ readonly children: Reac
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
+// The context hook ships with the provider that defines its context.
+// oxlint-disable-next-line react/only-export-components
 export function useSession(): SessionCtx {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error('useSession must be used inside SessionProvider')
@@ -114,11 +116,16 @@ export function useSession(): SessionCtx {
  * page down over a missing context. Anything that genuinely requires a session
  * must keep using {@link useSession}, which still fails loudly.
  */
+// Same context as `useSession` above.
+// oxlint-disable-next-line react/only-export-components
 export function useOptionalSession(): SessionCtx | null {
   return useContext(Ctx)
 }
 
 /** Role helpers — UI convenience only; the backend is the real gate. */
+// A UI convenience over the `roleRank` this module already imports, kept beside
+// the session it qualifies.
+// oxlint-disable-next-line react/only-export-components
 export function atLeast(role: UserRole | undefined, min: UserRole): boolean {
   return roleRank(role) >= roleRank(min)
 }

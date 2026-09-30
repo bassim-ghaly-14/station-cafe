@@ -51,7 +51,10 @@ export function PrinterSettings({
   // what changed" impossible, because the parent already holds the keystrokes.
   const [draft, setDraft] = useState<PrintConfig>(config)
   // The stored configuration is the truth: whenever it changes underneath this
-  // form (a successful save, a reload), the draft follows it.
+  // form (a successful save, a reload), the draft follows it. This is a
+  // prop-change reset (category F) and it is deliberate: the draft is held
+  // locally while typing so a half-typed printer name is never written.
+  // oxlint-disable-next-line react/set-state-in-effect -- draft follows config.
   useEffect(() => setDraft(config), [config])
 
   // Hooks run before this guard on every render, so returning early is safe.

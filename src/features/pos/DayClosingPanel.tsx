@@ -508,6 +508,7 @@ export function DayClosingPanel({
   // Initial load, then a silent reload on every POS data revision. `load` is
   // stable for a given day, so this fires on mount and on revision bumps only.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     void load(true)
   }, [load, revision])
 

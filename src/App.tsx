@@ -160,6 +160,10 @@ export default function App() {
 
   useEffect(() => {
     if (!canExit || exiting) return
+    // The boot overlay exits exactly once, and only after BOTH real readiness
+    // and the minimum branded duration hold. This is a one-way transition into
+    // a timed animation; the timer below owns the rest of the sequence.
+    // oxlint-disable-next-line react/set-state-in-effect -- one-way boot exit.
     setExiting(true)
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const id = window.setTimeout(

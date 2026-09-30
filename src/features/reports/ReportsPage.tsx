@@ -317,6 +317,9 @@ function ClosingReports({
       })
   }, [kind, from, to, errText, toast])
   useEffect(() => {
+    // The panel's initial read of the closings for the selected window.
+    // External async init, started after the first commit.
+    // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     load()
   }, [load])
   return (
