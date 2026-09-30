@@ -1,7 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions. Updater is granted by least privilege: allow-check only. The updater:default set would also grant download and install, which no code path uses yet (the update UI and its business-safety gating are a separate, later task). Whoever adds the install flow must add updater:allow-download-and-install in that same change, deliberately. NOTE: this file is strict JSON and the Tauri capability parser rejects comments, so the rationale lives in this description.",
+  "description": "enables the default permissions. Updater is granted by least privilege and no further: allow-check for the manual 'Check for Updates' action, and allow-download-and-install for the explicit, admin-confirmed install path in the Application Updates card. `updater:default` is deliberately NOT granted -- it would hand the webview install-at-once and other permissions the Station update flow never calls, so the two permissions below are exactly the updater surface the signed-update flow needs. `process:allow-restart` is included because the update flow relaunches the app through tauri-plugin-process after a successful install (process:allow-exit is deliberately NOT granted -- Station exits only through the Windows installer). NOTE: this file is strict JSON and the Tauri capability parser rejects comments, so the rationale lives in this description.",
   "windows": ["main"],
-  "permissions": ["core:default", "updater:allow-check"]
+  "permissions": [
+    "core:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:allow-restart"
+  ]
 }

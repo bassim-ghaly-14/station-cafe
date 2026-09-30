@@ -43,6 +43,7 @@ import {
 import { useSession } from '@/features/auth/useSession'
 import { ChartColorsCard } from './ChartColorsCard'
 import { LocalAccessCard } from './LocalAccessCard'
+import { ApplicationUpdatesCard } from './ApplicationUpdatesCard'
 import { FormattingPreview } from './FormattingPreview'
 
 /** Shared control styling for the formatting selects. */
@@ -1009,6 +1010,14 @@ export default function DevSettingsPage() {
           </Button>
         </div>
       </section>
+
+      {/* Application Updates — the LAST section of the page, after the Danger
+          Zone. Placed here deliberately: it is the newest, least frequent and
+          least reversible-looking control on the page, and a manager scanning
+          top-down should reach the data tools long before the one that can
+          close the app. The dialogs below are overlays, not sections, and stay
+          at the end of the container. */}
+      <ApplicationUpdatesCard />
 
       {/* Clear confirmation */}
       <Dialog

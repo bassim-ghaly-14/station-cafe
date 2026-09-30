@@ -986,4 +986,24 @@ describe('DevAmountList whole-amount amounts', () => {
     expect(screen.getByLabelText('زيادة')).toBeInTheDocument()
     expect(screen.getByLabelText('إنقاص')).toBeInTheDocument()
   })
+
+  it('places Application Updates last, after the Danger Zone', async () => {
+    page()
+    // Compared through the semantic test ids the sections already carry, so the
+    // assertion cannot pass or fail on a class name or a DOM depth.
+    const danger = screen.getByTestId('dev-danger-zone')
+    const updates = await screen.findByTestId('dev-application-updates')
+
+    // Document order: updates come after the Danger Zone.
+    expect(danger.compareDocumentPosition(updates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Same structural level: a direct child of the page container, exactly as
+    // LocalAccessCard is. Not nested inside another card or section.
+    expect(updates.parentElement).toBe(danger.parentElement)
+    expect(updates.parentElement).toBe(screen.getByTestId('dev-local-access').parentElement)
+
+    // The pages' own sections are untouched by the addition.
+    expect(screen.getByTestId('dev-danger-zone')).toBeInTheDocument()
+    expect(screen.getByTestId('dev-local-access')).toBeInTheDocument()
+  })
 })

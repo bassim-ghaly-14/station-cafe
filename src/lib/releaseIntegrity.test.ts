@@ -28,6 +28,8 @@ import workflow from '../../.github/workflows/windows-build.yml?raw'
 import releasingDoc from '../../docs/RELEASING.md?raw'
 import libRs from '../../src-tauri/src/lib.rs?raw'
 import capabilitiesRaw from '../../src-tauri/capabilities/default.json?raw'
+import updateApiSource from '../services/updateApi.ts?raw'
+import updateCardSource from '../features/dev/ApplicationUpdatesCard.tsx?raw'
 
 const tauriConf = JSON.parse(tauriConfRaw) as {
   version: string
@@ -36,6 +38,28 @@ const tauriConf = JSON.parse(tauriConfRaw) as {
   plugins?: { updater?: { pubkey: string; endpoints: string[] } }
 }
 const csp = tauriConf.app.security.csp
+
+/**
+ * The frontend updater surface, read as raw text like every other source here.
+ *
+ * Comments are stripped before the behavioural assertions: prose in this
+ * repository deliberately NAMES the things it must not do ("never route through
+ * `call()`", "never fetch a `.sig`"), so asserting against raw text would match
+ * the explanation of the rule instead of the code that could break it.
+ */
+function codeOnly(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '')
+}
+
+/** base64(text) -> UTF-8 text, through the platform primitives already used here. */
+function decodeBase64Utf8(base64: string): string {
+  const binary = atob(base64)
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+const updateService = codeOnly(updateApiSource)
+const updateCard = codeOnly(updateCardSource)
 
 /** base64(sha256(text)) — the exact form a CSP `script-src` hash uses. */
 async function sha256Base64(text: string): Promise<string> {
@@ -191,16 +215,46 @@ describe('updater build infrastructure', () => {
     expect(libRs).toContain('tauri_plugin_updater::Builder::new().build()')
   })
 
-  it('grants only the minimum updater permission', () => {
-    // `updater:default` grants check + download + install + install-at-once.
-    // Nothing installs an update yet, so standing install capability is not
-    // granted. The install flow must add its permission deliberately.
+  it('grants exactly the updater permissions the signed-update flow needs', () => {
+    // `updater:default` would also hand the webview download and install as
+    // blanket capability, which is not what the flow is allowed to reach. The
+    // two permissions below are the whole updater surface: check for the manual
+    // button, download-and-install for the confirmed install path.
+    //
+    // The permission set is asserted, not merely spot-checked: a future
+    // `updater:default` — the single most likely way this regresses — fails
+    // here rather than shipping ambient install capability to a POS.
     const caps = JSON.parse(capabilitiesRaw) as { permissions: string[] }
     expect(caps.permissions).toContain('updater:allow-check')
+    expect(caps.permissions).toContain('updater:allow-download-and-install')
     expect(caps.permissions).not.toContain('updater:default')
-    for (const p of caps.permissions) {
-      expect(p).not.toMatch(/^updater:allow-(download|install)/)
+
+    const updaterPermissions = caps.permissions.filter((p) => p.startsWith('updater:'))
+    expect(updaterPermissions.sort()).toEqual([
+      'updater:allow-check',
+      'updater:allow-download-and-install',
+    ])
+    // No deny entries either: a paired deny would silently disable the flow.
+    for (const p of updaterPermissions) {
+      expect(p).not.toMatch(/^updater:deny-/)
     }
+  })
+
+  it('registers the process plugin so the update flow can relaunch Station', () => {
+    // Installing an update ends the process on Windows, and the manager must
+    // come back to the new version without hunting for a shortcut. That relaunch
+    // goes through tauri-plugin-process, so the plugin must be registered next
+    // to the updater — not merely available as a dependency.
+    expect(libRs).toContain('tauri_plugin_process::init()')
+    // And the capability that authorises it from the webview.
+    const caps = JSON.parse(capabilitiesRaw) as { permissions: string[] }
+    expect(caps.permissions).toContain('process:allow-restart')
+    // `allow-exit` is not granted: Station leaves the process only through the
+    // NSIS installer, never through a webview-triggered exit.
+    expect(caps.permissions).not.toContain('process:allow-exit')
+
+    const cargoTomlDeps = cargoToml.slice(cargoToml.indexOf('[dependencies]'))
+    expect(cargoTomlDeps).toContain('tauri-plugin-process')
   })
 
   it('grants no broad filesystem, shell or http capability', () => {
@@ -289,11 +343,61 @@ describe('updater build infrastructure', () => {
     expect(block).toContain('exit 1')
   })
 
-  it('implements no update UI or install flow yet', () => {
-    // Scope guard: the update dialog, polling and the shift/day safety gate
-    // are a separate task. Asserting their absence keeps this change honest
-    // rather than half-finished.
+  it('implements no custom Rust updater command', () => {
+    // The frontend calls tauri-plugin-updater directly. A Station-owned
+    // `check_for_update`/`install_update` command would be a SECOND route to the
+    // same signed channel with its own error surface, its own auth story, and
+    // its own place to accidentally become automatic. There must be exactly one
+    // path to the plugin, and it is the JS API.
     expect(libRs).not.toContain('check_for_update')
     expect(libRs).not.toContain('install_update')
+    expect(libRs).not.toContain('commands::updates')
+  })
+
+  it('keeps the update flow manual: no polling, timer or startup check', () => {
+    // Station is offline-first. An automatic check would make a cafe's till
+    // reach the internet on its own, which is exactly what the product promise
+    // forbids — so the absence is asserted, not just documented.
+    expect(updateService).not.toMatch(/setInterval|setTimeout/)
+    // And the card never checks on mount: its only effect reads the version.
+    expect(updateCard).not.toMatch(/checkForUpdate\(\)[\s\S]{0,200}useEffect/)
+  })
+
+  it('never routes updater traffic through the LAN command bridge', () => {
+    // `call()` is the LAN `/api/v1/cmd` transport. An update call routed
+    // through it would expose a desktop-only capability to any phone on the
+    // cafe LAN and put a GitHub download on the LAN HTTP surface.
+    expect(updateService).not.toMatch(/\bcall[<(]/)
+    expect(updateService).not.toContain('/api/v1/cmd')
+    expect(updateService).toContain("from './ipc'")
+    // It imports `isDesktop` from that module and nothing else.
+    expect(updateService).toMatch(/import \{ isDesktop \} from '\.\/ipc'/)
+  })
+
+  it('verifies signatures in Rust, never in the frontend', () => {
+    // The plugin verifies the downloaded bundle against the compiled pubkey
+    // inside Rust. A frontend re-implementation, or a hand-fetched `.sig`, would
+    // be a second verification path that could disagree with the real one.
+    expect(updateService).not.toContain('.sig')
+    expect(updateService).not.toMatch(/minisign/i)
+    expect(updateService).not.toContain('pubkey')
+    expect(updateService).not.toContain('TAURI_SIGNING_PRIVATE_KEY')
+    // The public key stays exactly one compiled value in one place. It decodes
+    // to a minisign PUBLIC key — never a private half, which would mean anyone
+    // with repository read access could forge an update.
+    expect(updater?.pubkey).toBeTruthy()
+    const decodedKey = decodeBase64Utf8(updater?.pubkey ?? '')
+    expect(decodedKey).toContain('minisign public key')
+    expect(decodedKey).not.toContain('minisign secret key')
+  })
+
+  it('exposes no signing material to the frontend', () => {
+    // Belt and braces on the "no secret in the bundle" rule, across every file
+    // the webview can reach.
+    const frontendSources = [updateService, updateCard]
+    for (const source of frontendSources) {
+      expect(source).not.toContain('minisign secret key')
+      expect(source).not.toContain('TAURI_SIGNING_PRIVATE_KEY')
+    }
   })
 })

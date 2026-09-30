@@ -103,11 +103,17 @@ pub fn run() {
         // repository: it exists solely as the CI secret
         // TAURI_SIGNING_PRIVATE_KEY used by the release workflow.
         //
-        // Registering the plugin adds the update CHANNEL. No command, UI,
-        // polling, or install flow is added here — that is deliberately out
-        // of scope, and until it exists the app simply never asks for an
-        // update. Station therefore remains fully functional offline.
+        // The UI calls this plugin DIRECTLY, from the frontend, through the
+        // tauri-plugin-updater JS API -- never through a Station command and
+        // never through the LAN `api/v1/cmd` bridge. Adding a custom Rust
+        // updater command would create a second path to the same signed
+        // channel with its own error surface; the plugin is the channel.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Relaunch, so a manager sees Station reopen on the new version after
+        // a successful install. `process:allow-restart` in
+        // capabilities/default.json is the matching webview permission; the
+        // capability set is asserted in src/lib/releaseIntegrity.test.ts.
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

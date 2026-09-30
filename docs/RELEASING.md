@@ -147,20 +147,103 @@ Until then, **Windows will show a SmartScreen warning on first install.** The
 current installer uses `installMode: "currentUser"`, so it installs without
 administrator rights; the warning is expected and documented for the operator.
 
-## 6. Automatic updates: what exists and what does not
+## 6. In-app updates: how a manager actually gets one
 
-- [x] build infrastructure: plugin, `plugins.updater` config, committed
-      public key, fixed endpoint, `createUpdaterArtifacts`, signing secrets, and
-      signature verification
-- [ ] update check command, polling, and the Arabic update dialog
-- [ ] the update permission (`updater:allow-download-and-install`), currently
-      withheld so no unused install capability is granted
-- [ ] the safety gate that blocks installing during an open shift or business
-      day
+Everything above is build infrastructure. This section is the part a manager
+touches.
 
-Until the unchecked items exist the app never asks for an update, so Station
-stays fully functional offline. Nothing above grants the app a way to install
-software without a human deciding to.
+### There is no automatic update
+
+Station **never** checks for an update by itself. Not on launch, not when the
+Dev Settings page opens, not on a timer, not in the background. Until someone
+presses **«فحص وجود تحديث»**, the app makes no outbound request of any kind.
+This is the offline-first promise, and it is enforced by
+`src/services/updateApi.ts` (no timer, no `call`) plus a test in
+`src/lib/releaseIntegrity.test.ts`.
+
+### The flow, end to end
+
+Dev Settings → **تحديثات التطبيق** (the last card on the page).
+
+1. **فحص وجود تحديث / Check for Updates.** Contacts the fixed GitHub endpoint
+   and asks whether a newer signed build exists. No update → a success message
+   and the installed version stays. A new version → its number appears and the
+   **تحديث لأحدث إصدار / Update** button appears.
+2. **Update → confirmation dialog.** Explains that Station will close and reopen,
+   and that open work must be finished first. Cancelling downloads nothing.
+3. **The safety gate.** Station refuses to proceed while a shift or a business
+   day is open. This is checked **twice**: once before the confirmation opens,
+   and again from the confirmation, immediately before any byte is downloaded.
+   The second check is the one that counts — it re-reads `day_shift_state`,
+   which is authoritative and reflects _any_ active shift, not the admin's own
+   or a value cached in the UI. If the gate fails, nothing is downloaded and
+   nothing is installed.
+4. **Availability is re-checked** before the install, so a withdrawn update is
+   never installed from a stale handle.
+5. **Download with a percentage.** Signature verification happens in Rust against
+   the compiled `plugins.updater.pubkey`. An update that does not verify is
+   refused by the plugin; Station does not re-implement that check and never
+   fetches a `.sig` itself.
+6. **Install, then restart.** On Windows the NSIS installer replaces the app and
+   the process ends; Station shows the "ready to restart" message and the
+   relaunch is issued through `tauri-plugin-process`.
+
+### Constraints worth stating plainly
+
+| Constraint        | Why                                                                                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ADMIN only**    | The card lives in Dev Settings, which renders nothing for a non-ADMIN.                                                                                   |
+| **Desktop only**  | The plugin needs the Tauri shell. A phone or browser on the LAN shows the card with an explicit "desktop only" message and loads no updater code at all. |
+| **Manual only**   | Two presses and a confirmation. Nothing happens on a schedule.                                                                                           |
+| **Signed only**   | The pubkey is compiled in; the private key exists only in CI secrets.                                                                                    |
+| **Offline-first** | The only network access is the two explicit user-initiated actions.                                                                                      |
+
+### Safe install timing
+
+Install when the cafe is **closed for the day** — no open business day, no open
+shift, no unsaved POS work. The gate enforces the first two; the third is the
+manager's judgement. The confirmation says so in Arabic before anything starts.
+
+### What is preserved across an update
+
+The SQLite database lives in the OS application-data directory and is **not**
+inside the install directory. An NSIS update replaces the program files and
+leaves the data alone; there is no migration, no reset, and no install-directory
+assumption anywhere in the update flow. Cafe data, invoices, staff accounts and
+settings survive an update untouched.
+
+### If an update fails
+
+Every failure is localized, resets the card to idle, and leaves Station fully
+usable — nothing is half-applied, because nothing is applied until the signed
+bundle has been downloaded and handed to the installer.
+
+- **Check fails** (offline, DNS, endpoint unreachable) → error message, retry.
+- **Signature or manifest rejected** → the plugin refuses; the installed version
+  is untouched.
+- **Download fails mid-way** → error message, retry; the old version still runs.
+- **Installer fails** → error message; the old version still runs.
+- **Restart fails after a successful install** → reported as a _restart_ failure,
+  deliberately not an update failure. The new version is already installed;
+  opening Station by hand gives the new version.
+- **Last resort**: download the `.exe` from the GitHub release page, close
+  Station, run it. It installs over the same app and keeps the same database.
+
+### Capability set
+
+`src-tauri/capabilities/default.json` grants exactly
+`updater:allow-check` + `updater:allow-download-and-install` for the updater,
+plus `process:allow-restart` for the relaunch. `updater:default` is **not**
+granted. `src/lib/releaseIntegrity.test.ts` asserts that exact set, so a future
+blanket grant fails CI.
+
+### Known manual cleanup
+
+The published `v0.1.0` release may still carry a stale **MSI** asset from before
+the NSIS-only decision. The updater is NSIS-only and ignores it, but it should
+be **deleted manually from the GitHub Release page** so no one installs an
+artifact Station can never update to. This is a release-asset operation, not a
+source change.
 
 ## 7. Release procedure
 

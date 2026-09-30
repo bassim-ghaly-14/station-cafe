@@ -76,5 +76,10 @@ Ordered tasks. Each task: goal → modules → risks → acceptance criteria.
 4. **Export system (PDF / PNG / Excel)** — one report dataset → UI, PDF, PNG, Excel (no duplicated calculation).
 5. **Email reports (optional online)** — manual + scheduled; app fully functional offline without it.
 6. **Local network manager access + mDNS + QR** — local HTTP API serving the manager UI on Wi-Fi; `station.local`; QR display; IP fallback; device access permissions.
-7. **Automatic updates (production)** — signed updater end-to-end, Arabic update dialog with versions, safe install timing (blocked during open shift/day), failure/rollback recovery, GitHub secrets setup.
+7. **Automatic updates (production)** — **DONE.** Signed updater end-to-end, ADMIN-only
+   Arabic update card in Dev Settings, manual-only flow (no startup check, no polling,
+   no background download), blocked during an open shift or business day, progress and
+   failure recovery, restart via `tauri-plugin-process`. Desktop-only: a phone or
+   browser on the LAN shows an explicit "desktop only" message and loads no updater
+   code. See `docs/RELEASING.md` §6.
 8. **Advanced backup/restore UX, cleanup, maintenance** — backup status dashboard; retention-based cleanup of generated files (never touches backups or business data); admin seed/demo reset tooling; performance hardening.
