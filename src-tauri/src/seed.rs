@@ -1,4 +1,4 @@
-//! Deterministic seed infrastructure.
+//! Deterministic OFFICIAL seed infrastructure.
 //!
 //! - Runs the full starter seed only on a fresh database.
 //! - Catalog v4 is synchronized once for existing installations.
@@ -8,6 +8,28 @@
 //!   unreferenced old seed rows can be removed safely.
 //! - Categories are required for every catalog row; existing rows were
 //!   backfilled to a seeded system category during migration 14.
+//!
+//! # THIS FILE IS THE OFFICIAL DATASET — PRODUCTION DATA ONLY
+//!
+//! There are three classes of row in Station, and only two of them belong here:
+//!
+//!   A) required baseline / system data — the real staff accounts, the 12 cafe
+//!      tables and the business catalog supplied by the business;
+//!   B) official business / catalog data — `DEFAULT_PRODUCTS`;
+//!   C) demo / test / sample data — **never here**.
+//!
+//! Class C lives in its own dedicated module, `crate::demo_data`, and is only
+//! ever reached through the developer "Load Demo Data" action. Nothing in this
+//! file may create a demonstration account, a demonstration customer, a fake
+//! invoice, a fake expense or any other sample business record: "Load Official
+//! Data" must produce the official baseline and nothing else, so a production
+//! installation can never be contaminated by a test fixture.
+//!
+//! In particular the generic `admin` / `manager` / `cashier` demonstration
+//! logins that used to live in `DEFAULT_USERS` are GONE. They are demo
+//! credentials (see `crate::demo_data::DEMO_USERS`) and shipping them in the
+//! official seed meant every installation started with three guessable,
+//! shared-password accounts.
 
 use crate::db::Db;
 use crate::error::AppResult;
@@ -20,19 +42,28 @@ const SEED_MARKER: &str = "seed.completed_at";
 /// Marker for the current starter catalog version.
 const CATALOG_SEED_MARKER: &str = "seed.catalog.v4.completed_at";
 
-/// Default starter accounts.
+/// Real starter accounts of the business.
 ///
 /// Public so the developer-reset test can assert the re-seeded account count
 /// against the real list instead of a hardcoded number that silently rots the
 /// next time a starter account is added.
+///
+/// These are the café's OWN people with their own credentials. The
+/// demonstration logins (`admin`, `manager`, `cashier`) are NOT here — they
+/// live in `crate::demo_data::DEMO_USERS`, because a shared, guessable
+/// password must never reach a production installation.
 pub const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
-    ("admin", None, "ADMIN", "admin123"),
-    ("manager", None, "MANAGER", "manager123"),
     ("amira", None, "MANAGER", "20192"),
-    ("cashier", None, "STAFF", "cashier123"),
     ("momo", None, "STAFF", "11111"),
     ("foly", None, "STAFF", "22222"),
 ];
+
+/// Usernames that used to be demonstration accounts in this seed.
+///
+/// Kept as a named list so the tests that assert the OFFICIAL dataset is free
+/// of demo records can state the exclusion explicitly instead of hardcoding
+/// strings at each call site.
+pub const FORMER_DEMO_USERNAMES: &[&str] = &["admin", "manager", "cashier"];
 
 /// Current Station starter catalog.
 ///
@@ -534,16 +565,31 @@ fn insert_default_products(conn: &Db) -> AppResult<()> {
             )?;
 
             if *quantity != 0 {
-                conn.execute(
-                    "INSERT INTO stock_movements
-                        (product_id, change, reason, note, ref_invoice_id, user_id)
-                     VALUES (?1, ?2, 'ADJUSTMENT', 'initial_stock', NULL,
-                        (SELECT id FROM users
-                         WHERE role = 'ADMIN'
-                         ORDER BY id
-                         LIMIT 1))",
-                    rusqlite::params![product_id, quantity],
-                )?;
+                // The opening movement is attributed to a real user, because
+                // `stock_movements.user_id` is NOT NULL. An ADMIN is preferred,
+                // but the official dataset no longer ships one: it holds the
+                // café's own accounts, and a fresh installation therefore has
+                // no ADMIN at all until a developer reset creates `Belly` or a
+                // manager is promoted. Falling back to the lowest-id account —
+                // and skipping the movement entirely on a database with no user
+                // yet — keeps the catalog seedable in every one of those states
+                // instead of aborting the whole seed on a NOT NULL constraint.
+                let actor: Option<i64> = conn
+                    .query_row(
+                        "SELECT id FROM users ORDER BY (role <> 'ADMIN'), id LIMIT 1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .ok();
+
+                if let Some(user_id) = actor {
+                    conn.execute(
+                        "INSERT INTO stock_movements
+                            (product_id, change, reason, note, ref_invoice_id, user_id)
+                         VALUES (?1, ?2, 'ADJUSTMENT', 'initial_stock', NULL, ?3)",
+                        rusqlite::params![product_id, quantity, user_id],
+                    )?;
+                }
             }
         }
     }
@@ -1130,5 +1176,132 @@ mod tests {
             .unwrap();
 
         assert_eq!(order_line_count, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // THE OFFICIAL DATASET IS PRODUCTION-SAFE — NO DEMO / SAMPLE RECORDS
+    // -----------------------------------------------------------------------
+
+    /// Every class of row that must be EMPTY after the official seed.
+    ///
+    /// The official dataset is baseline + catalog only. If any of these is
+    /// non-zero, "Load Official Data" has leaked sample business data into a
+    /// production installation, which is exactly the regression this file's
+    /// header exists to prevent.
+    const BUSINESS_DATA_TABLES: &[&str] = &[
+        "customers",
+        "cars",
+        "orders",
+        "order_lines",
+        "invoices",
+        "invoice_lines",
+        "invoice_customers",
+        "payments",
+        "credit_accounts",
+        "credit_payments",
+        "wash_tickets",
+        "shifts",
+        "business_days",
+        "expenses",
+        "stock_movements",
+        "table_sessions",
+        "day_closings",
+        "attendance_days",
+        "employee_advances",
+        "payroll_runs",
+    ];
+
+    fn count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn exists(conn: &Connection, sql: &str, arg: &str) -> bool {
+        conn.query_row(sql, [arg], |r| r.get::<_, i64>(0)).unwrap() == 1
+    }
+
+    /// The official seed creates no demo account, and specifically none of the
+    /// three that used to live in `DEFAULT_USERS`.
+    #[test]
+    fn the_official_seed_creates_no_demo_accounts() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        for name in FORMER_DEMO_USERNAMES {
+            assert!(
+                !exists(&conn, "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)", name),
+                "{name} is a DEMO account and must never be created by the official seed"
+            );
+        }
+        // And the real business accounts ARE created.
+        for (name, ..) in DEFAULT_USERS {
+            assert!(
+                exists(&conn, "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)", name),
+                "{name} is a real starter account and must be seeded"
+            );
+        }
+    }
+
+    /// The official seed creates no sample BUSINESS record either.
+    ///
+    /// This is the whole point of the separation: an installation that only ever
+    /// ran "Load Official Data" must hold the baseline and the catalog, and
+    /// nothing that looks like trading history.
+    #[test]
+    fn the_official_seed_creates_no_sample_business_records() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        for table in BUSINESS_DATA_TABLES {
+            assert_eq!(count(&conn, table), 0, "{table} must be empty after the official seed");
+        }
+        // The baseline that legitimately DOES exist.
+        assert!(count(&conn, "products") > 0, "the official catalog is official data");
+        assert_eq!(count(&conn, "cafe_tables"), 12);
+        assert_eq!(count(&conn, "users"), DEFAULT_USERS.len() as i64);
+    }
+
+    /// A FRESH install with no ADMIN anywhere must still seed successfully.
+    ///
+    /// Regression guard for the opening-stock movement, which used to be
+    /// attributed to "the first ADMIN user" and therefore had no user at all
+    /// once the demonstration admin was removed from the seed.
+    #[test]
+    fn the_official_seed_succeeds_without_any_admin_account() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        let admins: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE role = 'ADMIN'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(admins, 0, "the official dataset ships no admin by design");
+
+        // The catalog's opening stock still landed, attributed to a real user.
+        let tracked: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM inventory_items i
+                 JOIN products p ON p.id = i.product_id
+                 WHERE p.track_inventory = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(tracked > 0);
+        let orphan_movements: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM stock_movements WHERE user_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan_movements, 0, "every movement needs a real actor");
     }
 }

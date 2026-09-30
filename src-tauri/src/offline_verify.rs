@@ -46,7 +46,7 @@ fn open_real_db(dir: &PathBuf) -> Connection {
     conn.pragma_update(None, "synchronous", "FULL").unwrap();
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
     db::migrate(&conn).expect("migrate real db file");
-    crate::seed::run_if_empty(&conn).expect("seed real db file");
+    crate::demo_data::seed_for_development(&conn).expect("seed real db file");
     conn
 }
 

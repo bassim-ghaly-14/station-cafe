@@ -106,19 +106,63 @@ pub fn root_asset_key(path: &str) -> Option<&str> {
 ///
 /// The path must already be free of its query string. Matching is exact and
 /// case-sensitive.
+///
+/// This is the SYNTAX-ONLY form: it decides which NAMESPACE a path belongs to
+/// and never whether a file is present. `/assets/anything.js` is reported as
+/// [`Route::Asset`] here even when the bundle has no such file, so the decision
+/// "does this asset exist?" is left to the resolver in [`route_with`], which is
+/// what the server actually uses.
+///
+/// Use [`route_with`] wherever the embedded bundle is reachable; prefer this
+/// form only where no resolver is available and the caller resolves existence
+/// itself.
 pub fn route(path: &str) -> Route<'_> {
+    route_with(path, |_| true)
+}
+
+/// Resolve a request path, asking the resolver whether a candidate asset
+/// genuinely exists.
+///
+/// `exists` is the ONE definition of "this asset is real", supplied by the
+/// caller so this module never grows a second, divergent path-resolution
+/// system. The listener passes the embedded bundle
+/// ([`super::server`]'s `embedded_asset` lookup), so the classification and the
+/// bytes that are later served can never disagree about existence.
+///
+/// A `/assets/` path is an [`Route::Asset`] only when the resolver confirms the
+/// file is there. A well-formed but ABSENT asset is [`Route::NotFound`]: it must
+/// never become the SPA shell, because answering a missing script or stylesheet
+/// with an HTML document surfaces in the browser as a baffling parse error
+/// rather than an honest 404.
+///
+/// The safety rules are unchanged and still structural: `asset_key` refuses an
+/// unsafe path before `exists` is ever consulted, so no traversal attempt is
+/// ever looked up, and a refused `/assets/` path stays `NotFound`.
+pub fn route_with<'a, F: Fn(&str) -> bool>(path: &'a str, exists: F) -> Route<'a> {
     if path == "/" || path == INDEX {
         return Route::Index;
     }
     if let Some(key) = asset_key(path) {
-        return Route::Asset(key);
+        // A safe key is not yet an asset: it must also be present.
+        return if exists(key) {
+            Route::Asset(key)
+        } else {
+            Route::NotFound
+        };
     }
     // The named root assets, and only those. This is checked BEFORE the
     // file-like-path rule below, which would otherwise claim every one of them
     // (they all carry an extension) and 404 them. It sits AFTER the `/assets/`
     // test so that namespace keeps its own strict handling untouched.
+    //
+    // These are also existence-checked: a name listed here but absent from the
+    // bundle answers an honest 404 rather than an invented asset.
     if let Some(key) = root_asset_key(path) {
-        return Route::Asset(key);
+        return if exists(key) {
+            Route::Asset(key)
+        } else {
+            Route::NotFound
+        };
     }
     // Anything under `/assets/` that is not a safe key is a bad request, never
     // the shell: answering a missing stylesheet or script with HTML would
@@ -192,15 +236,50 @@ mod tests {
         // Answering a missing script with a whole HTML document would surface
         // as a baffling parse error in the browser.
         assert_eq!(route("/nope.js"), Route::NotFound);
-        assert_eq!(route("/assets/missing-abc.js"), Route::NotFound);
+        // A well-formed `/assets/` path is only an asset when the bundle really
+        // carries it; absent, it is an honest 404 and never the shell.
+        assert_eq!(
+            route_with("/assets/missing-abc.js", |_| false),
+            Route::NotFound
+        );
     }
 
     #[test]
     fn assets_are_recognised() {
-        assert_eq!(
-            route("/assets/index-abc123.js"),
-            Route::Asset("/assets/index-abc123.js")
-        );
+        // Existence is the resolver's job, so this states the rule against an
+        // explicit bundle rather than a hardcoded build fingerprint. A real
+        // bundled script is an asset...
+        let bundled = ["/assets/index-abc123.js", "/assets/index-Ab12Cd34.css"];
+        for path in bundled {
+            assert_eq!(
+                route_with(path, |key| bundled.contains(&key)),
+                Route::Asset(path),
+                "{path}"
+            );
+        }
+        // ...and the very same well-formed path is a 404 when the bundle does
+        // not carry it. This is the whole point of the existence check: the
+        // syntax alone must never promote a missing file to an asset.
+        for path in bundled {
+            assert_eq!(route_with(path, |_| false), Route::NotFound, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_missing_asset_is_never_the_shell_however_it_is_asked() {
+        // The same absent path must be `NotFound` and never the shell, so a
+        // missing script can never be answered with an HTML document.
+        for path in ["/assets/missing-abc.js", "/assets/missing-abc123.js"] {
+            assert_eq!(route_with(path, |_| false), Route::NotFound, "{path}");
+            assert!(
+                !matches!(route_with(path, |_| false), Route::Spa | Route::Index),
+                "{path} must never fall back to the shell"
+            );
+        }
+        // Absent root assets behave identically, rather than being invented.
+        for path in ROOT_ASSETS {
+            assert_eq!(route_with(path, |_| false), Route::NotFound, "{path}");
+        }
     }
 
     #[test]
@@ -209,12 +288,8 @@ mod tests {
         // Vite copies `public/` to the root of the bundle without fingerprinting
         // it. They must reach the SAME embedded lookup as `/assets/`, not a
         // second one — hence `Route::Asset` with the request path as the key.
-        for path in [
-            "/station-cafe.png",
-            "/station-print.png",
-            "/site.webmanifest",
-        ] {
-            assert_eq!(route(path), Route::Asset(path), "{path}");
+        for path in ROOT_ASSETS {
+            assert_eq!(route_with(path, |key| ROOT_ASSETS.contains(&key)), Route::Asset(path), "{path}");
             assert_eq!(root_asset_key(path), Some(path), "{path}");
         }
     }

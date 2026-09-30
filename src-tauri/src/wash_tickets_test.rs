@@ -15,7 +15,7 @@
 
 use crate::db::migrate;
 use crate::repositories::{catalog, customers, pos};
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::{auth, checkout, pos as pos_svc, shifts as shift_svc};
 use rusqlite::Connection;
 

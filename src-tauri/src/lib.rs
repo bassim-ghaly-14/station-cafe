@@ -18,6 +18,7 @@ mod commands;
 #[cfg(test)]
 mod customer_analytics_test;
 mod db;
+mod demo_data;
 #[cfg(test)]
 mod deletion_test;
 #[cfg(test)]
@@ -289,6 +290,7 @@ pub fn run() {
             commands::ops::list_print_jobs,
             commands::developer::clear_database,
             commands::developer::load_official_data,
+            commands::developer::load_demo_data,
             commands::employees::list_employees,
             commands::employees::employee_overview,
             commands::employees::my_attendance,

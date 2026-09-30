@@ -27,7 +27,7 @@ mod runtime_tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         crate::db::migrate(&conn).unwrap();
-        crate::seed::run_if_empty(&conn).unwrap();
+        crate::demo_data::seed_for_development(&conn).unwrap();
         conn
     }
 
@@ -58,6 +58,18 @@ mod runtime_tests {
         .user
     }
 
+    /// Sign in as the manager and RELEASE the database lock before returning.
+    ///
+    /// Writing this as `manager(&conn.lock().unwrap())` looks equivalent but
+    /// deadlocks: the temporary `MutexGuard` is dropped at the end of the
+    /// enclosing STATEMENT, not at the end of the argument, so the lock is
+    /// still held when `save_and_apply` locks the same non-reentrant mutex
+    /// again. Scoping the guard here releases it before the caller proceeds.
+    fn manager_session(db: &Arc<Mutex<Connection>>) -> auth::User {
+        let conn = db.lock().unwrap();
+        manager(&conn)
+    }
+
     /// An enabled configuration bound to loopback, which is a REAL socket we
     /// can drive deterministically. Production uses the classified LAN
     /// address; the lifecycle being tested is identical.
@@ -75,6 +87,22 @@ mod runtime_tests {
             .local_addr()
             .unwrap()
             .port()
+    }
+
+    /// An enabled configuration on the machine's REAL LAN address.
+    ///
+    /// Used by the tests that persist the configuration through `config::set`,
+    /// which deliberately refuses a loopback bind — so the address has to be a
+    /// real one. This is also what production does: the stored `bind` is the
+    /// LAN interface, not a literal the operator typed.
+    fn enabled_on_lan(port: u16) -> NetworkConfig {
+        let ip = crate::network::address::select_lan_address()
+            .expect("this machine has a usable LAN address to bind");
+        NetworkConfig {
+            enabled: true,
+            bind: ip.to_string(),
+            port,
+        }
     }
 
     // ---- startup ----------------------------------------------------------
@@ -111,21 +139,21 @@ mod runtime_tests {
 
         let off = runtime::save_and_apply(
             &s,
-            &manager(&conn.lock().unwrap()),
+            &manager_session(&conn),
             &NetworkConfig::default(),
         )
         .unwrap();
         assert!(!off.running);
 
         let on =
-            runtime::save_and_apply(&s, &manager(&conn.lock().unwrap()), &enabled_on(port))
+            runtime::save_and_apply(&s, &manager_session(&conn), &enabled_on_lan(port))
                 .unwrap();
         assert!(on.running, "enabling must actually start it");
         let bound = on.address.expect("a bound address");
 
         let off_again = runtime::save_and_apply(
             &s,
-            &manager(&conn.lock().unwrap()),
+            &manager_session(&conn),
             &NetworkConfig::default(),
         )
         .unwrap();
@@ -137,8 +165,8 @@ mod runtime_tests {
         while std::time::Instant::now() < deadline {
             match runtime::save_and_apply(
                 &s,
-                &manager(&conn.lock().unwrap()),
-                &enabled_on(port),
+                &manager_session(&conn),
+                &enabled_on_lan(port),
             ) {
                 Ok(status) if status.running => {
                     rebound = Some(status);
@@ -277,8 +305,10 @@ mod runtime_tests {
         let conn = Arc::new(Mutex::new(fresh()));
         let s = state(Arc::clone(&conn));
         let port = free_port();
-        assert!(runtime::apply(&s, &enabled_on(port)).running);
-        assert!(runtime::apply(&s, &enabled_on(port)).running);
+        let first = runtime::apply(&s, &enabled_on(port));
+        assert!(first.running, "first apply: {first:?}");
+        let second = runtime::apply(&s, &enabled_on(port));
+        assert!(second.running, "second apply: {second:?}");
         assert!(s.api.lock().unwrap().is_some());
         runtime::stop(&s);
     }
@@ -293,11 +323,25 @@ mod runtime_tests {
 use crate::network::api::{self, ApiRequest};
 use crate::services::auth;
 
+/// Serialises the tests that exercise the process-wide login limiter.
+///
+/// The limiter is a deliberate singleton shared by every connection thread, so
+/// it cannot be made per-test without changing production behaviour. Its
+/// `reset` helper, though, clears the WHOLE map — so a test running in parallel
+/// could wipe another test's accumulated attempts and make an assertion about
+/// "the next attempt is refused" depend on scheduling. Holding this lock for the
+/// duration of such a test makes the count it asserts its own. The lock is
+/// test-only: production never takes it.
+fn login_limiter_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn fresh() -> rusqlite::Connection {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
     crate::db::migrate(&conn).unwrap();
-    crate::seed::run_if_empty(&conn).unwrap();
+    crate::demo_data::seed_for_development(&conn).unwrap();
     conn
 }
 
@@ -313,6 +357,19 @@ fn req(method: &str, route: &str) -> ApiRequest {
         client: "10.0.0.9".into(),
         body: String::new(),
     }
+}
+
+/// The same request, from a client address of the caller's choosing.
+///
+/// The login limiter is a process-wide singleton keyed by client address, so
+/// tests that count attempts must not share a key: with a common one, a
+/// concurrently running test's attempts land in the same window and the count
+/// this test asserts is no longer its own. A per-test key keeps each test's
+/// attempts its own, which is what "ten attempts then a refusal" means.
+fn req_from(client: &str, method: &str, route: &str) -> ApiRequest {
+    let mut r = req(method, route);
+    r.client = client.to_string();
+    r
 }
 
 fn with_token(mut r: ApiRequest, token: &str) -> ApiRequest {
@@ -479,6 +536,7 @@ fn a_wrong_password_is_401_and_never_echoes_the_attempt() {
 #[test]
 fn login_returns_a_usable_token_and_safe_identity() {
     let conn = fresh();
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
     let out = api::handle(&login_body("manager", "manager123"), &conn).unwrap();
     assert_eq!(out.status, 200);
@@ -495,6 +553,7 @@ fn a_network_login_uses_the_shared_session_table_and_is_audited() {
     // One session store for the POS and the network: a manager is not logged
     // into two separate worlds.
     let conn = fresh();
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
     let before: i64 = conn
         .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
@@ -517,13 +576,21 @@ fn a_network_login_uses_the_shared_session_table_and_is_audited() {
 #[test]
 fn repeated_failed_logins_are_throttled() {
     let conn = fresh();
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
+    // A key of this test's own, so the attempts counted below are its own.
+    let client = "10.0.0.101";
+    let attempt = |password: &str| {
+        let mut r = req_from(client, "POST", "/auth/login");
+        r.body = serde_json::json!({ "name": "manager", "password": password }).to_string();
+        r
+    };
     for _ in 0..10 {
-        assert_eq!(api::handle(&login_body("manager", "wrong"), &conn).unwrap_err().status, 401);
+        assert_eq!(api::handle(&attempt("wrong"), &conn).unwrap_err().status, 401);
     }
     // The next attempt in the window is refused before any password is checked.
     assert_eq!(
-        api::handle(&login_body("manager", "wrong"), &conn).unwrap_err().code,
+        api::handle(&attempt("wrong"), &conn).unwrap_err().code,
         "RATE_LIMITED"
     );
 }
@@ -533,11 +600,19 @@ fn a_correct_login_is_never_locked_out_by_earlier_typos() {
     // The throttle must not become a denial of service against the cafe's own
     // manager: a successful authentication clears the counter.
     let conn = fresh();
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
+    // This test's own client key, for the same reason as the throttle test.
+    let client = "10.0.0.102";
+    let attempt = |password: &str| {
+        let mut r = req_from(client, "POST", "/auth/login");
+        r.body = serde_json::json!({ "name": "manager", "password": password }).to_string();
+        r
+    };
     for _ in 0..5 {
-        let _ = api::handle(&login_body("manager", "typo"), &conn);
+        let _ = api::handle(&attempt("typo"), &conn);
     }
-    assert_eq!(api::handle(&login_body("manager", "manager123"), &conn).unwrap().status, 200);
+    assert_eq!(api::handle(&attempt("manager123"), &conn).unwrap().status, 200);
 }
 
 // ---- bind resolution ----------------------------------------------------
@@ -583,6 +658,7 @@ fn http_get(addr: std::net::SocketAddr, path: &str, header: Option<&str>) -> (u1
 
 #[test]
 fn the_listener_serves_health_over_a_real_socket() {
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
@@ -623,6 +699,7 @@ fn the_api_stays_usable_when_discovery_is_impossible() {
 
 #[test]
 fn a_bearer_token_authorizes_a_real_socket_request() {
+    let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
     let conn = std::sync::Arc::new(std::sync::Mutex::new(fresh()));
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
@@ -767,6 +844,7 @@ mod web_tests {
     //! split holds on the wire.
 
     use crate::network::web::{self, Route};
+    use crate::network_test::login_limiter_guard;
     use crate::services::auth;
     use rusqlite::Connection;
     use std::net::SocketAddr;
@@ -778,7 +856,7 @@ mod web_tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         crate::db::migrate(&conn).unwrap();
-        crate::seed::run_if_empty(&conn).unwrap();
+        crate::demo_data::seed_for_development(&conn).unwrap();
         conn
     }
 
@@ -829,7 +907,13 @@ mod web_tests {
         // Answering a missing script with HTML would surface as a baffling
         // parse error in the browser instead of a clean 404.
         assert_eq!(web::route("/nope.js"), Route::NotFound);
-        assert_eq!(web::route("/assets/missing-abc123.js"), Route::NotFound);
+        // A well-formed `/assets/` path becomes an asset only when the embedded
+        // bundle really carries it. Absent, it is an honest 404 — never the
+        // shell, which would surface as a baffling parse error in the browser.
+        assert_eq!(
+            web::route_with("/assets/missing-abc123.js", |_| false),
+            Route::NotFound
+        );
     }
 
     #[test]
@@ -854,12 +938,12 @@ mod web_tests {
         // bundle, so the application asks for these three by a root-relative
         // URL. They were 404ing on every phone, which is why the station logo
         // was missing from the LAN browser while working on the till.
-        for path in [
-            "/station-cafe.png",
-            "/station-print.png",
-            "/site.webmanifest",
-        ] {
-            assert_eq!(web::route(path), Route::Asset(path), "{path}");
+        for path in web::ROOT_ASSETS {
+            assert_eq!(
+                web::route_with(path, |key| web::ROOT_ASSETS.contains(&key)),
+                Route::Asset(path),
+                "{path}"
+            );
         }
     }
 
@@ -939,6 +1023,7 @@ mod web_tests {
 
     #[test]
     fn the_api_namespace_keeps_its_json_404() {
+        let _limiter = login_limiter_guard();
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
@@ -1056,6 +1141,7 @@ mod web_tests {
     #[test]
     fn the_api_is_still_authenticated_and_role_protected() {
         // Serving the browser must not have relaxed a single API rule.
+        let _limiter = login_limiter_guard();
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
@@ -1088,6 +1174,7 @@ mod web_tests {
 
     #[test]
     fn login_over_the_socket_authenticates_against_the_rust_services() {
+        let _limiter = login_limiter_guard();
         crate::network::server::reset_login_limiter_for_tests();
         let conn = shared(fresh());
         let handle = start(&conn);
@@ -1188,7 +1275,7 @@ mod qr_access_tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         crate::db::migrate(&conn).unwrap();
-        crate::seed::run_if_empty(&conn).unwrap();
+        crate::demo_data::seed_for_development(&conn).unwrap();
         conn
     }
 
@@ -1288,4 +1375,3 @@ mod qr_access_tests {
         assert!(!url.contains('?') && !url.contains('#') && !url.contains('@'));
     }
 }
-

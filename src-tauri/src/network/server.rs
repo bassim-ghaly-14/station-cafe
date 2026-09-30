@@ -59,6 +59,15 @@ pub fn reset_login_limiter_for_tests() {
     *cell = Some(api::RateLimiter::default_login());
 }
 
+/// How long `stop` waits for the OS to actually release the listening socket.
+///
+/// A backstop, not an expected delay: the wait ends as soon as the port is
+/// bindable again. It only exists so a wedged socket cannot hang shutdown.
+const PORT_RELEASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How often that wait re-checks the port while waiting.
+const PORT_RELEASE_POLL: std::time::Duration = std::time::Duration::from_millis(5);
+
 /// A running listener. Dropping the handle does NOT stop the server; call
 /// [`ServerHandle::stop`] so shutdown is explicit and observable.
 pub struct ServerHandle {
@@ -87,6 +96,15 @@ impl ServerHandle {
     /// Safe to call more than once. `unblock()` is what makes `recv()` return
     /// so the loop can observe the flag; dropping the last `Server` reference
     /// is what actually closes the listening socket.
+    ///
+    /// The port is not released the instant `Server` is dropped. `tiny_http`
+    /// closes its listener from an INTERNAL accept thread, woken by the
+    /// self-connect in its `Drop`, so the socket can outlive this call by a few
+    /// milliseconds. Returning early made this method break its own contract:
+    /// the very next `apply` re-bound the same port and failed with
+    /// `bind_failed`, which is how "applying the same configuration twice"
+    /// stopped being safe. So the release is WAITED FOR, bounded, rather than
+    /// assumed — the caller is told the port is free only when it genuinely is.
     pub fn stop(&self) {
         if !self.running.swap(false, Ordering::SeqCst) {
             return;
@@ -101,6 +119,37 @@ impl ServerHandle {
         // Dropped here, after the accept thread has exited, so the listening
         // socket is closed and the port is immediately reusable.
         drop(server);
+        self.await_port_release();
+    }
+
+    /// Block until this listener's port is genuinely free, or the deadline ends.
+    ///
+    /// This waits on a CONDITION (the port becoming bindable again), not on a
+    /// fixed delay, so it returns as soon as the socket is really gone. The
+    /// bound is a backstop so a wedged socket can never hang shutdown; a genuine
+    /// leak is still reported by the tests that assert the port is reusable.
+    fn await_port_release(&self) {
+        let deadline = std::time::Instant::now() + PORT_RELEASE_TIMEOUT;
+        loop {
+            // Binding is the only reliable proof the listener is gone. The
+            // probe socket is dropped immediately, before the next attempt.
+            match std::net::TcpListener::bind(self.addr) {
+                Ok(probe) => {
+                    drop(probe);
+                    return;
+                }
+                Err(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(PORT_RELEASE_POLL);
+                }
+                Err(_) => {
+                    log::error!(
+                        "local api: port {} is still bound after stop(); it may leak",
+                        self.addr
+                    );
+                    return;
+                }
+            }
+        }
     }
 }
 
@@ -114,18 +163,27 @@ impl Drop for ServerHandle {
 
 /// Start the listener on `addr`.
 ///
-/// The application handle is read from `state`. It is required, not optional,
-/// because it is the ONLY route to the two things this listener serves: the
-/// embedded Station assets (`asset_resolver`) and the real `State<AppState>`
-/// the commands need. Using it is what keeps the browser on the same commands
-/// as the desktop instead of on a parallel implementation.
+/// `app` is the running application. It is what lets this listener serve the
+/// two surfaces that need one — the embedded Station assets (`asset_resolver`)
+/// and the real `State<AppState>` the commands reach — and it is what keeps the
+/// browser on the same commands as the desktop instead of on a parallel
+/// implementation.
+///
+/// It is OPTIONAL, and that is a deliberate distinction rather than a
+/// convenience. The JSON API needs only the database, which this function
+/// already receives. A listener with no handle still answers `/api/v1/health`
+/// and every authenticated route for real; only the browser surface and the
+/// command bridge report that they are unavailable, and they do so per request
+/// ([`super::runtime::ERR_NO_APP_HANDLE`]) instead of the whole service refusing
+/// to bind. Binding is decided by the address and the port, so an enabled
+/// configuration that resolved an address must actually open its socket.
 ///
 /// Returns a typed failure instead of panicking, because the caller — the
 /// application startup path — must be able to carry on without the network.
 pub fn start(
     addr: SocketAddr,
     conn: Arc<Mutex<crate::repositories::Db>>,
-    app: tauri::AppHandle,
+    app: Option<tauri::AppHandle>,
 ) -> Result<ServerHandle, String> {
     let server = Server::http(addr).map_err(|e| format!("cannot bind {addr}: {e}"))?;
     let bound = server
@@ -140,7 +198,7 @@ pub fn start(
         let running = Arc::clone(&running);
         std::thread::Builder::new()
             .name("station-api".into())
-            .spawn(move || serve_forever(server, running, conn, Some(app)))
+            .spawn(move || serve_forever(server, running, conn, app))
             .map_err(|e| format!("cannot start API thread: {e}"))?
     };
 
@@ -154,38 +212,16 @@ pub fn start(
 
 /// Start the listener with NO application handle.
 ///
-/// Test-only seam. The browser application and the command bridge are served
-/// from Tauri's embedded asset set and need a real `AppHandle`; a unit test has
-/// none, so this exposes the JSON API alone. Production always goes through
-/// [`start`], which requires the handle — so this cannot be reached by a
-/// running cafe application, and a missing handle is reported rather than
-/// quietly degraded (see [`crate::network::runtime::ERR_NO_APP_HANDLE`]).
+/// A thin seam over [`start`] rather than a second implementation: the browser
+/// application and the command bridge are served from Tauri's embedded asset
+/// set and need a real `AppHandle`, so those two surfaces only exist inside a
+/// running application. Passing `None` serves the JSON API alone.
 #[cfg(test)]
 pub fn start_api_only(
     addr: SocketAddr,
     conn: Arc<Mutex<crate::repositories::Db>>,
 ) -> Result<ServerHandle, String> {
-    let server = Server::http(addr).map_err(|e| format!("cannot bind {addr}: {e}"))?;
-    let bound = server
-        .server_addr()
-        .to_ip()
-        .ok_or_else(|| "bound address is not an IP".to_string())?;
-    let server = Arc::new(server);
-    let running = Arc::new(AtomicBool::new(true));
-    let thread = {
-        let server = Arc::clone(&server);
-        let running = Arc::clone(&running);
-        std::thread::Builder::new()
-            .name("station-api-test".into())
-            .spawn(move || serve_forever(server, running, conn, None))
-            .map_err(|e| format!("cannot start API thread: {e}"))?
-    };
-    Ok(ServerHandle {
-        running,
-        server: Mutex::new(Some(server)),
-        thread: Mutex::new(Some(thread)),
-        addr: bound,
-    })
+    start(addr, conn, None)
 }
 
 fn serve_forever(
@@ -233,12 +269,7 @@ fn respond(
 
     // 1. The real command surface.
     if let Some(name) = command_name(&req.path) {
-        // Without a running application there are no real commands to call,
-        // and that is reported honestly rather than answered with empty data.
-        return match app {
-            Some(app) => command_response(&req, name, app, conn),
-            None => error_response(&ApiError::internal()),
-        };
+        return command_response(&req, name, app, conn);
     }
 
     // 2. The JSON API.
@@ -294,17 +325,26 @@ pub fn command_name(path: &str) -> Option<&str> {
 /// The token is read ONLY from the `Authorization` header. `api::reject_query_token`
 /// has already refused a token sent in the query string, and the body is used
 /// solely for command arguments, so a token can never appear in a URL.
+///
+/// The order below is the contract, and it is the same order the desktop IPC
+/// layer uses: METHOD, then SESSION, then ARGUMENTS, and only then the command
+/// itself. Each of those three is decided WITHOUT a running application,
+/// because they are properties of the request, not of the server: a GET to a
+/// command route is a 405 and a request with no token is a 401 whether or not a
+/// Tauri handle happens to exist. Only the final step — actually invoking a
+/// command — needs the application, so only that step reports its absence.
 fn command_response(
     req: &ApiRequest,
     name: &str,
-    app: &tauri::AppHandle,
+    app: Option<&tauri::AppHandle>,
     conn: &Arc<Mutex<crate::repositories::Db>>,
 ) -> ResponseBox {
+    // 1. Method. Commands mutate state; only an explicit POST may run one.
     if !matches!(req.method.as_str(), "POST") {
         return error_response(&ApiError::method_not_allowed());
     }
 
-    // Resolve the SESSION before anything else.
+    // 2. Session, resolved before anything else.
     //
     // Authentication strictly precedes argument validation, exactly as it does
     // on the desktop, where the command receives its token first. Doing it the
@@ -328,12 +368,31 @@ fn command_response(
         }
     }
 
+    // 3. Arguments. A body that is not JSON is a client error, not a crash.
     let body: serde_json::Value = if req.body.trim().is_empty() {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
         match serde_json::from_str(&req.body) {
             Ok(v) => v,
             Err(_) => return error_response(&ApiError::bad_request()),
+        }
+    };
+    // A REQUIRED argument that is absent or null is refused here, as a 400,
+    // rather than reaching the command and being defaulted into a business rule
+    // being skipped. Checked against the same table the dispatch arms are built
+    // from, so the two cannot drift.
+    if let Some(missing) = super::bridge::missing_required_argument(name, &body) {
+        log::debug!("local api: command {name} is missing required argument {missing}");
+        return error_response(&ApiError::bad_request());
+    }
+
+    // 4. The command itself. Only this needs the running application, and its
+    //    absence is reported honestly rather than answered with empty data.
+    let app = match app {
+        Some(app) => app,
+        None => {
+            log::error!("local api: no application handle; command {name} cannot run");
+            return error_response(&ApiError::internal());
         }
     };
     match crate::network::bridge::call(app, name, &token, &body) {
@@ -368,7 +427,11 @@ fn web_response(req: &ApiRequest, app: &tauri::AppHandle) -> ResponseBox {
     if !matches!(req.method.as_str(), "GET" | "HEAD") {
         return error_response(&ApiError::method_not_allowed());
     }
-    match web::route(&req.path) {
+    // The classification asks the SAME embedded-bundle lookup the response
+    // below uses, so "is this an asset?" and "are these its bytes?" can never
+    // disagree: a well-formed `/assets/` path that is absent from the bundle is
+    // classified `NotFound` up front and answered with an honest 404.
+    match web::route_with(&req.path, |key| embedded_asset(app, key).is_some()) {
         // The SPA fallback: a client-side route is answered with the SAME shell
         // as `/`, because the application — not the server — owns that routing.
         web::Route::Index | web::Route::Spa => shell(app),

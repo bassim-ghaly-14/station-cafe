@@ -24,7 +24,7 @@
 use crate::db::migrate;
 use crate::error::AppError;
 use crate::repositories::expenses;
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::auth::{self, User};
 use crate::services::ops as ops_svc;
 use rusqlite::Connection;

@@ -7,6 +7,7 @@
 //!   hide features, but hiding is never the security boundary.
 
 use crate::error::{AppError, AppResult};
+use crate::repositories::employees;
 pub use crate::repositories::users::User;
 use crate::repositories::users::{self};
 use crate::repositories::Db;
@@ -84,6 +85,18 @@ pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
         return Err(AppError::unauthorized("auth.suspended"));
     }
 
+    // The EMPLOYEE record is the authoritative statement of whether this person
+    // may work, so it is consulted directly rather than being inferred from the
+    // login's own status. `set_employee_status` suspends both rows in one
+    // transaction, so the two normally agree — but authentication is the place
+    // where being wrong is unacceptable, and a desynchronised pair (a hand
+    // edited row, a restored backup, a future writer that forgets the cascade)
+    // must never authenticate an employee the HR record calls INACTIVE.
+    match employees::find_by_user(conn, record.user.id)? {
+        Some(employee) if employee.status == "ACTIVE" => {}
+        _ => return Err(AppError::unauthorized("auth.suspended")),
+    }
+
     let mut raw = [0u8; 24];
     rand::thread_rng().fill_bytes(&mut raw);
     let token = hex(&raw);
@@ -134,7 +147,18 @@ pub fn require_user(conn: &Db, token: &str) -> AppResult<User> {
         return Err(AppError::unauthorized("auth.session_expired"));
     }
 
-    users::find_by_id(conn, id)?.ok_or_else(|| AppError::unauthorized("auth.invalid_session"))
+    // An employee deactivated AFTER signing in must not keep working off the
+    // session they already hold. Every protected command resolves its actor
+    // through here, so re-checking the authoritative employee status on each
+    // validation ends that session at the next request instead of letting it
+    // live out its 14-hour TTL. This is the stateless way to do it: the session
+    // row is left intact (it is a historical fact) and only its USE is refused.
+    let user = users::find_by_id(conn, id)?
+        .ok_or_else(|| AppError::unauthorized("auth.invalid_session"))?;
+    match employees::find_by_user(conn, user.id)? {
+        Some(employee) if employee.status == "ACTIVE" => Ok(user),
+        _ => Err(AppError::unauthorized("auth.suspended")),
+    }
 }
 
 /// Authorization gate: the actor's role must satisfy the requirement.
@@ -153,6 +177,16 @@ fn rank(role: &str) -> u8 {
         "STAFF" => 1,
         _ => 0,
     }
+}
+
+/// Whether a role may read the WHOLE catalog, deactivated items included.
+///
+/// The single place that answers "may this actor see inactive products?", so the
+/// command and any future caller cannot drift apart. Exposed (rather than
+/// reusing the numeric `rank`) because the question is not "is this role strong
+/// enough" but "is this role a catalog manager".
+pub fn may_manage_catalog(role: &str) -> bool {
+    rank(role) >= rank("MANAGER")
 }
 
 /// Revoke the session (logout).
@@ -226,7 +260,7 @@ pub fn validate_password(p: &str) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::db::migrate;
-    use crate::seed::run_if_empty;
+    use crate::demo_data::seed_for_development as run_if_empty;
     use rusqlite::Connection;
 
     fn fresh() -> Connection {
@@ -235,6 +269,193 @@ mod tests {
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
         conn
+    }
+
+    fn as_user(conn: &Connection, name: &str, password: &str) -> User {
+        login(
+            conn,
+            &LoginInput {
+                name: name.into(),
+                password: password.into(),
+            },
+        )
+        .unwrap()
+        .user
+    }
+
+    /// The employee record behind a seeded login.
+    fn employee_of(conn: &Connection, user: &User) -> i64 {
+        employees::find_by_user(conn, user.id)
+            .unwrap()
+            .expect("a login always has an employee record")
+            .id
+    }
+
+    fn try_login(conn: &Connection, name: &str, password: &str) -> AppResult<SessionInfo> {
+        login(
+            conn,
+            &LoginInput {
+                name: name.into(),
+                password: password.into(),
+            },
+        )
+    }
+
+    fn set_employee_status(conn: &Connection, actor: &User, name: &str, status: &str) {
+        // Resolve the employee by LOGIN NAME through the database, never by
+        // logging in: after a deactivation the login is refused, so a helper
+        // that authenticated first could not express the re-activation case.
+        let user_id: i64 = conn
+            .query_row("SELECT id FROM users WHERE name = ?1", [name], |r| r.get(0))
+            .unwrap();
+        let id = employees::find_by_user(conn, user_id)
+            .unwrap()
+            .expect("a login always has an employee record")
+            .id;
+        crate::services::employees::set_employee_status(conn, actor, id, status).unwrap();
+    }
+
+    /// RULE 1: an ACTIVE employee with correct credentials signs in normally.
+    #[test]
+    fn an_active_employee_with_correct_credentials_signs_in() {
+        let conn = fresh();
+        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        assert_eq!(session.user.name, "cashier");
+        assert_eq!(session.user.role, "STAFF");
+        // The session is usable: the employee check must not break the
+        // normal path it is meant to protect.
+        assert_eq!(
+            require_user(&conn, &session.token).unwrap().id,
+            session.user.id
+        );
+    }
+
+    /// RULE 1: an INACTIVE employee cannot sign in even with the CORRECT
+    /// password. This is the whole point — correct credentials are not enough.
+    #[test]
+    fn an_inactive_employee_cannot_sign_in_with_the_correct_password() {
+        let conn = fresh();
+        let manager = as_user(&conn, "manager", "manager123");
+        set_employee_status(&conn, &manager, "cashier", "INACTIVE");
+
+        let err = try_login(&conn, "cashier", "cashier123").unwrap_err();
+        assert!(
+            matches!(err, AppError::Unauthorized(_)),
+            "an inactive employee must be refused, got {err:?}"
+        );
+    }
+
+    /// RULE 1: the refusal must not depend on guessing the password — a wrong
+    /// password is refused too, and an unknown account fails identically, so
+    /// the inactive case never reveals that the account exists.
+    #[test]
+    fn an_inactive_employee_with_wrong_credentials_also_fails() {
+        let conn = fresh();
+        let manager = as_user(&conn, "manager", "manager123");
+        set_employee_status(&conn, &manager, "cashier", "INACTIVE");
+
+        assert!(try_login(&conn, "cashier", "wrong-password").is_err());
+        assert!(try_login(&conn, "nobody-at-all", "whatever").is_err());
+    }
+
+    /// RULE 1: a deactivated employee cannot create a NEW session, and the
+    /// session they ALREADY hold stops being honoured on its next use.
+    #[test]
+    fn a_deactivated_employee_cannot_create_a_new_session() {
+        let conn = fresh();
+        let manager = as_user(&conn, "manager", "manager123");
+
+        // A session established BEFORE the deactivation...
+        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        assert!(require_user(&conn, &session.token).is_ok());
+
+        set_employee_status(&conn, &manager, "cashier", "INACTIVE");
+
+        // ...is refused on its next use, and no new one can be minted.
+        assert!(
+            require_user(&conn, &session.token).is_err(),
+            "a deactivated employee must not keep using the session they hold"
+        );
+        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+    }
+
+    /// The employee record is the AUTHORITATIVE source, not the login's own
+    /// status. If the two ever disagree, the INACTIVE employee is still refused:
+    /// authentication must never rest on a second row staying in sync.
+    #[test]
+    fn an_inactive_employee_is_refused_even_if_the_login_row_says_active() {
+        let conn = fresh();
+        let cashier = as_user(&conn, "cashier", "cashier123");
+        let id = employee_of(&conn, &cashier);
+
+        // Desynchronise the pair behind the service's back.
+        conn.execute(
+            "UPDATE employees SET status = 'INACTIVE' WHERE id = ?1",
+            [id],
+        )
+        .unwrap();
+        let user_status: String = conn
+            .query_row(
+                "SELECT status FROM users WHERE id = ?1",
+                [cashier.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            user_status, "ACTIVE",
+            "the login row is deliberately still active"
+        );
+
+        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+    }
+
+    /// REGRESSION: re-activating an employee restores login, so deactivation
+    /// stays reversible and is not a one-way door.
+    #[test]
+    fn re_activating_an_employee_restores_login() {
+        let conn = fresh();
+        let manager = as_user(&conn, "manager", "manager123");
+
+        set_employee_status(&conn, &manager, "cashier", "INACTIVE");
+        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+
+        set_employee_status(&conn, &manager, "cashier", "ACTIVE");
+        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        assert_eq!(session.user.role, "STAFF");
+    }
+
+    /// REGRESSION: employee status and role authorization are INDEPENDENT. A
+    /// STAFF is refused a MANAGER action while active, a suspended MANAGER is
+    /// refused at the door, and neither check masks the other.
+    #[test]
+    fn employee_status_and_role_authorization_are_independent() {
+        let conn = fresh();
+        let manager = as_user(&conn, "manager", "manager123");
+        let cashier = as_user(&conn, "cashier", "cashier123");
+
+        // While active, the role gate alone decides.
+        assert!(require_role(&cashier, "MANAGER").is_err());
+        assert!(require_role(&manager, "MANAGER").is_ok());
+
+        // Suspending the manager refuses them at the door entirely.
+        let admin = as_user(&conn, "admin", "admin123");
+        set_employee_status(&conn, &admin, "manager", "INACTIVE");
+        assert!(try_login(&conn, "manager", "manager123").is_err());
+
+        // The untouched cashier is unaffected by a colleague's status.
+        assert!(try_login(&conn, "cashier", "cashier123").is_ok());
+    }
+
+    /// The catalog-visibility capability is the authorization model the product
+    /// command relies on: MANAGER and ADMIN may read deactivated items, STAFF
+    /// may not. Pinned here so a future role change cannot silently widen it.
+    #[test]
+    fn only_a_catalog_manager_may_read_the_whole_catalog() {
+        assert!(may_manage_catalog("ADMIN"));
+        assert!(may_manage_catalog("MANAGER"));
+        assert!(!may_manage_catalog("STAFF"));
+        assert!(!may_manage_catalog(""));
+        assert!(!may_manage_catalog("SUPER_ADMIN"));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::catalog::{self, Category, Product};
+use crate::services::auth::may_manage_catalog;
 use crate::services::settings::{
     DiscountOptionsConfig, MonthlySalesPeriodConfig, ServiceChargeConfig,
 };
@@ -25,7 +26,27 @@ pub struct ProductInput {
     pub is_new: bool,
 }
 
+/// The `active_only` value actually applied for a caller's role.
+///
+/// The single decision point for "may this actor widen the catalog query?". It
+/// is a function rather than an inline expression so the rule is unit-testable
+/// without a running Tauri app, and so the command and its test cannot drift.
+///
+/// A MANAGER/ADMIN keeps whatever it asked for, because the Catalog page needs
+/// the whole catalog to list and re-activate deactivated items. For anyone
+/// below MANAGER the request is forced to active-only, so a cashier — or
+/// anything driving the IPC surface directly — cannot ask for `false` and read
+/// deactivated items.
+pub fn effective_active_only(role: &str, requested_active_only: bool) -> bool {
+    requested_active_only || !may_manage_catalog(role)
+}
+
 /// POS reads the sellable catalog (active items only).
+///
+/// This is visibility only, and deliberately not the whole defence: the POS
+/// service independently refuses to put an inactive product on an order, so
+/// hiding it here and validating it there is what makes the rule hold even if
+/// this filter is bypassed.
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_products(
     state: State<'_, AppState>,
@@ -33,7 +54,8 @@ pub fn list_products(
     department: Option<String>,
     active_only: bool,
 ) -> AppResult<Vec<Product>> {
-    authorized(&state, &token, "STAFF", |conn, _| {
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        let active_only = effective_active_only(&actor.role, active_only);
         catalog::list(conn, department.as_deref(), active_only)
     })
 }

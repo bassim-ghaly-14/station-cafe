@@ -20,6 +20,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Sparkles,
   Trash2,
   TriangleAlert,
 } from '@/components/ui/icon'
@@ -104,10 +105,11 @@ export default function DevSettingsPage() {
   const [pinError, setPinError] = useState<string | null>(null)
 
   const [busy, setBusy] = useState<
-    'settings' | 'tables' | 'seed' | 'clear' | 'pin' | 'period' | null
+    'settings' | 'tables' | 'seed' | 'demo' | 'clear' | 'pin' | 'period' | null
   >(null)
 
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmDemo, setConfirmDemo] = useState(false)
 
   // ── Display formatting: draft vs saved ────────────────────────────────────
   // Controls edit a local DRAFT. Only "Save Changes" commits it to the central
@@ -272,6 +274,43 @@ export default function DevSettingsPage() {
       })
 
       toast(t('dev.seedSuccess'), 'success')
+    } catch (error) {
+      toast(errText(error), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function loadDemoData() {
+    setBusy('demo')
+
+    const reseedToken = developerApi.takeReseedToken()
+
+    try {
+      await developerApi.loadDemo(reseedToken)
+
+      // The grant is single-use.
+      if (reseedToken) {
+        developerApi.clearReseedToken()
+      }
+
+      // The demo load performs its own reset, which destroyed the session that
+      // called it — so the local session MUST be dropped or the UI would keep
+      // rendering a page for an account that no longer exists.
+      clearLocalSession()
+
+      // Local UI state is stale now that everything was rebuilt.
+      setServiceAmounts([])
+      setDiscountAmounts([])
+      setDiscountPinConfigured(false)
+      setCredit({ enabled: false, mode: 'LIST', allowed_customer_ids: [] })
+      setTableCount(0)
+      setSavedTableCount(0)
+      setMonthlyPeriod(MONTHLY_SALES_PERIOD_MONTHS[1])
+      setSavedMonthlyPeriod(MONTHLY_SALES_PERIOD_MONTHS[1])
+      setConfirmDemo(false)
+
+      toast(t('dev.demoSuccess'), 'success')
     } catch (error) {
       toast(errText(error), 'error')
     } finally {
@@ -914,6 +953,32 @@ export default function DevSettingsPage() {
           </Button>
         </div>
 
+        {/* Load DEMO data — deliberately a SEPARATE card from the official one.
+            The two actions are visually and verbally distinct: different icon,
+            different heading, an explicit "demo" label, and its own destructive
+            confirmation. They must never be confusable. */}
+        <div className="flex flex-col gap-3 rounded-md border border-warning-border bg-warning-soft/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <Sparkles size={18} aria-hidden className="mt-0.5 shrink-0 text-foreground-muted" />
+
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-foreground-strong">{t('dev.demoTitle')}</h3>
+
+              <p className="text-xs text-foreground-muted">{t('dev.demoDescription')}</p>
+            </div>
+          </div>
+
+          <Button
+            className="shrink-0 self-start sm:self-auto"
+            loading={busy === 'demo'}
+            disabled={busy !== null}
+            onClick={() => setConfirmDemo(true)}
+          >
+            <Sparkles size={16} aria-hidden />
+            {t('dev.demoTitle')}
+          </Button>
+        </div>
+
         {/* Clear database */}
         <div className="flex flex-col gap-3 rounded-md border border-destructive-border bg-surface-card p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
@@ -971,6 +1036,58 @@ export default function DevSettingsPage() {
             >
               <Trash2 size={16} aria-hidden />
               {t('dev.dangerZoneConfirmLabel')}
+            </Button>
+          </DialogActions>
+        </div>
+      </Dialog>
+
+      {/* Demo load confirmation — its own dialog, so the two destructive
+          actions can never be confirmed by accident through each other. */}
+      <Dialog
+        open={confirmDemo}
+        onClose={() => {
+          if (busy !== 'demo') setConfirmDemo(false)
+        }}
+        title={t('dev.demoWarningTitle')}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="whitespace-pre-line text-sm leading-6 text-foreground">
+            {t('dev.demoWarning')}
+          </p>
+
+          {/* The credentials are shown here because the operation ENDS the
+              session: without them the user would have no way back in. */}
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-input p-3">
+            <p className="text-sm font-bold text-foreground-strong">
+              {t('dev.demoCredentialsTitle')}
+            </p>
+
+            <p className="text-xs text-foreground-muted">{t('dev.demoCredentialsHint')}</p>
+
+            <ul className="flex flex-col gap-1 text-xs text-foreground" dir="ltr">
+              <li>{t('dev.demoCredentialsAdmin')}</li>
+              <li>{t('dev.demoCredentialsManager')}</li>
+              <li>{t('dev.demoCredentialsCashier')}</li>
+            </ul>
+          </div>
+
+          <DialogActions>
+            <Button
+              variant="outline"
+              disabled={busy === 'demo'}
+              onClick={() => setConfirmDemo(false)}
+            >
+              {t('dev.dangerZoneCancelLabel')}
+            </Button>
+
+            <Button
+              variant="destructive"
+              loading={busy === 'demo'}
+              disabled={busy !== null}
+              onClick={() => void loadDemoData()}
+            >
+              <Sparkles size={16} aria-hidden />
+              {t('dev.demoConfirmLabel')}
             </Button>
           </DialogActions>
         </div>

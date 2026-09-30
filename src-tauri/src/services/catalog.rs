@@ -153,7 +153,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         migrate(&conn).unwrap();
-        crate::seed::run_if_empty(&conn).unwrap();
+        crate::demo_data::seed_for_development(&conn).unwrap();
         conn
     }
 
@@ -231,6 +231,198 @@ mod tests {
             )
             .unwrap();
         assert_eq!(archived, (0, "كابتشينو".to_string(), 8900));
+    }
+
+    // ------------------------------------------------- inactive products
+
+    /// An open business day AND shift, so the POS order path is reachable.
+    fn open_day(conn: &Connection) {
+        let admin = login(conn, "admin", "admin123");
+        let staff = login(conn, "cashier", "cashier123");
+        shifts::open_day(conn, &admin).unwrap();
+        shifts::open_shift(conn, &staff, 0).unwrap();
+    }
+
+    /// Turn a seeded product off, the way the Catalog page does.
+    fn deactivate(conn: &Connection, name: &str) -> i64 {
+        let id = product_id(conn, name);
+        catalog::set_active(conn, id, false).unwrap();
+        id
+    }
+
+    /// An ACTIVE product is in the cashier-facing query and can be ordered.
+    #[test]
+    fn an_active_product_is_sellable_by_a_cashier() {
+        let conn = fresh();
+        let staff = login(&conn, "cashier", "cashier123");
+        let id = product_id(&conn, "كابتشينو");
+
+        let sellable = catalog::list(&conn, Some("CAFE"), true).unwrap();
+        assert!(
+            sellable.iter().any(|p| p.id == id),
+            "an active product must be listed"
+        );
+        assert!(
+            sellable.iter().all(|p| p.is_active),
+            "the sellable list is active-only"
+        );
+
+        // And the order itself goes through.
+        open_day(&conn);
+        sell(&conn, &staff, "كابتشينو");
+    }
+
+    /// An INACTIVE product is absent from the cashier-facing query, absent from
+    /// search (the list is the search corpus) and from every department view.
+    #[test]
+    fn an_inactive_product_is_absent_from_every_cashier_facing_query() {
+        let conn = fresh();
+        let id = deactivate(&conn, "كابتشينو");
+
+        for department in [None, Some("CAFE"), Some("WASH")] {
+            let listed = catalog::list(&conn, department, true).unwrap();
+            assert!(
+                !listed.iter().any(|p| p.id == id),
+                "inactive product leaked into {department:?}"
+            );
+        }
+    }
+
+    /// RULE 2: the BUSINESS LAYER refuses the inactive product even when the id
+    /// is submitted directly — a stale UI, a tampered request and a replayed
+    /// cached id all land here.
+    #[test]
+    fn an_inactive_product_cannot_be_added_to_an_order() {
+        let conn = fresh();
+        let staff = login(&conn, "cashier", "cashier123");
+        let id = deactivate(&conn, "كابتشينو");
+        open_day(&conn);
+
+        let table = pos::list_tables(&conn, None).unwrap().remove(0);
+        pos_svc::open_table(&conn, &staff, table.id).unwrap();
+        let order_id = pos_svc::start_order(&conn, &staff, table.id).unwrap();
+
+        let err = pos_svc::add_line(&conn, &staff, order_id, id, 1).unwrap_err();
+        assert!(
+            matches!(err, AppError::BusinessRule(_)),
+            "an inactive product must be refused by the service, got {err:?}"
+        );
+        // Nothing was written: the order still has no lines.
+        let lines: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM order_lines WHERE order_id = ?1",
+                [order_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lines, 0, "the refused line must not be persisted");
+    }
+
+    /// REGRESSION: re-activation puts the product back into service completely —
+    /// visible to the cashier AND orderable again.
+    #[test]
+    fn re_activating_a_product_makes_it_sellable_again() {
+        let conn = fresh();
+        let staff = login(&conn, "cashier", "cashier123");
+        let id = deactivate(&conn, "كابتشينو");
+        open_day(&conn);
+        assert!(!catalog::list(&conn, Some("CAFE"), true)
+            .unwrap()
+            .iter()
+            .any(|p| p.id == id));
+
+        catalog::set_active(&conn, id, true).unwrap();
+
+        assert!(catalog::list(&conn, Some("CAFE"), true)
+            .unwrap()
+            .iter()
+            .any(|p| p.id == id));
+        // And the order goes through exactly as it did before deactivation.
+        sell(&conn, &staff, "كابتشينو");
+    }
+
+    /// REGRESSION: a MANAGER/ADMIN still sees inactive items, because the
+    /// Catalog page is where they are listed and re-activated. Deactivation must
+    /// not make a product unmanageable.
+    #[test]
+    fn a_manager_still_sees_and_manages_inactive_products() {
+        let conn = fresh();
+        let id = deactivate(&conn, "كابتشينو");
+
+        let all = catalog::list(&conn, None, false).unwrap();
+        let found = all
+            .iter()
+            .find(|p| p.id == id)
+            .expect("managers see inactive items");
+        assert!(
+            !found.is_active,
+            "it is listed precisely so it can be re-activated"
+        );
+
+        // And the management action that reverses it is still permitted.
+        catalog::set_active(&conn, id, true).unwrap();
+        assert!(catalog::list(&conn, None, false)
+            .unwrap()
+            .iter()
+            .any(|p| p.id == id && p.is_active));
+    }
+
+    /// RULE 2 + the capability the command enforces: only a catalog MANAGER may
+    /// read the whole catalog. A STAFF asking for `active_only = false` is
+    /// answered with the active-only list instead, so the cashier-facing query
+    /// cannot be widened from the client side.
+    #[test]
+    fn a_cashier_cannot_widen_the_catalog_query_to_reach_inactive_items() {
+        use crate::services::auth::may_manage_catalog;
+
+        let conn = fresh();
+        let id = deactivate(&conn, "كابتشينو");
+
+        // A cashier asking for the whole catalog.
+        let requested = false;
+        // Exactly the guard the Tauri command applies.
+        let effective = crate::commands::catalog::effective_active_only("STAFF", requested);
+        assert!(effective, "a STAFF request must be forced to active-only");
+        assert!(
+            !catalog::list(&conn, None, effective)
+                .unwrap()
+                .iter()
+                .any(|p| p.id == id),
+            "a STAFF must not receive inactive items"
+        );
+
+        // A catalog manager still gets them.
+        for role in ["MANAGER", "ADMIN"] {
+            assert!(may_manage_catalog(role), "{role} manages the catalog");
+            let requested = false;
+            let effective = crate::commands::catalog::effective_active_only(role, requested);
+            assert!(!effective, "{role} keeps catalog visibility");
+            let listed = catalog::list(&conn, None, effective).unwrap();
+            assert!(
+                listed.iter().any(|p| p.id == id),
+                "{role} keeps catalog visibility"
+            );
+        }
+    }
+
+    /// An archived (ADMIN-deleted) item is gone from BOTH views: deactivation
+    /// and deletion are different rules and must not be conflated.
+    #[test]
+    fn a_deleted_product_is_absent_even_from_the_manager_catalog() {
+        let conn = fresh();
+        let admin = login(&conn, "admin", "admin123");
+        let id = product_id(&conn, "كابتشينو");
+
+        delete_product(&conn, &admin, id).unwrap();
+
+        assert!(!catalog::list(&conn, None, true)
+            .unwrap()
+            .iter()
+            .any(|p| p.id == id));
+        assert!(!catalog::list(&conn, None, false)
+            .unwrap()
+            .iter()
+            .any(|p| p.id == id));
     }
 
     #[test]

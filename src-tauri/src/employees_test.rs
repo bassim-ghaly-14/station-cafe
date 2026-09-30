@@ -10,7 +10,7 @@ use crate::db::migrate;
 use crate::error::AppError;
 use crate::repositories::employee_analytics::{self, Period};
 use crate::repositories::employees;
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::attendance::{self, AttendanceAction};
 use crate::services::auth::{self, User};
 use crate::services::employees::{self as emp, EmployeeInput, EmployeePeriod};
@@ -91,6 +91,35 @@ fn row_for(conn: &Connection, id: i64) -> employee_analytics::EmployeeRow {
         .into_iter()
         .find(|r| r.id == id)
         .expect("employee row")
+}
+
+/// The headcount the fixture actually created, as `(employees, cashiers, wash)`.
+///
+/// Derived from the employee rows rather than hardcoded, because the fixture is
+/// the DEVELOPMENT seeder: it contributes the official starter logins AND the
+/// demo accounts / demo wash workers on top of them, so a literal would silently
+/// rot the next time either list changes. Counting distinct `id`s here is also
+/// the very property these tests exist to protect, so the expectation and the
+/// production reduction are measured against the same "one person, one row" rule
+/// while remaining independent of how the KPI figures are computed.
+fn fixture_headcount(conn: &Connection) -> (i64, i64, i64) {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cashiers = 0;
+    let mut wash_workers = 0;
+    for row in rows(conn, None, None) {
+        if !seen.insert(row.id) {
+            continue;
+        }
+        // "كاشير" is the STAFF LOGIN ROLE, never the CASHIER employee type.
+        if row.login_role.as_deref() == Some("STAFF") {
+            cashiers += 1;
+        }
+        // A wash worker has no login at all.
+        if row.login_role.is_none() && row.employee_type == emp::WASH_WORKER {
+            wash_workers += 1;
+        }
+    }
+    (seen.len() as i64, cashiers, wash_workers)
 }
 
 // ---------------------------------------------------------------- migrations
@@ -1214,8 +1243,21 @@ fn the_kpi_band_never_mixes_incompatible_employee_types() {
     // attributable to a person and is reported at department level instead.
     assert_eq!(overview.top_shifts.unwrap().employee_id, cashier_id);
     assert_eq!(overview.top_cafe_revenue.unwrap().employee_id, cashier_id);
+    // The wash revenue booked above must never crown the worker it names: the
+    // band has no wash leader at all, so the wash employee's row is excluded
+    // from these two leaderboards by employee type, not by luck.
+    let wash_row = row_for(&conn, mahmoud);
+    assert_eq!(wash_row.employee_type, emp::WASH_WORKER);
+    assert!(wash_row.login_role.is_none(), "a wash worker holds no login");
     // A wash worker is still a headcount, even without a leaderboard of their own.
-    assert_eq!(overview.total_wash_workers, 1);
+    let (employees, expected_cashiers, wash_workers) = fixture_headcount(&conn);
+    assert_eq!(overview.total_wash_workers, wash_workers);
+    assert!(wash_workers > 0, "the fixture must contain a wash worker");
+    // The two type headcounts are disjoint populations: a wash worker can never
+    // be presented as a cashier, and the band never mixes the two.
+    assert_eq!(overview.total_cashiers, expected_cashiers);
+    assert_eq!(overview.total_employees, employees);
+    assert!(expected_cashiers + wash_workers <= employees);
 }
 
 #[test]
@@ -1233,13 +1275,21 @@ fn the_cashier_headcount_names_the_staff_role_not_the_employee_type() {
         .iter()
         .filter(|r| r.login_role.as_deref() == Some("STAFF"))
         .count() as i64;
+    let (employees, expected_cashiers, wash_workers) = fixture_headcount(&conn);
 
     assert_eq!(overview.total_cashiers, cashiers);
-    assert_eq!(overview.total_cashiers, 3); // cashier, momo, foly
+    assert_eq!(overview.total_cashiers, expected_cashiers);
+    assert!(expected_cashiers > 0, "the fixture must contain STAFF logins");
                                             // The type still counts everybody who holds a login, so the two figures are
                                             // genuinely different facts and neither is derived from the other.
-    assert_eq!(overview.total_employees, 7);
-    assert_eq!(overview.total_wash_workers, 1);
+    assert_eq!(overview.total_employees, employees);
+    assert_eq!(overview.total_wash_workers, wash_workers);
+    // The two figures differ whenever a non-STAFF login exists, which is what
+    // makes this a real check of role-vs-type rather than a tautology.
+    assert!(
+        overview.total_employees > overview.total_cashiers,
+        "an ADMIN/MANAGER login is an employee but not a cashier"
+    );
 }
 
 #[test]
@@ -1259,9 +1309,10 @@ fn headcounts_count_unique_employee_records_never_duplicated_rows() {
     emp::record_attendance(&conn, &cashier, id, AttendanceAction::CheckIn, None).unwrap();
 
     let overview = emp::overview(&conn, &manager, &EmployeePeriod::default()).unwrap();
-    assert_eq!(overview.total_employees, 7);
-    assert_eq!(overview.total_cashiers, 3);
-    assert_eq!(overview.total_wash_workers, 1);
+    let (employees, expected_cashiers, wash_workers) = fixture_headcount(&conn);
+    assert_eq!(overview.total_employees, employees);
+    assert_eq!(overview.total_cashiers, expected_cashiers);
+    assert_eq!(overview.total_wash_workers, wash_workers);
 
     // And the same person handed to the reduction twice is still one person.
     let mut rows = rows(&conn, None, None);
@@ -1282,7 +1333,17 @@ fn a_leader_with_no_activity_is_reported_as_no_leader() {
     // Nobody sold anything, so there is no "top" — a zero is not a leader.
     assert!(overview.top_cafe_revenue.is_none());
     assert!(overview.top_shifts.is_none());
-    assert_eq!(overview.total_wash_workers, 1);
+    // Fabricating a leader out of an idle roster would be the real failure, so
+    // the leaderless case is checked against the whole band, not just the two
+    // money/shift tiles: an employee with no activity leads nothing either.
+    assert!(overview.top_attendance.is_none());
+    assert!(overview.top_hours.is_none());
+    // The headcounts are still real: the roster exists, it is simply idle.
+    let (employees, expected_cashiers, wash_workers) = fixture_headcount(&conn);
+    assert_eq!(overview.total_employees, employees);
+    assert_eq!(overview.total_cashiers, expected_cashiers);
+    assert_eq!(overview.total_wash_workers, wash_workers);
+    assert!(wash_workers > 0, "the fixture must contain a wash worker");
 }
 
 // ------------------------------------------------------- advances & payroll

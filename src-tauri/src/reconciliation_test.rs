@@ -8,7 +8,7 @@
 use crate::db::migrate;
 use crate::repositories::shifts as shifts_repo;
 use crate::repositories::{catalog, expenses, invoices, pos};
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::reconciliation::{self, CashStatus};
 use crate::services::{
     auth, checkout, ops as ops_svc, pos as pos_svc, reports, shifts as shift_svc,

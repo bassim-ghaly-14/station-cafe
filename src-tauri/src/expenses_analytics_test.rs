@@ -7,7 +7,7 @@
 
 use crate::db::migrate;
 use crate::repositories::expenses::{self, ExpenseMonthRow, ExpenseOverview};
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use rusqlite::Connection;
 
 /// Migrated + seeded in-memory database.

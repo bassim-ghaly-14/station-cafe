@@ -132,6 +132,165 @@ fn opt<T: DeserializeOwned>(body: &Value, key: &str) -> Result<Option<T>, ApiErr
     }
 }
 
+/// The REQUIRED argument keys for every command, by name.
+///
+/// This is the same information the `req::<_>(body, "key")` calls in
+/// [`dispatch`] express, listed separately so it can be consulted BEFORE the
+/// command is invoked — and therefore before any application handle is needed.
+/// `req` is what ultimately enforces it; this table only lets the HTTP layer
+/// answer the same 400 at the boundary instead of deeper in.
+///
+/// A unit test below asserts this table and the dispatch arms agree, so adding
+/// a command to one and not the other fails the build rather than the cafe.
+const REQUIRED_ARGS: &[(&str, &[&str])] = &[
+    ("login", &["input"]),
+    ("logout", &[]),
+    ("me", &[]),
+    ("change_password", &["target_id", "new_password"]),
+    ("list_products", &["active_only"]),
+    ("create_product", &["input"]),
+    ("create_category", &["name"]),
+    ("update_category", &["category_id", "name"]),
+    ("delete_category", &["category_id"]),
+    ("list_categories", &[]),
+    ("update_product", &["product_id", "input"]),
+    ("set_product_price", &["product_id", "price_minor"]),
+    ("set_product_active", &["product_id", "active"]),
+    ("delete_product", &["product_id"]),
+    ("rename_product", &["product_id", "name"]),
+    ("get_discount_options", &[]),
+    ("set_discount_options", &["config"]),
+    ("get_discount_authorization", &[]),
+    ("set_discount_authorization_pin", &["pin"]),
+    ("get_service_charge", &[]),
+    ("set_service_charge", &["config"]),
+    ("get_monthly_sales_period", &[]),
+    ("set_monthly_sales_period", &["config"]),
+    ("get_credit_config", &[]),
+    ("set_credit_config", &["config"]),
+    ("search_customers", &["query"]),
+    ("list_customers", &[]),
+    ("customer_overview", &[]),
+    ("customer_details", &["customer_id"]),
+    ("list_cars_of", &["customer_id"]),
+    ("find_cars_by_plate", &["plate"]),
+    ("create_customer", &["input"]),
+    ("update_customer", &["customer_id", "input"]),
+    ("delete_customer", &["customer_id"]),
+    ("create_car", &["input"]),
+    ("clear_database", &[]),
+    ("load_official_data", &[]),
+    ("list_employees", &[]),
+    ("employee_overview", &[]),
+    ("my_attendance", &[]),
+    ("record_attendance", &["employee_id", "action"]),
+    ("correct_attendance", &["employee_id", "business_date", "action"]),
+    ("override_employee_attendance", &["employee_id", "business_date"]),
+    ("employee_details", &["employee_id"]),
+    ("create_employee", &["input"]),
+    ("update_employee", &["employee_id", "input"]),
+    ("set_employee_status", &["employee_id", "status"]),
+    ("delete_employee", &["employee_id"]),
+    ("set_employee_base_salary", &["employee_id", "base_salary"]),
+    ("create_employee_advance", &["employee_id", "input"]),
+    ("reverse_employee_advance", &["advance_id"]),
+    ("payroll_preview", &["employee_id", "period"]),
+    ("create_payroll_run", &["employee_id", "period"]),
+    ("finalize_payroll_run", &["run_id"]),
+    ("list_wash_workers", &[]),
+    ("set_order_wash_employee", &["order_id"]),
+    ("list_stock", &[]),
+    ("list_stock_movements", &["limit"]),
+    ("adjust_stock", &["product_id", "change", "reason"]),
+    ("set_stock_minimum", &["product_id", "min_quantity"]),
+    ("list_expense_categories", &[]),
+    ("create_expense_category", &["name"]),
+    ("rename_expense_category", &["code", "name"]),
+    ("delete_expense_category", &["code"]),
+    ("list_expenses", &["recurring_only"]),
+    ("expenses_overview", &[]),
+    ("expenses_monthly", &[]),
+    ("create_expense", &["input"]),
+    ("list_shift_expenses", &[]),
+    ("today_summary", &[]),
+    ("analytics_charts", &[]),
+    ("list_audit", &["limit"]),
+    ("get_print_config", &[]),
+    ("set_print_config", &["config"]),
+    ("print_test", &[]),
+    ("print_invoice", &["invoice_id"]),
+    ("print_wash_ticket", &["order_id"]),
+    ("preview_order_document", &["order_id"]),
+    ("preview_invoice", &["invoice_id"]),
+    ("preview_wash_ticket", &["order_id"]),
+    ("print_shift_report", &["shift_id"]),
+    ("preview_shift_report", &[]),
+    ("preview_day_report_cmd", &["day_id"]),
+    ("print_day_report_cmd", &["day_id"]),
+    ("list_print_jobs", &["limit"]),
+    ("list_tables", &[]),
+    ("set_table_count", &["count"]),
+    ("open_table", &["table_id"]),
+    ("close_empty_table", &["table_id"]),
+    ("start_order", &["table_id"]),
+    ("start_takeaway", &[]),
+    ("list_open_takeaway_orders", &[]),
+    ("discard_order", &["order_id"]),
+    ("get_order", &["order_id"]),
+    ("add_order_line", &["order_id", "product_id", "quantity"]),
+    ("set_line_quantity", &["line_id", "quantity"]),
+    ("remove_order_line", &["order_id", "line_id"]),
+    ("mark_ready_to_pay", &["order_id"]),
+    ("set_order_discount", &["order_id"]),
+    ("attach_customer", &["input"]),
+    ("detach_customer", &["order_id"]),
+    ("get_order_customer", &["order_id"]),
+    ("preview_order", &["order_id"]),
+    ("list_daily_wash_tickets", &[]),
+    ("issue_wash_ticket", &["order_id"]),
+    ("checkout_order", &["input"]),
+    ("get_invoice", &["invoice_id"]),
+    ("search_invoices", &[]),
+    ("list_credit_accounts", &[]),
+    ("settle_credit", &["customer_id", "amount"]),
+    ("sales_overview", &[]),
+    ("sales_invoices", &[]),
+    ("sales_monthly", &[]),
+    ("sales_cashiers", &[]),
+    ("day_shift_state", &[]),
+    ("open_business_day", &[]),
+    ("open_shift", &["opening_cash"]),
+    ("preview_shift_close", &[]),
+    ("close_shift", &["actual_cash"]),
+    ("preview_day_settlement", &[]),
+    ("settle_day", &[]),
+    ("day_settlement_history", &[]),
+    ("preview_day_close", &[]),
+    ("close_business_day", &[]),
+    ("list_closed_shifts", &[]),
+    ("list_closed_business_days", &[]),
+    ("list_shifts", &["day_id"]),
+    ("shift_report", &["shift_id"]),
+    ("day_report", &["day_id"]),
+    ("db_status", &[]),
+    ("local_access_qr", &[]),
+    ("get_network_config", &[]),
+    ("set_network_config", &["config"]),
+    ("local_api_status", &[]),
+];
+
+/// The first REQUIRED argument of `name` that `body` does not supply.
+///
+/// `None` means the command requires no arguments, or is not a command at all.
+/// Absent and `null` are treated identically, which is exactly what [`req`]
+/// does, so this can never accept a body the command itself would reject.
+pub fn missing_required_argument(name: &str, body: &Value) -> Option<&'static str> {
+    let keys = REQUIRED_ARGS.iter().find(|(n, _)| *n == name).map(|(_, k)| *k)?;
+    keys.iter()
+        .copied()
+        .find(|key| body.get(*key).is_none_or(|v| v.is_null()))
+}
+
 /// Run one Station command, addressed by name.
 ///
 /// `state` is a REAL `State<AppState>` taken from the running application, which
@@ -306,6 +465,93 @@ fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The required-argument table exists so the HTTP layer can answer a 400
+    /// before it has an application handle. That only stays honest if the table
+    /// says exactly what the dispatch arms require, so this pins the two
+    /// together: a command added to one and not the other fails HERE rather than
+    /// silently accepting a default on the LAN.
+    #[test]
+    fn the_required_argument_table_matches_the_dispatch_arms() {
+        // Re-derive the expectation from the source of truth: the arms.
+        let src = include_str!("bridge.rs");
+        let start = src.find("    match name {").expect("dispatch table");
+        let end = src[start..]
+            .find("        _ => Err(ApiError::not_found()),")
+            .map(|i| start + i)
+            .expect("dispatch fallthrough");
+        let arms = &src[start..end];
+
+        for (name, keys) in REQUIRED_ARGS {
+            let arm = arms
+                .lines()
+                .find(|l| l.trim_start().starts_with(&format!("\"{name}\" =>")))
+                .unwrap_or_else(|| panic!("{name} is in the table but has no dispatch arm"));
+            for key in *keys {
+                assert!(
+                    arm.contains(&format!("req::<_>(body, \"{key}\")")),
+                    "{name} lists {key} as required but its arm does not require it"
+                );
+            }
+            let declared = arm.matches("req::<_>(body, ").count();
+            assert_eq!(
+                declared,
+                keys.len(),
+                "{name}: the arm requires {declared} argument(s) but the table lists {}",
+                keys.len()
+            );
+        }
+
+        // And no arm is missing from the table entirely.
+        for line in arms.lines() {
+            let Some(rest) = line.trim_start().strip_prefix('"') else {
+                continue;
+            };
+            let Some((name, _)) = rest.split_once('"') else {
+                continue;
+            };
+            assert!(
+                REQUIRED_ARGS.iter().any(|(n, _)| *n == name),
+                "{name} has a dispatch arm but no entry in the required-argument table"
+            );
+        }
+    }
+
+    /// A missing required argument is reported, and an optional one is not:
+    /// this is the 400 that stops a business rule being skipped by a default.
+    #[test]
+    fn a_missing_required_argument_is_named_and_an_optional_one_is_not() {
+        assert_eq!(
+            missing_required_argument("create_category", &serde_json::json!({})),
+            Some("name")
+        );
+        // Explicit null counts as absent, exactly as `req` treats it.
+        assert_eq!(
+            missing_required_argument("create_category", &serde_json::json!({ "name": null })),
+            Some("name")
+        );
+        // A supplied value satisfies it.
+        assert_eq!(
+            missing_required_argument("create_category", &serde_json::json!({ "name": "Drinks" })),
+            None
+        );
+        // `search_invoices` takes only optional arguments, so an empty body is
+        // complete and must NOT be refused — the table lists its `opt` keys as
+        // absent precisely because they are not required.
+        assert_eq!(missing_required_argument("search_invoices", &serde_json::json!({})), None);
+        // `list_audit` requires `limit` but not `action_like`: the required one
+        // is reported, which is the distinction the table exists to preserve.
+        assert_eq!(
+            missing_required_argument("list_audit", &serde_json::json!({})),
+            Some("limit")
+        );
+        assert_eq!(
+            missing_required_argument("list_audit", &serde_json::json!({ "limit": 10 })),
+            None
+        );
+        // An unknown name is not a command, so it has no arguments to be missing.
+        assert_eq!(missing_required_argument("not_a_command", &serde_json::json!({})), None);
+    }
 
     /// The defect this pins: a printer failure was mapped down to an opaque
     /// `INTERNAL` before it crossed the HTTP boundary, so the browser received

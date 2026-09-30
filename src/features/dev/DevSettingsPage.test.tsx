@@ -11,6 +11,7 @@ import DevSettingsPage from './DevSettingsPage'
 const mocks = vi.hoisted(() => ({
   user: { role: 'ADMIN' as 'ADMIN' | 'STAFF' },
   loadOfficial: vi.fn(),
+  loadDemo: vi.fn(),
   clear: vi.fn(),
   setReseedToken: vi.fn(),
   clearSessionToken: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('@/features/auth/useSession', () => ({
 vi.mock('@/services/developerApi', () => ({
   developerApi: {
     loadOfficial: mocks.loadOfficial,
+    loadDemo: mocks.loadDemo,
     clear: mocks.clear,
     setReseedToken: mocks.setReseedToken,
     takeReseedToken: () => null,
@@ -74,6 +76,7 @@ describe('DevSettingsPage', () => {
     resetFormattingPreferences()
     mocks.user.role = 'ADMIN'
     mocks.loadOfficial.mockReset().mockResolvedValue(undefined)
+    mocks.loadDemo.mockReset().mockResolvedValue(undefined)
     mocks.clear.mockReset().mockResolvedValue('one-time-grant')
     mocks.setReseedToken.mockReset()
     mocks.clearSessionToken.mockReset()
@@ -207,9 +210,82 @@ describe('DevSettingsPage', () => {
     expect(zone).toHaveAttribute('aria-labelledby', 'dev-danger-zone')
     expect(within(zone).getByRole('heading', { name: 'منطقة الخطر' })).toBeInTheDocument()
 
-    // Both data actions live here and nowhere else on the page.
+    // All three data actions live here and nowhere else on the page.
     expect(within(zone).getByRole('button', { name: 'تحميل البيانات الرسمية' })).toBeInTheDocument()
+    expect(within(zone).getByRole('button', { name: 'تحميل بيانات تجريبية' })).toBeInTheDocument()
     expect(within(zone).getByRole('button', { name: 'مسح قاعدة البيانات' })).toBeInTheDocument()
+  })
+
+  /**
+   * The official and demo loaders must be impossible to confuse: different
+   * commands, different labels, and the demo one gated behind its own
+   * confirmation.
+   */
+  it('keeps "Load Demo Data" clearly separate from "Load Official Data"', async () => {
+    page()
+    await waitFor(() => expect(mocks.discountAuthorization).toHaveBeenCalled())
+
+    const zone = screen.getByTestId('dev-danger-zone')
+    const demoButton = within(zone).getByRole('button', { name: 'تحميل بيانات تجريبية' })
+    const officialButton = within(zone).getByRole('button', { name: 'تحميل البيانات الرسمية' })
+
+    // Distinct, unambiguous labels — one is never a substring of the other.
+    expect(demoButton).not.toBe(officialButton)
+    expect(demoButton.textContent).not.toBe(officialButton.textContent)
+
+    // Clicking the DEMO button must never call the OFFICIAL loader.
+    fireEvent.click(demoButton)
+    expect(mocks.loadOfficial).not.toHaveBeenCalled()
+    expect(mocks.loadDemo).not.toHaveBeenCalled()
+
+    // …and clicking the OFFICIAL one must never call the demo loader.
+    fireEvent.click(officialButton)
+    await waitFor(() => expect(mocks.loadOfficial).toHaveBeenCalledTimes(1))
+    expect(mocks.loadDemo).not.toHaveBeenCalled()
+  })
+
+  it('requires an explicit confirmation before loading demo data', async () => {
+    page()
+    const zone = screen.getByTestId('dev-danger-zone')
+
+    // First click opens the confirmation and changes nothing.
+    fireEvent.click(within(zone).getByRole('button', { name: 'تحميل بيانات تجريبية' }))
+    expect(mocks.loadDemo).not.toHaveBeenCalled()
+
+    const dialog = screen.getByRole('dialog', { name: 'تأكيد تحميل البيانات التجريبية' })
+    // The warning must state that real data is destroyed and unrecoverable.
+    expect(within(dialog).getByText(/سيتم حذفها نهائيًا/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/لا يمكن التراجع عنه/)).toBeInTheDocument()
+    // …and that the session ends, so the way back in must be shown.
+    expect(within(dialog).getByText('admin / admin123 — مدير النظام')).toBeInTheDocument()
+
+    // Cancelling must not load anything.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(mocks.loadDemo).not.toHaveBeenCalled()
+
+    // Confirming performs the load and drops the destroyed session.
+    fireEvent.click(within(zone).getByRole('button', { name: 'تحميل بيانات تجريبية' }))
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'تأكيد التحميل' }),
+    )
+    await waitFor(() => expect(mocks.loadDemo).toHaveBeenCalledTimes(1))
+    expect(mocks.clearLocalSession).toHaveBeenCalled()
+  })
+
+  it('surfaces a demo load failure in Arabic instead of reporting success', async () => {
+    mocks.loadDemo.mockRejectedValueOnce({ message: 'db.error' })
+    page()
+
+    const zone = screen.getByTestId('dev-danger-zone')
+    fireEvent.click(within(zone).getByRole('button', { name: 'تحميل بيانات تجريبية' }))
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'تأكيد التحميل' }),
+    )
+
+    expect(await screen.findByText('تعذر حفظ البيانات — حاول مرة أخرى')).toBeInTheDocument()
+    // A failed load must NOT drop the session, exactly like a failed clear.
+    expect(mocks.clearLocalSession).not.toHaveBeenCalled()
   })
 
   it('loads the official data through the developer API exactly once per click', async () => {

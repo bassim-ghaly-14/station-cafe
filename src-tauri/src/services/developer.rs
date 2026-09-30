@@ -19,6 +19,41 @@ pub fn load_official_data(conn: &Db, actor: &User) -> AppResult<()> {
     crate::seed::run_if_empty(conn)
 }
 
+/// Explicit developer action that loads the DEMO dataset.
+///
+/// # Why this clears first
+///
+/// The architecture question the brief asks is whether demo loading should wipe
+/// the database first or insert into whatever is there. Inspecting the reset
+/// flow settles it: `clear_all` already exists, is transactional, is proven
+/// child-first against the live foreign-key graph, and preserves the schema,
+/// the migrations and the migration-owned `expense_categories`. Reusing it
+/// means the demo flow is EXACTLY the existing "Clear → Load" pair with one
+/// extra step, so:
+///
+///   * the result is deterministic — the same demo dataset every time, never a
+///     merge of the previous contents with new sample rows;
+///   * nothing can be orphaned or duplicated, because there is nothing left to
+///     conflict with;
+///   * migrations, settings and the developer ADMIN account are preserved by
+///     the existing rules rather than by a second, parallel implementation.
+///
+/// It is therefore DESTRUCTIVE, and the UI says so before calling it.
+///
+/// The order matters and is not interchangeable: clear, then the OFFICIAL seed
+/// (so the baseline exists), then the demo records on top. The official seed is
+/// invoked through the very same [`load_official_data`] entry point the
+/// "Load Official Data" button uses — demo loading adds records, it never
+/// redefines the baseline.
+pub fn load_demo_data(conn: &Db, actor: &User) -> AppResult<()> {
+    require_role(actor, "ADMIN")?;
+    clear_database(conn, actor)?;
+    load_official_data(conn, actor)?;
+    crate::demo_data::load(conn)?;
+    log::info!("demo data: dataset loaded");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,8 +140,10 @@ mod tests {
         let old_session = auth::login(
             &conn,
             &LoginInput {
-                name: "admin".into(),
-                password: "admin123".into(),
+                // A REAL official starter account: the official dataset no
+                // longer ships any demo login.
+                name: "amira".into(),
+                password: "20192".into(),
             },
         )
         .unwrap();
@@ -147,7 +184,7 @@ mod tests {
         assert_developer_account(&conn);
         assert!(auth::require_user(&conn, &old_session.token).is_err());
         assert_eq!(count(&conn, "sessions"), 0);
-        for old_user in ["admin", "manager", "amira", "cashier"] {
+        for old_user in ["amira", "momo", "foly"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -198,7 +235,7 @@ mod tests {
             count(&conn, "users"),
             crate::seed::DEFAULT_USERS.len() as i64 + 1
         );
-        for name in ["Belly", "admin", "manager", "amira", "cashier"] {
+        for name in ["Belly", "amira", "momo", "foly"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -207,6 +244,18 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(exists, 1, "{name} must exist after canonical seed");
+        }
+        // …and, the point of the whole separation: NO demo account may come
+        // back with the official data.
+        for name in crate::seed::FORMER_DEMO_USERNAMES {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
+                    [name],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 0, "{name} is a demo account and must not be re-seeded");
         }
         assert!(count(&conn, "products") > 0);
         assert_eq!(count(&conn, "cafe_tables"), 12);
@@ -294,8 +343,8 @@ mod tests {
         auth::login(
             &conn,
             &LoginInput {
-                name: "admin".into(),
-                password: "admin123".into(),
+                name: "amira".into(),
+                password: "20192".into(),
             },
         )
         .unwrap();
@@ -434,7 +483,7 @@ mod tests {
         assert!(count(&conn, "products") > 0);
         assert_eq!(count(&conn, "cafe_tables"), 12);
         assert_developer_account(&conn);
-        for name in ["admin", "manager", "amira", "cashier"] {
+        for name in ["amira", "momo", "foly"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -443,6 +492,21 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(exists, 1, "{name} must be restored by the official seed");
+        }
+        // The official dataset is production-safe: no demo account, and no
+        // sample business record of any kind.
+        for name in crate::seed::FORMER_DEMO_USERNAMES {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
+                    [name],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 0, "{name} must never be restored by the official seed");
+        }
+        for table in ["customers", "invoices", "expenses", "attendance_days"] {
+            assert_eq!(count(&conn, table), 0, "{table} must stay empty");
         }
 
         // The preserved expense reference data survived the whole round trip.
@@ -473,5 +537,69 @@ mod tests {
         assert_eq!(count(&conn, "products"), products_after_first);
         assert_eq!(count(&conn, "users"), users_after_first);
         assert_eq!(count(&conn, "cafe_tables"), tables_after_first);
+    }
+
+    /// The developer reset preserved what it must, and the demo flow rebuilds
+    /// on top of it without losing the schema, the migrations or the reference
+    /// data the reset is documented to keep.
+    #[test]
+    fn demo_loading_rebuilds_on_top_of_the_official_baseline() {
+        let conn = db();
+        let admin = user(1, "ADMIN");
+
+        load_demo_data(&conn, &admin).unwrap();
+
+        // The migrations and the migration-owned expense categories survived the
+        // reset the demo load performs internally.
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM _migrations", [], |r| r.get(0)),
+            Ok(crate::db::migration_count())
+        );
+        assert!(count(&conn, "expense_categories") > 0);
+
+        // The official baseline is present…
+        assert_eq!(count(&conn, "cafe_tables"), 12);
+        assert!(count(&conn, "products") > 0);
+        // …and the demo records are on top of it.
+        assert!(count(&conn, "customers") > 0);
+        assert!(count(&conn, "invoices") > 0);
+        assert_foreign_keys(&conn);
+    }
+
+    /// The demo flow is deterministic and repeatable: loading it again replaces
+    /// the dataset rather than piling a second copy on top of it.
+    #[test]
+    fn repeated_demo_loading_replaces_rather_than_accumulates() {
+        let conn = db();
+        let admin = user(1, "ADMIN");
+
+        load_demo_data(&conn, &admin).unwrap();
+        let first = (
+            count(&conn, "customers"),
+            count(&conn, "invoices"),
+            count(&conn, "products"),
+        );
+
+        load_demo_data(&conn, &admin).unwrap();
+        let second = (
+            count(&conn, "customers"),
+            count(&conn, "invoices"),
+            count(&conn, "products"),
+        );
+
+        assert_eq!(first, second, "the demo dataset must be reproducible");
+    }
+
+    /// A MANAGER or STAFF session can load neither dataset. The demo loader is
+    /// exactly as locked down as the official one — it is not a back door.
+    #[test]
+    fn manager_and_staff_cannot_load_demo_data() {
+        let conn = db();
+        for role in ["MANAGER", "STAFF"] {
+            assert!(matches!(
+                load_demo_data(&conn, &user(1, role)),
+                Err(crate::error::AppError::Unauthorized(_))
+            ));
+        }
     }
 }

@@ -48,6 +48,11 @@ pub fn classify(ip: &IpAddr) -> Suitability {
     match ip {
         // Never serve, never print: these cannot be reached from another
         // device, and 127.0.0.1 in a QR would point the phone at itself.
+        // 255.255.255.255 is the LIMITED BROADCAST address, not a multicast
+        // group: it is 0xFF, so it sits outside 224.0.0.0/4 and `is_multicast`
+        // alone lets it through. It names no host at all, so nothing can ever
+        // be served on it and a QR encoding it reaches nothing.
+        IpAddr::V4(v4) if v4.octets() == [255, 255, 255, 255] => Suitability::Unusable,
         IpAddr::V4(v4) if v4.is_loopback() || v4.is_unspecified() || v4.is_multicast() => {
             Suitability::Unusable
         }

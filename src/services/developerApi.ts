@@ -32,6 +32,24 @@ export const developerApi = {
    */
   loadOfficial: (token?: string | null) =>
     call<void>('load_official_data', token ? { reseed_token: token } : undefined),
+
+  /**
+   * Load the DEMO dataset: reset, re-seed the official baseline, then add the
+   * demo records.
+   *
+   * DESTRUCTIVE, exactly like `clear()` — it performs that reset itself, which
+   * is what makes the result deterministic and free of duplicates. It is a
+   * different command from `load_official_data` and never calls it in place of
+   * the official baseline: the official dataset itself is untouched.
+   *
+   * Because the reset destroys the calling session, the caller must sign in
+   * again afterwards — with one of the demo accounts.
+   *
+   * The argument key MUST stay `reseed_token` for the same reason documented on
+   * `loadOfficial` above.
+   */
+  loadDemo: (token?: string | null) =>
+    call<void>('load_demo_data', token ? { reseed_token: token } : undefined),
   setReseedToken(token: string | null) {
     reseedToken = token
   },

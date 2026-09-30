@@ -120,7 +120,7 @@ pub fn set(conn: &Db, actor: &User, cfg: &NetworkConfig) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::db::migrate;
-    use crate::seed::run_if_empty;
+    use crate::demo_data::seed_for_development as run_if_empty;
     use rusqlite::Connection;
 
     fn fresh() -> Connection {

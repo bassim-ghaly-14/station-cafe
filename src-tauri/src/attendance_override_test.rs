@@ -19,7 +19,7 @@ use crate::db::migrate;
 use crate::error::AppError;
 use crate::repositories::employee_analytics;
 use crate::repositories::employees;
-use crate::seed::run_if_empty;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::attendance::{self, AttendanceAction};
 use crate::services::auth::{self, User};
 use crate::services::employees::{self as emp, EmployeeInput};

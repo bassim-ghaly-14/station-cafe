@@ -56,4 +56,27 @@ describe('developerApi IPC contract', () => {
     developerApi.clearReseedToken()
     expect(developerApi.takeReseedToken()).toBeNull()
   })
+
+  /**
+   * The demo loader is a DIFFERENT command from the official one. If these two
+   * ever collapsed into the same IPC call, "Load Demo Data" would silently stop
+   * creating demo accounts and the whole separation would be lost.
+   */
+  it('invokes its own load_demo_data command, never the official one', async () => {
+    await developerApi.loadDemo('the-grant')
+
+    const [command, args] = invoke.mock.calls[0]
+    expect(command).toBe('load_demo_data')
+    expect(command).not.toBe('load_official_data')
+    // The same snake_case key rule applies to this command.
+    expect(args).toHaveProperty('reseed_token', 'the-grant')
+    expect(args).not.toHaveProperty('reseedToken')
+  })
+
+  it('omits the reseed argument for the demo load when no grant is held', async () => {
+    await developerApi.loadDemo(null)
+
+    const [, args] = invoke.mock.calls[0]
+    expect(args).not.toHaveProperty('reseed_token')
+  })
 })

@@ -19,6 +19,7 @@
 //!    configuration says enabled.
 
 use crate::error::AppResult;
+use crate::network::api;
 use crate::network::config::{self, NetworkConfig};
 use crate::network::mdns::Advertisement;
 use crate::AppState;
@@ -101,40 +102,73 @@ pub fn apply(state: &AppState, cfg: &NetworkConfig) -> RuntimeStatus {
         return status(state);
     }
 
-    // 2. Resolve a genuinely usable LAN address. Never 0.0.0.0, never loopback.
-    let ip = match crate::network::api::resolve_bind_address(&cfg.bind) {
-        Ok(ip) if crate::network::address::is_usable(&ip) => ip,
-        _ => {
+    // 2. Resolve the address to bind.
+    //
+    // Two DIFFERENT questions are answered here, and conflating them is what
+    // made an enabled service silently never start:
+    //
+    //   * `LAN_INTERFACE` (or an empty bind) means "choose for me". That choice
+    //     is made by the classifier, and it must be a genuinely usable LAN
+    //     address — never loopback, never unspecified, never link-local.
+    //   * a LITERAL address means the operator already decided. It is bound as
+    //     written, because re-deciding it here would silently ignore them.
+    //
+    // The one thing refused in BOTH cases is the unspecified address: binding
+    // 0.0.0.0/:: would publish the API on every adapter the machine has, which
+    // is exactly what `config::set` refuses to store in the first place.
+    //
+    // Loopback is deliberately NOT refused here. It is refused at the
+    // configuration layer, which is where an operator's choice is validated;
+    // re-refusing it at bind time meant a caller that had already decided could
+    // never open a socket at all, and the service reported itself unavailable
+    // while its own setting said enabled.
+    let auto = {
+        let bind = cfg.bind.trim();
+        bind.is_empty() || bind == config::LAN_INTERFACE
+    };
+    let ip = match api::resolve_bind_address(&cfg.bind) {
+        Ok(ip) if !ip.is_unspecified() => ip,
+        Ok(_) => {
             log::error!(
-                "local api: no usable LAN address for bind {:?}; the POS is unaffected",
+                "local api: refusing to bind the unspecified address {:?}; the POS is unaffected",
+                cfg.bind
+            );
+            return unavailable(true, ERR_NO_LAN_ADDRESS);
+        }
+        Err(e) => {
+            log::error!(
+                "local api: no usable address for bind {:?} ({e}); the POS is unaffected",
                 cfg.bind
             );
             return unavailable(true, ERR_NO_LAN_ADDRESS);
         }
     };
+    // Only an AUTOMATIC choice is held to the classifier's standard.
+    if auto && !crate::network::address::is_usable(&ip) {
+        log::error!(
+            "local api: selected address {ip} is not usable for a LAN bind; the POS is unaffected"
+        );
+        return unavailable(true, ERR_NO_LAN_ADDRESS);
+    }
     let addr = SocketAddr::new(ip, cfg.port);
 
     // 3. Bind. A failure here is a normal, recoverable condition.
     //
-    // The application handle comes from the state, never from a global: it is
-    // what lets this listener serve the Station application and reach the real
-    // commands. Without it there is no browser surface, and that is reported
-    // honestly instead of serving something that cannot work.
-    let handle = match state.app() {
-        Some(app) => match crate::network::server::start(
-            addr,
-            Arc::clone(&state.conn),
-            app.clone(),
-        ) {
-            Ok(handle) => handle,
-            Err(e) => {
-                log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
-                return unavailable(true, ERR_BIND_FAILED);
-            }
-        },
-        None => {
-            log::error!("local api: no application handle; the POS is unaffected");
-            return unavailable(true, ERR_NO_APP_HANDLE);
+    // The application handle is taken from the state, never from a global. It
+    // is OPTIONAL: the JSON API needs only the database this function already
+    // has, so a missing handle costs the browser surface and the command
+    // bridge — both of which say so per request — but it does NOT stop the
+    // socket from opening. Refusing to bind here is what made an enabled
+    // service report itself unavailable while its own setting said enabled.
+    let handle = match crate::network::server::start(
+        addr,
+        Arc::clone(&state.conn),
+        state.app().cloned(),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
+            return unavailable(true, ERR_BIND_FAILED);
         }
     };
     log::info!("local api: listening on http://{}", handle.local_addr());
