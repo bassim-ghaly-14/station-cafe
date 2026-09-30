@@ -36,16 +36,52 @@ import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updat
  * plugin stack trace, a file path or a URL can never reach the screen.
  */
 export type UpdateErrorCode =
-  'dev.updateUnsupported' | 'dev.updateCheckFailed' | 'dev.updateFailed' | 'dev.updateRestartFailed'
+  | 'dev.updateUnsupported'
+  | 'dev.updateUnsupportedPlatform'
+  | 'dev.updateCheckFailed'
+  | 'dev.updateFailed'
+  | 'dev.updateRestartFailed'
 
 export class UpdateError extends Error {
   readonly code: UpdateErrorCode
 
-  constructor(code: UpdateErrorCode) {
-    super(code)
+  constructor(code: UpdateErrorCode, options?: { cause?: unknown }) {
+    super(code, options)
     this.name = 'UpdateError'
     this.code = code
   }
+}
+
+/**
+ * The two error strings `tauri-plugin-updater` produces when the release
+ * manifest parsed fine but carries no entry for the platform this binary is
+ * running on: `Error::TargetNotFound` and `Error::TargetsNotFound`.
+ *
+ * This is NOT a transport failure and NOT a broken connection. Station's
+ * releases are published for Windows (NSIS) only, so on any other desktop
+ * platform the plugin cannot find `darwin-*` / `linux-*` and rejects. Reporting
+ * that as "check your internet connection" sends a developer hunting a network
+ * problem that does not exist, which is exactly what happened.
+ */
+const PLATFORM_NOT_PUBLISHED =
+  /was not found in the response|were found in the response|platforms` object/
+
+/**
+ * Map a rejected `check()` onto a translation key, keeping the distinction the
+ * plugin actually made.
+ *
+ * The raw error is always logged first, with a stable prefix, so the real
+ * failure — DNS, TLS, HTTP status, malformed manifest, bad signature,
+ * wrong key, missing capability, plugin/JS version mismatch — is recoverable
+ * from the developer console. Nothing is logged to the user-facing surface, and
+ * nothing secret (keys, tokens) is ever part of these messages.
+ */
+function classifyCheckError(error: unknown): UpdateErrorCode {
+  console.error('[station/update] check failed:', error)
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return PLATFORM_NOT_PUBLISHED.test(message)
+    ? 'dev.updateUnsupportedPlatform'
+    : 'dev.updateCheckFailed'
 }
 
 /** Download progress, already clamped to a renderable percentage. */
@@ -110,14 +146,15 @@ export async function checkForUpdate(): Promise<PendingUpdate | null> {
   let update: Update | null
   try {
     update = await check()
-  } catch {
-    throw new UpdateError('dev.updateCheckFailed')
+  } catch (error) {
+    throw new UpdateError(classifyCheckError(error), { cause: error })
   }
   if (!update) return null
 
   const resource = updaterResource(update)
   if (!resource) {
     await safeClose(update)
+    console.error('[station/update] endpoint returned a malformed update object:', update)
     throw new UpdateError('dev.updateCheckFailed')
   }
 

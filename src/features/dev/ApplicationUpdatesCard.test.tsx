@@ -184,6 +184,91 @@ describe('ApplicationUpdatesCard', () => {
     expect(screen.getByTestId('dev-update-check')).toBeEnabled()
   })
 
+  it('distinguishes "no build for this platform" from a network failure', async () => {
+    // THE BUG. The endpoint is reachable and the manifest parses, but it has no
+    // `darwin-*` entry, so tauri-plugin-updater rejects with TargetsNotFound.
+    // Reporting that as "check your internet connection" was a lie: it sent the
+    // developer hunting a network fault that did not exist.
+    mocks.check.mockRejectedValue(
+      new Error(
+        'None of the fallback platforms `["darwin-x86_64-app", "darwin-x86_64"]` were found in the response `platforms` object',
+      ),
+    )
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() =>
+      expect(screen.getByText(/لا يوجد إصدار منشور لهذا النظام/)).toBeInTheDocument(),
+    )
+    // NOT the internet message: the connection was fine.
+    expect(screen.queryByText(/تأكد من الاتصال بالإنترنت/)).not.toBeInTheDocument()
+    // No install action is offered for a platform that has no published build.
+    expect(screen.queryByTestId('dev-update-install')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dev-update-check')).toBeEnabled()
+  })
+
+  it('keeps the real check failure in the console for diagnostics', async () => {
+    // The generic Arabic message is for the manager. The actual plugin error
+    // must survive somewhere, or the next occurrence is undiagnosable.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failure = new Error('https://example.invalid/latest.json: 404 Not Found')
+    mocks.check.mockRejectedValue(failure)
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() => expect(screen.getByText(/تعذّر فحص وجود تحديث/)).toBeInTheDocument())
+    expect(logged).toHaveBeenCalledWith('[station/update] check failed:', failure)
+    logged.mockRestore()
+  })
+
+  it('does not crash the card on a malformed update object', async () => {
+    // The endpoint answered, but the payload is not a usable Update: no
+    // download/install methods. The card must report, not explode, and must
+    // never treat it as an installable update.
+    mocks.check.mockResolvedValue({ version: '0.2.0', currentVersion: '0.1.0', rawJson: {} })
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() => expect(screen.getByText(/تعذّر فحص وجود تحديث/)).toBeInTheDocument())
+    expect(screen.queryByTestId('dev-update-install')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dev-update-check')).toBeEnabled()
+  })
+
+  it('never installs anything as a result of check() alone', async () => {
+    // The check is a READ. Even when it succeeds and an update exists, the
+    // safety gate, the confirmation, the re-check and the download all have to
+    // happen before a single byte moves.
+    const update = fakeUpdate('0.2.0')
+    mocks.check.mockResolvedValue(update)
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() => expect(screen.getByTestId('dev-update-install')).toBeInTheDocument())
+    expect(update.state.downloadCalls).toBe(0)
+    expect(update.state.installCalls).toBe(0)
+    expect(mocks.relaunch).not.toHaveBeenCalled()
+    // The held update is still open on the Rust side, awaiting a decision.
+    expect(update.state.closeCalls).toBe(0)
+  })
+
+  it('refuses to install when the authoritative safety state cannot be read', async () => {
+    // Fail-closed: if `day_shift_state` rejects, the gate is NOT treated as
+    // clear. Nothing downloads, nothing installs, the app does not restart.
+    const update = fakeUpdate('0.2.0')
+    mocks.check.mockResolvedValue(update)
+    mocks.call.mockRejectedValue(new Error('database is locked'))
+    renderCard()
+    await pressCheck()
+
+    fireEvent.click(screen.getByTestId('dev-update-install'))
+    await waitFor(() => expect(screen.getByText(/اقفل الوردية/)).toBeInTheDocument())
+    // The confirmation never even opens: an unreadable gate is a refusal.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(update.state.downloadCalls).toBe(0)
+    expect(update.state.installCalls).toBe(0)
+    expect(mocks.relaunch).not.toHaveBeenCalled()
+  })
+
   it('says updates are desktop-only in a browser, without any update controls', () => {
     mocks.desktop = false
     renderCard()
