@@ -30,8 +30,11 @@
  * Usage: node scripts/verify-release-manifest.mjs <path-to-latest.json>
  *
  * The path argument is untrusted input. It is never handed to `fs` as written:
- * every segment must match an allowlist (`SAFE_SEGMENT`, so no `..`, separator,
- * drive letter or UNC share can survive), the candidate is rebuilt from an
+ * every segment must match an allowlist — a plain file name for the manifest
+ * itself (`SAFE_SEGMENT`), a slightly wider one for the directories leading to
+ * it (`SAFE_DIRECTORY_SEGMENT`, which admits the `~` and the space real temp
+ * roots contain) — so no `..`, separator, drive letter or UNC share can
+ * survive, the candidate is rebuilt from an
  * EXPLICIT trusted root — this repository, or the system temp directory the
  * release workflow downloads into — and the result must still be inside that
  * root after symlinks are resolved. Nothing outside those roots is ever read.
@@ -79,6 +82,34 @@ const SEMVER = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
+ * The shape a path segment that names a DIRECTORY may have.
+ *
+ * The manifest's own file name is held to `SAFE_SEGMENT` (see
+ * `validateManifestPathSegments`), but the directories leading to it are not
+ * all chosen by this script: the trusted roots are the checkout and the system
+ * temp directory, and both live under real, occasionally awkward parents — a
+ * GitHub Windows runner's temp root is
+ * `C:\Users\RUNNER~1\AppData\Local\Temp`, and a developer machine can have a
+ * `C:\Users\Jane Doe\...`. Refusing those would refuse the legitimate use case,
+ * so a directory segment gets its own, still-explicit allowlist.
+ *
+ * It stays an ALLOWLIST, so it rules out by construction:
+ *
+ *   - `.` and `..`      -> a segment can never start with `.`
+ *   - `..` traversal    -> ditto, however it is spelled or truncated (`....`)
+ *   - `/` and `\`       -> a segment can never contain a separator
+ *   - `C:` / `\\server` -> `:` and `\` are not in the allowed set
+ *   - NTFS alternate data streams (`latest.json:$DATA`) -> `:` is not allowed
+ *   - wildcards and reserved characters (`*` `?` `"` `<` `>` `|`) -> not allowed
+ *   - URLs, NUL bytes, newlines, terminal escapes -> not alphanumeric or space
+ *
+ * What it adds over `SAFE_SEGMENT` is exactly the two characters real temp and
+ * home directory names are made of: `~` (the 8.3 short name a Windows runner
+ * uses) and the space.
+ */
+const SAFE_DIRECTORY_SEGMENT = /^[A-Za-z0-9~][A-Za-z0-9._~ -]{0,127}$/
+
+/**
  * Is this character one a filename here must never carry?
  *
  * A code-point check rather than a regex over control characters: a NUL byte
@@ -92,6 +123,12 @@ function isForbiddenPathCharacter(character) {
 
 /** A filesystem path long enough to be a command-line argument, not a payload. */
 const MAX_PATH_LENGTH = 4096
+
+/**
+ * How many symlinks a single manifest path may traverse before it is treated as
+ * a cycle. Far above any real chain; bounded so a link loop cannot recurse.
+ */
+const MAX_SYMLINK_HOPS = 40
 
 /**
  * Roots a release manifest is allowed to live in.
@@ -123,12 +160,46 @@ export function allowedManifestRoots() {
 }
 
 /**
+ * Resolve EVERY symlink along `target`, including one whose own target does not
+ * exist.
+ *
+ * `fs.realpathSync` alone is not enough at this boundary: for a dangling link
+ * (a `latest.json` pointing at a path that is not there — which is exactly what
+ * an attacker creates on a Windows runner, where `/etc/hosts` does not exist) it
+ * throws `ENOENT`, and a caller that falls back to the lexical string would then
+ * "verify" a path that points outside every allowed root. So this walks the
+ * chain itself: the deepest existing ancestor is resolved, and each remaining
+ * component is `lstat`ed — a symlink is followed by its own link target, a
+ * missing component keeps its name (nothing is there to escape to yet).
+ *
+ * `hops` bounds a symlink cycle, which would otherwise recurse forever.
+ */
+function resolveSymlinksFully(target, hops = 0) {
+  if (hops > MAX_SYMLINK_HOPS) throw new Error('the release manifest path has too many symlinks')
+  const absolute = path.resolve(target)
+  const parent = path.dirname(absolute)
+  const base = parent === absolute ? absolute : resolveSymlinksFully(parent, hops + 1)
+  const joined = path.join(base, path.basename(absolute))
+  let stats = null
+  try {
+    stats = fs.lstatSync(joined)
+  } catch {
+    // Nothing there: the name is kept as written. It cannot be a symlink, so it
+    // cannot be an escape, and a later `readFileSync` reports the real failure.
+    return joined
+  }
+  if (!stats.isSymbolicLink()) return joined
+  // A link: follow its OWN target, relative to the link's already-resolved
+  // directory, and resolve that target in turn.
+  return resolveSymlinksFully(path.resolve(base, fs.readlinkSync(joined)), hops + 1)
+}
+
+/**
  * Canonicalise a path, resolving symlinks where the path exists.
  *
- * A path that does not exist yet (a legitimate `scripts/latest.json` that has
- * not been written) keeps its lexical form rather than aborting the CLI. Any
- * symlink that IS resolvable is followed, which is what turns a
- * `repo/link -> /etc` escape into a path that is visibly outside the root.
+ * Kept for the ALLOWED ROOTS only, where a best-effort lexical fallback is the
+ * right behaviour: an unreadable root must not abort the CLI. Untrusted input
+ * goes through `resolveSymlinksFully`, which never falls back.
  */
 function safeRealpath(target) {
   try {
@@ -278,16 +349,24 @@ function splitManifestPathSegments(unified) {
  * Step 10 — allowlist every segment.
  *
  * An empty segment (`//`, a trailing slash), `.` and `..` are refused by name;
- * everything else has to match `SAFE_SEGMENT`, so a segment can never be a
+ * everything else has to match an allowlist, so a segment can never be a
  * traversal however it is spelled or truncated.
+ *
+ * The LAST segment names the manifest file itself, so it is held to the strict
+ * `SAFE_SEGMENT`; the segments before it name directories and are held to
+ * `SAFE_DIRECTORY_SEGMENT`, which differs only by allowing `~` and the space
+ * (a Windows runner's `RUNNER~1`, a home directory with a space in it). Both
+ * are allowlists anchored at the first character, so neither can begin with a
+ * dot and neither can carry a separator, a colon or a control character.
  */
 function validateManifestPathSegments(segments) {
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     // Empty (`//`, a trailing slash), `.` or `..`: never a manifest location.
     if (segment === '' || segment === '.' || segment === '..') {
       throw new Error('the release manifest path may not contain traversal segments')
     }
-    if (!SAFE_SEGMENT.test(segment)) {
+    const isFileName = index === segments.length - 1
+    if (isFileName ? !SAFE_SEGMENT.test(segment) : !SAFE_DIRECTORY_SEGMENT.test(segment)) {
       throw new Error('the release manifest path may only name plain file names')
     }
   }
@@ -352,7 +431,7 @@ export function resolveManifestPath(input, roots = allowedManifestRoots()) {
     // in one form resolves into the other. Requiring both inside *some* allowed
     // root still means neither the written path nor where it points can leave
     // the allowed set.
-    const resolved = safeRealpath(candidate)
+    const resolved = resolveSymlinksFully(candidate)
     const insideAsWritten = trustedRoots.some((root) => isPathInsideRoot(root, candidate))
     const insideResolved = trustedRoots.some((root) => isPathInsideRoot(root, resolved))
     if (!insideAsWritten || !insideResolved) continue
