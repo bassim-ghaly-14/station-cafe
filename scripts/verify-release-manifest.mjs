@@ -309,7 +309,7 @@ function normalizeManifestPathSeparators(raw) {
   if (path.sep !== '\\' && raw.includes('\\')) {
     throw new Error('the release manifest path must use this platform’s separator')
   }
-  return path.sep === '\\' ? raw.split('/').join('\\') : raw
+  return path.sep === '\\' ? raw.replaceAll('/', '\\') : raw
 }
 
 /**

@@ -58,7 +58,7 @@ export function AnalyticsDonutChart({
       toast(t('reports.charts.exportError'), 'error')
     }
   }
-  const downloadExcel = async () => {
+  const downloadExcel = () => {
     try {
       exportAnalyticsExcel(chart, period)
       toast(t('reports.charts.exportedExcel'), 'success')
