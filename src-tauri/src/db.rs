@@ -1608,6 +1608,42 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_invoices_wash_employee ON invoices(wash_employee_id);
         "#,
     },
+    Migration {
+        version: 33,
+        name: "invoice cashier snapshot",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- INVOICE CASHIER SNAPSHOT
+            -- ============================================================
+            -- An invoice already snapshots its CUSTOMER (`invoice_customers`),
+            -- but the cashier was only ever a live foreign key: `invoices.user_id`
+            -- points at a mutable login. Printing therefore had to resolve the
+            -- cashier at print time, which means a renamed employee silently
+            -- rewrote the identity of every invoice they ever raised, and a
+            -- reprint from another device could disagree with the original.
+            --
+            -- `cashier_name` closes that gap with the same rule every other
+            -- invoice field follows: the document carries its own copy of the
+            -- identity that was true at the moment of the sale, and a finalized
+            -- invoice never reads it back from a mutable master.
+            --
+            -- The employee record is the person as the business knows them, so
+            -- the backfill prefers `employees.name` and falls back to the login
+            -- name. This is a BEST-KNOWN value recorded once, at upgrade time:
+            -- it is better than no cashier at all on a historical document, and
+            -- it is never refreshed afterwards. An invoice whose cashier cannot
+            -- be resolved is left NULL and prints no cashier row rather than an
+            -- invented one.
+            ALTER TABLE invoices ADD COLUMN cashier_name TEXT;
+
+            UPDATE invoices
+               SET cashier_name = COALESCE(
+                       (SELECT e.name FROM employees e WHERE e.user_id = invoices.user_id),
+                       (SELECT u.name FROM users u WHERE u.id = invoices.user_id))
+             WHERE cashier_name IS NULL;
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

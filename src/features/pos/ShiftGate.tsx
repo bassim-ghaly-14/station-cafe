@@ -6,6 +6,7 @@ import { Power } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { parseMajor } from '@/lib/utils'
+import { OpenShiftCard } from './OpenShiftCard'
 
 export function ShiftGate({
   state,
@@ -17,12 +18,12 @@ export function ShiftGate({
   const [cash, setCash] = useState('')
   const [cashError, setCashError] = useState<string | null>(null)
 
-  if (state.any_active_shift && !state.my_shift) {
-    return (
-      <Card>
-        <CardHeader title={t('shift.someoneElseOpen')} subtitle={t('shift.someoneElseOpenHint')} />
-      </Card>
-    )
+  // A shift is open and it is not the caller's: the one-open-shift rule blocks
+  // opening another, so the gate explains the state instead of offering an
+  // action the backend would refuse. `open_shift` is the same read the service
+  // enforces the rule from, so the card cannot disagree with the database.
+  if (state.open_shift && !state.my_shift) {
+    return <OpenShiftCard shift={state.open_shift} />
   }
 
   async function start() {

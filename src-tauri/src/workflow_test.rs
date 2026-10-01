@@ -1422,7 +1422,7 @@ fn a_closed_shift_is_no_longer_treated_as_active() {
         state.my_shift.is_none(),
         "a closed shift is not an active shift"
     );
-    assert!(!state.any_active_shift);
+    assert!(state.open_shift.is_none());
     assert!(shift_svc::preview_shift_close(&conn, &staff).is_err());
 }
 

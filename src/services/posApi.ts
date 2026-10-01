@@ -114,6 +114,8 @@ export interface InvoiceRow {
   customer_phone: string | null
   car_plate: string | null
   car_model: string | null
+  /** Immutable snapshot of the cashier's name at the moment of the sale. */
+  cashier_name: string | null
   created_at: string
   shift_id: number | null
   business_day_id: number | null

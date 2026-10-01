@@ -18,7 +18,13 @@ use serde::Serialize;
 pub struct DayShiftState {
     pub day: Option<BusinessDay>,
     pub my_shift: Option<ShiftRow>,
-    pub any_active_shift: bool,
+    /// The shift that is open RIGHT NOW, whoever opened it.
+    ///
+    /// This is the same `shifts::any_active_shift` read that enforces the
+    /// one-open-shift rule, so the POS can only ever describe the shift the
+    /// backend actually has: there is no second "is a shift open" state to fall
+    /// out of step with the database. It is `None` when nothing is open.
+    pub open_shift: Option<ShiftRow>,
 }
 
 pub fn state(conn: &Db, actor: &User) -> AppResult<DayShiftState> {
@@ -37,7 +43,7 @@ pub fn state(conn: &Db, actor: &User) -> AppResult<DayShiftState> {
     Ok(DayShiftState {
         day: shifts::current_day(conn)?,
         my_shift,
-        any_active_shift: shifts::any_active_shift(conn)?.is_some(),
+        open_shift: shifts::any_active_shift(conn)?,
     })
 }
 

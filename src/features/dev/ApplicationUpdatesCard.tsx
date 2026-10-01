@@ -147,13 +147,13 @@ export function ApplicationUpdatesCard() {
    * The safety gate: true when Station must not restart right now.
    *
    * `day_shift_state` is the authoritative command: it reports the business day
-   * AND whether ANY shift is active, not only the caller's. A shift a cashier
-   * opened on the POS floor counts exactly as much as the admin's own, which is
-   * why no UI-cached shift state is trusted here.
+   * AND the shift that is open, not only the caller's. A shift a cashier opened
+   * on the POS floor counts exactly as much as the admin's own, which is why no
+   * UI-cached shift state is trusted here.
    */
   const blockedByOpenWork = useCallback(async (): Promise<boolean> => {
     const state = await shiftApi.state()
-    return state.day !== null || state.any_active_shift
+    return state.day !== null || state.open_shift !== null
   }, [])
 
   /** Open the confirmation — only after the gate has cleared. */

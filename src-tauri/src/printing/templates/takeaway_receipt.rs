@@ -1,6 +1,8 @@
 use super::super::escpos::{Align, ArabicMode, EscPos};
 use super::super::ir::PrintDoc;
-use super::invoice_format::{close_meta_block, meta_row, meta_timestamp, open_meta_block};
+use super::invoice_format::{
+    close_meta_block, meta_row, meta_timestamp, open_meta_block, party_identity,
+};
 use super::shared::{footer, invoice_header, items_and_totals, DocSettlement, DocTotals};
 use crate::repositories::invoices::{InvoiceLine, InvoiceRow};
 use crate::repositories::pos::Order;
@@ -104,25 +106,21 @@ pub fn takeaway_receipt(
     open_meta_block(&mut p);
     meta_timestamp(&mut p, &inv.created_at);
     meta_row(&mut p, "رقم الفاتورة", &inv.invoice_no.to_string());
-    if let Some(c) = &inv.customer_name {
-        meta_row(&mut p, "العميل", c);
-    }
-    if let Some(phone) = &inv.customer_phone {
-        meta_row(&mut p, "تليفون", phone);
-    }
-    if let Some(plate) = &inv.car_plate {
-        meta_row(&mut p, "رقم السيارة", plate);
-    }
     // The shared department renderer places the car model beside the WASH
-    // section for hybrid documents. Keep the model out of the metadata here
-    // to avoid printing the immutable snapshot twice.
-    if inv.car_model.is_some() && !lines.iter().any(|l| l.department == "WASH") {
-        meta_row(
-            &mut p,
-            "نوع السيارة",
-            inv.car_model.as_deref().unwrap_or_default(),
-        );
-    }
+    // section for hybrid documents, so the identity block only states it when
+    // this receipt has no wash items of its own — exactly as before, and never
+    // printing the immutable snapshot twice.
+    let model_without_wash = (!lines.iter().any(|l| l.department == "WASH"))
+        .then(|| inv.car_model.as_deref())
+        .flatten();
+    party_identity(
+        &mut p,
+        inv.cashier_name.as_deref(),
+        inv.customer_name.as_deref(),
+        inv.customer_phone.as_deref(),
+        inv.car_plate.as_deref(),
+        model_without_wash,
+    );
     close_meta_block(&mut p);
     items_and_totals(
         &mut p,

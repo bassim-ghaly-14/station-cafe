@@ -44,6 +44,8 @@ const INVOICE_CURRENCY_NOTE_LATIN: &str = "AMOUNTS IN EGP";
 const DATE_LABEL: &str = "التاريخ";
 /// Label of the printed time row.
 const TIME_LABEL: &str = "الوقت";
+/// Label of the cashier row: who served this sale.
+const CASHIER_LABEL: &str = "الكاشير";
 
 /// The currency sentence for the configured Arabic mode.
 pub(super) fn invoice_currency_note(mode: ArabicMode) -> &'static str {
@@ -112,6 +114,61 @@ pub(super) fn meta_row(p: &mut EscPos, label: &str, value: &str) {
 /// A metadata row set apart by weight — used for the date and the time.
 pub(super) fn meta_row_emphasis(p: &mut EscPos, label: &str, value: &str) {
     p.meta(label, value, WIDTH, true);
+}
+
+/// A metadata row whose value is bounded to what actually fits beside its
+/// label on an 80mm line.
+///
+/// Identity values are free text (an employee's name, a customer's name, a
+/// plate) and can be longer than the paper is wide. `kv_text` degrades to a
+/// single space when the pair overflows, which pushes the value onto a second
+/// physical line and breaks the two-column identity block, so the value is cut
+/// to the cells that remain after the label instead.
+pub(super) fn meta_row_fit(p: &mut EscPos, label: &str, value: &str) {
+    let room = WIDTH.saturating_sub(label.chars().count() + 1);
+    let fitted: String = value.chars().take(room.max(1)).collect();
+    p.meta(label, &fitted, WIDTH, false);
+}
+
+/// Label of the customer row.
+const CUSTOMER_LABEL: &str = "العميل";
+/// Label of the customer phone row.
+const PHONE_LABEL: &str = "تليفون";
+/// Label of the car plate row.
+const PLATE_LABEL: &str = "رقم السيارة";
+/// Label of the car model row.
+const CAR_MODEL_LABEL: &str = "نوع السيارة";
+
+/// The identity rows every invoice-shaped document states about its parties:
+/// the CASHIER who served the sale, then the CUSTOMER and their details.
+///
+/// The order is fixed and meaningful — the cashier is who ran the till and the
+/// customer is who was served — so it lives here once instead of being restated
+/// (and possibly reordered) per template. Both identities are snapshots read
+/// from the persisted invoice, never from the live session.
+pub(super) fn party_identity(
+    p: &mut EscPos,
+    cashier: Option<&str>,
+    customer_name: Option<&str>,
+    customer_phone: Option<&str>,
+    car_plate: Option<&str>,
+    car_model: Option<&str>,
+) {
+    if let Some(name) = cashier.map(str::trim).filter(|n| !n.is_empty()) {
+        meta_row_fit(p, CASHIER_LABEL, name);
+    }
+    if let Some(name) = customer_name.map(str::trim).filter(|n| !n.is_empty()) {
+        meta_row_fit(p, CUSTOMER_LABEL, name);
+    }
+    if let Some(phone) = customer_phone.map(str::trim).filter(|n| !n.is_empty()) {
+        meta_row_fit(p, PHONE_LABEL, phone);
+    }
+    if let Some(plate) = car_plate.map(str::trim).filter(|n| !n.is_empty()) {
+        meta_row_fit(p, PLATE_LABEL, plate);
+    }
+    if let Some(model) = car_model.map(str::trim).filter(|n| !n.is_empty()) {
+        meta_row_fit(p, CAR_MODEL_LABEL, model);
+    }
 }
 
 /// The printed date and time of a stored instant, as two full-width rows.

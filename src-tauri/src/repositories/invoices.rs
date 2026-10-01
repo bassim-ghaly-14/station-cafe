@@ -66,6 +66,12 @@ pub fn insert_invoice(
         ],
     )?;
     let inv = conn.last_insert_rowid();
+    // The CASHIER identity is snapshotted here, in the SAME transaction as the
+    // invoice, for the same reason the customer is: a finalized document must
+    // not read a mutable identity back at print time. `invoices.user_id` stays
+    // the live link (it is what shift/analytics attribution joins on), and this
+    // column is the document's own immutable copy of the name at sale time.
+    set_invoice_cashier(conn, inv, cashier_name_of(conn, user_id)?.as_deref())?;
     // The wash-worker attribution is written in the SAME transaction as the
     // invoice itself, immediately after the row exists. It is deliberately a
     // separate statement rather than a 20th INSERT column: the invoice's
@@ -99,6 +105,34 @@ fn wash_employee_id_of(conn: &Db, order_id: i64) -> AppResult<Option<i64>> {
         [order_id],
         |r| r.get(0),
     )?)
+}
+
+/// Resolve the cashier NAME a checkout is about to snapshot.
+///
+/// The employee record is the person as the business knows them, so it is the
+/// preferred source; the login name is only a fallback for a database whose
+/// employee row is missing. `None` means "unresolved" and is persisted as NULL:
+/// the printed document then omits the cashier row rather than inventing one.
+fn cashier_name_of(conn: &Db, user_id: i64) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT COALESCE(
+                 (SELECT e.name FROM employees e WHERE e.user_id = ?1),
+                 (SELECT u.name FROM users u WHERE u.id = ?1))
+             WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = ?1)",
+            [user_id],
+            |r| r.get(0),
+        )
+        .ok())
+}
+
+/// Write the cashier identity snapshot onto a freshly created invoice.
+fn set_invoice_cashier(conn: &Db, invoice_id: i64, name: Option<&str>) -> AppResult<()> {
+    conn.execute(
+        "UPDATE invoices SET cashier_name = ?2 WHERE id = ?1",
+        params![invoice_id, name],
+    )?;
+    Ok(())
 }
 
 /// Write the wash-worker attribution onto a freshly created invoice.
@@ -238,6 +272,8 @@ pub struct InvoiceRow {
     pub customer_phone: Option<String>,
     pub car_plate: Option<String>,
     pub car_model: Option<String>,
+    /// Immutable snapshot of the cashier's name at the moment of the sale.
+    pub cashier_name: Option<String>,
     pub created_at: String,
     pub shift_id: Option<i64>,
     pub business_day_id: Option<i64>,
@@ -247,10 +283,13 @@ pub struct InvoiceRow {
 /// true at the moment of the sale, and it is also how a customer-less invoice
 /// carries its explicit "بدون عميل" identity. The live `customers` row is only
 /// a fallback for legacy invoices that predate the snapshot.
+///
+/// The cashier is read from its OWN snapshot column and is NEVER joined to the
+/// live employee/login tables: a rename after the sale must not rewrite history.
 const INV_COLS: &str = "i.id, i.invoice_no, i.table_label, i.order_type, i.takeaway_no, i.status,
     i.total, i.paid_amount, i.service_charge, i.discount_minor, i.subtotal, i.cafe_total,
     i.wash_total, COALESCE(ic.customer_name, k.name), ic.customer_phone, ic.car_plate, ic.car_model,
-    i.created_at, i.shift_id, i.business_day_id";
+    i.cashier_name, i.created_at, i.shift_id, i.business_day_id";
 
 fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
     Ok(InvoiceRow {
@@ -271,9 +310,10 @@ fn inv_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<InvoiceRow> {
         customer_phone: r.get(14)?,
         car_plate: r.get(15)?,
         car_model: r.get(16)?,
-        created_at: r.get(17)?,
-        shift_id: r.get(18)?,
-        business_day_id: r.get(19)?,
+        cashier_name: r.get(17)?,
+        created_at: r.get(18)?,
+        shift_id: r.get(19)?,
+        business_day_id: r.get(20)?,
     })
 }
 

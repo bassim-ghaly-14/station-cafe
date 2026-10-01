@@ -61,9 +61,9 @@ function fakeUpdate(version: string, total = 1000) {
 }
 
 /** No open work: the shift gate is clear, the normal cafe-at-rest case. */
-const IDLE_DAY = { day: null, my_shift: null, any_active_shift: false }
-const OPEN_SHIFT = { day: { id: 1 }, my_shift: null, any_active_shift: true }
-const OPEN_DAY = { day: { id: 1 }, my_shift: null, any_active_shift: false }
+const IDLE_DAY = { day: null, my_shift: null, open_shift: null }
+const OPEN_SHIFT = { day: { id: 1 }, my_shift: null, open_shift: { id: 1 } }
+const OPEN_DAY = { day: { id: 1 }, my_shift: null, open_shift: null }
 
 function renderCard() {
   return render(

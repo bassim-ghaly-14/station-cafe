@@ -75,6 +75,7 @@ function invoice(over: Partial<InvoiceRow> = {}): InvoiceRow {
     customer_phone: null,
     car_plate: 'ABC123',
     car_model: null,
+    cashier_name: 'أحمد سيد',
     created_at: '2026-09-25 14:30:00Z',
     shift_id: 1,
     business_day_id: 1,

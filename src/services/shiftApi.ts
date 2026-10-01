@@ -126,7 +126,11 @@ export interface DayClosePreview {
 export interface DayShiftState {
   day: { id: number; day_date: string; status: string; opened_at: string } | null
   my_shift: ShiftRow | null
-  any_active_shift: boolean
+  /**
+   * The shift that is open right now, whoever opened it — the backend's own
+   * open-shift read, not a UI guess. `null` when nothing is open.
+   */
+  open_shift: ShiftRow | null
 }
 
 export interface ShiftClosing {

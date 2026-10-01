@@ -68,6 +68,67 @@ export function ClosingMetric({
   )
 }
 
+/**
+ * The chrome every operational card of this family shares: the identity rail,
+ * the header row (mark, title, status chip, meta line, optional header action)
+ * and the footer row. It carries the visual language — accent rail, borders,
+ * spacing and typography — so a card that states an OPERATIONAL STATUS is
+ * visibly the same object as the shift and day closing cards, without having to
+ * carry money to earn that resemblance.
+ */
+export function ClosingCardShell({
+  accent,
+  title,
+  icon,
+  status,
+  meta,
+  headerAction,
+  children,
+  footerNote,
+  action,
+}: {
+  readonly accent: ClosingAccent
+  readonly title: string
+  readonly icon: ReactNode
+  readonly status: ReactNode
+  readonly meta: ReactNode
+  readonly headerAction?: ReactNode
+  readonly children: ReactNode
+  readonly footerNote: ReactNode
+  readonly action: ReactNode
+}) {
+  const tone = ACCENT[accent]
+  return (
+    <Card className="flex h-full flex-col overflow-hidden p-0" data-closing={accent}>
+      {/* Identity rail: the one place the card kind is announced visually. */}
+      <span aria-hidden className={cn('block h-1 w-full shrink-0', tone.header)} />
+      <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn('shrink-0', tone.mark)}>{icon}</span>
+            <h2 className="text-section">{title}</h2>
+            {status}
+          </div>
+          {/* Date, time and the AM/PM marker are separate slots, so a long
+              localized date wraps instead of colliding with the time. */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption">
+            {meta}
+          </div>
+        </div>
+        {headerAction}
+      </div>
+
+      <div className="flex-1 p-4">{children}</div>
+
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
+        <div className="min-w-0 flex-1">{footerNote}</div>
+        {/* Action area keeps one shared shape so both cards behave identically. */}
+        <div className="flex shrink-0 items-center gap-2">{action}</div>
+      </div>
+    </Card>
+  )
+}
+
 export function ClosingCard({
   accent,
   title,
@@ -108,26 +169,17 @@ export function ClosingCard({
 }) {
   const tone = ACCENT[accent]
   return (
-    <Card className="flex h-full flex-col overflow-hidden p-0" data-closing={accent}>
-      {/* Identity rail: the one place the closing kind is announced visually. */}
-      <span aria-hidden className={cn('block h-1 w-full shrink-0', tone.header)} />
-      <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-4 py-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn('shrink-0', tone.mark)}>{icon}</span>
-            <h2 className="text-section">{title}</h2>
-            {status}
-          </div>
-          {/* Date, time and the AM/PM marker are separate slots, so a long
-              localized date wraps instead of colliding with the time. */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption">
-            {meta}
-          </div>
-        </div>
-        {headerAction}
-      </div>
-
-      <div className="grid flex-1 gap-4 p-4 sm:grid-cols-2">
+    <ClosingCardShell
+      accent={accent}
+      title={title}
+      icon={icon}
+      status={status}
+      meta={meta}
+      headerAction={headerAction}
+      footerNote={footerNote}
+      action={action}
+    >
+      <div className="grid h-full gap-4 sm:grid-cols-2">
         <section className={cn('flex flex-col justify-center rounded-md px-4 py-3', tone.primary)}>
           <p className="text-sm font-medium">{primaryLabel}</p>
           <MoneyDisplay
@@ -144,12 +196,6 @@ export function ClosingCard({
           </div>
         </section>
       </div>
-
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle px-4 py-3">
-        <div className="min-w-0 flex-1">{footerNote}</div>
-        {/* Action area keeps one shared shape so both cards behave identically. */}
-        <div className="flex shrink-0 items-center gap-2">{action}</div>
-      </div>
-    </Card>
+    </ClosingCardShell>
   )
 }

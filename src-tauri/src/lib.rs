@@ -23,6 +23,8 @@ mod demo_data;
 mod deletion_test;
 #[cfg(test)]
 mod employees_test;
+#[cfg(test)]
+mod invoice_identity_test;
 mod error;
 mod network;
 #[cfg(test)]

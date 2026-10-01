@@ -367,7 +367,7 @@ describe('PosPage takeaway entry', () => {
     mocks.state.mockResolvedValue({
       day: { id: 1 },
       my_shift: { id: 1 },
-      any_active_shift: true,
+      open_shift: { id: 1 },
     })
 
     mocks.getOrder.mockResolvedValue(
@@ -755,7 +755,7 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
   // header, so they existed only AFTER the shift gate — a manager with no open
   // till never saw the workspace and therefore never saw either button.
   it('shows a MANAGER both records with no open shift of their own', async () => {
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, any_active_shift: false })
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, open_shift: null })
     signInAs('MANAGER')
 
     renderPage()
@@ -765,7 +765,7 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
   })
 
   it('shows a MANAGER both records with no open business day either', async () => {
-    mocks.state.mockResolvedValue({ day: null, my_shift: null, any_active_shift: false })
+    mocks.state.mockResolvedValue({ day: null, my_shift: null, open_shift: null })
     signInAs('MANAGER')
 
     renderPage()
@@ -775,7 +775,7 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
   })
 
   it('keeps showing both records to a CASHIER with an active shift', async () => {
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 4 }, any_active_shift: true })
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 4 }, open_shift: { id: 4 } })
     signInAs('STAFF')
 
     renderPage()
@@ -788,7 +788,7 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
   // backend serves both reads to any STAFF regardless of who raised the invoice
   // or the ticket, and the UI must not contradict that.
   it('does not hide the records from a cashier whose colleague owns them', async () => {
-    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, any_active_shift: true })
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, open_shift: { id: 4 } })
     signInAs('STAFF')
 
     renderPage()
@@ -1937,7 +1937,7 @@ describe('POS resilience on load', () => {
     mocks.state.mockResolvedValue({
       day: { id: 1 },
       my_shift: { id: 1 },
-      any_active_shift: true,
+      open_shift: { id: 1 },
     })
     mocks.serviceCharge.mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] })
   })
