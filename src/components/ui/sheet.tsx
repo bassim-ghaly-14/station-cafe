@@ -51,6 +51,7 @@ export function Sheet({
   readonly className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const scrimRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const { t } = useTranslation()
 
@@ -68,16 +69,29 @@ export function Sheet({
       if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // Tapping the empty scrim closes, as before. Bound natively instead of as a
+    // React `onMouseDown` on the scrim: the scrim is a backdrop, not a control,
+    // so a mouse handler on it is typescript:S6848 and giving it a role or a
+    // tab stop would turn the whole overlay into a fake button. `mousedown`
+    // bubbles to the scrim, and the `target` comparison is what keeps a tap
+    // inside the sheet — or a scroll/touch gesture that ends on the scrim —
+    // from dismissing it.
+    const scrim = scrimRef.current
+    const onScrimMouseDown = (e: MouseEvent) => {
+      if (e.target === scrim) onCloseRef.current()
+    }
+    scrim?.addEventListener('mousedown', onScrimMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      scrim?.removeEventListener('mousedown', onScrimMouseDown)
+    }
   }, [open])
 
   if (!open) return null
   return (
     <div
+      ref={scrimRef}
       className="fixed inset-0 z-50 flex items-end bg-overlay motion-safe:animate-[drawer-scrim-in_150ms_ease-out]"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
     >
       <div
         ref={ref}

@@ -64,6 +64,7 @@ export function Drawer({
   readonly className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const scrimRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const { t } = useTranslation()
 
@@ -82,16 +83,29 @@ export function Drawer({
       if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // Pressing the empty scrim dismisses, exactly as it did with the previous
+    // inline `onMouseDown`. It is bound as a native listener rather than a
+    // React handler because the scrim is a backdrop, not a control: a mouse
+    // handler on a non-interactive element is typescript:S6848, and adding a
+    // role/tabIndex to satisfy that would expose the whole overlay as a fake
+    // button. `mousedown` bubbles, so the `target` comparison is what keeps a
+    // press inside the panel (or a drag that ends on the scrim) from closing it.
+    const scrim = scrimRef.current
+    const onScrimMouseDown = (e: MouseEvent) => {
+      if (e.target === scrim) onCloseRef.current()
+    }
+    scrim?.addEventListener('mousedown', onScrimMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      scrim?.removeEventListener('mousedown', onScrimMouseDown)
+    }
   }, [open])
 
   if (!open) return null
   return (
     <div
+      ref={scrimRef}
       className="fixed inset-0 z-50 flex items-end justify-end overflow-hidden bg-overlay max-sm:justify-center motion-safe:animate-[drawer-scrim-in_150ms_ease-out]"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
     >
       <div
         ref={ref}

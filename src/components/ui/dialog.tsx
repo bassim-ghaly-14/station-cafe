@@ -54,6 +54,7 @@ export function Dialog({
   readonly headerActions?: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const scrimRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const { t } = useTranslation()
 
@@ -81,16 +82,40 @@ export function Dialog({
       if (e.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    /*
+     * Dismiss by pressing the empty scrim.
+     *
+     * The scrim is a backdrop, not a control: it carries no role, no tab stop,
+     * and no keyboard semantics, because it is not reachable and nothing inside
+     * the dialog needs it to be. So it cannot carry a React `onMouseDown` either
+     * — a mouse handler on a non-interactive element is an accessibility smell
+     * (typescript:S6848), and it is not one here: it only ever runs for a press
+     * that landed on the scrim itself.
+     *
+     * It is therefore bound as a native listener on the element, next to the
+     * Escape listener, for the same duration and through the same callback
+     * ref. The semantics are identical to the previous inline handler: the
+     * listener is on the scrim and `mousedown` bubbles, so the `target`
+     * comparison is what keeps a press inside the dialog from closing it, and a
+     * press that starts inside the dialog and ends on the scrim still does not
+     * close it.
+     */
+    const scrim = scrimRef.current
+    const onScrimMouseDown = (e: MouseEvent) => {
+      if (e.target === scrim) onCloseRef.current()
+    }
+    scrim?.addEventListener('mousedown', onScrimMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      scrim?.removeEventListener('mousedown', onScrimMouseDown)
+    }
   }, [open])
 
   if (!open) return null
   return (
     <div
+      ref={scrimRef}
       className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-overlay p-0 sm:items-center sm:p-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
     >
       <div
         ref={ref}
