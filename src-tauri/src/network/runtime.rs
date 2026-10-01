@@ -179,9 +179,40 @@ pub fn apply(state: &AppState, cfg: &NetworkConfig) -> RuntimeStatus {
 
     // 4. Only now that the socket is genuinely bound do we advertise. mDNS
     //    must never point a manager at a service that does not exist.
-    let discovery = Advertisement::register(addr.ip(), addr.port(), env!("CARGO_PKG_VERSION"));
-    if let Ok(mut slot) = state.discovery.lock() {
-        *slot = discovery.ok();
+    //
+    //    The advertisement claims the friendly name `station.local` (see
+    //    `mdns::LAN_HOSTNAME`) against the address that was just bound, while
+    //    the HTTP listener keeps holding the SOCKET address — the name is
+    //    resolution metadata and is never handed to `bind`.
+    //
+    //    FAILURE IS NOT FATAL. `register` is given the bound IP and the bound
+    //    port, so a multicast-blocked machine, a name conflict or an
+    //    unavailable responder is logged and the service simply runs without
+    //    discovery — `state.discovery` stays `None`, `discovery_active` reports
+    //    false, and the UI shows the IP fallback.
+    match Advertisement::register(addr.ip(), addr.port(), env!("CARGO_PKG_VERSION")) {
+        Ok(advertisement) => {
+            log::info!(
+                "local api: advertised {} on the LAN (http://{}:{})",
+                crate::network::mdns::LAN_HOSTNAME,
+                addr.ip(),
+                addr.port()
+            );
+            if let Ok(mut slot) = state.discovery.lock() {
+                *slot = Some(advertisement);
+            }
+        }
+        Err(reason) => {
+            // Reported, not swallowed: an operator reading the log must be able
+            // to tell "the network name will not work" from "the LAN is down".
+            log::warn!(
+                "local api: mDNS advertisement of {} failed ({reason}); the IP address remains the fallback and the POS is unaffected",
+                crate::network::mdns::LAN_HOSTNAME
+            );
+            if let Ok(mut slot) = state.discovery.lock() {
+                *slot = None;
+            }
+        }
     }
 
     status(state)

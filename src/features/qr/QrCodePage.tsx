@@ -36,15 +36,17 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Card, CardHeader, Loader } from '@/components/ui'
+import { Button, Card, CardHeader, Loader } from '@/components/ui'
 import { QrCode as QrCodeIcon } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { StationQrCode } from '@/components/qr/StationQrCode'
 import { localAccessApi, type LocalAccess } from '@/services/localAccessApi'
+import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
 
 export default function QrCodePage() {
   const { t } = useTranslation()
+  const toast = useToast()
   const errText = useErrText(t)
   const [access, setAccess] = useState<LocalAccess | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -76,6 +78,28 @@ export default function QrCodePage() {
   const running = access?.apiRunning === true
   const svg = running ? access?.svg : null
   const url = running ? access?.url : null
+  // The IP fallback, shown only when it actually differs from what the code
+  // encodes — i.e. only while the friendly name is the primary address. Both
+  // strings come from the backend; the page builds neither.
+  const fallback =
+    running && access?.fallbackUrl && access.fallbackUrl !== access.url ? access.fallbackUrl : null
+
+  /**
+   * Copy the canonical URL — the same string the QR encodes and the same string
+   * shown beneath it.
+   *
+   * No URL is assembled here: `url` is what the backend produced, so a
+   * clipboard action can never paste something the code does not open.
+   */
+  const copyUrl = async () => {
+    if (!url) return
+    try {
+      await navigator.clipboard.writeText(url)
+      toast(t('dev.localAccessCopied'), 'success')
+    } catch {
+      toast(t('app.error'), 'error')
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -134,6 +158,28 @@ export default function QrCodePage() {
                 {t('dev.localAuthStillRequired')}
               </p>
             </div>
+
+            {/* Copy: the canonical URL, so what a manager pastes into a phone
+                is exactly what the code opens. */}
+            <Button onClick={() => void copyUrl()} variant="secondary" data-testid="qr-code-copy">
+              {t('dev.localAccessCopy')}
+            </Button>
+
+            {/* The IP fallback, as a secondary diagnostic line. Shown ONLY while
+                the friendly name is the primary address, so the page never
+                presents two competing addresses without saying which is which. */}
+            {fallback && (
+              <p
+                className="text-caption text-foreground-subtle text-center"
+                data-testid="qr-code-fallback"
+              >
+                {t('dev.localAccessFallbackLabel')}
+                {/* LTR: it is an address, and an address reads left-to-right. */}
+                <span dir="ltr" className="ms-2 font-mono">
+                  {fallback}
+                </span>
+              </p>
+            )}
           </div>
         ) : (
           /*

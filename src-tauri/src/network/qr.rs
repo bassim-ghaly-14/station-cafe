@@ -43,7 +43,25 @@ pub fn access_url(host: &str, port: u16) -> String {
     // `http` because the listener is plain HTTP on a LAN. A phone scanning this
     // gets the real Station login page over the café's own network; no secret
     // is transmitted in the address, which is what would otherwise justify TLS.
+    // The literal is deliberately inline rather than behind a scheme constant:
+    // `tests/lanContract.test.ts` pins this exact expression as the proof that
+    // the payload is assembled from host and port alone, with no branch that
+    // could concatenate a credential into it. Keep it in this shape.
     format!("http://{host}:{port}{ACCESS_PATH}")
+}
+
+/// The canonical friendly URL for the LAN service — `http://station.local:47821/`.
+///
+/// THE single place the friendly address is assembled. The QR page, Dev
+/// Settings and the mDNS hostname all read from here (and from
+/// [`mdns::LAN_HOSTNAME`]), so the name a manager types, the name printed on the
+/// page and the name advertised on the network cannot drift apart.
+///
+/// The port is a parameter, never a literal: it is the port the listener
+/// ACTUALLY bound, so a reconfigured port produces a matching URL instead of a
+/// stale one.
+pub fn friendly_url(port: u16) -> String {
+    access_url(crate::network::mdns::LAN_HOSTNAME, port)
 }
 
 /// Everything the UI needs to show the QR and explain it.
@@ -56,6 +74,12 @@ pub struct LocalAccess {
     /// URL, which let the UI display — and imply was reachable — an address
     /// for a server that did not exist. A QR to a stopped API is worse than no
     /// QR at all, because it scans and then fails.
+    ///
+    /// This is the PREFERRED address: `station.local` while mDNS discovery is
+    /// live, and the IP fallback otherwise. It is the single canonical value,
+    /// and the QR is rendered from exactly this string — the payload and the
+    /// text a manager reads are therefore the same bytes by construction, not
+    /// by two code paths agreeing.
     pub url: Option<String>,
     /// The QR as an SVG document. `None` whenever `url` is `None`.
     pub svg: Option<String>,
@@ -73,6 +97,19 @@ pub struct LocalAccess {
     pub other_hosts: Vec<String>,
     /// Whether mDNS advertised Station. Only ever true after a real bind.
     pub discovery_active: bool,
+    /// The friendly hostname, present only while mDNS discovery is actually
+    /// advertising it. `None` means "clients cannot resolve this name right
+    /// now", and the UI must then fall back to `fallback_url` rather than
+    /// display a name nothing answers to.
+    pub hostname: Option<String>,
+    /// The friendly URL, `http://station.local:<port>/`, or `None` when
+    /// discovery is not advertising it.
+    pub friendly_url: Option<String>,
+    /// The IP URL, `http://<lan-ip>:<port>/` — always present while running.
+    ///
+    /// This is the guarantee, not the convenience: a phone whose OS blocks
+    /// mDNS, or a network that filters multicast, still reaches Station here.
+    pub fallback_url: Option<String>,
 }
 
 /// Choose the address the QR should encode.
@@ -143,6 +180,9 @@ pub fn local_access(
             host: None,
             other_hosts: Vec::new(),
             discovery_active: false,
+            hostname: None,
+            friendly_url: None,
+            fallback_url: None,
         });
     }
 
@@ -150,7 +190,18 @@ pub fn local_access(
         "no LAN address is available on this machine, so a scannable code cannot be produced"
             .to_string()
     })?;
-    let url = access_url(&host, port);
+    // The IP address is ALWAYS produced. It is the guarantee: a phone whose OS
+    // does not answer mDNS queries still reaches Station this way, so this must
+    // never depend on discovery succeeding.
+    let fallback_url = access_url(&host, port);
+    // The friendly name is offered only when it is actually being ADVERTISED.
+    // Claiming `station.local` while multicast is blocked would put a URL on a
+    // counter that no phone can resolve, which is strictly worse than showing
+    // the IP that works.
+    let friendly_url = discovery_active.then(|| friendly_url(port));
+    // The QR encodes the canonical `url`, and the displayed URL is that same
+    // value — one variable, so the code and the text cannot disagree.
+    let url = friendly_url.clone().unwrap_or_else(|| fallback_url.clone());
     let svg = render_svg(&url)?;
 
     // Offer the machine's other addresses so a manager is never stuck if the
@@ -176,6 +227,9 @@ pub fn local_access(
         host: Some(host),
         other_hosts,
         discovery_active,
+        hostname: discovery_active.then(|| crate::network::mdns::LAN_HOSTNAME.to_string()),
+        friendly_url,
+        fallback_url: Some(fallback_url),
     })
 }
 
@@ -299,6 +353,125 @@ mod tests {
     }
 
     #[test]
+    fn the_canonical_friendly_url_is_station_local_on_the_bound_port() {
+        // THE PRIMARY CONTRACT.
+        assert_eq!(friendly_url(47821), "http://station.local:47821/");
+    }
+
+    #[test]
+    fn the_friendly_url_preserves_a_reconfigured_port() {
+        // The port is never a literal anywhere: it comes from the bound socket.
+        assert_eq!(friendly_url(50000), "http://station.local:50000/");
+        assert_ne!(friendly_url(47821), friendly_url(50000));
+    }
+
+    #[test]
+    fn the_friendly_url_is_the_same_string_the_qr_encodes() {
+        // The QR payload IS the canonical URL, not a parallel reconstruction.
+        let url = friendly_url(47821);
+        let svg = render_svg(&url).expect("renders");
+        // Determinism is what makes this assertable: the same URL always yields
+        // byte-identical output, and a different URL never does.
+        assert_eq!(svg, render_svg(&friendly_url(47821)).unwrap());
+        assert_ne!(svg, render_svg(&access_url("192.168.1.50", 47821)).unwrap());
+    }
+
+    #[test]
+    fn the_ip_fallback_url_is_the_form_the_manager_types_when_dns_fails() {
+        // THE FALLBACK CONTRACT.
+        assert_eq!(
+            access_url("192.168.1.88", 47821),
+            "http://192.168.1.88:47821/"
+        );
+    }
+
+    #[test]
+    fn both_urls_end_the_same_way() {
+        // Trailing-slash behaviour is identical for the friendly and the
+        // fallback form, so the two can be shown side by side.
+        for url in [friendly_url(47821), access_url("192.168.1.88", 47821)] {
+            assert!(url.ends_with('/'), "{url}");
+            assert!(
+                url.matches('/').count() == 3,
+                "exactly scheme + path: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn neither_url_carries_a_credential() {
+        // The friendly name must not become a place to smuggle one.
+        for url in [friendly_url(47821), access_url("192.168.1.88", 47821)] {
+            assert!(
+                !url.contains('?') && !url.contains('#') && !url.contains('@'),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_qr_is_the_friendly_name_whenever_discovery_is_advertising() {
+        let cfg = NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".into(),
+            port: 47821,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:47821".parse().unwrap();
+        let access = local_access(&cfg, Some(addr), true).expect("access info");
+        assert_eq!(access.url.as_deref(), Some("http://station.local:47821/"));
+        assert_eq!(
+            access.friendly_url.as_deref(),
+            Some("http://station.local:47821/")
+        );
+        assert_eq!(access.hostname.as_deref(), Some("station.local"));
+        // The IP remains available as the fallback, never removed.
+        assert!(access
+            .fallback_url
+            .as_deref()
+            .is_some_and(|u| u.ends_with(":47821/")));
+    }
+
+    #[test]
+    fn the_qr_falls_back_to_the_ip_when_discovery_is_not_advertising() {
+        // THE GRACEFUL-FALLBACK CONTRACT: a name nothing answers to is worse
+        // than the address that always works.
+        let cfg = NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".into(),
+            port: 47821,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:47821".parse().unwrap();
+        let access = local_access(&cfg, Some(addr), false).expect("access info");
+        assert!(
+            !access.discovery_active,
+            "this is the degraded mode under test"
+        );
+        assert_eq!(access.url.as_deref(), access.fallback_url.as_deref());
+        assert_ne!(access.url.as_deref(), Some("http://station.local:47821/"));
+        // No hostname is claimed while nothing advertises it.
+        assert_eq!(access.hostname, None);
+        assert_eq!(access.friendly_url, None);
+        // But the service is fully running and still yields a usable QR.
+        assert!(access.api_running);
+        assert!(access.svg.is_some());
+    }
+
+    #[test]
+    fn a_stopped_service_claims_no_address_at_all() {
+        // The friendly name must not survive into a stopped state either.
+        let cfg = NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".into(),
+            port: 47821,
+        };
+        let access = local_access(&cfg, None, true).expect("access info");
+        assert_eq!(access.hostname, None);
+        assert_eq!(access.friendly_url, None);
+        assert_eq!(access.fallback_url, None);
+        assert_eq!(access.url, None);
+    }
+
+    #[test]
     fn local_access_reports_the_running_port_and_discovery_state() {
         let cfg = NetworkConfig {
             enabled: true,
@@ -313,11 +486,32 @@ mod tests {
         assert!(access.discovery_active);
         assert!(access.url.is_some(), "a running service must yield a URL");
         assert!(access.svg.is_some(), "a running service must yield a QR");
+        // With discovery live the canonical URL is the friendly name, while
+        // `host` keeps the IP for the fallback and for diagnostics.
         assert!(access
             .url
             .as_deref()
             .unwrap_or_default()
+            .contains("station.local:47821"));
+        assert!(access
+            .fallback_url
+            .as_deref()
+            .unwrap_or_default()
             .contains("192.168.1.50:47821"));
+    }
+
+    #[test]
+    fn the_port_of_the_url_is_the_port_that_was_bound() {
+        // Never a literal: an ephemeral test bind must be reflected exactly.
+        let cfg = NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".into(),
+            port: 47821,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:51234".parse().unwrap();
+        let access = local_access(&cfg, Some(addr), true).expect("access info");
+        assert_eq!(access.port, 51234);
+        assert!(access.url.unwrap().ends_with(":51234/"));
     }
 
     #[test]

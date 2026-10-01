@@ -122,7 +122,11 @@ export function LocalAccessCard() {
                   {t('dev.localAccessProductName')}
                 </p>
 
-                {/* The address a manager reads out or types. LTR: it is a URL. */}
+                {/* The address a manager reads out or types. LTR: it is a URL.
+                    This is the CANONICAL `access.url` produced in Rust — the
+                    friendly `station.local` name while mDNS advertises it, the
+                    IP otherwise. It is the same string the QR was rendered
+                    from, and nothing here rebuilds it. */}
                 <p
                   className="font-mono text-body-strong"
                   dir="ltr"
@@ -140,6 +144,23 @@ export function LocalAccessCard() {
                 {access.discoveryActive && (
                   <p className="text-caption text-foreground-muted" dir="rtl">
                     {t('dev.localDiscoveryOn')}
+                  </p>
+                )}
+
+                {/* The IP fallback, shown only when it is not what the code
+                    already encodes — i.e. only while the friendly name is the
+                    primary address. Diagnostic, never hidden, and never built
+                    here: the backend produced this string too. */}
+                {access.fallbackUrl && access.fallbackUrl !== access.url && (
+                  <p
+                    className="text-caption text-foreground-subtle"
+                    dir="rtl"
+                    data-testid="dev-local-access-fallback"
+                  >
+                    {t('dev.localAccessFallbackLabel')}
+                    <span dir="ltr" className="ms-2 font-mono">
+                      {access.fallbackUrl}
+                    </span>
                   </p>
                 )}
 

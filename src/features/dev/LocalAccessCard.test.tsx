@@ -10,7 +10,8 @@ vi.mock('@/services/localAccessApi', () => ({
 
 /** A running service: there is a listener, so there is a URL and a QR. */
 const running = {
-  url: 'http://192.168.1.61:47821/',
+  // THE canonical friendly URL, identical to the one the QR Code page shows.
+  url: 'http://station.local:47821/',
   svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>',
   apiRunning: true,
   error: null,
@@ -18,6 +19,18 @@ const running = {
   host: '192.168.1.61',
   otherHosts: ['10.0.0.9'],
   discoveryActive: true,
+  hostname: 'station.local',
+  friendlyUrl: 'http://station.local:47821/',
+  fallbackUrl: 'http://192.168.1.61:47821/',
+}
+
+/** Multicast blocked: the listener runs, but no name is advertised. */
+const noDiscovery = {
+  ...running,
+  url: 'http://192.168.1.61:47821/',
+  discoveryActive: false,
+  hostname: null,
+  friendlyUrl: null,
 }
 
 /** The defect's symptom: enabled in the settings, but nothing listening. */
@@ -30,6 +43,9 @@ const notRunning = {
   host: null,
   otherHosts: [],
   discoveryActive: false,
+  hostname: null,
+  friendlyUrl: null,
+  fallbackUrl: null,
 }
 
 const enabled = { enabled: true, bind: 'lan', port: 47821 }
@@ -164,8 +180,44 @@ describe('LocalAccessCard', () => {
     vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
     renderCard()
     const shown = await screen.findByTestId('dev-local-access-url')
-    expect(shown.textContent).toBe('http://192.168.1.61:47821/')
+    expect(shown.textContent).toBe('http://station.local:47821/')
     expect(shown.textContent).not.toContain('/api/v1/health')
+  })
+
+  it('shows the friendly hostname as the primary address', async () => {
+    // THE DEV SETTINGS CONTRACT: the preferred local address is
+    // `station.local:47821`, not the machine's IP.
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
+    renderCard()
+    const shown = await screen.findByTestId('dev-local-access-url')
+    expect(shown.textContent).toBe('http://station.local:47821/')
+    // The displayed value is the backend's canonical URL, rebuilt by nobody.
+    expect(shown.textContent).toBe(running.url)
+  })
+
+  it('keeps the LAN IP visible as a fallback, never replacing the name', async () => {
+    // The IP remains available as a diagnostic/fallback value, exactly as it was
+    // before — it is demoted, not deleted.
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
+    renderCard()
+    const fallback = await screen.findByTestId('dev-local-access-fallback')
+    expect(fallback.textContent).toContain('192.168.1.61:47821')
+    // And it is secondary: the name is still the primary line.
+    expect(screen.getByTestId('dev-local-access-url').textContent).toContain('station.local')
+  })
+
+  it('falls back to the IP when mDNS could not advertise the name', async () => {
+    // Discovery failing must not break Dev Settings: the card shows the
+    // reachable address and claims no hostname.
+    vi.mocked(localAccessApi.load).mockResolvedValue(noDiscovery)
+    vi.mocked(localAccessApi.getConfig).mockResolvedValue(enabled)
+    renderCard()
+    const shown = await screen.findByTestId('dev-local-access-url')
+    expect(shown.textContent).toBe('http://192.168.1.61:47821/')
+    // No duplicate line: the displayed URL already IS the fallback.
+    expect(screen.queryByTestId('dev-local-access-fallback')).not.toBeInTheDocument()
   })
 
   it('states what the QR opens, so the purpose is obvious', async () => {

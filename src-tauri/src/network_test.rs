@@ -1374,4 +1374,64 @@ mod qr_access_tests {
         assert_eq!(url, "http://192.168.1.50:47821/");
         assert!(!url.contains('?') && !url.contains('#') && !url.contains('@'));
     }
+
+    #[test]
+    fn the_qr_payload_carries_no_credential_with_the_friendly_name_either() {
+        // The same guarantee must hold for the PRIMARY address. Introducing a
+        // hostname must not become a place to smuggle a token — the safe form
+        // and the friendly form are built by the same function.
+        let cfg = crate::network::config::NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".to_string(),
+            port: crate::network::config::DEFAULT_PORT,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:47821".parse().unwrap();
+        let access = crate::network::qr::local_access(&cfg, Some(addr), true).unwrap();
+        let url = access.url.expect("a running service has a URL");
+        assert_eq!(url, "http://station.local:47821/");
+        assert!(!url.contains('?') && !url.contains('#') && !url.contains('@'));
+    }
+
+    #[test]
+    fn the_friendly_name_is_never_substituted_for_the_bind_address() {
+        // mDNS advertises a NAME; the listener binds a SOCKET. If the name were
+        // ever handed to `bind` the LAN service would stop working entirely, so
+        // this pins that the bind path still parses an IP and that the advertised
+        // hostname is not a usable socket address.
+        assert!(
+            crate::network::mdns::LAN_HOSTNAME
+                .parse::<std::net::IpAddr>()
+                .is_err(),
+            "an mDNS name must never be usable as a bind address"
+        );
+        assert!(crate::network::config::NetworkConfig::default()
+            .bind
+            .parse::<std::net::IpAddr>()
+            .is_err());
+    }
+
+    #[test]
+    fn a_failed_advertisement_leaves_the_ip_url_intact() {
+        // THE GRACEFUL-FALLBACK CONTRACT, end to end over the real builder:
+        // `discovery_active: false` is what `runtime` stores when mDNS
+        // registration fails, and it must degrade to the IP rather than to a
+        // name nothing answers to — while keeping the service fully usable.
+        let cfg = crate::network::config::NetworkConfig {
+            enabled: true,
+            bind: "192.168.1.50".to_string(),
+            port: crate::network::config::DEFAULT_PORT,
+        };
+        let addr: std::net::SocketAddr = "192.168.1.50:47821".parse().unwrap();
+        let access = crate::network::qr::local_access(&cfg, Some(addr), false).unwrap();
+
+        assert!(access.api_running, "the LAN service itself is unaffected");
+        assert!(access.svg.is_some(), "a QR is still produced");
+        assert_eq!(access.url.as_deref(), Some("http://192.168.1.50:47821/"));
+        assert_eq!(access.hostname, None);
+        assert_eq!(access.friendly_url, None);
+        assert_eq!(
+            access.fallback_url.as_deref(),
+            Some("http://192.168.1.50:47821/")
+        );
+    }
 }

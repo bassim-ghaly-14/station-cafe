@@ -15,6 +15,11 @@ export interface LocalAccess {
    * Nullable on purpose: the backend only produces a URL when a listener
    * actually exists, so a stopped service can never be displayed as though it
    * were reachable.
+   *
+   * This is the CANONICAL URL, and it is whatever the backend decided is best:
+   * `http://station.local:47821/` while mDNS discovery advertises the friendly
+   * name, otherwise the IP fallback. The page displays exactly this string and
+   * the code was rendered from it, so the two cannot disagree.
    */
   url: string | null
   /** The QR as an SVG document, or `null` when the service is not running. */
@@ -27,6 +32,21 @@ export interface LocalAccess {
   host: string | null
   otherHosts: string[]
   discoveryActive: boolean
+  /**
+   * `station.local` while discovery advertises it, otherwise `null`.
+   *
+   * `null` means the name is NOT resolvable right now, so the UI must fall back
+   * to `fallbackUrl` rather than display a hostname nothing answers to.
+   */
+  hostname: string | null
+  /** `http://station.local:47821/`, or `null` when discovery is not advertising. */
+  friendlyUrl: string | null
+  /**
+   * `http://<lan-ip>:47821/` — the guarantee for any device that cannot resolve
+   * `.local` (Windows without an mDNS responder, a network that filters
+   * multicast). Present whenever the service is running.
+   */
+  fallbackUrl: string | null
 }
 
 export interface NetworkConfig {

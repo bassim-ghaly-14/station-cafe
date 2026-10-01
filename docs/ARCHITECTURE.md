@@ -75,7 +75,11 @@ Direct ESC/POS to Xprinter (80mm thermal, monochrome) — **no PDF-based printin
 
 ## 5. Local network
 
-Main PC hosts the app + SQLite. A local HTTP API (Phase 2, same Tauri/Rust process bound to the LAN) serves the manager UI to laptops/phones on Wi-Fi. **The SQLite file is never exposed over the network.** Discovery: mDNS (`station.local`) + QR code in the app, with IP fallback when mDNS fails.
+Main PC hosts the app + SQLite. A local HTTP API (Phase 2, same Tauri/Rust process bound to the LAN) serves the manager UI to laptops/phones on Wi-Fi. **The SQLite file is never exposed over the network.**
+
+Discovery: mDNS/DNS-SD advertises the hostname **`station.local`** (`mdns-sd`, pure Rust, no Bonjour dependency) against the address the listener actually bound, so `http://station.local:47821/` resolves on the cafe Wi-Fi. The QR code and Dev Settings both read the one canonical URL built in Rust (`network::qr::friendly_url`), with the port taken from the bound socket — never a literal. When mDNS registration fails (multicast blocked, no responder, a name conflict) the failure is logged, the LAN server is unaffected, and the UI shows the IP fallback `http://<lan-ip>:47821/` instead. `.local` is link-local by RFC 6762, so this can never leave the LAN: no external DNS, no router configuration, no relay.
+
+**Hostname vs. bind are separate concerns.** mDNS publishes a NAME; the HTTP listener binds an IP `SocketAddr`. The name is never passed to `bind`, and a name is never a usable socket address — both are asserted in tests.
 
 ## 6. Updates
 

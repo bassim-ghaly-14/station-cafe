@@ -1,9 +1,9 @@
 //! mDNS/DNS-SD advertisement — a CONVENIENCE, never the source of truth.
 //!
-//! What this module is allowed to do is publish that Station exists and on
-//! which port. What it must never do is become a dependency: the HTTP API in
-//! [`super::server`] is the real target, and the runtime IP is always
-//! authoritative.
+//! What this module is allowed to do is publish that Station exists, under the
+//! name `station.local`, and on which port. What it must never do is become a
+//! dependency: the HTTP API in [`super::server`] is the real target, and the
+//! runtime IP is always authoritative.
 //!
 //! Three properties follow, and each is deliberate:
 //!
@@ -18,6 +18,13 @@
 //! - **Failure is never fatal.** Multicast blocked, no interface, a name
 //!   conflict — each is logged and swallowed. Station is a POS first; losing
 //!   a convenience lookup must never stop the till.
+//!
+//! What this module advertises is a NAME, not a socket. `station.local` is
+//! published as an mDNS hostname pointing at this machine's LAN address, which
+//! is what makes `http://station.local:47821/` resolve on a phone. The HTTP
+//! listener keeps binding to an IP ([`super::runtime`]); the two are separate
+//! concerns and must stay separate — an mDNS name is not a `SocketAddr` and is
+//! never passed to `bind`.
 
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use std::net::IpAddr;
@@ -26,6 +33,22 @@ use std::net::IpAddr;
 /// used precisely because Station is not a public protocol — no third party
 /// can meaningfully claim it.
 pub const SERVICE_TYPE: &str = "_station._tcp.local.";
+
+/// The canonical, friendly Station LAN hostname — ONE source for the whole
+/// application.
+///
+/// This constant is what mDNS advertises AND what the QR code encodes AND what
+/// Dev Settings displays, so those three surfaces cannot disagree. It is
+/// deliberately not configurable: a manager's phone has to know one name to
+/// type, and a second setting for it would only create a way for the QR to
+/// point somewhere the advertisement does not.
+///
+/// `.local` is reserved by RFC 6762 for link-local multicast, so this name can
+/// only ever be resolved ON the cafe's own network. It is not routable, is not
+/// published to any public DNS, and cannot expose Station beyond the LAN. The
+/// IP fallback (see [`super::qr`]) remains the guarantee for a client whose
+/// device does not answer mDNS queries at all.
+pub const LAN_HOSTNAME: &str = "station.local";
 
 /// The advertised instance name.
 ///
@@ -38,28 +61,41 @@ pub const INSTANCE_NAME: &str = "Station Cafe";
 /// Split out from registration so the metadata can be asserted in tests
 /// without touching the network — real multicast cannot be unit-tested
 /// reliably, but "what would we broadcast" absolutely can.
+///
+/// `ip` is this machine's real LAN address, never a literal: the listener has
+/// already bound it in [`super::runtime`] by the time this is called, so the
+/// name and the socket cannot point at different interfaces.
 pub fn service_info(ip: IpAddr, port: u16, app_version: &str) -> Result<ServiceInfo, String> {
     // Typed as a slice, not an array: the crate's `IntoTxtProperties` is
     // implemented for `&[T]`, and an `&[T; 1]` does not coerce during trait
     // resolution.
     let properties: &[(&str, &str)] = &[("version", app_version)];
-    ServiceInfo::new(SERVICE_TYPE, INSTANCE_NAME, &host_name(), ip, port, properties)
-        // Re-advertise automatically when the host's addresses change, so a
-        // DHCP lease change cannot leave a stale address published.
-        .map(ServiceInfo::enable_addr_auto)
-        .map_err(|e| format!("cannot build mDNS service info: {e}"))
+    ServiceInfo::new(
+        SERVICE_TYPE,
+        INSTANCE_NAME,
+        &mdns_host_name(),
+        ip,
+        port,
+        properties,
+    )
+    // Re-advertise automatically when the host's addresses change, so a
+    // DHCP lease change cannot leave a stale address published.
+    .map(ServiceInfo::enable_addr_auto)
+    .map_err(|e| format!("cannot build mDNS service info: {e}"))
 }
 
-/// The hostname Station answers on.
+/// The FQDN form of [`LAN_HOSTNAME`] as the wire format requires it.
 ///
-/// Uses the OS hostname, which is what the responder can actually publish, and
-/// never a hardcoded value. `station.local` is a CONVENIENCE the client may or
-/// may not be able to resolve; the IP fallback is the guarantee.
-fn host_name() -> String {
-    std::env::var("HOSTNAME")
-        .ok()
-        .filter(|h| !h.trim().is_empty())
-        .unwrap_or_else(|| "station".to_string())
+/// DNS-SD hostnames are absolute: they carry the trailing dot (`station.local.`)
+/// and `ServiceDaemon::register` REJECTS anything else, so the dotted form is
+/// what is published while [`LAN_HOSTNAME`] — undotted, the form a person types
+/// in a browser — stays the single constant the rest of the application uses.
+///
+/// This is the resolution mechanism: registering this hostname makes a client
+/// on the LAN that queries `station.local` receive this machine's address back
+/// from the responder. No external DNS, no router configuration, no cloud.
+pub fn mdns_host_name() -> String {
+    format!("{LAN_HOSTNAME}.")
 }
 
 /// A running advertisement. Dropping the handle unregisters the service.
@@ -180,12 +216,48 @@ mod tests {
     }
 
     #[test]
-    fn the_hostname_is_never_hardcoded() {
-        // Whatever the OS reports is what is published; Station cannot assert
-        // a name it does not control.
-        let name = host_name();
-        assert!(!name.is_empty());
-        assert_ne!(name, "station.local", "the OS hostname must be used");
+    fn it_advertises_the_canonical_station_hostname() {
+        // THE CONTRACT: this is the friendly name the QR encodes and Dev
+        // Settings shows, so it must be the name actually on the wire.
+        assert_eq!(info().get_hostname(), "station.local.");
+    }
+
+    #[test]
+    fn the_advertised_hostname_is_the_canonical_constant() {
+        // One source. If this fails, the QR would point at a name nothing
+        // advertises — the exact failure that made this change necessary.
+        assert_eq!(mdns_host_name(), format!("{LAN_HOSTNAME}."));
+    }
+
+    #[test]
+    fn the_hostname_is_absolute_as_dns_sd_requires() {
+        // `ServiceDaemon::register` rejects anything that does not end in
+        // `.local.`, so an undotted hostname would fail registration at runtime
+        // instead of failing here.
+        assert!(mdns_host_name().ends_with(".local."));
+        assert!(!mdns_host_name().ends_with(".local.."));
+        // And the typed form carries no trailing dot.
+        assert!(!LAN_HOSTNAME.ends_with('.'));
+    }
+
+    #[test]
+    fn the_typed_hostname_is_station_local() {
+        // Pinned so the QR, Dev Settings and the advertisement cannot drift.
+        assert_eq!(LAN_HOSTNAME, "station.local");
+        // RFC 6762: `.local` is reserved for link-local multicast, so this can
+        // only ever resolve on the cafe's own network. Asserted so it cannot be
+        // quietly replaced with a public domain.
+        assert!(LAN_HOSTNAME.ends_with(".local"));
+    }
+
+    #[test]
+    fn the_hostname_is_not_derived_from_the_os() {
+        // A cafe PC named "DESKTOP-7K2" must still answer as station.local;
+        // otherwise the QR would encode a name the manager has to guess.
+        std::env::set_var("HOSTNAME", "DESKTOP-7K2");
+        assert_eq!(info().get_hostname(), "station.local.");
+        std::env::remove_var("HOSTNAME");
+        assert_eq!(info().get_hostname(), "station.local.");
     }
 }
 
