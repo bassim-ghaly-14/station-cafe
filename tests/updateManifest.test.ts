@@ -40,7 +40,9 @@ import {
   REQUIRED_TARGETS,
   candidateTargets,
   findManifestProblems,
+  getValidatedManifestVersion,
   isNewerVersion,
+  isPathInsideRoot,
   resolveManifestPath,
   resolveTarget,
 } from '../scripts/verify-release-manifest.mjs'
@@ -330,7 +332,257 @@ describe('release manifest path policy', () => {
     if (path.sep !== '/') return
     expect(() => resolveManifestPath(String.raw`C:\Users\someone\latest.json`)).toThrow()
   })
+
+  // --- S8707: the allowlist-based validator, case by case ---------------------
+
+  it('accepts the documented relative forms against the checkout root', () => {
+    // The legitimate use case must keep working: the argument names a file
+    // relative to the repository checkout, which is where CI runs the script.
+    expect(resolveManifestPath('latest.json')).toBe(
+      path.join(fs.realpathSync(REPO_ROOT), 'latest.json'),
+    )
+    expect(resolveManifestPath('releases/latest.json')).toBe(
+      path.join(fs.realpathSync(REPO_ROOT), 'releases', 'latest.json'),
+    )
+  })
+
+  it('rejects every shape of parent traversal', () => {
+    for (const input of [
+      '../outside.json',
+      'a/../../outside.json',
+      '../../../../../../etc/hosts',
+      '..',
+      'releases/../../outside.json',
+      'releases/../../../etc/passwd',
+      'latest.json/../../etc/passwd',
+      './latest.json',
+      'releases//latest.json',
+    ]) {
+      expect(() => resolveManifestPath(input), input).toThrow()
+    }
+  })
+
+  it('rejects a Windows-style traversal on a POSIX host', () => {
+    if (path.sep !== '/') return
+    // `..\x` must not survive as a literal filename that `path.resolve` treats
+    // as relative, and `....\x` must not be mistaken for a safe name either.
+    expect(() => resolveManifestPath(String.raw`....\outside.json`)).toThrow()
+    expect(() => resolveManifestPath(String.raw`..\..\etc\passwd`)).toThrow()
+    expect(() => resolveManifestPath(String.raw`releases\..\..\outside.json`)).toThrow()
+  })
+
+  it('rejects Windows absolute paths and UNC shares on a POSIX host', () => {
+    if (path.sep !== '/') return
+    for (const input of [
+      String.raw`C:\outside\latest.json`,
+      'C:/outside/latest.json',
+      'c:/outside/latest.json',
+      String.raw`\\server\share\latest.json`,
+      '//server/share/latest.json',
+    ]) {
+      expect(() => resolveManifestPath(input), input).toThrow()
+    }
+  })
+
+  it('rejects a symlink that escapes an allowed root', () => {
+    // The escape is the point: the path AS WRITTEN is inside the checkout, but
+    // where it POINTS is not — here `/etc`, which is neither the repo nor a temp
+    // root. Containment is re-checked after realpath, so the target is refused.
+    const link = path.join(REPO_ROOT, 'station-symlink-probe')
+    try {
+      fs.mkdirSync(link, { recursive: true })
+      fs.symlinkSync('/etc/hosts', path.join(link, 'latest.json'))
+      expect(() => resolveManifestPath('station-symlink-probe/latest.json')).toThrow()
+      // And the same escape by ABSOLUTE path.
+      expect(() => resolveManifestPath(path.join(link, 'latest.json'))).toThrow()
+      // The realpath is never what gets returned.
+      expect(resolveManifestPath('package.json')).not.toBe('/etc/hosts')
+    } finally {
+      fs.rmSync(link, { recursive: true, force: true })
+    }
+  })
+
+  it('still accepts a symlink that stays inside an allowed root', () => {
+    // Containment is about the DESTINATION, not about symlinks: a link into the
+    // temp directory is legitimate and must keep working.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'station-inside-'))
+    const target = path.join(dir, 'latest.json')
+    fs.writeFileSync(target, '{}')
+    const link = path.join(REPO_ROOT, 'station-symlink-inside')
+    try {
+      fs.mkdirSync(link, { recursive: true })
+      fs.symlinkSync(target, path.join(link, 'latest.json'))
+      expect(resolveManifestPath('station-symlink-inside/latest.json')).toBe(
+        fs.realpathSync(target),
+      )
+    } finally {
+      fs.rmSync(link, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects control characters and NUL in the path', () => {
+    // A NUL truncates the path in libc; a newline is log injection.
+    expect(() => resolveManifestPath('latest.json .txt')).toThrow()
+    expect(() => resolveManifestPath('latest.json\n../../etc/passwd')).toThrow()
+    expect(() => resolveManifestPath('latest[31m.json')).toThrow()
+  })
+
+  it('never returns the raw argument for an accepted path', () => {
+    // The returned value is REBUILT from the checkout root plus allowlisted
+    // segments, which is what makes it a validated path rather than the input.
+    const resolved = resolveManifestPath('releases/latest.json')
+    expect(path.isAbsolute(resolved)).toBe(true)
+    expect(resolved).toBe(path.join(fs.realpathSync(REPO_ROOT), 'releases', 'latest.json'))
+  })
+
+  it('treats a sibling directory sharing the root prefix as outside', () => {
+    // The exact S8707 shape: allowed `/repo`, attacker `/repo-evil`. A string
+    // `startsWith` check would accept it; `path.relative` does not.
+    const roots = [path.resolve(path.sep, 'repo')]
+    expect(() =>
+      resolveManifestPath(path.resolve(path.sep, 'repo-evil', 'latest.json'), roots),
+    ).toThrow()
+  })
+
+  it('exposes containment as a path-aware helper', () => {
+    const root = path.resolve(path.sep, 'repo', 'releases')
+    expect(isPathInsideRoot(root, path.join(root, 'latest.json'))).toBe(true)
+    expect(isPathInsideRoot(root, root)).toBe(true)
+    // Same string prefix, different directory.
+    expect(isPathInsideRoot(root, path.resolve(path.sep, 'repo', 'releases-evil'))).toBe(false)
+    expect(isPathInsideRoot(root, path.resolve(path.sep, 'repo'))).toBe(false)
+    expect(isPathInsideRoot(root, path.resolve(path.sep, 'etc', 'passwd'))).toBe(false)
+  })
 })
+describe('release manifest version validation (S8689 trust boundary)', () => {
+  it('returns a validated version for a plain MAJOR.MINOR.PATCH release', () => {
+    // The trusted value the CLI is allowed to print.
+    expect(getValidatedManifestVersion({ version: '0.1.1' })).toBe('0.1.1')
+    expect(getValidatedManifestVersion({ version: '10.20.30' })).toBe('10.20.30')
+    expect(getValidatedManifestVersion(bothPlatforms)).toBe('0.1.1')
+  })
+
+  it('refuses anything that is not a plain release version', () => {
+    for (const version of [
+      '0.1',
+      'v0.1.1',
+      '0.1.1-beta',
+      '0.1.1+build',
+      '',
+      'latest',
+      undefined,
+      null,
+      123,
+      { major: 0 },
+      ['0.1.1'],
+    ]) {
+      expect(getValidatedManifestVersion({ version }), String(version)).toBeNull()
+    }
+    // And a manifest that is not an object at all.
+    expect(getValidatedManifestVersion(null)).toBeNull()
+    expect(getValidatedManifestVersion('{}')).toBeNull()
+  })
+
+  it('refuses a version-like value carrying URLs, tokens or newlines', () => {
+    // These are the values that make `manifest.version` dangerous in a CI log.
+    for (const version of [
+      'https://evil.test/?token=abc',
+      '0.1.1\nERROR: build passed',
+      '0.1.1\r\n[11m',
+      '1.2.3[31m',
+      '0000.0000.0000',
+      '0.1.1 ',
+      ' 0.1.1',
+      '0.1.1; rm -rf /',
+      `${'9'.repeat(64)}.0.0`,
+    ]) {
+      expect(getValidatedManifestVersion({ version }), version).toBeNull()
+    }
+  })
+
+  it('rebuilds the value it returns rather than aliasing the input', () => {
+    // A returned string that shares no character source with the manifest is
+    // what makes it safe to interpolate into a log line.
+    const result = getValidatedManifestVersion({ version: '1.2.3' })
+    expect(typeof result).toBe('string')
+    expect(result).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  it('logs a valid version and refuses to log an invalid one', () => {
+    withManifestFile(JSON.stringify(bothPlatforms), (file) => {
+      const { status, out } = runCli([file])
+      expect(status).toBe(0)
+      expect(out).toContain('release manifest ok: version 0.1.1')
+    })
+    // A newline-forged version can never forge a second CI log line.
+    const forged = JSON.stringify({ ...bothPlatforms, version: '0.1.1\nERROR: release ok' })
+    withManifestFile(forged, (file) => {
+      const { status, out, err } = runCli([file])
+      expect(status).toBe(1)
+      expect(`${out}${err}`).not.toContain('ERROR: release ok')
+      expect(err).toContain('(unvalidated version)')
+    })
+  })
+})
+
+describe('release manifest problem reporting (S8689)', () => {
+  it('never emits an attacker-controlled platform key', () => {
+    const injected = 'https://evil.test/?token=abc'
+    const manifest = {
+      version: '0.1.1',
+      platforms: { [`${injected} ${'x'.repeat(300)}`]: entry('setup.exe') },
+    }
+    const problems = findManifestProblems(manifest)
+    expect(problems.length).toBeGreaterThan(0)
+    for (const problem of problems) {
+      expect(problem).not.toContain('evil.test')
+      expect(problem).not.toContain('token')
+      expect(problem).not.toMatch(/https?:/)
+      expect(problem).not.toContain('x'.repeat(50))
+    }
+    expect(problems.join('\n')).toContain('no well-formed target keys')
+  })
+
+  it('never emits a newline or escape sequence through a problem message', () => {
+    const manifest = {
+      version: '0.1.1',
+      platforms: {
+        'windows-x86_64-nsis\nERROR forged': entry('setup.exe'),
+        'darwin-aarch64-app[31m': entry('a.tar.gz'),
+        'darwin-x86_64-app../../etc': entry('a.tar.gz'),
+      },
+    }
+    const text = findManifestProblems(manifest).join('\n')
+    expect(text).not.toContain('ERROR forged')
+    expect(text).not.toContain('[31m')
+    expect(text).not.toContain('../../etc')
+  })
+
+  it('never emits a URL, signature or filesystem path through the CLI', () => {
+    const token = 'ghp_supersecrettoken'
+    const signature = 'deadbeefcafe'
+    const manifest = {
+      version: 'https://evil.test/?token=' + token,
+      platforms: {
+        [`https://evil.test/?token=${token} ${'y'.repeat(200)}`]: {
+          url: `https://evil.test/setup.exe?sig=${signature}`,
+          signature,
+        },
+      },
+    }
+    withManifestFile(JSON.stringify(manifest), (file) => {
+      const { out, err } = runCli([file])
+      const printed = `${out}${err}`
+      expect(printed).not.toContain(token)
+      expect(printed).not.toContain(signature)
+      expect(printed).not.toContain('evil.test')
+      expect(printed).not.toContain(REPO_ROOT)
+      expect(printed).not.toContain(os.tmpdir())
+    })
+  })
+})
+
 describe('release manifest CLI output safety', () => {
   it('fails with exit 2 and leaks no path when the argument is missing', () => {
     const { status, err } = runCli([])
