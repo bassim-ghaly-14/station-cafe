@@ -4,12 +4,33 @@ use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::catalog::{self, Category, Product};
 use crate::services::auth::may_manage_catalog;
+use crate::services::settings;
 use crate::services::settings::{
     DiscountOptionsConfig, MonthlySalesPeriodConfig, ServiceChargeConfig,
 };
 use crate::AppState;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
+
+/// The whole monthly-target group as Dev Settings needs to see it.
+///
+/// It states three things side by side on purpose, because the three are what
+/// makes an override comprehensible: the DEFAULTS, the ACTIVE month's OWN
+/// overrides (each department independently optional), and the EFFECTIVE pair
+/// those two resolve to — all for one month the backend named.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevenueTargetsView {
+    /// The active business month, `YYYY-MM`.
+    pub month: String,
+    /// The cafe-wide defaults, used by every month with no override.
+    pub defaults: settings::RevenueTargetDefaults,
+    /// The active month's own overrides. A department is absent when it follows
+    /// the default.
+    pub overrides: settings::MonthTargetOverride,
+    /// The effective CAFE and WASH targets for the active month, resolved by the
+    /// single resolver — never recomputed by the UI.
+    pub targets: [settings::MonthlyTarget; 2],
+}
 
 #[derive(Deserialize)]
 pub struct ProductInput {
@@ -425,6 +446,82 @@ pub fn set_monthly_sales_period(
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         crate::services::settings::set_monthly_sales_period(conn, actor, &config)
     })
+}
+
+// ---- monthly revenue targets (CAFE / WASH) ---------------------------------
+
+/// What Dev Settings needs to show the target group: the cafe-wide defaults and
+/// the ACTIVE month's own overrides, plus the month they describe.
+///
+/// The month travels with the read instead of being derived by the caller, so
+/// the UI labels the right month without asking the browser what month it thinks
+/// it is. Authorization is ADMIN, like the page: reading the yardstick the
+/// business is measured against is a configuration read, not a sales read.
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_revenue_targets(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<RevenueTargetsView> {
+    authorized(&state, &token, "ADMIN", |conn, _| {
+        let month = crate::time::current_business_month();
+        Ok(RevenueTargetsView {
+            month: month.clone(),
+            overrides: settings::get_revenue_target_overrides(conn, &month)?,
+            targets: settings::resolve_monthly_targets(conn, &month)?,
+            defaults: settings::get_revenue_target_defaults(conn)?,
+        })
+    })
+}
+
+/// ADMIN sets the cafe-wide DEFAULT monthly targets. It cannot touch any month's
+/// override, and it is validated server-side, so the UI is never trusted with the
+/// whole-pound rule or the authorization.
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_revenue_targets(
+    state: State<'_, AppState>,
+    token: String,
+    defaults: crate::services::settings::RevenueTargetDefaults,
+) -> AppResult<()> {
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        settings::set_revenue_target_defaults(conn, actor, &defaults)
+    })
+}
+
+/// ADMIN sets (or clears) ONE department's override for the CURRENT month.
+///
+/// `amount_minor` of `None` clears that department's override. The month is not
+/// an argument: the backend resolves which month is active, so a stale or
+/// forged client cannot write an override into the wrong month.
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_revenue_target_override(
+    state: State<'_, AppState>,
+    token: String,
+    department: String,
+    amount_minor: Option<i64>,
+) -> AppResult<()> {
+    let department = department_from(&department)?;
+    authorized(&state, &token, "ADMIN", move |conn, actor| {
+        settings::set_revenue_target_override(
+            conn,
+            actor,
+            &crate::time::current_business_month(),
+            department,
+            amount_minor,
+        )
+    })
+}
+
+/// The revenue departments a target exists for. A name outside this set is
+/// refused rather than coerced: there is no TAKEAWAY target and no HYBRID
+/// target, and inventing one from a string would create a target nothing fills.
+fn department_from(value: &str) -> AppResult<settings::RevenueDepartment> {
+    match value {
+        "CAFE" => Ok(settings::RevenueDepartment::Cafe),
+        "WASH" => Ok(settings::RevenueDepartment::Wash),
+        _ => Err(AppError::validation(
+            "settings.invalid_revenue_target_department",
+        )),
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]

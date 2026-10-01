@@ -111,6 +111,196 @@ pub fn cashiers(conn: &Db, actor: &User) -> AppResult<Vec<SalesCashier>> {
     sales_analytics::cashiers(conn)
 }
 
+// ---------------------------------------------------------------------------
+// MONTHLY TARGET PROGRESS
+//
+// One read for the Sales page's target section: the month's effective CAFE and
+// WASH targets, the revenue actually achieved against each, what is still
+// missing, and the day-by-day path there.
+//
+// WHY IT IS THE CURRENT BUSINESS MONTH ONLY: a target is a MONTHLY target, and
+// the page answers "how is this month going". The month is resolved here, in
+// Rust, from Station's own clock — never from a browser date and never from the
+// page's date picker, which scopes a different question (what happened in an
+// arbitrary range).
+//
+// WHY IT REUSES `sales_analytics::trend`: that is already the canonical daily
+// cafe/wash aggregation over the invoice snapshot, grouped by business day, in
+// ONE grouped query. Target progress is a different PRESENTATION of the same
+// revenue, not a second revenue rule: cafe money comes from `cafe_total`, wash
+// money from `wash_total`, service charges are in neither, and a hybrid invoice
+// splits exactly as it does everywhere else in the application.
+
+/// The whole month's days in one query — at most 31 rows, never a query per day.
+const MONTH_TREND_LIMIT: usize = 31;
+
+/// One business day of the month's progress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetDayRow {
+    /// The business date, `YYYY-MM-DD`.
+    pub day_date: String,
+    /// That day's CAFE revenue, from the `cafe_total` snapshot.
+    pub cafe_revenue: i64,
+    /// That day's WASH revenue, from the `wash_total` snapshot.
+    pub wash_revenue: i64,
+    /// CAFE revenue from the first of the month through this day.
+    pub cafe_cumulative: i64,
+    /// WASH revenue from the first of the month through this day.
+    pub wash_cumulative: i64,
+    /// Cumulative CAFE achievement against the FULL monthly target, in
+    /// hundredths of a percent. There is no per-day target: the owner set one
+    /// number for the month, and each day reports how much of THAT number has
+    /// been earned so far. `None` when there is no target to measure against.
+    pub cafe_achievement_hundredths: Option<i64>,
+    /// The same for WASH.
+    pub wash_achievement_hundredths: Option<i64>,
+}
+
+/// How one department is doing against its monthly target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DepartmentTargetProgress {
+    pub department: String,
+    /// The effective target for THIS month, in minor units.
+    pub target_minor: i64,
+    /// Whether this month overrides the cafe-wide default for this department.
+    pub overridden: bool,
+    /// Revenue achieved in the month so far, in minor units.
+    pub actual_minor: i64,
+    /// What is still missing, floored at zero: an over-achieved month has
+    /// nothing remaining, and its surplus is visible in `achievement_percent`.
+    pub remaining_minor: i64,
+    /// `actual / target * 100`, to two decimal places (see
+    /// [`percentage_hundredths`]). `None` when the target is zero.
+    pub achievement_percent: Option<String>,
+    /// Achievement as hundredths of a percent, for callers that need the number
+    /// rather than the display. `None` when the target is zero — the ONE place
+    /// the "no target" state is represented, so no caller invents its own.
+    pub achievement_hundredths: Option<i64>,
+}
+
+/// The month's progress, for both departments and every day of it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonthlyTargetProgress {
+    /// The business month this describes, `YYYY-MM`.
+    pub month: String,
+    /// First business date of the month, inclusive.
+    pub from: String,
+    /// Last business date read: today for the current month, so the series stops
+    /// at the last day that has actually happened.
+    pub to: String,
+    pub cafe: DepartmentTargetProgress,
+    pub wash: DepartmentTargetProgress,
+    /// Ascending by `day_date`. A day with no business day at all is absent —
+    /// there is no trading to report.
+    pub daily: Vec<TargetDayRow>,
+}
+/// Achievement percentage, in hundredths of a percent (`11429` = 114.29%).
+///
+/// Integer arithmetic throughout, using the canonical `div_round`, so the same
+/// revenue and target always produce the same number. A target of zero returns
+/// `None`: there is no achievement to report against no target, and inventing
+/// `0%` would state that nothing was achieved when in fact nothing was measured.
+fn achievement_hundredths(actual: i64, target: i64) -> Option<i64> {
+    if target <= 0 {
+        return None;
+    }
+    // `actual * 10_000 / target` is `actual / target * 100`, expressed in
+    // hundredths of a percent. `div_round` is half-up, so 87,500 against
+    // 175,000 reads exactly 50.00%.
+    Some(crate::money::div_round(actual * 10_000, target))
+}
+
+/// The percent as the UI states it: two decimals and no unit suffix, so an
+/// over-achieved month reads `114.29` and is never clamped to `100.00`.
+fn percentage_hundredths(hundredths: Option<i64>) -> Option<String> {
+    hundredths.map(|value| format!("{}.{:02}", value / 100, value.abs() % 100))
+}
+
+/// One department's figures, from its resolved target and its achieved revenue.
+fn department_progress(
+    target: settings::MonthlyTarget,
+    actual: i64,
+) -> DepartmentTargetProgress {
+    let hundredths = achievement_hundredths(actual, target.target_minor);
+    DepartmentTargetProgress {
+        department: target.department,
+        target_minor: target.target_minor,
+        overridden: target.overridden,
+        actual_minor: actual,
+        // A month that has passed its target has nothing left to earn toward it;
+        // reporting a negative "remaining" would read as a shortfall.
+        remaining_minor: (target.target_minor - actual).max(0),
+        achievement_percent: percentage_hundredths(hundredths),
+        achievement_hundredths: hundredths,
+    }
+}
+
+/// The current business month's target progress. Manager-level, like the rest
+/// of the Sales page.
+pub fn target_progress(conn: &Db, actor: &User) -> AppResult<MonthlyTargetProgress> {
+    auth::require_role(actor, "MANAGER")?;
+
+    // The month identity, resolved by the backend clock. The browser's timezone
+    // and the page's date filter are both deliberately not consulted.
+    let month = time::current_business_month();
+    let (from, month_last_day) = time::business_month_bounds(&month)
+        .ok_or_else(|| AppError::internal("current business month is not a real month"))?;
+    // The month is read only as far as it has actually happened.
+    let today = time::today_business_date();
+    let to = if today < month_last_day {
+        today
+    } else {
+        month_last_day
+    };
+
+    // Targets come from the ONE resolver, for both departments. They are
+    // resolved BEFORE the daily series is built so each day can report its own
+    // cumulative achievement against the same effective target.
+    let [cafe_target, wash_target] = settings::resolve_monthly_targets(conn, &month)?;
+
+    // The canonical revenue: the existing daily aggregation, scoped to this
+    // month's business days, in ONE query.
+    let days = sales_analytics::trend(
+        conn,
+        &SalesFilter {
+            from: Some(from.clone()),
+            to: Some(to.clone()),
+            ..SalesFilter::default()
+        },
+    )?;
+    // A calendar month cannot hold more than 31 days, but the series is bounded
+    // anyway so no malformed range can grow the payload without limit.
+    let days = days.into_iter().take(MONTH_TREND_LIMIT);
+
+    // Cumulative is a running sum over the days in order — the arithmetic a
+    // manager would do, performed once here so no caller repeats it.
+    let mut cafe_running = 0;
+    let mut wash_running = 0;
+    let mut daily = Vec::new();
+    for day in days {
+        cafe_running += day.cafe_sales;
+        wash_running += day.wash_sales;
+        daily.push(TargetDayRow {
+            day_date: day.day_date,
+            cafe_revenue: day.cafe_sales,
+            wash_revenue: day.wash_sales,
+            cafe_cumulative: cafe_running,
+            wash_cumulative: wash_running,
+            cafe_achievement_hundredths: achievement_hundredths(cafe_running, cafe_target.target_minor),
+            wash_achievement_hundredths: achievement_hundredths(wash_running, wash_target.target_minor),
+        });
+    }
+
+    Ok(MonthlyTargetProgress {
+        cafe: department_progress(cafe_target, cafe_running),
+        wash: department_progress(wash_target, wash_running),
+        month,
+        from,
+        to,
+        daily,
+    })
+}
+
 /// Reject anything outside the closed sets the domain actually stores.
 pub fn validate(filter: &SalesFilter) -> AppResult<()> {
     for value in [filter.from(), filter.to()].into_iter().flatten() {

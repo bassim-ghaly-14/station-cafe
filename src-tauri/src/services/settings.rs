@@ -371,3 +371,322 @@ pub fn set_credit_config(conn: &Db, actor: &User, cfg: &CreditConfig) -> AppResu
         Some(&serde_json::to_value(cfg).unwrap_or_default()),
     )
 }
+
+// ---------------------------------------------------------------------------
+// MONTHLY REVENUE TARGETS (CAFE / WASH)
+//
+// Station has exactly TWO revenue departments, and they are the departments the
+// invoice ITSELF splits into: `cafe_total` and `wash_total`. A target therefore
+// exists for CAFE and WASH and for nothing else — `order_type` is not a revenue
+// department, so TAKEAWAY and HYBRID never get a target of their own; a hybrid
+// invoice simply contributes its cafe part to the cafe target and its wash part
+// to the wash target, exactly as it already contributes to those two figures on
+// the Sales page.
+//
+// # Two settings keys, because they have DIFFERENT lifetimes
+//
+// * `revenue_target_defaults` — the default for every month that has no explicit
+//   override. One pair of numbers, editable in Dev Settings.
+// * `revenue_target_months` — the overrides, keyed by canonical `YYYY-MM`.
+//
+// They are deliberately SEPARATE records rather than one blob with a nested
+// map. That is what makes the required behaviour structural instead of
+// careful: an override can never be rewritten by editing a default, because no
+// code path writes one through the other, and a month that was overridden in
+// October keeps October's number when the default is changed in November.
+//
+// # Money
+//
+// Amounts are `Money` — integers in minor units (piastres), like every other
+// amount in Station. A target is stated in WHOLE POUNDS, so a stored target must
+// be an exact multiple of 100 piastres; 150.50 EGP is not a target Station can
+// hold, and is refused rather than rounded.
+//
+// # Authorization
+//
+// ADMIN, like every other Dev Settings group. A manager or cashier configuring
+// a revenue target would be configuring the yardstick the business is measured
+// against, which is exactly the change that must stay above them.
+
+/// The cafe-wide default monthly targets, used by every month with no override.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RevenueTargetDefaults {
+    /// Default monthly CAFE revenue target, in minor units (piastres).
+    pub cafe_minor: i64,
+    /// Default monthly WASH revenue target, in minor units (piastres).
+    pub wash_minor: i64,
+}
+
+/// The two revenue departments a target exists for.
+///
+/// This is a CLOSED SET on purpose. `order_type` values (`TAKEAWAY`, `CAFE`,
+/// `WASH`, `HYBRID`) are NOT departments, and a type that named a target here
+/// would create a target the invoice totals can never fill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevenueDepartment {
+    Cafe,
+    Wash,
+}
+
+impl RevenueDepartment {
+    /// The stored / transported name. Stable, so a saved configuration keeps
+    /// working across builds.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cafe => "CAFE",
+            Self::Wash => "WASH",
+        }
+    }
+}
+
+/// The effective target of ONE department for ONE month, and where it came from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MonthlyTarget {
+    /// The month this target applies to, `YYYY-MM`.
+    pub month: String,
+    /// The department, `CAFE` | `WASH`.
+    pub department: String,
+    /// The effective target in minor units (piastres): override if present,
+    /// otherwise the default.
+    pub target_minor: i64,
+    /// Whether the month carries its OWN override for this department. The UI
+    /// states this rather than inferring it, so "overridden for October" and
+    /// "inherited from the default" can never look the same.
+    pub overridden: bool,
+}
+
+/// The month's OWN overrides, as stored. A department left absent here falls
+/// back to the default — the "override cafe only" case, which is why the two
+/// are `Option` rather than two mandatory zeros.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MonthTargetOverride {
+    /// Override for this month's CAFE target.
+    pub cafe_minor: Option<i64>,
+    /// Override for this month's WASH target.
+    pub wash_minor: Option<i64>,
+}
+
+impl MonthTargetOverride {
+    /// Whether this override record carries nothing at all — in which case the
+    /// month has no override and is removed from storage entirely rather than
+    /// kept as an empty husk.
+    pub fn is_empty(&self) -> bool {
+        self.cafe_minor.is_none() && self.wash_minor.is_none()
+    }
+
+    /// The stored value for one department.
+    pub fn get(&self, department: RevenueDepartment) -> Option<i64> {
+        match department {
+            RevenueDepartment::Cafe => self.cafe_minor,
+            RevenueDepartment::Wash => self.wash_minor,
+        }
+    }
+
+    /// A copy with one department's value replaced.
+    fn with(&self, department: RevenueDepartment, value: Option<i64>) -> Self {
+        match department {
+            RevenueDepartment::Cafe => Self {
+                cafe_minor: value,
+                wash_minor: self.wash_minor,
+            },
+            RevenueDepartment::Wash => Self {
+                cafe_minor: self.cafe_minor,
+                wash_minor: value,
+            },
+        }
+    }
+}
+
+/// The largest target Station accepts, in minor units: one trillion piastres,
+/// i.e. ten billion Egyptian pounds. A café does not earn that in a month, so
+/// anything above it is a typo or a hostile value, and refusing it keeps every
+/// later percentage computation far away from an `i64` overflow.
+pub const MAX_REVENUE_TARGET_MINOR: i64 = 1_000_000_000_000;
+
+/// Whether a target is a legal monthly target. Three rules, one place:
+///
+/// * **whole pounds only** — a multiple of `MINOR_PER_MAJOR`, because that is
+///   how a target is stated and Station stores no fractional targets;
+/// * **not negative** — a negative target would make "remaining" and every
+///   percentage derived from it meaningless rather than merely wrong;
+/// * **inside the storage ceiling** — see [`MAX_REVENUE_TARGET_MINOR`].
+///
+/// Zero is legal on purpose: a month may genuinely have no target set, and that
+/// is a state the progress display reports explicitly rather than refusing.
+pub fn validate_revenue_target(amount_minor: i64) -> AppResult<()> {
+    if amount_minor < 0
+        || amount_minor % crate::money::MINOR_PER_MAJOR != 0
+        || amount_minor > MAX_REVENUE_TARGET_MINOR
+    {
+        return Err(AppError::validation("settings.invalid_revenue_target"));
+    }
+    Ok(())
+}
+
+/// Validate a month key, returning it trimmed. A month is a key into stored
+/// configuration, so a malformed one is refused rather than repaired — guessing
+/// `2026-1` into `2026-01` would silently read a month nobody configured.
+fn require_month(month: &str) -> AppResult<String> {
+    let month = month.trim();
+    if !crate::time::is_business_month(month) {
+        return Err(AppError::validation(
+            "settings.invalid_revenue_target_month",
+        ));
+    }
+    Ok(month.to_string())
+}
+
+/// The stored cafe-wide defaults, treating an absent (or no-longer-legal)
+/// record as "no target configured".
+pub fn get_revenue_target_defaults(conn: &Db) -> AppResult<RevenueTargetDefaults> {
+    let defaults = read_json(
+        conn,
+        "revenue_target_defaults",
+        RevenueTargetDefaults::default(),
+    )?;
+    // A stored value that predates a rule change is treated as unset rather
+    // than failing every screen that reads the target.
+    if validate_revenue_target(defaults.cafe_minor).is_ok()
+        && validate_revenue_target(defaults.wash_minor).is_ok()
+    {
+        Ok(defaults)
+    } else {
+        Ok(RevenueTargetDefaults::default())
+    }
+}
+
+/// The month's stored overrides, empty when it has none.
+pub fn get_revenue_target_overrides(conn: &Db, month: &str) -> AppResult<MonthTargetOverride> {
+    let month = require_month(month)?;
+    let all = read_json::<std::collections::HashMap<String, MonthTargetOverride>>(
+        conn,
+        "revenue_target_months",
+        Default::default(),
+    )?;
+    Ok(all.get(&month).cloned().unwrap_or_default())
+}
+
+/// ADMIN sets the DEFAULT monthly targets.
+///
+/// Writing the defaults can never touch a month's override: the two live in
+/// separate settings records and only this function writes the first one.
+pub fn set_revenue_target_defaults(
+    conn: &Db,
+    actor: &User,
+    defaults: &RevenueTargetDefaults,
+) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "ADMIN")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
+    validate_revenue_target(defaults.cafe_minor)?;
+    validate_revenue_target(defaults.wash_minor)?;
+    write_json(conn, "revenue_target_defaults", defaults)?;
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "settings.revenue_target_defaults_changed",
+        "settings",
+        Some("revenue_target_defaults"),
+        None,
+        Some(&serde_json::to_value(defaults).unwrap_or_default()),
+    )
+}
+
+/// ADMIN sets (or clears) ONE department's override for ONE month.
+///
+/// `amount` of `None` removes that department's override for that month, and the
+/// month immediately resolves to the default again. The OTHER department's
+/// override is untouched, which is what makes "override cafe only" and "clear
+/// only the cafe override" ordinary operations rather than rewrites of the whole
+/// month.
+///
+/// When the last override of a month is removed, the month's record is deleted
+/// rather than stored empty: a month with no override and a month with an empty
+/// override must not be two different things.
+pub fn set_revenue_target_override(
+    conn: &Db,
+    actor: &User,
+    month: &str,
+    department: RevenueDepartment,
+    amount: Option<i64>,
+) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "ADMIN")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
+    let month = require_month(month)?;
+    if let Some(amount) = amount {
+        validate_revenue_target(amount)?;
+    }
+    let mut all = read_json::<std::collections::HashMap<String, MonthTargetOverride>>(
+        conn,
+        "revenue_target_months",
+        Default::default(),
+    )?;
+    let updated = all
+        .get(&month)
+        .cloned()
+        .unwrap_or_default()
+        .with(department, amount);
+    if updated.is_empty() {
+        all.remove(&month);
+    } else {
+        all.insert(month.clone(), updated);
+    }
+    write_json(conn, "revenue_target_months", &all)?;
+    crate::services::audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "settings.revenue_target_override_changed",
+        "settings",
+        Some(&format!("revenue_target_months:{month}")),
+        None,
+        Some(&serde_json::json!({
+            "month": month,
+            "department": department.as_str(),
+            "amount_minor": amount,
+        })),
+    )
+}
+
+/// **THE** target resolution — one function, one rule, every caller.
+///
+/// `resolve_monthly_target(month, department)` answers: what is this
+/// department's target for this month? The month's override applies when the
+/// month has one for THIS department, and the cafe-wide default applies
+/// otherwise. Every screen, report and read that needs a target goes through
+/// here; there is deliberately no second fallback written anywhere else, because
+/// two fallbacks are how a Sales page and a report end up disagreeing about the
+/// same month.
+///
+/// A month with no override therefore resolves to the CURRENT default, which is
+/// the correct reading of "months without an override follow the default"; a
+/// month WITH an override stays at the number that was set for it, which is what
+/// keeps history from being rewritten by a later configuration change.
+pub fn resolve_monthly_target(
+    conn: &Db,
+    month: &str,
+    department: RevenueDepartment,
+) -> AppResult<MonthlyTarget> {
+    let month = require_month(month)?;
+    let override_amount = get_revenue_target_overrides(conn, &month)?.get(department);
+    let default = match department {
+        RevenueDepartment::Cafe => get_revenue_target_defaults(conn)?.cafe_minor,
+        RevenueDepartment::Wash => get_revenue_target_defaults(conn)?.wash_minor,
+    };
+    Ok(MonthlyTarget {
+        month: month.clone(),
+        department: department.as_str().to_string(),
+        target_minor: override_amount.unwrap_or(default),
+        overridden: override_amount.is_some(),
+    })
+}
+
+/// Both departments' effective targets for one month — the pair a monthly
+/// progress read needs, resolved through [`resolve_monthly_target`] so the pair
+/// can never be assembled from a different rule than a single one.
+pub fn resolve_monthly_targets(conn: &Db, month: &str) -> AppResult<[MonthlyTarget; 2]> {
+    Ok([
+        resolve_monthly_target(conn, month, RevenueDepartment::Cafe)?,
+        resolve_monthly_target(conn, month, RevenueDepartment::Wash)?,
+    ])
+}

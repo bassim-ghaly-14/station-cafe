@@ -45,6 +45,8 @@ mod pos_rules_test;
 mod printing;
 #[cfg(test)]
 mod reconciliation_test;
+#[cfg(test)]
+mod revenue_targets_test;
 mod repositories;
 #[cfg(test)]
 mod sales_analytics_test;
@@ -212,6 +214,9 @@ pub fn run() {
             commands::catalog::get_service_charge,
             commands::catalog::get_monthly_sales_period,
             commands::catalog::set_monthly_sales_period,
+            commands::catalog::get_revenue_targets,
+            commands::catalog::set_revenue_targets,
+            commands::catalog::set_revenue_target_override,
             commands::catalog::set_service_charge,
             commands::catalog::get_credit_config,
             commands::catalog::set_credit_config,
@@ -232,6 +237,7 @@ pub fn run() {
             commands::sales::sales_overview,
             commands::sales::sales_invoices,
             commands::sales::sales_cashiers,
+            commands::sales::sales_target_progress,
             commands::sales::sales_monthly,
             commands::pos::list_tables,
             commands::pos::table_lifecycle_counters,

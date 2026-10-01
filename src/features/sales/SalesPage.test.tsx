@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   cashiers: vi.fn(),
   monthly: vi.fn(),
   monthlySalesPeriod: vi.fn(),
+  targetProgress: vi.fn(),
 }))
 
 // The monthly chart window is a SETTING, read through the same settings API the
@@ -45,6 +46,7 @@ vi.mock('@/services/salesApi', () => ({
     invoices: mocks.invoices,
     cashiers: mocks.cashiers,
     monthly: mocks.monthly,
+    targetProgress: mocks.targetProgress,
   },
 }))
 
@@ -162,6 +164,49 @@ function invoice(over: Partial<SalesInvoiceRow> = {}): SalesInvoiceRow {
   }
 }
 
+/**
+ * The month-at-a-glance target read.
+ *
+ * These are the owner's own example numbers: a CAFE override of 175,000 EGP
+ * against 150,000 achieved (114.29%), and a WASH default of 90,000 against
+ * 30,000 (33.33%) — so the fixture itself proves the page renders a figure
+ * ABOVE 100% without clamping it.
+ */
+const TARGET_PROGRESS = {
+  month: '2026-09',
+  from: '2026-09-01',
+  to: '2026-09-26',
+  cafe: {
+    department: 'CAFE' as const,
+    target_minor: 17_500_000,
+    overridden: true,
+    actual_minor: 15_000_000,
+    remaining_minor: 2_500_000,
+    achievement_percent: '85.71',
+    achievement_hundredths: 8571,
+  },
+  wash: {
+    department: 'WASH' as const,
+    target_minor: 9_000_000,
+    overridden: true,
+    actual_minor: 3_000_000,
+    remaining_minor: 6_000_000,
+    achievement_percent: '33.33',
+    achievement_hundredths: 3333,
+  },
+  daily: [
+    {
+      day_date: '2026-09-25',
+      cafe_revenue: 7_000_000,
+      wash_revenue: 1_000_000,
+      cafe_cumulative: 15_000_000,
+      wash_cumulative: 3_000_000,
+      cafe_achievement_hundredths: 8571,
+      wash_achievement_hundredths: 3333,
+    },
+  ],
+}
+
 function renderPage() {
   return render(
     <ToastProvider>
@@ -218,6 +263,7 @@ describe('SalesPage', () => {
     ])
     mocks.monthly.mockReset().mockResolvedValue(MONTHLY)
     mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
+    mocks.targetProgress.mockReset().mockResolvedValue(TARGET_PROGRESS)
   })
 
   it('opens on today and sends that one period to BOTH reads', async () => {
@@ -393,5 +439,143 @@ describe('SalesPage', () => {
     renderPage()
 
     expect(screen.getByLabelText('جارٍ تحميل الجدول')).toBeInTheDocument()
+  })
+
+  // ---- the month's target progress ----------------------------------------
+
+  /**
+   * The target section answers the owner's question about the WHOLE month, so it
+   * must render even while the page's period filter is narrowing everything else
+   * to a single day.
+   */
+  it('shows the current month target for BOTH departments above the period figures', async () => {
+    renderPage()
+
+    const section = await screen.findByTestId('sales-targets')
+    const cafe = within(section).getByTestId('sales-target-cafe')
+    const wash = within(section).getByTestId('sales-target-wash')
+
+    // The four figures of each card are the BACKEND's numbers, not recomputed.
+    // `variant: 'auto'` mirrors the component, so the assertion states the
+    // formatted figure the card actually renders under the global settings.
+    expect(within(cafe).getByText('الهدف')).toBeInTheDocument()
+    expect(
+      within(cafe).getByText(formatMinorMoney(17_500_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      within(cafe).getByText(formatMinorMoney(15_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      within(cafe).getByText(formatMinorMoney(2_500_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+
+    expect(
+      within(wash).getByText(formatMinorMoney(9_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      within(wash).getByText(formatMinorMoney(3_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      within(wash).getByText(formatMinorMoney(6_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+  })
+
+  it('prints the achievement the backend resolved, never a locally computed one', async () => {
+    renderPage()
+
+    const section = await screen.findByTestId('sales-targets')
+    expect(within(section).getByTestId('sales-target-cafe')).toHaveTextContent('85.71')
+    expect(within(section).getByTestId('sales-target-wash')).toHaveTextContent('33.33')
+  })
+
+  /** Above 100% is a real business result, so the NUMBER is never capped. */
+  it('prints an achievement above one hundred without clamping it', async () => {
+    mocks.targetProgress.mockResolvedValue({
+      ...TARGET_PROGRESS,
+      cafe: {
+        ...TARGET_PROGRESS.cafe,
+        achievement_percent: '114.29',
+        achievement_hundredths: 11429,
+      },
+    })
+    renderPage()
+
+    const cafe = within(await screen.findByTestId('sales-targets')).getByTestId('sales-target-cafe')
+    expect(cafe).toHaveTextContent('114.29')
+    // Only the BAR is capped, so it still reads as a full track.
+    expect(within(cafe).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
+  })
+
+  /**
+   * No target is a real state, and it must not be dressed up as 0% — which would
+   * claim nothing was achieved — nor as a fabricated 100%.
+   */
+  it('states that there is no percentage when the month has no target', async () => {
+    mocks.targetProgress.mockResolvedValue({
+      ...TARGET_PROGRESS,
+      cafe: {
+        ...TARGET_PROGRESS.cafe,
+        target_minor: 0,
+        achievement_percent: null,
+        achievement_hundredths: null,
+        remaining_minor: 0,
+      },
+    })
+    renderPage()
+
+    const cafe = within(await screen.findByTestId('sales-targets')).getByTestId('sales-target-cafe')
+    // The PERCENTAGE is the dash. The money figures around it are still real —
+    // a zero target and a zero remaining are both correctly rendered as 0.00 —
+    // so the assertion is about the achievement alone, never the whole card.
+    const percent = within(cafe).getByTestId('sales-target-cafe-percent')
+    expect(percent).toHaveTextContent('—')
+    expect(percent).not.toHaveTextContent('%')
+    expect(within(cafe).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+  })
+
+  it('shows each day of the month with its cumulative achievement', async () => {
+    renderPage()
+
+    const section = await screen.findByTestId('sales-targets')
+    const table = within(section).getByRole('table')
+    expect(within(table).getByText('تحقيق هدف الكافيه')).toBeInTheDocument()
+    expect(within(table).getByText('مبيعات الكافيه')).toBeInTheDocument()
+    expect(within(table).getByText('مبيعات المغسلة')).toBeInTheDocument()
+    // The day's own revenue, and the day's CUMULATIVE achievement against the
+    // full monthly target.
+    expect(
+      within(table).getByText(formatMinorMoney(7_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      within(table).getByText(formatMinorMoney(1_000_000, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(within(table).getAllByText('85.71%').length).toBeGreaterThan(0)
+    expect(within(table).getAllByText('33.33%').length).toBeGreaterThan(0)
+  })
+
+  it('never sends the page period filter to the target read', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.targetProgress).toHaveBeenCalled())
+
+    // The month is the BACKEND's to resolve: the call takes no filter at all, so
+    // narrowing the page's period cannot turn a monthly achievement into a
+    // three-day one.
+    expect(mocks.targetProgress).toHaveBeenCalledWith()
+    expect(mocks.targetProgress.mock.calls[0]).toHaveLength(0)
+  })
+
+  it('re-reads the target progress when the page is refreshed', async () => {
+    renderPage()
+    await waitFor(() => expect(mocks.targetProgress).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: /تحديث/ }))
+    await waitFor(() => expect(mocks.targetProgress).toHaveBeenCalledTimes(2))
+  })
+
+  it('reports a failed target read with a retry', async () => {
+    mocks.targetProgress.mockRejectedValue({ message: 'db.error' })
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
   })
 })

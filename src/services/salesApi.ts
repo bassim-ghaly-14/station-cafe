@@ -1,4 +1,5 @@
 /** Typed wrappers over the Sales management command surface. */
+import type { RevenueDepartment } from './posApi'
 import { call } from './ipc'
 
 /** Inclusive business-date bounds; empty means unbounded, like the reports. */
@@ -126,6 +127,74 @@ export interface SalesCashier {
   role: string
 }
 
+/**
+ * How one department is doing against this month's target.
+ *
+ * EVERY financial value here is computed by the backend — the UI formats them
+ * and never recomputes an achievement, a remainder or a share. That is the whole
+ * point of the shape: the percentage the manager reads is the percentage the
+ * domain resolved.
+ */
+export interface DepartmentTargetProgress {
+  department: RevenueDepartment
+  /** The month's effective target: its override if it has one, else the default. */
+  target_minor: number
+  /** Whether this month overrides the cafe-wide default for this department. */
+  overridden: boolean
+  /** Revenue achieved in the month so far — the invoice snapshot's own split. */
+  actual_minor: number
+  /** Still to earn, floored at zero: a passed target has nothing remaining. */
+  remaining_minor: number
+  /**
+   * Achievement as a display string with two decimals ("50.00", "114.29"), or
+   * `null` when there is NO target to measure against.
+   *
+   * `null` is the deliberate answer for a zero target — not `0`, which would
+   * claim nothing was achieved, and never a fabricated `100`.
+   */
+  achievement_percent: string | null
+  /** The same figure as hundredths of a percent, for callers needing the number. */
+  achievement_hundredths: number | null
+}
+
+/** One business day of the month's progress, in Station's business timezone. */
+export interface TargetDayRow {
+  /** Business date, `YYYY-MM-DD`. */
+  day_date: string
+  cafe_revenue: number
+  wash_revenue: number
+  /** Revenue from the first of the month through this day. */
+  cafe_cumulative: number
+  wash_cumulative: number
+  /**
+   * Cumulative achievement against the FULL monthly target, in hundredths of a
+   * percent. There is no daily target: each day reports how much of the month's
+   * number has been earned by then. `null` when no target is set.
+   */
+  cafe_achievement_hundredths: number | null
+  wash_achievement_hundredths: number | null
+}
+
+/**
+ * The current business month's target progress, for both departments.
+ *
+ * The month is decided by the backend clock in `Africa/Cairo`, so this payload
+ * can never describe a different month than the one the business is trading in,
+ * whatever timezone the browser happens to be in.
+ */
+export interface MonthlyTargetProgress {
+  /** The business month, `YYYY-MM`. */
+  month: string
+  /** First business date of the month, inclusive. */
+  from: string
+  /** Last business date read: today, so the series stops where the month has. */
+  to: string
+  cafe: DepartmentTargetProgress
+  wash: DepartmentTargetProgress
+  /** Ascending by `day_date`; a day with no business day at all is absent. */
+  daily: TargetDayRow[]
+}
+
 /** The filter exactly as the backend expects it: absent, never empty. */
 function filterArg(filter?: SalesFilter) {
   return {
@@ -156,4 +225,12 @@ export const salesApi = {
    */
   monthly: (months?: number) =>
     call<SalesMonthlyReport>('sales_monthly', { months: months ?? null }),
+  /**
+   * The CURRENT business month's target progress for CAFE and WASH.
+   *
+   * It takes no period and no filter, exactly like `monthly`: a monthly target is
+   * a statement about the month being traded in, and this command cannot be
+   * pointed at an arbitrary range.
+   */
+  targetProgress: () => call<MonthlyTargetProgress>('sales_target_progress'),
 }

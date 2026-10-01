@@ -45,6 +45,7 @@ import { ChartColorsCard } from './ChartColorsCard'
 import { LocalAccessCard } from './LocalAccessCard'
 import { ApplicationUpdatesCard } from './ApplicationUpdatesCard'
 import { FormattingPreview } from './FormattingPreview'
+import { RevenueTargetsCard } from './RevenueTargetsCard'
 
 /** Shared control styling for the formatting selects. */
 const SELECT =
@@ -914,6 +915,10 @@ export default function DevSettingsPage() {
           </Button>
         </div>
       </Card>
+
+      {/* Monthly revenue targets — the cafe/wash business configuration, next to
+          the table count and the monthly chart window it belongs with. */}
+      <RevenueTargetsCard />
 
       {/* Danger zone */}
       <section

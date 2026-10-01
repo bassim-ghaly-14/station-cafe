@@ -66,3 +66,19 @@ pub fn sales_cashiers(
         crate::services::sales::cashiers(conn, actor)
     })
 }
+
+/// The current business month's revenue-target progress for CAFE and WASH.
+///
+/// Takes no period argument at all: a target is a MONTHLY target, and this
+/// command answers for the current Cairo business month, resolved by the backend
+/// clock. The absence of a `filter` is the same contract `sales_monthly` keeps —
+/// this figure cannot be pointed at an arbitrary range by a caller.
+#[tauri::command(rename_all = "snake_case")]
+pub fn sales_target_progress(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<crate::services::sales::MonthlyTargetProgress> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        crate::services::sales::target_progress(conn, actor)
+    })
+}

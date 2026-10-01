@@ -1092,7 +1092,6 @@
     "collapse": "تصغير المعاينة",
     "reprint": "إعادة طبع",
     "cut": "قطع الورق",
-
     "document": {
       "cafeInvoice": "فاتورة كافيه",
       "washInvoice": "فاتورة مغسلة",
@@ -1337,7 +1336,23 @@
     "updateMetadataInvalid": "بيانات التحديث المنشورة غير صالحة. لم يتم تثبيت أي شيء، راجع مسؤول النظام.",
     "updateReleaseUnavailable": "لا يوجد إصدار منشور متاح للتحديث حاليًا. جرّب الفحص لاحقًا.",
     "updateNoCompatibleBuild": "لا يوجد إصدار منشور لهذا النظام. إصدارات Station الموقّعة متاحة لنظام Windows و macOS. تأكد من أن هذا الإصدار منشور لنظامك.",
-    "updateNoLongerAvailable": "لم يعد هناك تحديث متاح. جرّب الفحص مرة أخرى."
+    "updateNoLongerAvailable": "لم يعد هناك تحديث متاح. جرّب الفحص مرة أخرى.",
+    "revenueTargetsTitle": "أهداف المبيعات الشهرية",
+    "revenueTargetsDescription": "هدف شهري مستقل لكل قسم: الكافيه والمغسلة. يُستخدم في صفحة المبيعات لقياس الإنجاز عن الشهر الحالي.",
+    "revenueTargetsDefaultsTitle": "الهدف الافتراضي",
+    "revenueTargetsDefaultsHelp": "الهدف الذي يتبعه كل شهر لا يحتوي على تجاوز خاص. تغييره لا يؤثر على أي شهر تم تجاوزه بالفعل.",
+    "revenueTargetsAmountHint": "بأرقام صحيحة بالجنيه فقط.",
+    "revenueTargetsCafeDefault": "هدف الكافيه الافتراضي",
+    "revenueTargetsWashDefault": "هدف المغسلة الافتراضي",
+    "revenueTargetsDefaultsSaved": "تم تحديث الأهداف الافتراضية.",
+    "revenueTargetsOverrideTitle": "تجاوز هدف الشهر {{month}}",
+    "revenueTargetsOverrideHelp": "رقم خاص بالشهر الحالي فقط. اترك الحقل فارغًا ليتبع الهدف الافتراضي، وامسحه للعودة إليه دون المساس بالشهور الأخرى.",
+    "revenueTargetsOverrideFieldHint": "اتركه فارغًا ليعتمد الهدف الافتراضي.",
+    "revenueTargetsOverriddenForMonth": "تجاوز خاص بهذا الشهر",
+    "revenueTargetsFollowingDefault": "يتبع الافتراضي",
+    "revenueTargetsClearOverride": "إزالة التجاوز",
+    "revenueTargetsOverrideSaved": "تم تحديث تجاوز الشهر.",
+    "revenueTargetsOverrideCleared": "تم إزالة التجاوز وعاد القسم إلى الهدف الافتراضي."
   },
   "errors": {
     "internal_error": "حدث خطأ غير متوقع، حاول مرة أخرى",
@@ -1399,6 +1414,9 @@
     "discount.percent_not_allowed": "نسبة الخصم غير متاحة — الخصم بمبلغ ثابت فقط",
     "settings.invalid_discount": "مبالغ الخصم يجب أن تكون موجبة وأرقامًا مختلفة",
     "settings.invalid_monthly_sales_period": "عدد شهور الرسم البياني يجب أن يكون 6 أو 12 أو 18 أو 24",
+    "settings.invalid_revenue_target": "الهدف يجب أن يكون رقمًا صحيحًا بالجنيه لا يقل عن صفر",
+    "settings.invalid_revenue_target_month": "الشهر غير صحيح",
+    "settings.invalid_revenue_target_department": "القسم غير صحيح",
     "payment.invalid_method": "طريقة الدفع غير صحيحة",
     "payment.received_required": "أدخل المبلغ المستلم",
     "payment.insufficient_cash": "المبلغ المستلم أقل من الإجمالي",
@@ -1531,6 +1549,27 @@
       "credit": "المبيعات الآجلة",
       "cafe": "مبيعات الكافيه",
       "wash": "مبيعات المغسلة"
+    },
+    "targets": {
+      "title": "هدف الشهر الحالي",
+      "target": "الهدف",
+      "actual": "المحقق",
+      "remaining": "المتبقي",
+      "achievement": "نسبة تحقيق الهدف",
+      "overriddenBadge": "هدف خاص بهذا الشهر",
+      "defaultBadge": "الهدف الافتراضي",
+      "noTarget": "لم يتم تحديد هدف لهذا الشهر",
+      "daily": {
+        "title": "التقدم اليومي",
+        "hint": "نسبة كل يوم محسوبة من إيراده التراكمي منذ بداية الشهر مقابل هدف الشهر كاملًا، وليس هدفًا يوميًا.",
+        "caption": "تقدم الشهر الحالي يومًا بيوم لكل قسم",
+        "empty": "لا توجد أيام عمل في هذا الشهر بعد.",
+        "date": "اليوم",
+        "cafeColumn": "مبيعات الكافيه",
+        "washColumn": "مبيعات المغسلة",
+        "cafeProgressColumn": "تحقيق هدف الكافيه",
+        "washProgressColumn": "تحقيق هدف المغسلة"
+      }
     },
     "trend": {
       "title": "حركة المبيعات",

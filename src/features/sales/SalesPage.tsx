@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
-import { Button, Card, ProgressBar, TableSkeleton } from '@/components/ui'
+import { Button, Card, ProgressBar, Skeleton, TableSkeleton } from '@/components/ui'
 import { HandCoins } from '@/components/ui/icon'
 import { PrintPreviewDialog } from '@/features/pos/PrintPreviewDialog'
 import { formatDate, todayIso } from '@/lib/date'
@@ -43,8 +43,10 @@ import { SalesFilters } from './SalesFilters'
 import { SalesInvoiceTable } from './SalesInvoiceTable'
 import { SalesKpiBand } from './SalesKpiBand'
 import { SalesDailyChart } from './SalesDailyChart'
+import { SalesTargetProgress } from './SalesTargetProgress'
 import { TopItemsTable } from './TopItemsTable'
 import { useSalesData, type SalesDataState } from './useSalesData'
+import { useTargetProgress, type TargetProgressState } from './useTargetProgress'
 
 const RANGE_KEY = 'station.sales.dateRange'
 
@@ -104,6 +106,17 @@ export default function SalesPage() {
   }, [])
 
   const data = useSalesData(filter, sort)
+  // The target section is deliberately a SEPARATE read: a monthly target is a
+  // statement about the month being traded in, so it follows the backend clock
+  // and is never sliced by the page's date picker. `data.revision`-style
+  // refreshing is not reused here — the hook re-reads on its own explicit reload,
+  // which the Sales refresh button drives.
+  const targets = useTargetProgress()
+  // The two reload callbacks are destructured so the refresh handler depends on
+  // the FUNCTIONS rather than on the state objects that change identity on every
+  // render.
+  const { reload: reloadSales } = data
+  const { reload: reloadTargets } = targets
   const summary = data.overview?.summary ?? null
   const trend = useMemo(() => data.overview?.trend ?? [], [data.overview])
   const items = useMemo(() => data.overview?.items ?? [], [data.overview])
@@ -117,6 +130,15 @@ export default function SalesPage() {
   // `from`/`to` the overview was read with, formatted by the central formatter, so
   // the chart can never describe a different window than the KPIs above it.
   const period = `${formatDate(filter.from)} — ${formatDate(filter.to)}`
+
+  // One refresh drives BOTH reads. The target progress follows the backend's
+  // current month rather than the picker, but it must still move when a sale is
+  // recorded — so the page's single refresh button re-reads it alongside the
+  // filtered data, rather than leaving a stale month on screen.
+  const refresh = useCallback(() => {
+    reloadSales()
+    reloadTargets()
+  }, [reloadSales, reloadTargets])
 
   const resetFilters = useCallback(() => {
     setFilter((current) => ({ ...current, method: '', status: '', user_id: null, customer: '' }))
@@ -142,7 +164,7 @@ export default function SalesPage() {
         onChange={setFilter}
         cashiers={cashiers}
         refreshing={data.refreshing}
-        onRefresh={data.reload}
+        onRefresh={refresh}
         onReset={resetFilters}
       />
 
@@ -162,6 +184,8 @@ export default function SalesPage() {
           narrowed={narrowed}
           onResetFilters={resetFilters}
           onOpenInvoice={openInvoice}
+          targets={targets}
+          onRefreshTargets={targets.reload}
         />
       )}
 
@@ -202,6 +226,8 @@ function SalesResults({
   narrowed,
   onResetFilters,
   onOpenInvoice,
+  targets,
+  onRefreshTargets,
 }: Readonly<{
   data: SalesDataState
   summary: SalesSummary | null
@@ -213,11 +239,33 @@ function SalesResults({
   narrowed: boolean
   onResetFilters: () => void
   onOpenInvoice: (invoice: SalesInvoiceRow) => void
+  /** The month-at-a-glance target section: its own read, its own refresh. */
+  targets: TargetProgressState
+  onRefreshTargets: () => void
 }>) {
   const { t } = useTranslation()
 
   return (
     <>
+      {/* The month's target progress comes FIRST: it is the question the owner
+          opens this page with, and it is about the whole month rather than the
+          period the filters above happen to be showing. */}
+      {targets.error && !targets.progress ? (
+        <Card className="p-4">
+          <ErrorState
+            message={targets.error}
+            onRetry={onRefreshTargets}
+            retryLabel={t('app.retry')}
+          />
+        </Card>
+      ) : targets.initialLoading ? (
+        <Card>
+          <Skeleton variant="text" className="h-4 w-48" accessibilityLabel="" />
+        </Card>
+      ) : targets.progress ? (
+        <SalesTargetProgress progress={targets.progress} />
+      ) : null}
+
       <SalesKpiBand summary={summary} loading={data.refreshing} />
 
       {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}

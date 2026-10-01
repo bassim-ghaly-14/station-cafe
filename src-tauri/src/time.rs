@@ -123,6 +123,53 @@ pub fn business_date_months_ago(months_back: i64) -> String {
         .unwrap_or_default()
 }
 
+/// The canonical MONTH identity of an instant: `YYYY-MM` in Station's timezone.
+///
+/// A month here is a BUSINESS month — the calendar month of the Cairo-local day
+/// — so it is derived through `BUSINESS_TZ` and never from the browser, a UTC
+/// timestamp or a localized display string. It is the same `strftime('%Y-%m')`
+/// key the monthly sales report groups by, so a month means one thing in the
+/// backend and one thing on screen.
+pub fn business_month_of(instant: DateTime<Utc>) -> String {
+    let local = instant.with_timezone(&BUSINESS_TZ).date_naive();
+    format!("{:04}-{:02}", local.year(), local.month())
+}
+
+/// The business month of the current instant, `YYYY-MM`.
+pub fn current_business_month() -> String {
+    business_month_of(now_utc())
+}
+
+/// Whether a string is a well-formed month key AND a real calendar month.
+///
+/// `2026-1` and `2026-13` are refused rather than repaired: a month identity is
+/// a key into stored configuration, and a guessed key would silently resolve a
+/// different month than the caller meant.
+pub fn is_business_month(month: &str) -> bool {
+    business_month_bounds(month).is_some()
+}
+
+/// The first and last business DATES of a month key, both inclusive.
+///
+/// Returned as business dates (`YYYY-MM-DD`), not instants and not month keys,
+/// because every revenue read in the application is scoped by a business-day
+/// range. `None` for anything that is not a real month.
+pub fn business_month_bounds(month: &str) -> Option<(String, String)> {
+    let text = month.trim();
+    let (year, month_number) = text.split_once('-')?;
+    if year.len() != 4 || !year.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if month_number.len() != 2 || !month_number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let year: i32 = year.parse().ok()?;
+    let month_number: u32 = month_number.parse().ok()?;
+    let first = NaiveDate::from_ymd_opt(year, month_number, 1)?;
+    let last = first.with_day(u32::from(first.num_days_in_month()))?;
+    Some((first.to_string(), last.to_string()))
+}
+
 /// Format an already-stored timestamp for display/print, in business time.
 pub fn to_business_datetime(value: &str) -> String {
     match parse_timestamp(value) {
@@ -275,6 +322,89 @@ mod tests {
         assert_eq!(value.len(), 10);
         assert!(!value.contains('T') && !value.ends_with('Z'));
         assert!(parse_timestamp(&format!("{value} 12:00:00")).is_some());
+    }
+
+    #[test]
+    fn a_month_key_is_the_cairo_month_not_the_utc_one() {
+        // 21:30 UTC is already the 26th in Cairo, so a month boundary is a
+        // business-time boundary: this instant belongs to September, never to
+        // the UTC day it was written on.
+        assert_eq!(business_month_of(utc(2026, 9, 25, 21, 30, 0)), "2026-09");
+        assert_eq!(business_month_of(utc(2026, 9, 25, 20, 59, 59)), "2026-09");
+        // The month ROLLS exactly on the Cairo-local first of the month.
+        assert_eq!(business_month_of(utc(2026, 9, 30, 21, 30, 0)), "2026-10");
+        assert_eq!(business_month_of(utc(2026, 9, 30, 20, 59, 59)), "2026-09");
+        // And a year boundary is carried, not dropped.
+        assert_eq!(business_month_of(utc(2027, 1, 1, 0, 0, 0)), "2027-01");
+        assert_eq!(business_month_of(utc(2026, 12, 31, 22, 0, 0)), "2026-12");
+    }
+
+    #[test]
+    fn the_current_month_is_the_month_the_cafe_is_in() {
+        // The one the Sales page and Dev Settings both name as "this month".
+        assert_eq!(current_business_month(), business_month_of(now_utc()));
+        assert!(is_business_month(&current_business_month()));
+    }
+
+    #[test]
+    fn a_month_key_uses_the_four_two_shape() {
+        // Grouping key, never a display name: no padding to guess, no ordering
+        // surprise, and it sorts chronologically as text.
+        assert_eq!(business_month_of(utc(2026, 1, 5, 12, 0, 0)), "2026-01");
+        assert!(is_business_month("2026-09"));
+        assert!(is_business_month("2026-10"));
+    }
+
+    #[test]
+    fn a_malformed_or_impossible_month_is_refused_not_repaired() {
+        // A month is a key into stored configuration; guessing one would read a
+        // different month's target than the caller asked for.
+        for value in [
+            "2026-1",
+            "2026-13",
+            "2026-00",
+            "26-10",
+            "2026/10",
+            "2026-10-01",
+            "أكتوبر 2026",
+            "",
+        ] {
+            assert!(!is_business_month(value), "{value} must be refused");
+        }
+    }
+
+    #[test]
+    fn month_bounds_cover_exactly_that_calendar_month() {
+        assert_eq!(
+            business_month_bounds("2026-10").unwrap(),
+            ("2026-10-01".to_string(), "2026-10-31".to_string())
+        );
+        // February in a leap year and a common one — the range is derived from
+        // the calendar, never assumed to be 30 days.
+        assert_eq!(
+            business_month_bounds("2024-02").unwrap().1,
+            "2024-02-29".to_string()
+        );
+        assert_eq!(
+            business_month_bounds("2026-02").unwrap().1,
+            "2026-02-28".to_string()
+        );
+        assert_eq!(
+            business_month_bounds("2026-12").unwrap(),
+            ("2026-12-01".to_string(), "2026-12-31".to_string())
+        );
+    }
+
+    #[test]
+    fn month_bounds_are_business_dates_not_instants() {
+        for (first, last) in [
+            business_month_bounds("2026-10").unwrap(),
+            business_month_bounds("2026-02").unwrap(),
+        ] {
+            assert_eq!(first.len(), 10);
+            assert_eq!(last.len(), 10);
+            assert!(first < last, "{first}..{last} is not an ordered range");
+        }
     }
 
     #[test]

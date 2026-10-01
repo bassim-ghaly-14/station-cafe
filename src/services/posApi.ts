@@ -487,6 +487,56 @@ export interface MonthlySalesPeriodConfig {
 /** The windows Dev Settings offers, mirroring the backend's accepted set. */
 export const MONTHLY_SALES_PERIOD_MONTHS = [6, 12, 18, 24] as const
 
+/**
+ * The two revenue departments a monthly target exists for.
+ *
+ * A CLOSED SET, matching the backend exactly. It is deliberately NOT the set of
+ * order types: `TAKEAWAY` and `HYBRID` are not revenue departments, and a
+ * takeaway's money is counted against the department its invoice lines are in.
+ */
+export type RevenueDepartment = 'CAFE' | 'WASH'
+
+/** The cafe-wide default monthly targets, used by every month with no override. */
+export interface RevenueTargetDefaults {
+  cafe_minor: number
+  wash_minor: number
+}
+
+/**
+ * The ACTIVE month's own overrides. Each department is independently absent,
+ * which is what "override the cafe figure only" means: an absent department
+ * follows the default, and only that department.
+ */
+export interface MonthTargetOverride {
+  cafe_minor: number | null
+  wash_minor: number | null
+}
+
+/** One department's effective target for one month, and where it came from. */
+export interface MonthlyTarget {
+  /** `YYYY-MM`, resolved by the backend clock in the business timezone. */
+  month: string
+  department: RevenueDepartment
+  /** Effective target: the month's override if it has one, else the default. */
+  target_minor: number
+  /** Whether THIS month overrides the default — stated, never inferred. */
+  overridden: boolean
+}
+
+/**
+ * Everything Dev Settings needs to show the target group: the defaults, the
+ * active month's own overrides, and the effective pair they resolve to.
+ *
+ * The month travels with the read, so the screen labels the month the BACKEND
+ * considers active rather than asking the browser which month it thinks it is.
+ */
+export interface RevenueTargetsView {
+  month: string
+  defaults: RevenueTargetDefaults
+  overrides: MonthTargetOverride
+  targets: MonthlyTarget[]
+}
+
 export const settingsApi = {
   serviceCharge: () => call<ServiceChargeConfig>('get_service_charge'),
   setServiceCharge: (config: ServiceChargeConfig) => call<void>('set_service_charge', { config }),
@@ -503,6 +553,18 @@ export const settingsApi = {
   monthlySalesPeriod: () => call<MonthlySalesPeriodConfig>('get_monthly_sales_period'),
   setMonthlySalesPeriod: (config: MonthlySalesPeriodConfig) =>
     call<void>('set_monthly_sales_period', { config }),
+  /** ADMIN reads the monthly revenue targets: defaults, this month's overrides, and the effective pair. */
+  revenueTargets: () => call<RevenueTargetsView>('get_revenue_targets'),
+  /** ADMIN saves the cafe-wide DEFAULT targets. It can never touch a month's override. */
+  setRevenueTargets: (defaults: RevenueTargetDefaults) =>
+    call<void>('set_revenue_targets', { defaults }),
+  /**
+   * ADMIN sets — or, with `null`, clears — ONE department's override for the
+   * CURRENT month. The month is not an argument: the backend decides which month
+   * is active, so a stale client cannot write an override into the wrong month.
+   */
+  setRevenueTargetOverride: (department: RevenueDepartment, amountMinor: number | null) =>
+    call<void>('set_revenue_target_override', { department, amount_minor: amountMinor }),
 }
 
 export interface CheckoutInput {
