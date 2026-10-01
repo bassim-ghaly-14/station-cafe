@@ -49,6 +49,35 @@ const skipSpaces = (text, from) => {
   return i
 }
 
+/** Whether `index` sits at a line start, where a declaration may begin. */
+const isLineStart = (text, index) => index === 0 || LINE_TERMINATORS.has(text[index - 1])
+
+/**
+ * Inspect ONE line start: the value it declares, if it declares one, and the
+ * position to resume the scan from when it does not.
+ *
+ * The two answers are returned together because they are the same decision seen
+ * from two sides — a candidate that declares nothing still has to say where the
+ * scan continues, and how far it may skip is only known once this candidate has
+ * been judged.
+ */
+function declarationAt(text, key, candidate) {
+  const keyAt = skipSpaces(text, candidate)
+  if (!text.startsWith(key, keyAt)) {
+    // Every line start inside that whitespace run resumes at the same index
+    // and reaches the same verdict, so jumping past them keeps this linear.
+    return { value: null, next: keyAt > candidate ? keyAt : candidate + 1 }
+  }
+  let i = skipSpaces(text, keyAt + key.length)
+  if (text[i] === '=') i = skipSpaces(text, i + 1)
+  if (text[i] !== '"') return { value: null, next: candidate + 1 }
+  const start = i + 1
+  const end = text.indexOf('"', start) // `[^"]+` cannot cross a quote
+  // An EMPTY value is not a declaration: the pair is a typo, not a version.
+  if (end <= start) return { value: null, next: candidate + 1 }
+  return { value: text.slice(start, end), next: null }
+}
+
 /**
  * The value of the first `<key> = "…"` declaration in `text`, or null when it
  * declares none.
@@ -64,25 +93,13 @@ function declaredQuotedValue(text, key) {
   // A declaration can only begin at a line start, so only those are candidates.
   let candidate = 0
   while (candidate < text.length) {
-    if (candidate > 0 && !LINE_TERMINATORS.has(text[candidate - 1])) {
+    if (!isLineStart(text, candidate)) {
       candidate++
       continue
     }
-    const keyAt = skipSpaces(text, candidate)
-    if (!text.startsWith(key, keyAt)) {
-      // Every line start inside that whitespace run resumes at the same index
-      // and reaches the same verdict, so jumping past them keeps this linear.
-      candidate = keyAt > candidate ? keyAt : candidate + 1
-      continue
-    }
-    let i = skipSpaces(text, keyAt + key.length)
-    if (text[i] === '=') i = skipSpaces(text, i + 1)
-    if (text[i] === '"') {
-      const start = i + 1
-      const end = text.indexOf('"', start) // `[^"]+` cannot cross a quote
-      if (end > start) return text.slice(start, end)
-    }
-    candidate++
+    const { value, next } = declarationAt(text, key, candidate)
+    if (value !== null) return value
+    candidate = next
   }
   return null
 }
