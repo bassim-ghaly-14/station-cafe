@@ -27,11 +27,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build-windows:
+    # `contents: write` is granted HERE, not at workflow level (Sonar
+    # githubactions:S8233): only the two `tauri-action` jobs create and upload
+    # release assets, so the write token must not be reachable from every job.
+    permissions:
+      contents: write
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -202,6 +204,11 @@ jobs:
   build-macos:
     # Sequential on purpose — see the race note at the top of this file.
     needs: build-windows
+    # The same release the Windows job created: `tauri-action` merges this
+    # platform's entries into the existing `latest.json` and uploads the
+    # `.app.tar.gz` + `.sig` pair, which is a release write.
+    permissions:
+      contents: write
     runs-on: macos-14
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -360,6 +367,10 @@ jobs:
   # ---------------------------------------------------------------------------
   verify-release:
     needs: [build-windows, build-macos]
+    # Read-only: this job only downloads `latest.json` from the published
+    # release and audits it. It never creates or uploads anything.
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
