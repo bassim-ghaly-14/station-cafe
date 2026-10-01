@@ -460,58 +460,94 @@ fn shell(app: &tauri::AppHandle) -> ResponseBox {
     }
 }
 
+/// Whether a path is safe to hand to the embedded-asset resolver.
+///
+/// Structurally narrow: a bundle key is always `/`-rooted, forward-only and
+/// free of `..`, a backslash and a NUL byte. Refused here rather than merely
+/// filtered downstream, because no path is ever BUILT from client input — this
+/// is the last gate before a string reaches the resolver.
+pub fn is_embedded_key(key: &str) -> bool {
+    key.starts_with('/')
+        && !key.ends_with('/')
+        && !key.contains("..")
+        && !key.contains('\\')
+        && !key.contains('\0')
+        && !key.contains("//")
+}
+
 /// Look up an asset in the embedded bundle, with NO fallback of its own.
 ///
-/// This asks Tauri for the asset only when it is genuinely present. The
-/// `AssetResolver` is deliberately not used: it rewrites a miss into
-/// `index.html` (its own SPA behaviour), which is right for a webview and wrong
-/// for an HTTP API, where it would turn a 404 into a misleading 200.
+/// # THE ENCODING RULE — read this before touching the bytes
+///
+/// Tauri embeds `dist/` into the executable **Brotli-compressed** (`tauri`'s
+/// default `compression` feature; `tauri-codegen` compresses every asset at
+/// build time). Its two accessors are therefore NOT interchangeable:
+///
+/// - `AssetResolver::get()` is the **DECODING** accessor. It returns the
+///   original bytes.
+/// - `AssetResolver::iter()` is the **RAW** accessor. It yields the compressed
+///   bytes exactly as they were compiled in.
+///
+/// Serving what `iter()` yields labels a Brotli stream `Content-Type:
+/// text/html` with no `Content-Encoding` to accompany it, and every browser
+/// renders that as a screenful of garbage instead of the Station page. That is
+/// not hypothetical — it is what this function used to do, and it is why a
+/// phone scanning the QR got binary noise rather than the application.
+///
+/// So the split below is deliberate and must stay this way: the iterator is
+/// consulted for EXISTENCE only, and every byte written to a socket comes from
+/// the decoding accessor.
+///
+/// `get()` is still asked for existence separately, because `get()` falls back
+/// to `index.html` (and to `<path>.html`, then `<path>/index.html`) on a miss,
+/// so a `Some` from it does not mean the file is there. Checking the map first
+/// is what keeps a missing script an honest 404 instead of a 200 carrying a
+/// whole HTML document.
+///
+/// The MIME type is the one Tauri derived from the **decoded** bytes, so the
+/// type served is byte-for-byte the one the desktop webview gets.
+///
+/// `AssetResolver` is deliberately not used for existence alone: it rewrites a
+/// miss into `index.html` (its own SPA behaviour), which is right for a webview
+/// and wrong for an HTTP API, where it would turn a 404 into a misleading 200.
 fn embedded_asset(app: &tauri::AppHandle, key: &str) -> Option<(String, Vec<u8>)> {
-    // The embedded map is a perfect-hash lookup, so this is a cheap exact match
-    // on the real file name. `AssetKey::from(Path)` normalises to a
-    // slash-separated path WITH a leading slash on Unix, so the request path is
-    // already in the stored form and is compared verbatim — no path is ever
-    // built from client input here.
-    let name = key;
     // A key outside the embedded bundle is refused before the lookup.
-    if !name.starts_with('/') || name.contains("..") || name.contains('\\') {
+    if !is_embedded_key(key) {
         return None;
     }
-    // ONE traversal, not two.
-    //
-    // This used to run a full `iter().any(...)` existence scan and THEN a
-    // separate `.get()` lookup, walking the embedded map twice for every single
-    // asset request — and `web_response` calls this function once to classify
-    // the route and again to read the bytes, so a page load walked it four times
-    // instead of twice.
-    //
-    // `iter()` yields the key together with the bytes, so a single `find` both
-    // proves existence and returns the content. The one thing it does not yield
-    // is the MIME type, which is why this derives it from the same
-    // `MimeType::parse` call Tauri's own `AssetResolver::get` uses internally —
-    // so the type served is byte-for-byte the one the desktop webview gets, and
-    // the exactness that the resolver's `index.html` fallback would have broken
-    // is preserved without paying for a second walk.
-    app.asset_resolver()
+    // `AssetKey::from(Path)` normalises to a slash-separated path WITH a
+    // leading slash on Unix, so the request path is already in the stored form
+    // and is compared verbatim — no path is ever built from client input here.
+    let resolver = app.asset_resolver();
+    // EXISTENCE ONLY. The bytes this iterator yields are the compressed ones
+    // and are deliberately discarded — see the note above.
+    if !resolver
         .iter()
-        .find(|(existing, _)| {
-            // `existing` is a `Cow<AssetKey>`; `AssetKey` derefs to `str`.
-            let existing: &str = existing.as_ref();
-            existing == name
-        })
-        .map(|(_, bytes)| {
-            let bytes = bytes.into_owned();
-            let mime = tauri::utils::mime_type::MimeType::parse(&bytes, name);
-            (mime, bytes)
-        })
+        .any(|(existing, _)| existing.as_ref() == key)
+    {
+        return None;
+    }
+    // BYTES. The decoding accessor, so the wire carries plain HTML/JS/CSS/PNG.
+    let asset = resolver.get(key.to_string())?;
+    Some((asset.mime_type, asset.bytes))
 }
 
 /// Write a frontend asset.
 ///
+/// The body is written EXACTLY as the embedded bundle holds it and is NOT
+/// compressed here. `tiny_http` sets `Content-Length` from the byte count and
+/// no `Content-Encoding` is added, so the declared encoding and the actual
+/// encoding cannot disagree — the simplest reliable path, and the only one that
+/// is correct when the bytes are already plain.
+///
 /// The security headers are the same ones the API sends, plus the strict CSP:
 /// this content is HTML and JavaScript executing in a browser on the same LAN
 /// as the till, so it is held to at least the same standard.
-fn asset_response(
+///
+/// `pub(crate)` so the byte-level HTTP contract it writes — status line, headers
+/// and an uncompressed body — can be asserted directly, rather than inferred
+/// from a browser that no automated test can drive.
+pub(crate) fn asset_response(
     status: u16,
     content_type: &str,
     body: &[u8],
@@ -614,4 +650,89 @@ fn error_response(err: &ApiError) -> ResponseBox {
         "error": { "code": err.code, "message": err.message }
     });
     json_response(err.status, &body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_bundle_shaped_key_may_reach_the_asset_resolver() {
+        /*
+         * The last gate before a string becomes an embedded-asset lookup. The
+         * allow-list is structural — `/`-rooted, forward-only, no `..`, no
+         * backslash, no NUL — so nothing that names a filesystem location, a
+         * database file, a `.env` or a build artefact can satisfy it.
+         */
+        for good in [
+            "/index.html",
+            "/assets/index-DqmH59mP.js",
+            "/station-cafe.png",
+        ] {
+            assert!(is_embedded_key(good), "{good} must be allowed");
+        }
+        for bad in [
+            "",
+            "index.html",
+            "assets/index.js",
+            "/../Cargo.toml",
+            "/assets/../../etc/passwd",
+            "/..%2f..%2fsecret",
+            "/assets\\..\\..\\secret",
+            "/assets/\0.js",
+            "//",
+        ] {
+            assert!(!is_embedded_key(bad), "{bad:?} must be refused");
+        }
+    }
+
+    #[test]
+    fn the_wire_bytes_are_never_taken_from_the_raw_compressed_iterator() {
+        /*
+         * THE REGRESSION PIN.
+         *
+         * Tauri embeds `dist/` Brotli-compressed. `AssetResolver::iter()` yields
+         * those RAW compressed bytes; only `AssetResolver::get()` decodes them.
+         * Reading the page out of the iterator is what made
+         * `http://<lan-ip>:47821/` return a Brotli stream labelled
+         * `Content-Type: text/html` with no `Content-Encoding`, which a browser
+         * renders as a screenful of binary garbage.
+         *
+         * The read path needs a running Tauri application, so it cannot be
+         * exercised here — but the mistake is a one-line change, so the API
+         * contract is pinned from the source instead. Comments are stripped
+         * first: the module's own documentation necessarily NAMES `iter()` and
+         * `get()` to explain the rule, and matching that prose would assert the
+         * opposite of the intent.
+         */
+        let source = include_str!("server.rs");
+        // Everything before the test module. `split("#[cfg(test)]")` alone would
+        // be wrong: `start_api_only` carries the same attribute, so the naive
+        // split would cut the production half in half and assert nothing.
+        let module = source
+            .find("#[cfg(test)]\nmod tests")
+            .expect("server.rs keeps its tests in one trailing module");
+        let production = &source[..module];
+        let code: String = production
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with("//") && !l.starts_with("///") && !l.starts_with("//!"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            code.contains("resolver.get("),
+            "asset bytes must come from the DECODING accessor"
+        );
+        assert!(
+            !code.contains("into_owned()"),
+            "`into_owned()` only appeared to take the RAW compressed bytes off \
+             the iterator; that is the binary-on-the-wire defect"
+        );
+        assert!(
+            !code.contains("MimeType::parse"),
+            "the MIME type must be the one Tauri derived from the DECODED bytes, \
+             not sniffed from a compressed stream"
+        );
+    }
 }

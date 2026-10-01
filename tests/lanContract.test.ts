@@ -387,6 +387,46 @@ describe('the LAN listener can serve every file it must', () => {
     expect(assets.sort()).toEqual(['site.webmanifest', 'station-cafe.png', 'station-print.png'])
   })
 
+  it('ships a shell the Rust listener can decode back into HTML', () => {
+    /*
+     * THE REGRESSION, from the artifact side.
+     *
+     * Tauri embeds `dist/` into the executable BROTLI-COMPRESSED. The listener
+     * used to read those raw compressed bytes out of `AssetResolver::iter()`
+     * and write them to the socket labelled `Content-Type: text/html`, with no
+     * `Content-Encoding` — so `http://<lan-ip>:47821/` returned a Brotli
+     * stream and Safari rendered it as binary garbage instead of the page.
+     *
+     * The listener now reads through Tauri's decoding accessor, so what leaves
+     * the socket is the file on disk. That is only worth anything if the file on
+     * disk really is plain HTML and not, say, an already-compressed artefact
+     * committed by mistake — which is what this asserts.
+     */
+    const shell = readFileSync(join(DIST, 'index.html'))
+
+    // 5. Plain, readable markup — not a compressed stream. A NUL byte or a
+    //    non-UTF-8 sequence would mean the artifact itself is encoded.
+    expect(shell.subarray(0, 15).toString('utf8')).toMatch(/^<!doctype html>/i)
+    expect(shell.includes(0)).toBe(false)
+    expect(shell.toString('utf8')).toContain('<html')
+
+    // Every bundle file the shell references is really in `dist/`, and every
+    // TEXT one is plain on disk: decoding is what restores it, so those bytes
+    // must be the document the browser parses. Binary icons are excluded — a
+    // PNG is legitimately full of NUL bytes.
+    for (const ref of [...shell.toString('utf8').matchAll(/(?:src|href)="(\/[^"]+)"/g)].map(
+      (m) => m[1]!,
+    )) {
+      const file = join(DIST, ref.replace(/^\//, ''))
+      expect(existsSync(file), `${ref} is referenced but not in dist/`).toBe(true)
+      const bytes = readFileSync(file)
+      expect(bytes.length, `${ref} must not be empty`).toBeGreaterThan(0)
+      if (/\.(?:js|css|html|webmanifest|json)$/.test(ref)) {
+        expect(bytes.includes(0), `${ref} must be a plain file, not an encoded one`).toBe(false)
+      }
+    }
+  })
+
   it('ships a manifest whose icons and start_url the listener can serve', () => {
     /*
      * The browser fetches `/site.webmanifest` and then each icon it names, over

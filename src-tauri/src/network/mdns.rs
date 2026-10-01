@@ -11,10 +11,13 @@
 //!   port. No user, no customer, no employee, no database path, no filesystem
 //!   path, no token, no discount PIN. Those have no business on a broadcast
 //!   that every device on the cafe Wi-Fi can read.
-//! - **Addresses are never stale.** The advertisement carries the address
-//!   detected at startup AND is registered with `enable_addr_auto()`, so the
-//!   responder re-advertises when the host's addresses change. A DHCP lease
-//!   that moves cannot leave a dead address in the responder's cache.
+//! - **Exactly one address, and it is the bound one.** `station.local` resolves
+//!   to precisely the address the HTTP listener has bound, and to nothing else.
+//!   Automatic address discovery (`enable_addr_auto`) is deliberately NOT used,
+//!   because it widens the record to every interface on the machine — including
+//!   loopback and IPv6 link-local `fe80::/10` addresses that a browser cannot
+//!   connect to, which made Safari retry `station.local` indefinitely instead
+//!   of loading the page. See [`Advertisement::register`].
 //! - **Failure is never fatal.** Multicast blocked, no interface, a name
 //!   conflict — each is logged and swallowed. Station is a POS first; losing
 //!   a convenience lookup must never stop the till.
@@ -78,9 +81,8 @@ pub fn service_info(ip: IpAddr, port: u16, app_version: &str) -> Result<ServiceI
         port,
         properties,
     )
-    // Re-advertise automatically when the host's addresses change, so a
-    // DHCP lease change cannot leave a stale address published.
-    .map(ServiceInfo::enable_addr_auto)
+    // `addr_auto` is DELIBERATELY NOT enabled. See the note on
+    // `Advertisement::register` — it is what made `station.local` unusable.
     .map_err(|e| format!("cannot build mDNS service info: {e}"))
 }
 
@@ -106,6 +108,36 @@ pub struct Advertisement {
 impl Advertisement {
     /// Register the service. Any failure is returned as a message and the
     /// caller is expected to carry on without discovery.
+    ///
+    /// # WHY `addr_auto` IS NOT USED
+    ///
+    /// `enable_addr_auto()` reads as a strict improvement — it re-advertises
+    /// when a DHCP lease moves — but in `mdns-sd` it does something far more
+    /// than that: at registration time the daemon inserts the address of EVERY
+    /// UP interface, loopback included, into this hostname's A and AAAA
+    /// records. On a real cafe PC that means `station.local` is published as
+    /// the LAN IPv4 *plus* `127.0.0.1` *plus* a dozen `fe80::/10` IPv6
+    /// link-local addresses belonging to `en0`, `en1`, `en2`, `bridge0`, `ap1`
+    /// and every `utun`.
+    ///
+    /// `fe80::` addresses carry a zone index, are only meaningful on the local
+    /// segment, and are not something a browser can connect to from a resolved
+    /// name. Safari prefers AAAA, tries those first, and gets no answer — so
+    /// `http://station.local:47821/` sat in `SYN_SENT` and spun instead of
+    /// rendering. It is the same class of mistake
+    /// [`crate::network::address`] refuses: publishing an address no client can
+    /// actually use.
+    ///
+    /// So exactly ONE address is advertised: the one the HTTP listener has
+    /// already bound. That makes the name and the socket agree by
+    /// CONSTRUCTION rather than by timing, and it is the address the IP
+    /// fallback prints, so all three surfaces cannot drift.
+    ///
+    /// The DHCP-lease case is still covered, by a better mechanism: a lease
+    /// change makes the bound address stale, and [`crate::network::runtime`]
+    /// tears the listener down and re-advertises whenever the service is
+    /// applied. Correctness of what is on the wire beats a stale-proof that
+    /// publishes unusable addresses in the meantime.
     pub fn register(ip: IpAddr, port: u16, app_version: &str) -> Result<Self, String> {
         let info = service_info(ip, port, app_version)?;
         let daemon =
@@ -169,9 +201,80 @@ mod tests {
     }
 
     #[test]
-    fn it_tracks_address_changes_so_a_dhcp_change_is_re_advertised() {
-        // A lease that moves must not leave a dead address published.
-        assert!(info().is_addr_auto(), "address auto-update must be enabled");
+    fn it_advertises_exactly_the_bound_address_and_nothing_else() {
+        /*
+         * THE DEFECT. `enable_addr_auto()` made the daemon add the address of
+         * every up interface — loopback included — plus every `fe80::/10`
+         * IPv6 link-local address on the machine. `station.local` therefore
+         * resolved to a bundle of addresses a browser cannot connect to, and
+         * Safari retried them forever instead of rendering the page.
+         *
+         * A client must now get ONE address, and it must be the one the HTTP
+         * listener is bound to. Auto-discovery stays off.
+         */
+        assert!(
+            !info().is_addr_auto(),
+            "automatic address discovery must stay OFF or station.local \
+             publishes unreachable fe80::/loopback addresses again"
+        );
+
+        // Exactly one address, and it is the bound one.
+        assert_eq!(
+            info()
+                .get_addresses_v4()
+                .into_iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![Ipv4Addr::new(192, 168, 1, 50)],
+            "station.local must resolve to the bound address alone"
+        );
+
+        // Belt and braces: the set is never widened, and never carries an IPv6
+        // record a browser could try (and fail on) before the IPv4 one.
+        for info in [
+            service_info(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)), 47821, "0.1.0").unwrap(),
+            service_info(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9)), 47821, "0.1.0").unwrap(),
+        ] {
+            assert_eq!(
+                info.get_addresses_v4().len(),
+                1,
+                "the advertised address set must never be widened"
+            );
+            assert_eq!(
+                info.get_addresses().len(),
+                1,
+                "no IPv6 record may be published alongside the bound IPv4"
+            );
+            assert!(!info.is_addr_auto());
+        }
+    }
+
+    #[test]
+    fn the_advertised_address_is_the_one_the_listener_bound() {
+        // The name and the socket cannot point at different interfaces: both
+        // come from the same `SocketAddr` that `runtime::apply` bound.
+        let bound: IpAddr = "192.168.1.61".parse().unwrap();
+        let info = service_info(bound, 47821, "0.1.0").unwrap();
+        assert_eq!(
+            info.get_addresses_v4()
+                .into_iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![Ipv4Addr::new(192, 168, 1, 61)]
+        );
+        // And the fallback URL the QR prints for the very same listener is that
+        // address on that very port, so hostname and IP reach one server.
+        assert_eq!(
+            crate::network::qr::access_url(
+                &crate::network::address::url_host(&bound),
+                info.get_port()
+            ),
+            "http://192.168.1.61:47821/"
+        );
+        assert_eq!(
+            crate::network::qr::friendly_url(info.get_port()),
+            "http://station.local:47821/"
+        );
     }
 
     #[test]

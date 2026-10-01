@@ -29,6 +29,10 @@ mod error;
 mod network;
 #[cfg(test)]
 mod network_test;
+// THE LAN HTTP CONTRACT, kept apart because it spans the socket, the response
+// writer, the bind address, the advertised name and the two QR URLs at once.
+#[cfg(test)]
+mod network_lan_http_test;
 #[cfg(test)]
 mod expense_categories_test;
 mod expenses_analytics_test;
