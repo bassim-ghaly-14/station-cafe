@@ -47,6 +47,19 @@ export interface PosOrder {
   lines: OrderLine[]
 }
 
+/**
+ * The authoritative lifecycle counters of the current business day.
+ *
+ * `closed_empty` is the empty-close count, read from persisted `table_sessions`
+ * by the backend. It is deliberately NOT summed from the per-table cards here:
+ * a sum over the active grid loses any close belonging to a table that has
+ * since been retired, and it is a second, competing definition of one number.
+ */
+export interface TableCounters {
+  opens: number
+  closed_empty: number
+}
+
 export interface TableView {
   id: number
   label: string
@@ -302,6 +315,7 @@ export function isPrintPreview(value: unknown): value is PrintPreview {
 
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
+  tableCounters: () => call<TableCounters>('table_lifecycle_counters'),
   setTableCount: (count: number) => call<void>('set_table_count', { count }),
   openTakeaways: () => call<TakeawayView[]>('list_open_takeaway_orders'),
   openTable: (table_id: number) => call<number>('open_table', { table_id }),

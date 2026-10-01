@@ -37,6 +37,7 @@ import {
   type OrderPreview,
   type PosOrder,
   type PrintOutcome,
+  type TableCounters,
   type TableView,
   type TakeawayView,
 } from '@/services/posApi'
@@ -69,6 +70,15 @@ export default function PosPage() {
   const { navigate } = useRouter()
   const [shiftState, setShiftState] = useState<DayShiftState | null>(null)
   const [tables, setTables] = useState<TableView[] | null>(null)
+  /**
+   * The business day's lifecycle counters, straight from the backend.
+   *
+   * This is held only to render: it is re-read on every `refresh()`, so the
+   * empty-close figure always comes from the database rather than from anything
+   * this screen tallies. Opening a table never writes to it — only a completed
+   * operation followed by a refresh can change what it shows.
+   */
+  const [counters, setCounters] = useState<TableCounters | null>(null)
   const [takeaways, setTakeaways] = useState<TakeawayView[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
@@ -93,11 +103,17 @@ export default function PosPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [tv, tk, st] = await Promise.all([api.tables(), api.openTakeaways(), shiftApi.state()])
+      const [tv, tk, st, counters] = await Promise.all([
+        api.tables(),
+        api.openTakeaways(),
+        shiftApi.state(),
+        api.tableCounters(),
+      ])
 
       setTables(tv)
       setTakeaways(tk)
       setShiftState(st)
+      setCounters(counters)
       setError(null)
     } catch (e) {
       setError(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']))
@@ -325,7 +341,7 @@ export default function PosPage() {
   const hasWorkspace = activeOrder !== null || selected !== null
 
   const layout = workspaceLayout(hasWorkspace)
-  const counts = tableCounts(tables)
+  const counts = tableCounts(tables, counters)
 
   return (
     /*
@@ -479,12 +495,15 @@ function dayClosingDay(
  *  - `occupied`  — OCCUPIED + READY_TO_PAY: the table has an order on it. The
  *                  two order states are ONE state here, exactly as they were
  *                  before, because "بها طلب" is what a cashier needs to know.
- *  - `closed`    — the sessions closed empty TODAY, summed from the same
- *                  `closed_empty_today` counter each card already prints. This
- *                  is deliberately a presentation of a figure the backend
- *                  already returns, NOT a fifth table status: no table row is
- *                  ever "closed", a session is, and inventing a status here
- *                  would make the header disagree with the grid.
+ *  - `closed`    — the empty closes of the current business day. It comes from
+ *                  the backend's own `table_lifecycle_counters` command, which
+ *                  reads the persisted `table_sessions` rows. It is deliberately
+ *                  NOT a sum of the cards below: summing over the active grid
+ *                  would drop every close belonging to a table that has since
+ *                  been retired, and it would be a second definition of a number
+ *                  the database already states. No table row is ever "closed",
+ *                  a session is, so this is a presentation of a backend fact,
+ *                  not a fifth table status.
  */
 type TableCounts = {
   empty: number
@@ -493,13 +512,15 @@ type TableCounts = {
   closed: number
 }
 
-function tableCounts(tables: TableView[]): TableCounts {
+function tableCounts(tables: TableView[], counters: TableCounters | null): TableCounts {
   return {
     empty: tables.filter((tv) => tv.status === 'EMPTY').length,
     open: tables.filter((tv) => tv.status === 'OPEN').length,
     occupied: tables.filter((tv) => tv.status === 'OCCUPIED' || tv.status === 'READY_TO_PAY')
       .length,
-    closed: tables.reduce((total, tv) => total + tv.closed_empty_today, 0),
+    // The backend is the source of truth. `null` only means the counters have
+    // not arrived yet, and it renders as a truthful 0 rather than a guess.
+    closed: counters?.closed_empty ?? 0,
   }
 }
 

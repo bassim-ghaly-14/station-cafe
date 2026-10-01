@@ -47,6 +47,8 @@ mod sales_analytics_test;
 mod seed;
 mod services;
 #[cfg(test)]
+mod table_lifecycle_test;
+#[cfg(test)]
 mod workflow_test;
 
 pub mod time;
@@ -228,6 +230,7 @@ pub fn run() {
             commands::sales::sales_cashiers,
             commands::sales::sales_monthly,
             commands::pos::list_tables,
+            commands::pos::table_lifecycle_counters,
             commands::pos::set_table_count,
             commands::pos::open_table,
             commands::pos::close_empty_table,
@@ -322,3 +325,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

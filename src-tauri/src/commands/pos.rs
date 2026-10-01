@@ -3,7 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::invoices::{self, CreditAccount, InvoiceRow};
-use crate::repositories::pos::{self, Order, TableView, TakeawayView};
+use crate::repositories::pos::{self, Order, TableCounters, TableView, TakeawayView};
 use crate::services::checkout::{self, CheckoutInput, CheckoutResult};
 use crate::services::pos as pos_svc;
 use crate::AppState;
@@ -14,6 +14,22 @@ use tauri::State;
 pub fn list_tables(state: State<'_, AppState>, token: String) -> AppResult<Vec<TableView>> {
     authorized(&state, &token, "STAFF", |conn, _| {
         pos_svc::list_tables(conn)
+    })
+}
+
+/// The authoritative lifecycle counters of the current business day.
+///
+/// This is the ONE definition of the empty-close count. It is a read of
+/// persisted `table_sessions` rows rather than anything the caller accumulates,
+/// so a first empty close on a fresh database reports 1 exactly like the
+/// hundredth one, and reopening or restarting the POS cannot change it.
+#[tauri::command(rename_all = "snake_case")]
+pub fn table_lifecycle_counters(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<TableCounters> {
+    authorized(&state, &token, "STAFF", |conn, _| {
+        pos_svc::day_lifecycle_counts(conn)
     })
 }
 

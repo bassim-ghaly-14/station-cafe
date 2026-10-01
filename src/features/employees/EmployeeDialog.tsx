@@ -52,6 +52,7 @@
  * wire.
  */
 import { useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import {
   Badge,
@@ -70,7 +71,7 @@ import { useErrText } from '@/lib/err'
 import { parseMajor } from '@/lib/utils'
 import { authApi } from '@/services/authApi'
 import { employeesApi } from '@/services/employeesApi'
-import type { EmployeeRow, EmployeeType, LoginRole } from '@/services/employeesApi'
+import type { EmployeeInput, EmployeeRow, EmployeeType, LoginRole } from '@/services/employeesApi'
 import { roleLabel, roleOf } from './employee-role'
 
 export type EmployeeDialogMode = { kind: 'create' } | { kind: 'edit'; employee: EmployeeRow } | null
@@ -98,6 +99,123 @@ const CASHIER_ROLE: FormRole = 'STAFF'
 
 /** The role value that means "a wash worker, who has no login account". */
 const NO_LOGIN_ROLE: FormRole = 'WASH_WORKER'
+
+/**
+ * The field-level errors the form refuses to save with, and nothing else.
+ *
+ * Kept as a PURE function of the fields it inspects, so the save button and the
+ * tests can reason about the rules without the component around them. The login
+ * is validated up front so a missing password is a field error, not a rejected
+ * request the user can only learn about from a toast.
+ *
+ * The SHARED auth rule, mirrored here for immediate feedback; the service
+ * enforces the real one either way. A new password is optional on edit: an EMPTY
+ * field means "leave the credential alone", so it is never validated — and a
+ * password is only ever required when a login is being CREATED.
+ */
+function validateEmployeeForm(
+  fields: Readonly<{
+    name: string
+    password: string
+    newPassword: string
+    needsPassword: boolean
+    canChangePassword: boolean
+    t: TFunction
+  }>,
+): Record<string, string> {
+  const errors: Record<string, string> = {}
+  if (fields.name.trim() === '') errors.name = fields.t('employees.form.nameRequired')
+  if (fields.needsPassword && fields.password.length < MIN_PASSWORD_LENGTH) {
+    errors.password = fields.t('errors.user.password_too_short')
+  }
+  if (
+    fields.canChangePassword &&
+    fields.newPassword !== '' &&
+    fields.newPassword.length < MIN_PASSWORD_LENGTH
+  ) {
+    errors.newPassword = fields.t('errors.user.password_too_short')
+  }
+  return errors
+}
+
+/**
+ * The salary field, read as integer piasters through the SHARED `parseMajor`.
+ *
+ * Entered in major units, so every amount in Station parses identically and no
+ * float is ever constructed. An EMPTY field is a deliberate zero; a MALFORMED
+ * one is `null` — a validation error, never a silent zero.
+ */
+function parseSalaryField(salary: string): number | null {
+  return salary.trim() === '' ? 0 : parseMajor(salary)
+}
+
+/**
+ * The employee payload, assembled from the form exactly as it collects it.
+ *
+ * The employee TYPE is implied by the role, never chosen independently: a wash
+ * worker has no login (and the database refuses one), and every login in Station
+ * is a CASHIER employee. A wash worker therefore gets no credential, while a new
+ * login gets its account created alongside the employee record, in the same
+ * transaction on the server.
+ */
+function buildEmployeeInput(
+  fields: Readonly<{
+    name: string
+    phone: string
+    notes: string
+    type: EmployeeType
+    /** The presentation role; `WASH_WORKER` is the one value with no login. */
+    role: FormRole
+    isWashWorker: boolean
+    isEditing: boolean
+    needsPassword: boolean
+    password: string
+    baseSalary: number
+  }>,
+): EmployeeInput {
+  // The type field exists only to let a CASHIER-slot person be created as a wash
+  // worker instead, so the role overrides whatever the selector holds.
+  const employeeType: EmployeeType = fields.isWashWorker ? 'WASH_WORKER' : fields.type
+  return {
+    name: fields.name.trim(),
+    phone: fields.phone.trim() || null,
+    employee_type: employeeType,
+    base_salary: fields.baseSalary,
+    notes: fields.notes.trim() || null,
+    user_id: null,
+    // Editing never proposes a role or a credential: this form cannot change
+    // them, so it does not even claim to. `null` means "leave it alone".
+    role: fields.isEditing || fields.isWashWorker ? null : (fields.role as LoginRole),
+    password: fields.needsPassword ? fields.password : null,
+  }
+}
+
+/**
+ * Persist one employee: the details, then the money, then the credential.
+ *
+ * These are three deliberate backend commands in a fixed order, and none of them
+ * rides along inside another:
+ *  - the salary is a MONEY attribute with its own audited command;
+ *  - a NEW password is a separate act through the auth command, not a field on
+ *    the employee record. Leaving the field empty sends nothing at all, so an
+ *    unrelated edit can never reset the credential.
+ */
+async function persistEmployee(
+  editing: EmployeeRow,
+  input: EmployeeInput,
+  baseSalary: number,
+  change: Readonly<{ canChangePassword: boolean; newPassword: string }>,
+): Promise<void> {
+  await employeesApi.update(editing.id, input)
+  if (baseSalary !== (editing.base_salary ?? 0)) {
+    await employeesApi.setBaseSalary(editing.id, baseSalary)
+  }
+  // `user_id` is guaranteed non-null by `canChangePassword`, and re-checked here
+  // so the call site can never widen what an ADMIN may reach.
+  if (change.canChangePassword && change.newPassword !== '' && editing.user_id !== null) {
+    await authApi.changePassword(editing.user_id, change.newPassword)
+  }
+}
 
 export function EmployeeDialog({
   mode,
@@ -165,70 +283,43 @@ export function EmployeeDialog({
     : ['STAFF', 'MANAGER']
 
   async function save() {
-    // Validate the login up front so a missing password is a field error, not a
-    // rejected request the user can only learn about from a toast.
-    const nextErrors: Record<string, string> = {}
-    if (name.trim() === '') nextErrors.name = t('employees.form.nameRequired')
-    // The SHARED auth rule, mirrored here for immediate feedback; the service
-    // enforces the real one either way. A new password is optional on edit: an
-    // EMPTY field means "leave the credential alone", so it is never validated.
-    if (needsPassword && password.length < MIN_PASSWORD_LENGTH) {
-      nextErrors.password = t('errors.user.password_too_short')
-    }
-    if (canChangePassword && newPassword !== '' && newPassword.length < MIN_PASSWORD_LENGTH) {
-      nextErrors.newPassword = t('errors.user.password_too_short')
-    }
+    // The login is validated up front so a missing password is a field error, not
+    // a rejected request the user can only learn about from a toast.
+    const nextErrors = validateEmployeeForm({
+      name,
+      password,
+      newPassword,
+      needsPassword,
+      canChangePassword,
+      t,
+    })
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    // The salary is entered in major units and parsed by the SHARED helper, so
-    // the value that reaches the wire is integer piasters. A malformed amount
-    // is a validation error, never a silent zero.
-    const parsedSalary = salary.trim() === '' ? 0 : parseMajor(salary)
-    if (salary.trim() !== '' && parsedSalary === null) {
+    const baseSalary = parseSalaryField(salary)
+    if (baseSalary === null) {
       // The SHARED `errors.` namespace, so the message comes from the same
       // catalogue the backend's own rejection is translated from.
       toast(t('errors.employee.invalid_salary'), 'error')
       return
     }
-    const baseSalary = parsedSalary ?? 0
 
     setBusy(true)
     try {
-      // The employee TYPE is implied by the role, never chosen independently:
-      // a wash worker has no login (and the database refuses one), and every
-      // login in Station is a CASHIER employee. The type field exists only to let
-      // a CASHIER-slot person be created as a wash worker instead.
-      const employeeType: EmployeeType = isWashWorker ? 'WASH_WORKER' : type
-      // A wash worker has no login, so no credential is ever sent for one; a new
-      // login gets its account created alongside the employee record, in the
-      // same transaction on the server.
-      const input = {
-        name: name.trim(),
-        phone: phone.trim() || null,
-        employee_type: employeeType,
-        base_salary: baseSalary,
-        notes: notes.trim() || null,
-        user_id: null,
-        // Editing never proposes a role or a credential: this form cannot change
-        // them, so it does not even claim to. `null` means "leave it alone".
-        role: editing || isWashWorker ? null : (role as LoginRole),
-        password: needsPassword ? password : null,
-      }
+      const input = buildEmployeeInput({
+        name,
+        phone,
+        notes,
+        type,
+        role,
+        isWashWorker,
+        isEditing: Boolean(editing),
+        needsPassword,
+        password,
+        baseSalary,
+      })
       if (editing) {
-        await employeesApi.update(editing.id, input)
-        // The salary is a MONEY attribute, so it goes through its own audited
-        // command rather than riding along with an identity edit.
-        if (baseSalary !== (editing.base_salary ?? 0)) {
-          await employeesApi.setBaseSalary(editing.id, baseSalary)
-        }
-        // A NEW password is a separate, deliberate act through the auth command —
-        // not a field on the employee record. Leaving the field empty sends
-        // nothing at all, so an unrelated edit can never reset the credential.
-        // `user_id` is guaranteed non-null by `canChangePassword`.
-        if (canChangePassword && newPassword !== '' && editing.user_id !== null) {
-          await authApi.changePassword(editing.user_id, newPassword)
-        }
+        await persistEmployee(editing, input, baseSalary, { canChangePassword, newPassword })
       } else {
         await employeesApi.create(input)
       }

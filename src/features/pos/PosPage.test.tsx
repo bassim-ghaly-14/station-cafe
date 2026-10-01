@@ -45,6 +45,12 @@ vi.mock('@/services/ipc', async (importOriginal) => ({
 
 const mocks = vi.hoisted(() => ({
   tables: vi.fn(),
+  /**
+   * The authoritative lifecycle counters. Defaults to the empty case so the
+   * existing grid tests keep their focus; the empty-close band has its own
+   * tests that drive this explicitly.
+   */
+  tableCounters: vi.fn(async () => ({ opens: 0, closed_empty: 0 })),
   serviceCharge: vi.fn().mockResolvedValue({ amounts: [1000, 3000, 5000, 7000, 10000] }),
   openTakeaways: vi.fn(),
   openTable: vi.fn(),
@@ -91,6 +97,7 @@ vi.mock('@/services/posApi', async (importOriginal) => ({
   },
   api: {
     tables: mocks.tables,
+    tableCounters: mocks.tableCounters,
     openTakeaways: mocks.openTakeaways,
     openTable: mocks.openTable,
     closeEmptyTable: mocks.closeEmptyTable,
@@ -822,14 +829,18 @@ describe('tables KPI header and the one-table-per-row phone grid', () => {
     mocks.preview.mockResolvedValue(previewOf())
   })
 
-  it('states all four table states, with the closed count from the sessions closed today', async () => {
+  it('states all four table states, with the closed count the backend reports', async () => {
+    // The closed figure is the backend's own lifecycle count, NOT a sum of the
+    // cards. The cards below carry a deliberately different per-table number so
+    // this test fails if the band ever starts tallying them itself again.
+    mocks.tableCounters.mockResolvedValue({ opens: 4, closed_empty: 2 })
     mocks.tables.mockResolvedValue([
       table({ id: 1, status: 'EMPTY' }),
       table({ id: 2, status: 'EMPTY' }),
       table({ id: 3, status: 'OPEN', session_id: 7 }),
       table({ id: 4, status: 'OCCUPIED', order_id: 9 }),
       table({ id: 5, status: 'READY_TO_PAY', order_id: 10 }),
-      table({ id: 6, status: 'EMPTY', closed_empty_today: 2 }),
+      table({ id: 6, status: 'EMPTY', closed_empty_today: 5 }),
     ])
 
     renderPage()
@@ -843,12 +854,66 @@ describe('tables KPI header and the one-table-per-row phone grid', () => {
     expect(within(band).getByText('مغلق')).toBeInTheDocument()
 
     // 3 empty · 1 open · 2 with an order (OCCUPIED and READY_TO_PAY are one
-    // state here) · 2 sessions closed empty today.
+    // state here) · 2 empty closes, as the backend reported them.
     expect(
       within(band)
         .getAllByText(/^\d+$/)
         .map((node) => node.textContent),
     ).toEqual(['3', '1', '2', '2'])
+  })
+
+  it('keeps the empty-close count when a table with closes leaves the grid', async () => {
+    // The regression this guards: the band used to sum `closed_empty_today`
+    // across whatever tables the grid happened to show, so retiring a table
+    // silently deleted its recorded closes from the day total.
+    mocks.tableCounters.mockResolvedValue({ opens: 3, closed_empty: 2 })
+    mocks.tables.mockResolvedValue([
+      table({ id: 1, status: 'EMPTY', closed_empty_today: 0 }),
+      table({ id: 2, status: 'EMPTY', closed_empty_today: 0 }),
+    ])
+
+    renderPage()
+
+    const band = await screen.findByLabelText('حالات الطاولات')
+
+    expect(
+      within(band)
+        .getAllByText(/^\d+$/)
+        .map((node) => node.textContent),
+    ).toEqual(['2', '0', '0', '2'])
+  })
+
+  it('renders a first empty close from the first refresh, with no second read', async () => {
+    // A fresh database reports 0, then the very first empty close must show as
+    // 1 immediately — the backend refetch is what carries it, not a local tally.
+    mocks.tableCounters.mockResolvedValue({ opens: 0, closed_empty: 0 })
+    mocks.tables.mockResolvedValue([table({ id: 1, status: 'OPEN', session_id: 7 })])
+
+    renderPage()
+
+    const band = await screen.findByLabelText('حالات الطاولات')
+    expect(
+      within(band)
+        .getAllByText(/^\d+$/)
+        .map((node) => node.textContent),
+    ).toEqual(['0', '1', '0', '0'])
+
+    // The close lands, and the page re-reads the backend rather than incrementing.
+    mocks.tableCounters.mockResolvedValue({ opens: 1, closed_empty: 1 })
+    mocks.tables.mockResolvedValue([table({ id: 1, status: 'EMPTY' })])
+    mocks.closeEmptyTable.mockResolvedValueOnce(undefined)
+
+    fireEvent.click(screen.getByRole('button', { name: /إغلاق فارغ/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^إغلاق فارغ$/ }))
+
+    await waitFor(() => {
+      const next = screen.getByLabelText('حالات الطاولات')
+      expect(
+        within(next)
+          .getAllByText(/^\d+$/)
+          .map((node) => node.textContent),
+      ).toEqual(['1', '0', '0', '1'])
+    })
   })
 
   it('follows the shared KPI rule: one tile per row on a phone, four across on a desktop', async () => {

@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 use crate::money::{self, Money};
 use crate::repositories::catalog;
 use crate::repositories::customers;
-use crate::repositories::pos::{self, Order, OrderLine, TableView};
+use crate::repositories::pos::{self, Order, OrderLine, TableCounters, TableView};
 use crate::repositories::shifts;
 use crate::repositories::Db;
 use crate::services::auth::User;
@@ -26,6 +26,21 @@ pub fn list_tables(conn: &Db) -> AppResult<Vec<TableView>> {
     // Lifecycle counters are scoped to the current business day (none → zeros).
     let day = shifts::current_day(conn)?;
     pos::list_tables(conn, day.map(|d| d.id))
+}
+
+/// The authoritative lifecycle counters of the current business day.
+///
+/// `closed_empty` is THE empty-close count the whole application reports. It is
+/// a read of persisted `table_sessions` rows, scoped by the business day the
+/// CLOSE happened on — never a sum the UI keeps, and never scoped by which
+/// tables are currently active, so retiring a table cannot erase history and a
+/// fresh database reports exactly as a busy one.
+///
+/// With no open business day there is nothing to count and the answer is a
+/// truthful zero rather than an error or a guess.
+pub fn day_lifecycle_counts(conn: &Db) -> AppResult<TableCounters> {
+    let day = shifts::current_day(conn)?;
+    pos::day_lifecycle_counts(conn, day.map(|d| d.id))
 }
 
 /// Set the number of cafe tables. Table rows are retained for history: only

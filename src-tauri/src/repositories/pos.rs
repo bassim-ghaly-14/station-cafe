@@ -106,11 +106,62 @@ pub struct TakeawayView {
     pub total_minor: i64,
 }
 
+/// The canonical business-day predicate for a lifecycle column.
+///
+/// A `table_sessions` row records an OPENING instant and a CLOSING instant, and
+/// `business_day_id` names the day the table was OPENED on. Counting "closes
+/// that happened today" therefore cannot filter on `business_day_id`: a session
+/// opened late yesterday and closed after midnight belongs to yesterday's
+/// counter forever, so its empty close is silently lost.
+///
+/// The close is dated by its own `closed_at` instant instead, through
+/// `station_business_date` — the one function that turns an instant into a
+/// Station business day (see `db::register_business_date`). It is joined to the
+/// business day the application already owns rather than re-deriving one, so no
+/// hardcoded `+03:00` and no second notion of "today" can creep in.
+fn closed_on_business_day(session_alias: &str) -> String {
+    format!(
+        "station_business_date({a}.closed_at) = \
+         (SELECT d.day_date FROM business_days d WHERE d.id = ?1)",
+        a = session_alias,
+    )
+}
+
+/// The same rule for the OPENING instant, so both daily counters are scoped by
+/// the event they actually count.
+fn opened_on_business_day(session_alias: &str) -> String {
+    format!(
+        "station_business_date({a}.opened_at) = \
+         (SELECT d.day_date FROM business_days d WHERE d.id = ?1)",
+        a = session_alias,
+    )
+}
+
+/// The authoritative lifecycle totals of a business day.
+///
+/// `closed_empty` is THE empty-close count. It is a persisted fact read back
+/// from `table_sessions`, never a frontend accumulator, so it is identical on a
+/// fresh database and on a heavily used one, and identical before and after a
+/// restart.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableCounters {
+    /// Sessions opened during the business day.
+    pub opens: i64,
+    /// Sessions closed during the business day with no order attached.
+    pub closed_empty: i64,
+}
+
 /// All tables with their live status/total in a single query (fast grid).
 /// Lifecycle counters come from `table_sessions`, never from orders, so an
 /// opened table that never ordered can never look like a sale.
+///
+/// The per-table counters are a PRESENTATION of the day's lifecycle, scoped to
+/// the business day the event happened on (see `closed_on_business_day`).
+/// They are deliberately not the source of truth for the day total: a table
+/// deactivated later leaves the grid and would take its history with it. The
+/// day's authoritative figures come from `day_lifecycle_counts`.
 pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<TableView>> {
-    let mut stmt = conn.prepare(
+    let sql = format!(
         "SELECT t.id, t.label,
                 CASE
                     WHEN o.id IS NULL AND s.id IS NULL THEN 'EMPTY'
@@ -121,10 +172,10 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
                 o.id, s.id, COUNT(l.id), COALESCE(SUM(l.line_total), 0),
                 COALESCE(o.opened_at, s.opened_at),
                 (SELECT COUNT(*) FROM table_sessions os
-                  WHERE os.table_id = t.id AND os.business_day_id = ?1),
+                  WHERE os.table_id = t.id AND {opened}),
                 (SELECT COUNT(*) FROM table_sessions cs
-                  WHERE cs.table_id = t.id AND cs.business_day_id = ?1
-                    AND cs.status = 'CLOSED' AND cs.order_id IS NULL)
+                  WHERE cs.table_id = t.id
+                    AND cs.status = 'CLOSED' AND cs.order_id IS NULL AND {closed})
          FROM cafe_tables t
          LEFT JOIN orders o ON o.table_id = t.id AND o.status IN ('OPEN','READY_TO_PAY')
          LEFT JOIN table_sessions s ON s.table_id = t.id AND s.status = 'OPEN'
@@ -132,7 +183,10 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
          WHERE t.is_active = 1
          GROUP BY t.id, o.id, s.id
          ORDER BY t.label",
-    )?;
+        opened = opened_on_business_day("os"),
+        closed = closed_on_business_day("cs"),
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([business_day_id], |r| {
         Ok(TableView {
             id: r.get(0)?,
@@ -148,6 +202,37 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// The authoritative lifecycle totals of one business day: how many table
+/// sessions were opened, and how many of them were closed with NO order.
+///
+/// This is the single definition of the empty-close count. It is derived
+/// straight from `table_sessions` — the persisted lifecycle — and deliberately
+/// does NOT join `cafe_tables`, because an empty close is a historical business
+/// event: retiring a table from the active grid must never erase the closes it
+/// already recorded, and the count must therefore be identical on a fresh
+/// database and on a fully-used one.
+///
+/// An empty close is a session that reached `CLOSED` while `order_id IS NULL`:
+/// opened, closed normally, and no order/invoice/revenue was ever attached. No
+/// separate counter is stored, so the figure cannot drift from the rows it
+/// summarises.
+pub fn day_lifecycle_counts(conn: &Db, business_day_id: Option<i64>) -> AppResult<TableCounters> {
+    let sql = format!(
+        "SELECT
+            (SELECT COUNT(*) FROM table_sessions os WHERE {opened}),
+            (SELECT COUNT(*) FROM table_sessions cs
+              WHERE cs.status = 'CLOSED' AND cs.order_id IS NULL AND {closed})",
+        opened = opened_on_business_day("os"),
+        closed = closed_on_business_day("cs"),
+    );
+    Ok(conn.query_row(&sql, [business_day_id], |r| {
+        Ok(TableCounters {
+            opens: r.get(0)?,
+            closed_empty: r.get(1)?,
+        })
+    })?)
 }
 pub fn get_table(conn: &Db, id: i64) -> AppResult<Option<(i64, String)>> {
     let mut stmt =
@@ -233,15 +318,27 @@ pub fn close_open_session_of_table(conn: &Db, table_id: i64, user_id: i64) -> Ap
     Ok(())
 }
 
-/// (opens, closed-without-order) for one table inside a business day.
+/// (opens, closed-without-order) for ONE table inside a business day.
+///
+/// Uses the same business-day rule as `list_tables` and `day_lifecycle_counts`
+/// so the three reads can never disagree about what belongs to a day: an open
+/// is counted by its opening instant, an empty close by its closing instant.
 pub fn session_counts(conn: &Db, table_id: i64, business_day_id: i64) -> AppResult<(i64, i64)> {
-    Ok(conn.query_row(
-        "SELECT COUNT(*),
-                COALESCE(SUM(CASE WHEN status = 'CLOSED' AND order_id IS NULL THEN 1 ELSE 0 END), 0)
-         FROM table_sessions WHERE table_id = ?1 AND business_day_id = ?2",
-        params![table_id, business_day_id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?)
+    let sql = format!(
+        "SELECT
+            (SELECT COUNT(*) FROM table_sessions os
+              WHERE os.table_id = ?1 AND {opened}),
+            (SELECT COUNT(*) FROM table_sessions cs
+              WHERE cs.table_id = ?1 AND cs.status = 'CLOSED' AND cs.order_id IS NULL
+                AND {closed})",
+        opened = opened_on_business_day("os").replace("?1", "?2"),
+        closed = closed_on_business_day("cs").replace("?1", "?2"),
+    );
+    Ok(
+        conn.query_row(&sql, params![table_id, business_day_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?,
+    )
 }
 
 pub fn open_order(

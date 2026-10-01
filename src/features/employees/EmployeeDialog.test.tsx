@@ -387,3 +387,101 @@ describe('EmployeeDialog — ADMIN sets a new password', () => {
     expect(screen.queryByLabelText(FIELD)).not.toBeInTheDocument()
   })
 })
+/**
+ * The save TRANSACTION: what goes out on the wire, in what order, and what
+ * happens when the backend refuses.
+ *
+ * The rules pinned here are the ones that make the form safe rather than merely
+ * present: a name is required even when it is only whitespace, the salary is a
+ * money attribute with its own audited command (sent only when it actually
+ * changed), a failure is reported as a toast and never leaves the button stuck
+ * in its busy state.
+ */
+describe('EmployeeDialog — save transaction', () => {
+  const SAVE = 'حفظ'
+  const SALARY = 'الراتب الأساسي الشهري'
+
+  it('cannot save an empty name, and sends nothing at all', async () => {
+    renderCreate()
+    // Whitespace only: the button is gated on a non-empty name, so an empty one
+    // never even reaches the form's own `nameRequired` validation — either way
+    // no request is made.
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: '   ' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+
+    expect(screen.getByRole('button', { name: SAVE })).toBeDisabled()
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
+
+  it('creates a cashier with the chosen role, its credential and no salary', async () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: ' سعاد ' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
+    const input = mocks.create.mock.calls[0][0]
+    // Name is trimmed on the way out; an empty phone/notes field is `null`, never ''.
+    expect(input.name).toBe('سعاد')
+    expect(input.employee_type).toBe('CASHIER')
+    expect(input.role).toBe('STAFF')
+    expect(input.password).toBe('secret123')
+    expect(input.phone).toBeNull()
+    expect(input.notes).toBeNull()
+    // No salary typed at all is a deliberate ZERO, not an omitted field.
+    expect(input.base_salary).toBe(0)
+  })
+
+  it('parses the typed salary into integer piasters', async () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'سعاد' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+    fireEvent.change(screen.getByLabelText(SALARY), { target: { value: '2500.50' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
+    expect(mocks.create.mock.calls[0][0].base_salary).toBe(250_050)
+  })
+
+  it('sends the salary command only when the salary actually changed', async () => {
+    renderEdit()
+    // Seeded from the record as `300000 / 100`, so saving it untouched is a no-op.
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'أحمد' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled())
+    expect(mocks.setBaseSalary).not.toHaveBeenCalled()
+
+    // A real change goes out through its own audited command, never inside the
+    // identity edit, and after it.
+    fireEvent.change(screen.getByLabelText(SALARY), { target: { value: '4500' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    await waitFor(() => expect(mocks.setBaseSalary).toHaveBeenCalledWith(7, 450_000))
+    expect(mocks.update.mock.calls.at(-1)?.[1].base_salary).toBe(450_000)
+  })
+
+  it('reports a rejected save and releases the busy state', async () => {
+    mocks.update.mockRejectedValueOnce(new Error('auth.forbidden'))
+    renderEdit()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'أحمد' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    // The backend's own code, through the shared error-to-translation mapping.
+    expect(await screen.findByText('ليس لديك صلاحية لتنفيذ هذا الإجراء')).toBeInTheDocument()
+    // The `finally` matters: a stuck button would lock the manager out of the
+    // whole form with no way to retry.
+    await waitFor(() => expect(screen.getByRole('button', { name: SAVE })).not.toBeDisabled())
+  })
+
+  it('releases the busy state when only the salary command fails', async () => {
+    mocks.setBaseSalary.mockRejectedValueOnce(new Error('internal_error'))
+    renderEdit()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'أحمد' } })
+    fireEvent.change(screen.getByLabelText(SALARY), { target: { value: '4500' } })
+    fireEvent.click(screen.getByRole('button', { name: SAVE }))
+
+    expect(await screen.findByText('حدث خطأ غير متوقع، حاول مرة أخرى')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: SAVE })).not.toBeDisabled())
+  })
+})

@@ -31,6 +31,39 @@ pub fn register_clock(conn: &Db) -> AppResult<()> {
     conn.create_scalar_function("station_today", 0, FunctionFlags::SQLITE_UTF8, |_ctx| {
         Ok(crate::time::today_business_date())
     })?;
+    register_business_date(conn)?;
+    Ok(())
+}
+
+/// Register `station_business_date(x)` alongside the clock.
+///
+/// `x` is any timestamp this application writes (the explicit `...Z` form) or
+/// any legacy form it still reads; the result is that instant's calendar day in
+/// Station's business timezone.
+///
+/// This exists as a SQL function because SQLite's own `date(x, 'Africa/Cairo')`
+/// silently yields NULL on a build without IANA zone data, and because a daily
+/// report must agree with `crate::time::business_date_of` to the letter. Deriving
+/// the day in Rust keeps ONE definition — `BUSINESS_TZ` — behind every caller,
+/// with no hardcoded `+03:00` and no dependence on the host's tzdata.
+fn register_business_date(conn: &Db) -> AppResult<()> {
+    conn.create_scalar_function(
+        "station_business_date",
+        1,
+        FunctionFlags::SQLITE_UTF8,
+        |ctx| {
+            // A NULL or non-text argument yields NULL rather than a guessed day.
+            Ok(ctx
+                .get_raw(0)
+                .as_str()
+                .ok()
+                .and_then(crate::time::parse_timestamp)
+                // An unparseable value is not a date we may invent. Yielding NULL
+                // excludes the row from any day-scoped count instead of filing it
+                // under a guess.
+                .map(crate::time::business_date_of))
+        },
+    )?;
     Ok(())
 }
 
