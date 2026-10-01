@@ -134,30 +134,37 @@ function splitTopLevelMembers(body) {
   const parts = []
   let current = ''
   let nest = 0
-  for (let i = 0; i < body.length; i++) {
+  // An explicit cursor: advancing past a quoted segment is a jump, not a
+  // single-step increment, so it cannot be expressed by a for-loop counter.
+  let i = 0
+  while (i < body.length) {
     const c = body[i]
     if (c === "'" || c === '"' || c === '`') {
       const end = endOfQuoted(body, i)
       current += body.slice(i, end)
-      i = end - 1
+      i = end
       continue
     }
     if (c === '{' || c === '[' || c === '(') {
       nest++
       current += c
+      i++
       continue
     }
     if (c === '}' || c === ']' || c === ')') {
       nest--
       current += c
+      i++
       continue
     }
     if (c === ',' && nest === 0) {
       parts.push(current)
       current = ''
+      i++
       continue
     }
     current += c
+    i++
   }
   if (current.trim()) parts.push(current)
   return parts

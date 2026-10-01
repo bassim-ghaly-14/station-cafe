@@ -37,6 +37,56 @@ const readJson = (relative) => {
   }
 }
 
+const SPACE = /\s/
+const isSpace = (c) => SPACE.test(c)
+// The line terminators a multiline `^` anchors after — the same set JS uses.
+const LINE_TERMINATORS = new Set(['\n', '\r', '\u2028', '\u2029'])
+
+/** Index of the first non-whitespace character at or after `from`. */
+const skipSpaces = (text, from) => {
+  let i = from
+  while (i < text.length && isSpace(text[i])) i++
+  return i
+}
+
+/**
+ * The value of the first `<key> = "…"` declaration in `text`, or null when it
+ * declares none.
+ *
+ * Character-scanned rather than regex-matched: every token is anchored by a
+ * literal or by a maximal whitespace run, so there is nothing to backtrack and
+ * the scan is linear in `text.length`. Whitespace runs are consumed as maximal
+ * runs, exactly as a greedy `\s*` does — a shorter run could only put a
+ * whitespace character where a literal is required, so it can never match where
+ * the maximal one does not.
+ */
+function declaredQuotedValue(text, key) {
+  // A declaration can only begin at a line start, so only those are candidates.
+  let candidate = 0
+  while (candidate < text.length) {
+    if (candidate > 0 && !LINE_TERMINATORS.has(text[candidate - 1])) {
+      candidate++
+      continue
+    }
+    const keyAt = skipSpaces(text, candidate)
+    if (!text.startsWith(key, keyAt)) {
+      // Every line start inside that whitespace run resumes at the same index
+      // and reaches the same verdict, so jumping past them keeps this linear.
+      candidate = keyAt > candidate ? keyAt : candidate + 1
+      continue
+    }
+    let i = skipSpaces(text, keyAt + key.length)
+    if (text[i] === '=') i = skipSpaces(text, i + 1)
+    if (text[i] === '"') {
+      const start = i + 1
+      const end = text.indexOf('"', start) // `[^"]+` cannot cross a quote
+      if (end > start) return text.slice(start, end)
+    }
+    candidate++
+  }
+  return null
+}
+
 /** Extract `version = "x"` from the [package] table of Cargo.toml. */
 const cargoVersion = () => {
   const file = path.join(ROOT, 'src-tauri/Cargo.toml')
@@ -46,9 +96,9 @@ const cargoVersion = () => {
   } catch (error) {
     fail(`cannot read src-tauri/Cargo.toml: ${error.message}`)
   }
-  const match = toml.match(/^\s*version\s*=\s*"([^"]+)"/m)
-  if (!match) fail('no version = "..." found in src-tauri/Cargo.toml [package]')
-  return match[1]
+  const version = declaredQuotedValue(toml, 'version')
+  if (version === null) fail('no version = "..." found in src-tauri/Cargo.toml [package]')
+  return version
 }
 
 const errors = []
