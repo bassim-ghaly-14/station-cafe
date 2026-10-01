@@ -232,7 +232,11 @@ describe('EmployeesPage — manager', () => {
 
   it('renders the KPI band and the roster', async () => {
     renderPage()
-    expect(await screen.findByText('إجمالي الموظفين')).toBeInTheDocument()
+    expect(await screen.findByText('عدد الموظفين')).toBeInTheDocument()
+    // The headcount tile's breakdown is a real section with its own labelled
+    // figures, not a caption appended to the total.
+    expect(screen.getByText('الكاشير')).toBeInTheDocument()
+    expect(screen.getByText('عمال المغسلة')).toBeInTheDocument()
     // Attendance and hours leaders span BOTH types; the money tiles are
     // type-scoped, and each names a real employee.
     expect(screen.getByText('الأكثر حضورًا')).toBeInTheDocument()

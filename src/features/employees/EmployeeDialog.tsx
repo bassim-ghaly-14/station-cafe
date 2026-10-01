@@ -28,13 +28,24 @@
  *
  * # EDITING is deliberately much more restricted
  *
- * The edit dialog offers exactly four fields — name, phone, salary and notes.
- * Role, employee type, account role, credentials and employment status are NOT
- * editable here at all: they are absent from the form rather than disabled,
- * because a disabled control still advertises that the value is negotiable. The
- * role and type are shown as read-only context so the manager can see what the
- * record actually carries, and changing either is a separate, explicit workflow
- * (the backend refuses it with `employee.type_is_immutable`).
+ * The edit dialog offers four HR fields — name, phone, salary and notes — plus
+ * ONE credential field for an ADMIN. Role, employee type, account role and
+ * employment status are NOT editable here at all: they are absent from the form
+ * rather than disabled, because a disabled control still advertises that the
+ * value is negotiable. The role and type are shown as read-only context so the
+ * manager can see what the record actually carries, and changing either is a
+ * separate, explicit workflow (the backend refuses it with
+ * `employee.type_is_immutable`).
+ *
+ * # The password field SETS, never REVEALS
+ *
+ * The credential field is a "new password" field: it is empty when the dialog
+ * opens, masked by default, and an EMPTY value means "leave the password alone".
+ * Station never has the current password — only an Argon2id hash — and the field
+ * is therefore not a viewer. An ADMIN typing here is choosing the colleague's
+ * next password, not reading the one they have; the label and hint say exactly
+ * that. The value goes to `change_password`, which authorizes, validates, hashes
+ * and persists on the Rust side, and returns nothing at all.
  *
  * Money is entered through the shared amount parsing, which yields integer
  * piasters exactly like every other amount in Station. No float ever reaches the
@@ -57,11 +68,20 @@ import {
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { useErrText } from '@/lib/err'
 import { parseMajor } from '@/lib/utils'
+import { authApi } from '@/services/authApi'
 import { employeesApi } from '@/services/employeesApi'
 import type { EmployeeRow, EmployeeType, LoginRole } from '@/services/employeesApi'
 import { roleLabel, roleOf } from './employee-role'
 
 export type EmployeeDialogMode = { kind: 'create' } | { kind: 'edit'; employee: EmployeeRow } | null
+
+/**
+ * The client-side minimum password length, stated ONCE and used by both the
+ * create and the change path so the two can never disagree about what this form
+ * accepts. The backend's `auth::validate_password` is the real rule and is at
+ * least as strict; this is immediate feedback, not a second policy.
+ */
+const MIN_PASSWORD_LENGTH = 6
 
 /**
  * The role the form is collecting.
@@ -99,6 +119,8 @@ export function EmployeeDialog({
   const [type, setType] = useState<EmployeeType>('CASHIER')
   const [role, setRole] = useState<FormRole>(CASHIER_ROLE)
   const [password, setPassword] = useState('')
+  /** The NEW password an ADMIN is choosing on edit. Empty means "do not touch it". */
+  const [newPassword, setNewPassword] = useState('')
   const [salary, setSalary] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -115,6 +137,9 @@ export function EmployeeDialog({
         (editing?.employee_type === 'WASH_WORKER' ? NO_LOGIN_ROLE : CASHIER_ROLE),
     )
     setPassword('')
+    // Always starts EMPTY, which is exactly "do not change the password". Nothing
+    // about opening this dialog can reset or reveal the stored credential.
+    setNewPassword('')
     setSalary(editing?.base_salary ? String(editing.base_salary / 100) : '')
     setNotes(editing?.notes ?? '')
     setErrors({})
@@ -129,9 +154,12 @@ export function EmployeeDialog({
   // other role implies it. See the module doc.
   const showType = !editing && role === CASHIER_ROLE
   // A new login needs a password, because their account is created with them.
-  // Editing never re-asks: changing a credential is the account screen's job, and
-  // this form must not silently reset it.
   const needsPassword = !editing && !isWashWorker
+  // Setting a NEW password is an ADMIN action on an account that exists: it needs
+  // a login to act on (`user_id`), so a wash worker is never offered one. This is
+  // presentation only — `change_password` re-checks the caller's authority on the
+  // Rust side regardless of what this form renders.
+  const canChangePassword = Boolean(editing?.user_id) && atLeast(user?.role, 'ADMIN')
   const assignableRoles: LoginRole[] = atLeast(user?.role, 'ADMIN')
     ? ['STAFF', 'MANAGER', 'ADMIN']
     : ['STAFF', 'MANAGER']
@@ -142,9 +170,13 @@ export function EmployeeDialog({
     const nextErrors: Record<string, string> = {}
     if (name.trim() === '') nextErrors.name = t('employees.form.nameRequired')
     // The SHARED auth rule, mirrored here for immediate feedback; the service
-    // enforces the real one either way.
-    if (needsPassword && password.length < 6) {
+    // enforces the real one either way. A new password is optional on edit: an
+    // EMPTY field means "leave the credential alone", so it is never validated.
+    if (needsPassword && password.length < MIN_PASSWORD_LENGTH) {
       nextErrors.password = t('errors.user.password_too_short')
+    }
+    if (canChangePassword && newPassword !== '' && newPassword.length < MIN_PASSWORD_LENGTH) {
+      nextErrors.newPassword = t('errors.user.password_too_short')
     }
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
@@ -190,10 +222,22 @@ export function EmployeeDialog({
         if (baseSalary !== (editing.base_salary ?? 0)) {
           await employeesApi.setBaseSalary(editing.id, baseSalary)
         }
+        // A NEW password is a separate, deliberate act through the auth command —
+        // not a field on the employee record. Leaving the field empty sends
+        // nothing at all, so an unrelated edit can never reset the credential.
+        // `user_id` is guaranteed non-null by `canChangePassword`.
+        if (canChangePassword && newPassword !== '' && editing.user_id !== null) {
+          await authApi.changePassword(editing.user_id, newPassword)
+        }
       } else {
         await employeesApi.create(input)
       }
-      toast(t('employees.form.saved'), 'success')
+      toast(
+        canChangePassword && newPassword !== ''
+          ? t('employees.form.savedWithPassword')
+          : t('employees.form.saved'),
+        'success',
+      )
       onSaved()
       onClose()
     } catch (cause) {
@@ -301,8 +345,8 @@ export function EmployeeDialog({
         </Field>
 
         {/* A password is asked for exactly once, when a login is being created.
-            Editing never re-asks: changing a credential is the account screen's
-            job, and this form must not silently reset it. */}
+            On EDIT the equivalent field is the optional "new password" below,
+            which sets rather than reveals. */}
         {needsPassword ? (
           <Field
             label={t('employees.form.password')}
@@ -315,6 +359,27 @@ export function EmployeeDialog({
               autoComplete="new-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+            />
+          </Field>
+        ) : null}
+
+        {/* SETTING a password, never revealing one. Rendered only for an ADMIN
+            editing someone who HAS a login, and OPTIONAL: empty means "leave the
+            password alone", so saving unrelated fields here never touches it.
+            Masked by the shared PasswordInput — the same control, and the same
+            eye toggle, the create form and the login screen already use. */}
+        {canChangePassword ? (
+          <Field
+            label={t('employees.form.newPassword')}
+            htmlFor="employee-new-password"
+            error={errors.newPassword ?? null}
+            hint={t('employees.form.newPasswordHint')}
+          >
+            <PasswordInput
+              id="employee-new-password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
             />
           </Field>
         ) : null}

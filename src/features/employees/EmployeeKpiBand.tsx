@@ -42,12 +42,19 @@ function KpiTile({
   label,
   children,
   hint,
+  breakdown,
   className,
 }: {
   readonly icon: LucideIcon
   readonly label: string
   readonly children: React.ReactNode
   readonly hint?: React.ReactNode
+  /**
+   * An optional block rendered under the figure, separated by a hairline.
+   * Used by the headcount tile, whose CASHIER / WASH_WORKER split carries enough
+   * information to deserve a real section rather than a caption.
+   */
+  readonly breakdown?: React.ReactNode
   readonly className?: string
 }) {
   return (
@@ -72,7 +79,63 @@ function KpiTile({
         </span>
         {hint ? <span className="truncate text-caption text-foreground-subtle">{hint}</span> : null}
       </div>
+      {breakdown ? (
+        <div className="mt-auto border-t border-border-subtle pt-2.5">{breakdown}</div>
+      ) : null}
     </Card>
+  )
+}
+
+/**
+ * The headcount breakdown: CASHIER vs WASH_WORKER under the total.
+ *
+ * These are the two employee TYPES, and they are the split that decides who signs
+ * in and whose attendance is recorded by a colleague — so the numbers are read at
+ * a glance, not decoded from a caption.
+ *
+ * Containment
+ * -----------
+ * The tile is one cell of a 5-column grid on a wide desktop and the FULL width on
+ * a phone, so the available width is unknown at design time and a fixed px size
+ * would break at one end or the other. Everything here is therefore intrinsic:
+ *
+ *  - `grid-cols-2` gives each half exactly half the tile, at every width;
+ *  - `min-w-0` on each half lets its content SHRINK inside that half instead of
+ *    pushing the grid — the property that makes `truncate` work at all;
+ *  - the figures are `tabular-nums` in a modest step, so `9999` occupies the same
+ *    width as `9` and a four-digit count cannot jump a line;
+ *  - `truncate` on both the label and the figure is the final containment net: a
+ *    value too wide for its half is clipped INSIDE the tile instead of pushing
+ *    the card wider than its column.
+ *
+ * In RTL the two halves keep their logical order (cashier on the reading side),
+ * because this is grid flow, not a physical left/right pair.
+ */
+function HeadcountBreakdown({
+  cashiers,
+  washWorkers,
+}: {
+  readonly cashiers: number
+  readonly washWorkers: number
+}) {
+  const { t } = useTranslation()
+  return (
+    <dl className="grid grid-cols-2 gap-x-3">
+      <BreakdownEntry label={t('employees.kpi.cashiers')} value={cashiers} />
+      <BreakdownEntry label={t('employees.kpi.washWorkers')} value={washWorkers} />
+    </dl>
+  )
+}
+
+/** One half of the breakdown: a figure with its type label directly beneath it. */
+function BreakdownEntry({ label, value }: { readonly label: string; readonly value: number }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-0.5 text-center">
+      <dd className="min-w-0 truncate text-[1.125rem] leading-tight font-bold tabular-nums text-foreground-strong">
+        {value}
+      </dd>
+      <dt className="min-w-0 truncate text-caption text-foreground-subtle">{label}</dt>
+    </div>
   )
 }
 
@@ -129,10 +192,12 @@ export function EmployeeKpiBand({
       <KpiTile
         icon={Users}
         label={t('employees.kpi.total')}
-        hint={t('employees.kpi.totalHint', {
-          cashiers: overview.total_cashiers,
-          wash: overview.total_wash_workers,
-        })}
+        breakdown={
+          <HeadcountBreakdown
+            cashiers={overview.total_cashiers}
+            washWorkers={overview.total_wash_workers}
+          />
+        }
       >
         <span className="tabular-nums">{overview.total_employees}</span>
       </KpiTile>

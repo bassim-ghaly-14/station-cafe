@@ -1653,3 +1653,320 @@ fn attendance_counters_follow_the_selected_date_range() {
         .unwrap();
     assert_eq!(in_october.attendance_days, Some(1));
 }
+
+/// The login id behind an employee, so a credential change can be aimed at it.
+fn user_of(conn: &Connection, employee_id: i64) -> i64 {
+    let user_id: i64 = conn
+        .query_row(
+            "SELECT user_id FROM employees WHERE id = ?1",
+            [employee_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(user_id > 0, "this employee is expected to have a login");
+    user_id
+}
+
+/// The stored PHC string for a login.
+///
+/// Read with SQL on purpose. The `users::User` struct this application passes
+/// around — the one that is serialized to the frontend — has NO `password_hash`
+/// field at all, so there is no API through which a caller (or a test) could
+/// accidentally come to depend on a hash the UI could also see.
+fn stored_hash(conn: &Connection, user_id: i64) -> String {
+    conn.query_row(
+        "SELECT password_hash FROM users WHERE id = ?1",
+        [user_id],
+        |r| r.get(0),
+    )
+    .expect("a login exists")
+}
+
+// ---------------------------------------------------------------------------
+// PASSWORD MANAGEMENT FROM THE EMPLOYEES SURFACE
+//
+// The employee edit dialog lets an ADMIN set a NEW password for a colleague. The
+// feature deliberately reuses the EXISTING `auth::change_password` command — one
+// authorization gate, one hashing implementation, one audit trail — so these tests
+// pin what that reuse is supposed to guarantee, at the service layer where it is
+// actually enforced:
+//
+//   - an authorized actor can set a new password, and only the HASH is stored;
+//   - the plaintext never reaches the database in any form;
+//   - the old password stops working and the new one starts, which is the only
+//     honest proof that the change happened;
+//   - an empty password is a validation error, never "silently blank the login";
+//   - a role without authority is refused at the service, so hiding the field in
+//     the dialog is never what makes the rule true.
+// ---------------------------------------------------------------------------
+
+/// The happy path: an ADMIN sets a colleague's new password, and it works.
+#[test]
+fn an_admin_can_set_a_new_password_for_an_employee() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+
+    auth::change_password(&conn, &admin, target, "brand-new-pass")
+        .expect("an ADMIN may set a colleague's password");
+
+    // The proof is behavioural, not structural: the old credential is dead and the
+    // new one authenticates. Anything else is a change nobody can rely on.
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: "cashier123".into(),
+        }
+    )
+    .is_err());
+    let session = auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: "brand-new-pass".into(),
+        },
+    )
+    .expect("the new password authenticates");
+    assert_eq!(session.user.id, cashier.id);
+}
+
+/// A change is a REPLACEMENT, not an addition: the previous password is dead even
+/// though it was never sent anywhere or shown to anyone.
+#[test]
+fn setting_a_new_password_replaces_the_old_one() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let manager = login(&conn, "manager");
+    let target = user_of(&conn, employee_of(&conn, &manager));
+
+    let before = stored_hash(&conn, target);
+    auth::change_password(&conn, &admin, target, "second-secret").unwrap();
+    let after = stored_hash(&conn, target);
+
+    // Argon2id salts every hash, so a genuinely different value proves a fresh
+    // hash was computed rather than a stale one written back.
+    assert_ne!(before, after);
+    assert!(auth::verify_password("second-secret", &after));
+    assert!(!auth::verify_password("manager123", &after));
+}
+
+/// SECURITY: only the hash is persisted. The plaintext must appear nowhere in the
+/// stored value, and it must still be a PHC string the shared verifier reads —
+/// i.e. the ONE hashing implementation was used, not a second one.
+#[test]
+fn only_the_hash_is_persisted_never_the_plaintext() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+    let plaintext = "plaintext-must-not-persist";
+
+    auth::change_password(&conn, &admin, target, plaintext).unwrap();
+
+    let stored = stored_hash(&conn, target);
+    assert!(
+        !stored.contains(plaintext),
+        "the plaintext must never be persisted"
+    );
+    // Argon2id PHC string: $argon2id$...$salt$hash.
+    assert!(
+        stored.starts_with("$argon2id$"),
+        "unexpected hash form: {stored}"
+    );
+    assert!(auth::verify_password(plaintext, &stored));
+}
+
+/// An empty password is REFUSED by the shared rule, not accepted as "clear the
+/// credential". The dialog's empty field means "do not change it" and sends
+/// nothing at all; if it ever sent this, the service must still say no.
+#[test]
+fn an_empty_password_is_refused_and_leaves_the_credential_intact() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+    let before = stored_hash(&conn, target);
+
+    let err = auth::change_password(&conn, &admin, target, "").unwrap_err();
+    assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    assert_eq!(stored_hash(&conn, target), before, "the hash must not move");
+}
+
+/// The ordinary edit the dialog sends when the field is left EMPTY: no password
+/// reaches the employee service at all, and the login behind the record is
+/// untouched. This is the regression that matters most — an unrelated name or
+/// salary correction must never reset a colleague's credential.
+#[test]
+fn an_ordinary_employee_edit_does_not_change_the_password() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let employee_id = employee_of(&conn, &cashier);
+    let before = stored_hash(&conn, cashier.id);
+
+    emp::update_employee(
+        &conn,
+        &admin,
+        employee_id,
+        &EmployeeInput {
+            name: "كاشير معدّل".into(),
+            phone: None,
+            employee_type: emp::CASHIER.into(),
+            base_salary: Some(0),
+            notes: None,
+            user_id: None,
+            role: None,
+            password: None,
+        },
+    )
+    .expect("an ordinary edit succeeds");
+
+    assert_eq!(
+        stored_hash(&conn, cashier.id),
+        before,
+        "an unrelated edit must never reset the credential"
+    );
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: "cashier123".into(),
+        }
+    )
+    .is_ok());
+}
+
+/// A password below the shared minimum is refused BEFORE anything is written.
+#[test]
+fn a_too_short_password_is_rejected_and_changes_nothing() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+    let before = stored_hash(&conn, target);
+
+    let err = auth::change_password(&conn, &admin, target, "1234").unwrap_err();
+    assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    assert_eq!(stored_hash(&conn, target), before);
+}
+
+/// AUTHORIZATION, enforced at the service layer and not by the form.
+///
+/// A STAFF has no authority over another person's credential. This is asserted
+/// against the service directly, so hiding the field in the dialog cannot be what
+/// makes it true.
+#[test]
+fn a_staff_cannot_change_another_persons_password() {
+    let conn = fresh();
+    let cashier = login(&conn, "cashier");
+    let manager = login(&conn, "manager");
+    let target = user_of(&conn, employee_of(&conn, &manager));
+    let before = stored_hash(&conn, target);
+
+    let err = auth::change_password(&conn, &cashier, target, "hijack-attempt").unwrap_err();
+    assert!(matches!(err, AppError::Unauthorized(_)), "got {err:?}");
+    assert_eq!(stored_hash(&conn, target), before);
+    // The attempt left the colleague's credential alone: they can still sign in.
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "manager".into(),
+            password: "manager123".into(),
+        }
+    )
+    .is_ok());
+}
+
+/// The pre-existing gate for ANOTHER person's credential is `MANAGER`+ — the
+/// employees surface inherited it by reusing the command rather than by inventing
+/// a second rule. Pinned here so a future role change cannot silently move what
+/// an ADMIN may do through this screen.
+///
+/// Note the asymmetry this makes explicit: the DIALOG offers the field to an ADMIN
+/// only, which is NARROWER than this boundary. The service is authoritative; the
+/// narrower UI is a deliberate restriction layered on top of it, never the thing
+/// that enforces it.
+#[test]
+fn another_persons_credential_stays_a_manager_capability_at_the_service() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+
+    auth::change_password(&conn, &manager, target, "manager-set-this")
+        .expect("the service gate is MANAGER+, unchanged by this feature");
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: "manager-set-this".into(),
+        }
+    )
+    .is_ok());
+}
+
+/// Self-service is unchanged: anyone may still change their OWN password, which is
+/// how a user recovers a forgotten credential with no ADMIN involved at all.
+#[test]
+fn a_user_may_still_change_their_own_password() {
+    let conn = fresh();
+    let cashier = login(&conn, "cashier");
+
+    auth::change_password(&conn, &cashier, cashier.id, "self-chosen-pass").unwrap();
+
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: "self-chosen-pass".into(),
+        }
+    )
+    .is_ok());
+}
+
+/// The change is AUDITED as `user.password_changed`, attributed to the actor who
+/// performed it — the same trail every other privileged action writes to.
+#[test]
+fn a_password_change_is_written_to_the_audit_log_without_the_credential() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+
+    auth::change_password(&conn, &admin, target, "audited-secret").unwrap();
+
+    let (actor, before_json, after_json): (i64, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT actor_id, before_json, after_json FROM audit_log
+             WHERE action = 'user.password_changed' AND entity_id = ?1
+             ORDER BY id DESC LIMIT 1",
+            [target.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("the change is audited");
+    assert_eq!(actor, admin.id);
+    // Neither half of the audit row may have captured the credential it describes.
+    for json in [before_json, after_json] {
+        assert!(
+            !json.unwrap_or_default().contains("audited-secret"),
+            "the audit trail must not record the password"
+        );
+    }
+}
+
+/// The feature sends the NEW password and nothing else: no hash, no current
+/// password. The employee payloads the edit dialog reads carry no credential field
+/// at all, which is asserted by serializing the real response.
+#[test]
+fn no_employee_payload_carries_any_credential_field() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let list = emp::list(&conn, &manager, &EmployeePeriod::default(), "", false).unwrap();
+    let json = serde_json::to_string(&list.employees).unwrap();
+
+    assert!(!json.contains("password"), "a credential leaked: {json}");
+    assert!(!json.contains("hash"), "a hash leaked: {json}");
+    assert!(!json.contains("$argon2"), "a PHC string leaked: {json}");
+}

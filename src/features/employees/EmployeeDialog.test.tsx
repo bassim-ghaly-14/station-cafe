@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   setBaseSalary: vi.fn(),
+  changePassword: vi.fn(),
   role: { current: 'ADMIN' as 'STAFF' | 'MANAGER' | 'ADMIN' },
 }))
 
@@ -32,6 +33,10 @@ vi.mock('@/services/employeesApi', () => ({
     update: mocks.update,
     setBaseSalary: mocks.setBaseSalary,
   },
+}))
+
+vi.mock('@/services/authApi', () => ({
+  authApi: { changePassword: mocks.changePassword },
 }))
 
 vi.mock('@/features/auth/useSession', () => ({
@@ -96,6 +101,7 @@ beforeEach(() => {
   mocks.create.mockResolvedValue(1)
   mocks.update.mockResolvedValue(undefined)
   mocks.setBaseSalary.mockResolvedValue(undefined)
+  mocks.changePassword.mockResolvedValue(undefined)
 })
 
 describe('EmployeeDialog — create', () => {
@@ -246,13 +252,15 @@ describe('EmployeeDialog — edit', () => {
     expect(screen.getByLabelText('ملاحظات')).toBeInTheDocument()
   })
 
-  it('offers no control for role, type, status, account or password', () => {
+  it('offers no control for role, type, status, account or the current password', () => {
+    mocks.role.current = 'MANAGER'
     const { container } = renderEdit()
     // Not disabled, not read-only inputs: ABSENT. A disabled select would still
     // advertise that the value is negotiable.
     expect(screen.queryByLabelText('الدور')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('نوع الموظف')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('كلمة المرور')).not.toBeInTheDocument()
+    // Not even the NEW-password field: setting a credential is an ADMIN act.
+    expect(screen.queryByLabelText('كلمة المرور الجديدة')).not.toBeInTheDocument()
     expect(container.querySelectorAll('select')).toHaveLength(0)
   })
 
@@ -288,5 +296,94 @@ describe('EmployeeDialog — edit', () => {
 
     expect(await screen.findByText('الراتب غير صحيح')).toBeInTheDocument()
     expect(mocks.update).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Setting a NEW password from the edit dialog.
+ *
+ * The rule these tests pin is that the field SETS and never REVEALS: it opens
+ * empty, an empty save changes nothing at all, and a typed value goes out through
+ * the auth command rather than riding along on the employee record. The backend
+ * enforces the real authorization — the visibility asserted here is an affordance,
+ * not the boundary.
+ */
+describe('EmployeeDialog — ADMIN sets a new password', () => {
+  const FIELD = 'كلمة المرور الجديدة'
+  const TOGGLE = 'إظهار كلمة المرور'
+
+  function newPasswordField() {
+    return screen.getByLabelText(FIELD) as HTMLInputElement
+  }
+
+  it('offers the field to an ADMIN and opens it empty and masked', () => {
+    mocks.role.current = 'ADMIN'
+    renderEdit()
+    const field = newPasswordField()
+    expect(field).toHaveAttribute('type', 'password')
+    // Empty is the whole meaning of "unchanged": there is no value to leak, and
+    // nothing is pre-filled from a stored credential.
+    expect(field.value).toBe('')
+  })
+
+  it('reuses the shared show/hide toggle rather than a second design', () => {
+    renderEdit()
+    fireEvent.change(newPasswordField(), { target: { value: 'secret123' } })
+    fireEvent.click(screen.getByRole('button', { name: TOGGLE }))
+    expect(newPasswordField()).toHaveAttribute('type', 'text')
+    expect(newPasswordField().value).toBe('secret123')
+  })
+
+  it('changes nothing when the field is left empty', async () => {
+    renderEdit()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'أحمد' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled())
+    // The decisive assertion: an unrelated edit never touches the credential.
+    expect(mocks.changePassword).not.toHaveBeenCalled()
+    // And it is not smuggled onto the employee payload either.
+    expect(mocks.update.mock.calls[0][1].password).toBeNull()
+  })
+
+  it('sends the new password through the auth command, against the LOGIN id', async () => {
+    renderEdit()
+    fireEvent.change(newPasswordField(), { target: { value: 'brand-new-pass' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, 'brand-new-pass'))
+    expect(mocks.update).toHaveBeenCalled()
+  })
+
+  it('rejects a too-short password before any request is sent', async () => {
+    renderEdit()
+    fireEvent.change(newPasswordField(), { target: { value: '123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    expect(await screen.findByText('كلمة المرور يجب ألا تقل عن 6 حروف')).toBeInTheDocument()
+    expect(mocks.changePassword).not.toHaveBeenCalled()
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+
+  it('offers no field to a MANAGER or a STAFF', () => {
+    for (const role of ['MANAGER', 'STAFF'] as const) {
+      mocks.role.current = role
+      const { unmount } = renderEdit()
+      expect(screen.queryByLabelText(FIELD)).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('offers no field for a wash worker, who has no login to act on', () => {
+    render(
+      <ToastProvider>
+        <EmployeeDialog
+          mode={{ kind: 'edit', employee: { ...ROW, user_id: null } as EmployeeRow }}
+          onClose={() => {}}
+          onSaved={() => {}}
+        />
+      </ToastProvider>,
+    )
+    expect(screen.queryByLabelText(FIELD)).not.toBeInTheDocument()
   })
 })
