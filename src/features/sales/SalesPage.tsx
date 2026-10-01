@@ -250,70 +250,149 @@ function SalesResults({
       {/* The month's target progress comes FIRST: it is the question the owner
           opens this page with, and it is about the whole month rather than the
           period the filters above happen to be showing. */}
-      {targets.error && !targets.progress ? (
-        <Card className="p-4">
-          <ErrorState
-            message={targets.error}
-            onRetry={onRefreshTargets}
-            retryLabel={t('app.retry')}
-          />
-        </Card>
-      ) : targets.initialLoading ? (
-        <Card>
-          <Skeleton variant="text" className="h-4 w-48" accessibilityLabel="" />
-        </Card>
-      ) : targets.progress ? (
-        <SalesTargetProgress progress={targets.progress} />
-      ) : null}
+      <SalesTargetSection targets={targets} onRefresh={onRefreshTargets} />
 
       <SalesKpiBand summary={summary} loading={data.refreshing} />
 
       {data.refreshing ? <ProgressBar label={t('app.loading')} /> : null}
 
-      {summary?.invoices_count === 0 ? (
-        <Card className="p-4">
-          <EmptyState
-            title={narrowed ? t('sales.states.noResults') : t('sales.states.noSales')}
-            action={
-              narrowed ? (
-                <Button variant="outline" onClick={onResetFilters}>
-                  {t('sales.filters.reset')}
-                </Button>
-              ) : null
-            }
-          />
-        </Card>
-      ) : (
-        <>
-          <SalesDailyChart trend={trend} period={period} />
-          {summary ? <SalesBreakdown summary={summary} /> : null}
-          <TopItemsTable items={items} sort={sort} onSortChange={onSortChange} />
-        </>
-      )}
+      <SalesContentSection
+        summary={summary}
+        trend={trend}
+        items={items}
+        sort={sort}
+        onSortChange={onSortChange}
+        period={period}
+        narrowed={narrowed}
+        onResetFilters={onResetFilters}
+      />
 
       {/* The evidence behind the numbers, always reachable. */}
-      <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
-          <div>
-            <h2 className="text-section text-foreground-strong">{t('sales.invoices.title')}</h2>
-            <p className="mt-0.5 text-caption text-foreground-subtle">{t('sales.invoices.hint')}</p>
-          </div>
-          {data.refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-        </div>
-        {data.invoices.length === 0 ? (
-          <div className="p-4">
-            <EmptyState
-              title={narrowed ? t('sales.invoices.noMatch') : t('sales.invoices.empty')}
-            />
-          </div>
-        ) : (
-          <SalesInvoiceTable
-            invoices={data.invoices}
-            onOpen={onOpenInvoice}
-            busy={data.refreshing}
-          />
-        )}
-      </Card>
+      <SalesInvoicesSection
+        invoices={data.invoices}
+        refreshing={data.refreshing}
+        narrowed={narrowed}
+        onOpen={onOpenInvoice}
+      />
     </>
+  )
+}
+
+/**
+ * The month-at-a-glance target block, in strict priority order: a failure with
+ * nothing to show retries, a first read shows a skeleton, a read that produced a
+ * figure shows the progress card, and a read that produced neither shows nothing
+ * at all rather than an empty frame.
+ */
+function SalesTargetSection({
+  targets,
+  onRefresh,
+}: Readonly<{ targets: TargetProgressState; onRefresh: () => void }>) {
+  const { t } = useTranslation()
+
+  if (targets.error && !targets.progress) {
+    return (
+      <Card className="p-4">
+        <ErrorState message={targets.error} onRetry={onRefresh} retryLabel={t('app.retry')} />
+      </Card>
+    )
+  }
+  if (targets.initialLoading) {
+    return (
+      <Card>
+        <Skeleton variant="text" className="h-4 w-48" accessibilityLabel="" />
+      </Card>
+    )
+  }
+  if (targets.progress) return <SalesTargetProgress progress={targets.progress} />
+  return null
+}
+
+/**
+ * The ANALYSIS: the trend, the optional breakdown and the top items — or the one
+ * empty state that stands in for all of them, offering a reset ONLY when the
+ * user narrowed the page, because "there were no sales" and "your filter hid
+ * them" must not read the same.
+ */
+function SalesContentSection({
+  summary,
+  trend,
+  items,
+  sort,
+  onSortChange,
+  period,
+  narrowed,
+  onResetFilters,
+}: Readonly<{
+  summary: SalesSummary | null
+  trend: SalesDayRow[]
+  items: SalesItemRow[]
+  sort: SalesItemSort
+  onSortChange: (sort: SalesItemSort) => void
+  period: string
+  narrowed: boolean
+  onResetFilters: () => void
+}>) {
+  const { t } = useTranslation()
+
+  if (summary?.invoices_count === 0) {
+    return (
+      <Card className="p-4">
+        <EmptyState
+          title={narrowed ? t('sales.states.noResults') : t('sales.states.noSales')}
+          action={
+            narrowed ? (
+              <Button variant="outline" onClick={onResetFilters}>
+                {t('sales.filters.reset')}
+              </Button>
+            ) : null
+          }
+        />
+      </Card>
+    )
+  }
+  return (
+    <>
+      <SalesDailyChart trend={trend} period={period} />
+      {summary ? <SalesBreakdown summary={summary} /> : null}
+      <TopItemsTable items={items} sort={sort} onSortChange={onSortChange} />
+    </>
+  )
+}
+
+/**
+ * The EVIDENCE: the invoice list behind every figure above, with its own header
+ * and its own empty state, so a period with no invoices still explains itself.
+ */
+function SalesInvoicesSection({
+  invoices,
+  refreshing,
+  narrowed,
+  onOpen,
+}: Readonly<{
+  invoices: SalesInvoiceRow[]
+  refreshing: boolean
+  narrowed: boolean
+  onOpen: (invoice: SalesInvoiceRow) => void
+}>) {
+  const { t } = useTranslation()
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div>
+          <h2 className="text-section text-foreground-strong">{t('sales.invoices.title')}</h2>
+          <p className="mt-0.5 text-caption text-foreground-subtle">{t('sales.invoices.hint')}</p>
+        </div>
+        {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
+      </div>
+      {invoices.length === 0 ? (
+        <div className="p-4">
+          <EmptyState title={narrowed ? t('sales.invoices.noMatch') : t('sales.invoices.empty')} />
+        </div>
+      ) : (
+        <SalesInvoiceTable invoices={invoices} onOpen={onOpen} busy={refreshing} />
+      )}
+    </Card>
   )
 }
