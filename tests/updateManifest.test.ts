@@ -326,10 +326,11 @@ describe('release manifest path policy', () => {
     ).toThrow()
   })
 
-  it('rejects a Windows-shaped path on a POSIX host', () => {
+  it('rejects a Windows-shaped path on a POSIX host', ({ skip }) => {
     // `path.resolve` would read `C:\...` as a relative FILENAME here, so the
     // foreign-separator case has to be rejected rather than normalised.
-    if (path.sep !== '/') return
+    // Explicitly skipped (never an early `return`) on a Windows host.
+    skip(path.sep !== '/', 'asserts POSIX-only separator handling')
     expect(() => resolveManifestPath(String.raw`C:\Users\someone\latest.json`)).toThrow()
   })
 
@@ -362,8 +363,8 @@ describe('release manifest path policy', () => {
     }
   })
 
-  it('rejects a Windows-style traversal on a POSIX host', () => {
-    if (path.sep !== '/') return
+  it('rejects a Windows-style traversal on a POSIX host', ({ skip }) => {
+    skip(path.sep !== '/', 'asserts POSIX-only separator handling')
     // `..\x` must not survive as a literal filename that `path.resolve` treats
     // as relative, and `....\x` must not be mistaken for a safe name either.
     expect(() => resolveManifestPath(String.raw`....\outside.json`)).toThrow()
@@ -371,8 +372,8 @@ describe('release manifest path policy', () => {
     expect(() => resolveManifestPath(String.raw`releases\..\..\outside.json`)).toThrow()
   })
 
-  it('rejects Windows absolute paths and UNC shares on a POSIX host', () => {
-    if (path.sep !== '/') return
+  it('rejects Windows absolute paths and UNC shares on a POSIX host', ({ skip }) => {
+    skip(path.sep !== '/', 'asserts POSIX-only separator handling')
     for (const input of [
       String.raw`C:\outside\latest.json`,
       'C:/outside/latest.json',

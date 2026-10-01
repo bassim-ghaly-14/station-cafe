@@ -196,35 +196,92 @@ const UNC_SHARE = /^\\\\/
  */
 function parseManifestPath(input) {
   const raw = input.trim()
+  assertValidManifestPathLength(raw)
+  assertValidManifestPathCharacters(raw)
+  // Separator policy is decided once, here, so the checks below all see a path
+  // spelled the way THIS host spells it.
+  const unified = normalizeManifestPathSeparators(raw)
+  assertLocalManifestPath(unified)
+  return buildValidatedManifestPath(unified)
+}
+
+/**
+ * Step 1 — length. A filesystem path long enough to be a command-line argument,
+ * not a payload. Checked on the trimmed string, so padding cannot smuggle one
+ * past the limit.
+ */
+function assertValidManifestPathLength(raw) {
   if (raw.length > MAX_PATH_LENGTH) {
     throw new Error('the release manifest path is too long')
   }
-  // A NUL byte truncates the path in every libc call; a newline or an escape
-  // sequence is log injection dressed as a filename.
+}
+
+/**
+ * Step 2 — code points. A NUL byte truncates the path in every libc call; a
+ * newline or an escape sequence is log injection dressed as a filename.
+ */
+function assertValidManifestPathCharacters(raw) {
   if ([...raw].some(isForbiddenPathCharacter)) {
     throw new Error('the release manifest path must not contain control characters')
   }
-  // A backslash is a separator on Windows and nothing at all on POSIX, where it
-  // could only be smuggling `..\` or a drive letter into a filename.
+}
+
+/**
+ * Step 3/4 — separator policy, and normalisation to this host's separator.
+ *
+ * A backslash is a separator on Windows and nothing at all on POSIX, where it
+ * could only be smuggling `..\` or a drive letter into a filename, so on POSIX it
+ * is refused rather than translated. On Windows the accepted `/` spelling is
+ * translated so everything downstream reasons in one separator.
+ */
+function normalizeManifestPathSeparators(raw) {
   if (path.sep !== '\\' && raw.includes('\\')) {
     throw new Error('the release manifest path must use this platform’s separator')
   }
-  const unified = path.sep === '\\' ? raw.split('/').join('\\') : raw
+  return path.sep === '\\' ? raw.split('/').join('\\') : raw
+}
+
+/**
+ * Step 5/6 — this must be a location on THIS machine.
+ *
+ * A UNC share (`\\server\share\...`) is a network location wherever it is
+ * written. A drive-letter path (`C:\...`, `D:/...`) is a real location on a
+ * Windows runner — that is where `$RUNNER_TEMP` lives — but on POSIX it could
+ * only be a filename that happens to contain a colon, so it is refused there.
+ */
+function assertLocalManifestPath(unified) {
   if (UNC_SHARE.test(unified)) {
     throw new Error('the release manifest path must be a local path, not a network share')
   }
-  // A drive-letter path (`C:\...`, `D:/...`) is a real location on a Windows
-  // runner — that is where `$RUNNER_TEMP` lives — but on POSIX it could only be
-  // a filename that happens to contain a colon, so it is refused there.
   if (path.sep !== '\\' && /^[a-zA-Z]:/.test(unified)) {
     throw new Error('the release manifest path must be a path inside this environment')
   }
+}
+
+/**
+ * Steps 7/8/9 — split the unified path into its trusted root and the segments
+ * that follow it.
+ *
+ * An absolute path keeps its root — `/` on POSIX, `C:\` on Windows — taken from
+ * the validated string and never used to widen the allowed set. A relative path
+ * has no root here; it is joined onto an EXPLICIT trusted root by
+ * `resolveManifestPath` instead.
+ */
+function splitManifestPathSegments(unified) {
   const absolute = path.isAbsolute(unified)
-  // The trusted part of an absolute path: `/` on POSIX, `C:\` on Windows. Taken
-  // from the validated string, never used to widen the allowed set.
   const root = absolute ? path.parse(unified).root : ''
-  // Everything after the root, split into the segments that must be allowlisted.
   const segments = (absolute ? unified.slice(root.length) : unified).split(path.sep)
+  return { absolute, root, segments }
+}
+
+/**
+ * Step 10 — allowlist every segment.
+ *
+ * An empty segment (`//`, a trailing slash), `.` and `..` are refused by name;
+ * everything else has to match `SAFE_SEGMENT`, so a segment can never be a
+ * traversal however it is spelled or truncated.
+ */
+function validateManifestPathSegments(segments) {
   for (const segment of segments) {
     // Empty (`//`, a trailing slash), `.` or `..`: never a manifest location.
     if (segment === '' || segment === '.' || segment === '..') {
@@ -237,9 +294,18 @@ function parseManifestPath(input) {
   if (segments.length === 0) {
     throw new Error('the release manifest path may only name plain file names')
   }
-  // REBUILT, never the caller's string: `absoluteForm` is provably free of `..`
-  // and of any character `SAFE_SEGMENT` refused. A relative path is instead
-  // joined onto an EXPLICIT trusted root further down.
+}
+
+/**
+ * Steps 11/12 — rebuild the trusted path representation.
+ *
+ * REBUILT, never the caller's string: `absoluteForm` is provably free of `..` and
+ * of any character `SAFE_SEGMENT` refused, because it is assembled from the
+ * validated root plus the validated segments and nothing else.
+ */
+function buildValidatedManifestPath(unified) {
+  const { absolute, root, segments } = splitManifestPathSegments(unified)
+  validateManifestPathSegments(segments)
   return { absolute, absoluteForm: path.join(root, ...segments), segments }
 }
 
