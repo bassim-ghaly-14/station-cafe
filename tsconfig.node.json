@@ -6,6 +6,14 @@
     "types": ["node"],
     "skipLibCheck": true,
 
+    /* The Node-side test suites import plain-JS tooling from `scripts/`
+       (`verify-release-manifest.mjs`, the release manifest gate). `allowJs`
+       lets TypeScript infer those exports instead of treating the module as
+       untyped `any`; `checkJs` stays off because those scripts are documented
+       with JSDoc rather than annotations. Nothing under `src/` imports them, so
+       no script can reach the application bundle. */
+    "allowJs": true,
+
     /* Bundler mode */
     "module": "nodenext",
     "allowImportingTsExtensions": true,

@@ -10,6 +10,15 @@
  *
  * One busy state, one source of truth.
  *
+ * The card is PLATFORM-NEUTRAL by design. It never asks which operating system
+ * it is on and never chooses an artifact: `tauri-plugin-updater` resolves the
+ * download URL from the running binary's own OS and architecture against the
+ * release manifest, so the same code path is correct on Windows and macOS. A
+ * `navigator.userAgent` sniff or an `isWindows` branch here would be both wrong
+ * (it duplicates the plugin's own resolution) and the direct cause of the bug
+ * this flow was repaired for: a build-time assumption that only Windows is
+ * ever updated.
+ *
  * `phase` is a single state value rather than a handful of booleans, because
  * scattered flags can disagree with each other mid-transition — and a
  * disagreement here means a double install or a permanently dead button. Both
@@ -197,7 +206,9 @@ export function ApplicationUpdatesCard() {
       setProgress(IDLE_PROGRESS)
       await installUpdate(fresh, setProgress)
 
-      // On Windows the NSIS installer has taken over by this point.
+      // Windows: the NSIS installer has taken over and ended the process.
+      // macOS: the `.app` bundle has been replaced in place and the plugin
+      // returns normally — the relaunch below is what starts the new version.
       setPhase('restarting')
       await relaunchApp()
       // The process is on its way out. The terminal state stays 'restarting'
@@ -208,7 +219,7 @@ export function ApplicationUpdatesCard() {
       // The application is untouched and still usable; returning to idle leaves
       // the manager a working retry rather than a dead button. Nothing claims
       // the update succeeded when it did not.
-      reportError(error, 'dev.updateFailed')
+      reportError(error, 'dev.updateInstallFailed')
     } finally {
       if (fresh && fresh !== pending) discard(fresh)
       running.current = false

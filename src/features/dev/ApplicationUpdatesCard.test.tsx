@@ -174,12 +174,14 @@ describe('ApplicationUpdatesCard', () => {
   })
 
   it('localises a failed check and leaves the button usable for a retry', async () => {
+    // A refused connection is a genuine network fault, so it gets the network
+    // message — and ONLY a genuine network fault does.
     mocks.check.mockRejectedValue(new Error('ECONNREFUSED 140.82.121.4:443'))
     renderCard()
     await pressCheck()
 
     // A localized message, never the plugin's stack or the raw host.
-    await waitFor(() => expect(screen.getByText(/تعذّر فحص وجود تحديث/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/تعذّر الوصول إلى الإنترنت/)).toBeInTheDocument())
     expect(screen.queryByText(/ECONNREFUSED/)).not.toBeInTheDocument()
     expect(screen.getByTestId('dev-update-check')).toBeEnabled()
   })
@@ -200,10 +202,38 @@ describe('ApplicationUpdatesCard', () => {
     await waitFor(() =>
       expect(screen.getByText(/لا يوجد إصدار منشور لهذا النظام/)).toBeInTheDocument(),
     )
+    // The message must no longer blame Windows for a macOS install.
+    expect(document.body.textContent).not.toContain('Windows فقط')
     // NOT the internet message: the connection was fine.
-    expect(screen.queryByText(/تأكد من الاتصال بالإنترنت/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/تعذّر الوصول إلى الإنترنت/)).not.toBeInTheDocument()
     // No install action is offered for a platform that has no published build.
     expect(screen.queryByTestId('dev-update-install')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dev-update-check')).toBeEnabled()
+  })
+
+  it('distinguishes a missing release from a network failure', async () => {
+    // The endpoint answered "nothing here" rather than timing out. Telling the
+    // manager to check their internet connection would be wrong and would send
+    // them to the router instead of to the release page.
+    mocks.check.mockRejectedValue(new Error('Could not fetch a valid release JSON from the remote'))
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() => expect(screen.getByText(/لا يوجد إصدار منشور متاح/)).toBeInTheDocument())
+    expect(screen.queryByText(/تعذّر الوصول إلى الإنترنت/)).not.toBeInTheDocument()
+  })
+
+  it('reports a malformed update manifest instead of claiming success', async () => {
+    // A broken manifest is a release-pipeline bug. It must never be flattened
+    // into "you are up to date", which is what makes a broken release invisible.
+    mocks.check.mockRejectedValue(new Error('expected value at line 1 column 1'))
+    renderCard()
+    await pressCheck()
+
+    await waitFor(() =>
+      expect(screen.getByText(/بيانات التحديث المنشورة غير صالحة/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/محدّث بالفعل/)).not.toBeInTheDocument()
     expect(screen.getByTestId('dev-update-check')).toBeEnabled()
   })
 
@@ -216,7 +246,7 @@ describe('ApplicationUpdatesCard', () => {
     renderCard()
     await pressCheck()
 
-    await waitFor(() => expect(screen.getByText(/تعذّر فحص وجود تحديث/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/لا يوجد إصدار منشور متاح/)).toBeInTheDocument())
     expect(logged).toHaveBeenCalledWith('[station/update] check failed:', failure)
     logged.mockRestore()
   })
@@ -525,7 +555,11 @@ describe('ApplicationUpdatesCard', () => {
     expect(mocks.relaunch).not.toHaveBeenCalled()
   })
 
-  it('reports a failed download without ever claiming success', async () => {
+  it('reports a rejected signature as a security failure, not a flaky download', async () => {
+    // The bytes arrived and were REJECTED. Telling the manager "the download
+    // failed, try again" would be actively misleading: retrying cannot fix an
+    // artifact that is not signed by Station, and it hides the one failure that
+    // must be escalated.
     const update = fakeUpdate('0.2.0')
     update.download.mockRejectedValue(new Error('signature verification failed: minisign'))
     mocks.check.mockResolvedValue(update)
@@ -536,9 +570,34 @@ describe('ApplicationUpdatesCard', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('dev-update-confirm'))
 
-    await waitFor(() => expect(screen.getByText(/تعذّر تثبيت التحديث/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/تم رفض حزمة التحديث/)).toBeInTheDocument())
+    // Neither the network message nor the generic install message.
+    expect(screen.queryByText(/تعذّر الوصول إلى الإنترنت/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/تعذّر تنزيل التحديث/)).not.toBeInTheDocument()
     expect(screen.queryByTestId('dev-update-restarting')).not.toBeInTheDocument()
+    // Nothing was installed and nothing was restarted.
+    expect(update.state.installCalls).toBe(0)
+    expect(mocks.relaunch).not.toHaveBeenCalled()
     expect(screen.getByTestId('dev-update-check')).toBeEnabled()
+  })
+
+  it('reports an interrupted download as a download failure, not a signature failure', async () => {
+    // The opposite classification, from the same phase: the transfer broke
+    // before any bytes could be verified. This one genuinely is worth a retry.
+    const update = fakeUpdate('0.2.0')
+    update.download.mockRejectedValue(new Error('error sending request: operation timed out'))
+    mocks.check.mockResolvedValue(update)
+    renderCard()
+    await pressCheck()
+
+    fireEvent.click(screen.getByTestId('dev-update-install'))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('dev-update-confirm'))
+
+    await waitFor(() => expect(screen.getByText(/تعذّر الوصول إلى الإنترنت/)).toBeInTheDocument())
+    expect(screen.queryByText(/تم رفض حزمة التحديث/)).not.toBeInTheDocument()
+    expect(update.state.installCalls).toBe(0)
+    expect(mocks.relaunch).not.toHaveBeenCalled()
   })
 
   it('reports a restart failure separately from a failed update', async () => {

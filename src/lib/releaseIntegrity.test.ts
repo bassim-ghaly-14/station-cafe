@@ -30,6 +30,8 @@ import libRs from '../../src-tauri/src/lib.rs?raw'
 import capabilitiesRaw from '../../src-tauri/capabilities/default.json?raw'
 import updateApiSource from '../services/updateApi.ts?raw'
 import updateCardSource from '../features/dev/ApplicationUpdatesCard.tsx?raw'
+import verifyManifestScript from '../../scripts/verify-release-manifest.mjs?raw'
+import translations from '../locales/ar/translations.json'
 
 const tauriConf = JSON.parse(tauriConfRaw) as {
   version: string
@@ -162,6 +164,65 @@ describe('release version consistency', () => {
     expect(tauriConf.bundle.targets).toBe('all')
   })
 
+  it('builds macOS updater artifacts into the SAME release as Windows', () => {
+    // Station ships on two platforms, so a release that carries only one
+    // platform's artifacts is a release that strands half its users. The macOS
+    // job must therefore upload to the same tag (`v__VERSION__`) rather than
+    // publish a parallel release the endpoint would never serve.
+    expect(workflow).toContain('build-macos:')
+    expect(workflow).toContain('universal-apple-darwin')
+    // `app` is the bundle the macOS updater actually installs; `createUpdaterArtifacts`
+    // turns it into the signed .app.tar.gz the manifest points at.
+    expect(workflow).toContain('--bundles app,dmg')
+    expect(tauriConf.bundle.createUpdaterArtifacts).toBe(true)
+    // The macOS job must not create its own release: one version, one release.
+    const macosJob = workflow.slice(workflow.indexOf('build-macos:'))
+    expect(macosJob).toContain('tagName: v__VERSION__')
+    expect(macosJob).toContain("releaseDraft: ${{ github.ref_type != 'tag' }}")
+  })
+
+  it('merges the two platforms into one manifest deterministically', () => {
+    // `tauri-action` MERGES `latest.json` into the asset already on the release,
+    // so two jobs uploading it at the same instant race and one platform's
+    // entries are lost — silently, and with a green build. Sequencing the macOS
+    // job after the Windows job is what makes the union deterministic.
+    expect(workflow).toMatch(/build-macos:\s*\n\s*#[\s\S]*?\n\s*needs: build-windows/)
+  })
+
+  it('fails the release when any shipped platform has no updater artifact', () => {
+    // The gate that turns "both platforms are updatable" into something CI
+    // enforces rather than something a human remembers.
+    expect(workflow).toContain('scripts/verify-release-manifest.mjs')
+    expect(workflow).toContain('verify-release:')
+    // And the same check runs locally, against the real selection logic.
+    expect(verifyManifestScript).toContain('darwin')
+    expect(verifyManifestScript).toContain('windows')
+  })
+
+  it('wires the updater signing secrets into the macOS job too', () => {
+    // An unsigned `.app.tar.gz` cannot be installed by any client: the plugin
+    // verifies every download against the compiled pubkey. The macOS job must
+    // therefore receive the same signing key as Windows, or its artifacts are
+    // unpublishable no matter what the release listing shows.
+    const macosJob = workflow.slice(workflow.indexOf('build-macos:'))
+    expect(macosJob).toContain('TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.')
+    expect(macosJob).toContain('TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.')
+  })
+
+  it('keeps Apple signing optional instead of requiring credentials nobody has', () => {
+    // Apple Developer ID signing is NOT required by the updater — the minisign
+    // signature is the integrity guarantee — so a repository without those
+    // credentials must still be able to ship a working update. The workflow
+    // therefore detects them and exports them ONLY when present, rather than
+    // hard-failing on secrets this project does not have.
+    const macosJob = workflow.slice(workflow.indexOf('build-macos:'))
+    expect(macosJob).toContain('Detect Apple Developer ID signing credentials')
+    expect(macosJob).toContain('apple-signing=disabled')
+    // Passing an EMPTY certificate would be worse than passing none:
+    // `tauri-bundler` reads it with `var_os`, which sees `Some("")`.
+    expect(macosJob).toContain('>> "$GITHUB_ENV"')
+  })
+
   it('publishes a real release only for a version tag', () => {
     // Otherwise every push to main would overwrite the published v<version>
     // release, and the updater would serve a moving target that no client
@@ -238,6 +299,50 @@ describe('updater build infrastructure', () => {
     for (const p of updaterPermissions) {
       expect(p).not.toMatch(/^updater:deny-/)
     }
+  })
+
+  it('never lets the frontend choose a platform for the updater', () => {
+    // The plugin resolves the artifact from the running binary's own OS and
+    // architecture. A user-agent sniff or an `isWindows` branch in the app would
+    // duplicate that decision — and would be the direct cause of the bug this
+    // flow was repaired for, where a build-time "Windows only" assumption
+    // reached a macOS user as a message about Windows.
+    for (const source of [updateService, updateCard]) {
+      expect(source).not.toMatch(/userAgent|navigator\.platform/i)
+      expect(source).not.toMatch(/isWindows|isMac|isDarwin|platform\(/i)
+      expect(source).not.toContain('windows')
+      expect(source).not.toContain('darwin')
+      expect(source).not.toContain('nsis')
+      expect(source).not.toContain('.app.tar.gz')
+    }
+  })
+
+  it('tells a manager the truth about which release exists', () => {
+    // Every error code the service can raise must have an Arabic string, and
+    // none of them may claim updates are Windows-only — that claim was the
+    // bug, not a fact about the product.
+    const dev = translations.dev as Record<string, string>
+    for (const code of [
+      'updateUnsupported',
+      'updateNoCompatibleBuild',
+      'updateReleaseUnavailable',
+      'updateNetworkFailed',
+      'updateMetadataInvalid',
+      'updateCheckFailed',
+      'updateSignatureRejected',
+      'updateDownloadFailed',
+      'updateInstallFailed',
+      'updateRestartFailed',
+      'updateUpToDate',
+    ]) {
+      expect(dev[code], `missing Arabic string for dev.${code}`).toBeTruthy()
+    }
+    for (const [key, value] of Object.entries(dev)) {
+      if (!key.startsWith('update') && key !== 'applicationUpdates') continue
+      expect(value, `${key} claims updates are Windows-only`).not.toContain('Windows فقط')
+    }
+    // And no orphaned key survives the taxonomy change.
+    expect(dev.updateUnsupportedPlatform).toBeUndefined()
   })
 
   it('registers the process plugin so the update flow can relaunch Station', () => {

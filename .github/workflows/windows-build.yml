@@ -1,6 +1,7 @@
-name: Windows Build
+name: Release Build
 
-# Builds the production Windows .exe.
+# Builds the production Station installers for WINDOWS and macOS and publishes
+# them as updater artifacts to the SAME GitHub Release.
 #
 # Two distinct outcomes, and the difference matters:
 #   - push a `v*` TAG  -> publishes a real GitHub Release for that version.
@@ -8,7 +9,17 @@ name: Windows Build
 #                         a draft prerelease, so ordinary commits can never
 #                         overwrite a published release or become an update
 #                         target for installed clients.
-# The developer never needs a Windows machine for normal releases.
+# The developer never needs a Windows or a Mac machine for normal releases.
+#
+# Why the macOS job is NOT parallel to the Windows one
+# ---------------------------------------------------
+# `tauri-action` builds `latest.json` by MERGING into the manifest already
+# attached to the release: it reads the existing asset, keeps every
+# `platforms` entry it does not own, and writes back the union. Two jobs
+# uploading that asset at the same instant race, and the loser's entries
+# (here: the whole macOS half) vanish — the release then looks published and
+# complete while every Mac client is told "no build for this platform".
+# `needs: build-windows` makes the merge order deterministic instead.
 
 on:
   push:
@@ -183,5 +194,205 @@ jobs:
           # must verify the build, not publish a release: without this the
           # workflow would overwrite the published v<version> release on
           # every commit, and the updater would serve a moving target.
+          releaseDraft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+  # ---------------------------------------------------------------------------
+  # macOS: the same release, the same version, the second platform's artifacts.
+  # ---------------------------------------------------------------------------
+  build-macos:
+    # Sequential on purpose — see the race note at the top of this file.
+    needs: build-windows
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust (stable, both macOS architectures)
+        # `universal-apple-darwin` is a LIPO of an aarch64 and an x86_64 build,
+        # so both targets must be installed. One artifact then serves Apple
+        # Silicon AND Intel, and `tauri-action` expands it into the
+        # `darwin-aarch64-app` / `darwin-x86_64-app` manifest keys — exactly
+        # the two keys the plugin looks up on those two machines.
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify updater signing key is present
+        # The full six-layer diagnostic runs in the Windows job, which executes
+        # FIRST (`needs:`), so a broken key has already failed the run by the
+        # time this job starts. This step exists because the macOS job reaches
+        # the same key-gated build: a missing key must abort here too, never
+        # publish an unsigned `.app.tar.gz` no client could verify. Presence is
+        # reported; the key is never printed.
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is unset: the macOS build would abort rather than publish an unsigned update artifact."
+            exit 1
+          fi
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY_PASSWORD must be ABSENT: the deployed key is encrypted with an empty password, which Tauri always requires. Run: gh secret delete TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            exit 1
+          fi
+          echo "updater signing key: present (value never printed)"
+
+      - name: Detect Apple Developer ID signing credentials
+        # Apple code signing is OPTIONAL for the updater and is therefore never
+        # required — an unsigned `.app` still installs through the updater,
+        # because the updater's integrity guarantee is the minisign signature,
+        # not Apple's. It is required only to avoid a Gatekeeper warning on a
+        # MANUAL first install from the .dmg.
+        #
+        # These secrets are exported into the environment ONLY when actually
+        # set. Passing `APPLE_CERTIFICATE: ''` would be worse than passing
+        # nothing: `tauri-bundler` reads it with `var_os`, which returns
+        # `Some("")` for an empty-but-defined variable, so it would try to
+        # import an empty certificate and fail the build.
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            {
+              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "apple-signing=enabled"
+          else
+            echo "apple-signing=disabled (no APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD secret)"
+            echo "::warning::Building an unsigned macOS app. The in-app updater still verifies the minisign signature, but a manual first install from the .dmg will show a Gatekeeper warning. See docs/RELEASING.md."
+          fi
+          # Notarization is all-or-nothing: a partial credential set is a
+          # misconfiguration, not a reason to skip silently.
+          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            {
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+            echo "apple-notarization=enabled"
+          elif [ -n "${APPLE_ID:-}" ] || [ -n "${APPLE_PASSWORD:-}" ] || [ -n "${APPLE_TEAM_ID:-}" ]; then
+            echo "::error::Incomplete notarization credentials: APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID must all be set, or all three must be absent."
+            exit 1
+          else
+            echo "apple-notarization=disabled"
+          fi
+
+      - name: Import Apple Developer certificate into a CI keychain
+        # Reached only when the step above exported APPLE_CERTIFICATE. The
+        # keychain password is generated per run rather than stored, so it can
+        # neither leak nor need rotating.
+        if: env.APPLE_CERTIFICATE != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" build.keychain
+          CERT_ID="$(security find-identity -v -p codesigning build.keychain | grep 'Developer ID Application' | head -n1 | awk -F'"' '{print $2}')"
+          if [ -z "$CERT_ID" ]; then
+            echo "::error::No 'Developer ID Application' identity in the imported certificate."
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+          echo "certificate imported"
+
+      - name: Build Tauri app (macOS, universal)
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The SAME updater signing key as Windows: one trust anchor for the
+          # whole product, and its public half is already compiled into every
+          # build.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # `app` is the bundle the macOS updater actually installs, and
+          # `createUpdaterArtifacts` turns it into the signed
+          # `<Product>.app.tar.gz` + `.sig` pair `latest.json` points at.
+          # `dmg` is the manual-install path for a machine that has never run
+          # Station before; an existing install never needs it.
+          args: --target universal-apple-darwin --bundles app,dmg
+          tagName: v__VERSION__
+          releaseName: 'Station Cafe v__VERSION__'
+          releaseBody: 'انظر التغييرات في المرفقات / See the assets below.'
+          # Identical policy to the Windows job: a real release only for a tag.
+          releaseDraft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ github.ref_type != 'tag' }}
+
+  # ---------------------------------------------------------------------------
+  # The gate that makes "both platforms are updatable" a fact, not a hope.
+  # ---------------------------------------------------------------------------
+  verify-release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Verify the published release can update every supported platform
+        # Reads the manifest ACTUALLY attached to the release — the same bytes a
+        # client downloads from the endpoint — and applies the plugin's own
+        # lookup order (`{os}-{arch}-{installer}` then `{os}-{arch}`) for every
+        # platform Station ships. A release missing any of them fails the run
+        # here, instead of shipping a "successful" release that silently
+        # strands half the installed base.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Draft releases (a push to main) are unreachable by tag and serve no
+          # client, so the manifest check applies to real releases only.
+          PUBLISHED: ${{ github.ref_type == 'tag' }}
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISHED" != "true" ]; then
+            echo "not a tag push: the release is a draft and serves no client. Skipping the manifest check."
+            exit 0
+          fi
+          TAG="v$(node -p "require('./package.json').version")"
+          gh release download "$TAG" --pattern latest.json --dir "$RUNNER_TEMP/manifest"
+          node scripts/verify-release-manifest.mjs "$RUNNER_TEMP/manifest/latest.json"
+          tagName: v__VERSION__
+          releaseName: 'Station Cafe v__VERSION__'
+          releaseBody: 'انظر التغييرات في المرفقات / See the assets below.'
+          # Identical policy to the Windows job: a real release only for a tag.
           releaseDraft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ github.ref_type != 'tag' }}

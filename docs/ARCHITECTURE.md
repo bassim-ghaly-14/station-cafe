@@ -79,7 +79,7 @@ Main PC hosts the app + SQLite. A local HTTP API (Phase 2, same Tauri/Rust proce
 
 ## 6. Updates
 
-`tauri-plugin-updater` + GitHub Releases. Workflow: push tag → GitHub Actions builds Windows .exe + signed updater manifests → publishes release → running app checks for updates → Arabic update dialog (current/available version, update now / later). Never force-updates during active shifts/day.
+`tauri-plugin-updater` + GitHub Releases, on **Windows and macOS from the same release/version**. Workflow: push tag `v<version>` → Actions builds the signed Windows NSIS `.exe` and the signed universal macOS `.app.tar.gz` → both merge into one `latest.json` on one GitHub Release → a CI gate proves every shipped platform resolves from that manifest → the running app checks for updates when a manager asks → Arabic update dialog (current/available version, update now / later). The client never chooses a platform: the plugin resolves the artifact from the running binary's own OS + architecture. Never force-updates during active shifts/day.
 
 ## 7. Security & roles
 

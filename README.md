@@ -16,7 +16,7 @@ pnpm build:app    # local release build
 
 ## Windows production builds
 
-Push a tag `v*` to GitHub → Actions builds the signed Windows `.exe` + updater manifests and publishes a Release. No Windows machine required. (See `.github/workflows/windows-build.yml`; updater signing secrets required in Phase 2.)
+Push a tag `v*` to GitHub → Actions builds the signed Windows `.exe` AND the signed universal macOS `.app`, merges both into one updater manifest, verifies every platform resolves from it, and publishes a single Release. No Windows or Mac machine required. (See `.github/workflows/windows-build.yml` and `docs/RELEASING.md`; updater signing secret required, Apple signing optional.)
 
 ## Documentation
 

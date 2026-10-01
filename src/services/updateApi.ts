@@ -37,9 +37,14 @@ import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updat
  */
 export type UpdateErrorCode =
   | 'dev.updateUnsupported'
-  | 'dev.updateUnsupportedPlatform'
+  | 'dev.updateNoCompatibleBuild'
+  | 'dev.updateReleaseUnavailable'
+  | 'dev.updateNetworkFailed'
+  | 'dev.updateMetadataInvalid'
   | 'dev.updateCheckFailed'
-  | 'dev.updateFailed'
+  | 'dev.updateSignatureRejected'
+  | 'dev.updateDownloadFailed'
+  | 'dev.updateInstallFailed'
   | 'dev.updateRestartFailed'
 
 export class UpdateError extends Error {
@@ -57,31 +62,79 @@ export class UpdateError extends Error {
  * manifest parsed fine but carries no entry for the platform this binary is
  * running on: `Error::TargetNotFound` and `Error::TargetsNotFound`.
  *
- * This is NOT a transport failure and NOT a broken connection. Station's
- * releases are published for Windows (NSIS) only, so on any other desktop
- * platform the plugin cannot find `darwin-*` / `linux-*` and rejects. Reporting
- * that as "check your internet connection" sends a developer hunting a network
- * problem that does not exist, which is exactly what happened.
+ * This is NOT a transport failure and NOT a broken connection. Station
+ * publishes Windows (NSIS) and macOS (universal .app) updater artifacts, but a
+ * given RELEASE can still carry only one of them — that is exactly what
+ * v0.1.0 did, and it is why a Mac was told "no release for this system".
+ * Reporting that as "check your internet connection" sends a developer hunting
+ * a network fault that does not exist.
  */
 const PLATFORM_NOT_PUBLISHED =
   /was not found in the response|were found in the response|platforms` object/
 
 /**
- * Map a rejected `check()` onto a translation key, keeping the distinction the
+ * The endpoint answered, but there is no release to read.
+ *
+ * `Error::ReleaseNotFound` is the plugin's own answer when the body is not a
+ * usable manifest — for this project that means "no GitHub release published
+ * an updater manifest yet", which is a genuinely different situation from "the
+ * network is down" and from "this release has no build for your platform".
+ */
+const RELEASE_UNAVAILABLE =
+  /Could not fetch a valid release JSON|release not found|404 Not Found|403 Forbidden/
+
+/**
+ * The manifest arrived but could not be parsed into a release.
+ *
+ * `Error::Serialization` is transparent, so this matches serde's own wording.
+ * A malformed manifest is an operator-visible release bug and must never be
+ * reported as "no update available" — that hides a broken pipeline behind a
+ * reassuring message.
+ */
+const METADATA_INVALID =
+  /expected value|expected .* at line|invalid type|missing field|EOF while parsing|trailing characters|key must be a string/
+
+/**
+ * Transport failures: DNS, TLS, refused connection, timeout, proxy.
+ *
+ * Only these justify "check your internet connection".
+ */
+const NETWORK_FAILED =
+  /dns error|failed to lookup|connection refused|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timed out|timeout|error sending request|network is unreachable|TLS|certificate|proxy|operation timed out/i
+
+/**
+ * The download reached the end and the signature did not verify.
+ *
+ * `minisign_verify` errors are transparent, and Tauri's own base64/UTF-8
+ * signature errors are spelled out. This is NOT a download failure and NOT an
+ * install failure: the bytes arrived and were REJECTED, which means the artifact
+ * is not from us, or the pubkey compiled into this binary does not match the key
+ * that signed the release. It gets its own message because it is the one failure
+ * a manager must escalate rather than simply retry.
+ */
+const SIGNATURE_REJECTED =
+  /signature verification failed|Invalid encoding in .* data|Wrong password for that key|signed for version|does not specify the version it was signed for|Unexpected signature algorithm|Unexpected key id|Unsupported signature algorithm|Unsupported legacy mode|unexpected EOF while parsing base64/
+
+/**
+ * Map a rejected `check()` onto a translation key, keeping the distinctions the
  * plugin actually made.
  *
- * The raw error is always logged first, with a stable prefix, so the real
- * failure — DNS, TLS, HTTP status, malformed manifest, bad signature,
- * wrong key, missing capability, plugin/JS version mismatch — is recoverable
+ * Order matters: `PLATFORM_NOT_PUBLISHED` is tested before `NETWORK_FAILED`
+ * because its message names `platforms`, and a missing-platform manifest is not
+ * a network fault. Every remaining failure keeps the raw error in the console
+ * with a stable prefix, so the real cause — HTTP status, malformed manifest,
+ * wrong key, missing capability, plugin/JS version mismatch — stays recoverable
  * from the developer console. Nothing is logged to the user-facing surface, and
- * nothing secret (keys, tokens) is ever part of these messages.
+ * no secret is ever part of these messages.
  */
 function classifyCheckError(error: unknown): UpdateErrorCode {
   console.error('[station/update] check failed:', error)
   const message = error instanceof Error ? error.message : String(error ?? '')
-  return PLATFORM_NOT_PUBLISHED.test(message)
-    ? 'dev.updateUnsupportedPlatform'
-    : 'dev.updateCheckFailed'
+  if (PLATFORM_NOT_PUBLISHED.test(message)) return 'dev.updateNoCompatibleBuild'
+  if (RELEASE_UNAVAILABLE.test(message)) return 'dev.updateReleaseUnavailable'
+  if (METADATA_INVALID.test(message)) return 'dev.updateMetadataInvalid'
+  if (NETWORK_FAILED.test(message)) return 'dev.updateNetworkFailed'
+  return 'dev.updateCheckFailed'
 }
 
 /** Download progress, already clamped to a renderable percentage. */
@@ -183,9 +236,16 @@ function updaterResource(update: Update): UpdateResource | null {
  * opaque call would leave the manager staring at a frozen number while the
  * installer actually runs.
  *
- * On Windows the installer replaces the app and the process exits, so
- * `install()` normally never resolves. The UI treats "the installer took over"
- * as the success path and never claims success before the bytes are down.
+ * The two phases fail differently and are reported differently: `download()`
+ * verifies the minisign signature on the bytes that arrived (a rejected
+ * signature is NOT a network problem and retrying cannot fix it), while
+ * `install()` only runs once those bytes are proven to come from Station.
+ *
+ * After this resolves the caller relaunches. On Windows the installer ends the
+ * process itself; on macOS the plugin replaces the `.app` bundle in place and
+ * returns, so the explicit relaunch is what starts the new version. The UI
+ * treats "the installer took over" as the success path and never claims success
+ * before the bytes are down.
  */
 export async function installUpdate(
   update: PendingUpdate,
@@ -197,29 +257,63 @@ export async function installUpdate(
   let downloaded = 0
 
   try {
-    await update.resource.download((event) => {
-      if (event.event === 'Started') {
-        // `event.data` is typed as present, but a malformed or older plugin
-        // payload must not be able to throw here: a crash would be reported as
-        // a failed install of an update that never started downloading.
-        total = normalizeTotal(event.data?.contentLength)
-        onProgress({ downloaded: 0, total, percent: toPercent(0, total) })
-        return
-      }
-      if (event.event === 'Progress') {
-        downloaded += Math.max(0, event.data?.chunkLength ?? 0)
-        onProgress({ downloaded, total, percent: toPercent(downloaded, total) })
-        return
-      }
-      // 'Finished': the final Progress event can land short of the announced
-      // total on a throttled connection, so report a complete bar, not 98%.
-      onProgress({ downloaded, total, percent: 100 })
-    })
-    await update.resource.install()
+    try {
+      await update.resource.download((event) => {
+        if (event.event === 'Started') {
+          // `event.data` is typed as present, but a malformed or older plugin
+          // payload must not be able to throw here: a crash would be reported as
+          // a failed install of an update that never started downloading.
+          total = normalizeTotal(event.data?.contentLength)
+          onProgress({ downloaded: 0, total, percent: toPercent(0, total) })
+          return
+        }
+        if (event.event === 'Progress') {
+          downloaded += Math.max(0, event.data?.chunkLength ?? 0)
+          onProgress({ downloaded, total, percent: toPercent(downloaded, total) })
+          return
+        }
+        // 'Finished': the final Progress event can land short of the announced
+        // total on a throttled connection, so report a complete bar, not 98%.
+        onProgress({ downloaded, total, percent: 100 })
+      })
+    } catch (error) {
+      // Signature verification happens INSIDE download(), on the bytes that
+      // arrived. A rejected signature is therefore a download-phase failure and
+      // must never be reported as a flaky connection: retrying cannot fix it,
+      // and the cause (a foreign or tampered artifact) is worth escalating.
+      throw new UpdateError(classifyTransferError(error, 'dev.updateDownloadFailed'), {
+        cause: error,
+      })
+    }
+
+    try {
+      await update.resource.install()
+    } catch (error) {
+      // Reaching `install()` means the bundle was downloaded AND verified, so
+      // anything failing here is the installer itself: Windows ran the NSIS
+      // installer, macOS replaced the `.app` bundle in place.
+      throw new UpdateError('dev.updateInstallFailed', { cause: error })
+    }
   } catch (error) {
     if (error instanceof UpdateError) throw error
-    throw new UpdateError('dev.updateFailed')
+    throw new UpdateError('dev.updateInstallFailed', { cause: error })
   }
+}
+
+/**
+ * Classify a failure raised while fetching or verifying an update bundle.
+ *
+ * The same two families the check path distinguishes: the bytes never arrived
+ * (transport), or the bytes arrived and were rejected (signature). Everything
+ * else falls back to the caller's phase default, so an unknown future plugin
+ * error is still reported as the phase it happened in rather than as success.
+ */
+function classifyTransferError(error: unknown, fallback: UpdateErrorCode): UpdateErrorCode {
+  console.error('[station/update] transfer failed:', error)
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (SIGNATURE_REJECTED.test(message)) return 'dev.updateSignatureRejected'
+  if (NETWORK_FAILED.test(message)) return 'dev.updateNetworkFailed'
+  return fallback
 }
 
 /**
