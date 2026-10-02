@@ -10,9 +10,12 @@
  */
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, MoneyDisplay } from '@/components/ui'
+import { Button } from '@/components/ui'
 import { Coffee, Droplets } from '@/components/ui/icon'
+import { PosProductCard } from './PosProductCard'
 import { QtyStepper } from './QtyStepper'
+import { categoryTone } from '@/lib/category-visual'
+import { cn } from '@/lib/utils'
 import type { Product } from '@/services/posApi'
 
 type Department = 'CAFE' | 'WASH'
@@ -22,20 +25,21 @@ const DEPARTMENTS: Department[] = ['CAFE', 'WASH']
 /**
  * The shared grid for the category list and the product list.
  *
- * Two columns on a phone, three from `sm` up — chosen so a product name and its
- * price both fit legibly at 360px rather than being truncated to nothing.
+ * It is an auto-fill track rather than a column COUNT, so the number of columns
+ * follows the width actually available instead of a hardcoded breakpoint that
+ * only suits one screen. The 11rem floor is what a tile needs to show a name
+ * over two lines beside its price with neither truncated; a narrower track than
+ * that is precisely the defect this replaces.
  *
- * The height cap and the internal scroll are `sm:`-only, and that is the whole
- * point of this constant. The POS page is a two-pane desktop layout: a fixed
- * product grid beside a live order panel, each scrolling inside itself. On a
- * phone the two panes are stacked and the PAGE is the only scroll container, so
- * a capped, independently scrolling grid inside it produced the nested-scroll
- * trap — dragging through the products scrolled a small inner box while the
- * page stayed put, and the cashier had to find the right scroll target. Letting
- * the phone grid grow with the page removes the inner scroller entirely, which
- * is why the cap is not applied below `sm`.
+ * There is deliberately NO height cap and NO internal scroll here. The order
+ * workspace owns exactly one scroll container per axis: on a desktop the two
+ * columns scroll inside themselves, and on a phone the page does. A capped grid
+ * nested inside one of those is the nested-scroll trap — dragging through the
+ * products scrolls a small inner box while the surrounding pane stays put, and
+ * the cashier has to hunt for the right scroll target.
  */
-const PRODUCT_GRID = 'grid grid-cols-2 gap-2 sm:max-h-72 sm:grid-cols-3 sm:overflow-y-auto'
+const PRODUCT_GRID =
+  'grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))] sm:gap-3'
 
 interface CategoryGroup {
   id: number
@@ -135,21 +139,19 @@ export function ProductBrowser({
         categories.length === 0 ? (
           <p className="py-4 text-center text-sm text-foreground-subtle">{t('pos.noCategories')}</p>
         ) : (
-          // See PRODUCT_GRID for why the internal scroll is desktop-only.
+          // See PRODUCT_GRID for why there is no internal scroll here.
           <div className={PRODUCT_GRID}>
             {categories.map((category) => (
-              <button
+              // The category tile carries the SAME tone the product tiles inside it
+              // will carry, so the cashier's eye learns one colour per category
+              // and the two levels of the hierarchy agree.
+              <CategoryTile
                 key={category.id}
-                type="button"
-                onClick={() => setCategoryId(category.id)}
-                className="flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-lg border border-border-strong bg-transparent p-2 text-start transition-colors hover:border-border-accent-hover hover:bg-surface-hover active:bg-accent"
-              >
-                <span className="w-full truncate text-sm font-medium">{category.name}</span>
-
-                <span className="text-xs text-foreground-subtle">
-                  {t('pos.itemTypesCount', { count: category.items.length })}
-                </span>
-              </button>
+                id={category.id}
+                name={category.name}
+                itemCount={category.items.length}
+                onPick={() => setCategoryId(category.id)}
+              />
             ))}
           </div>
         )
@@ -158,22 +160,58 @@ export function ProductBrowser({
       ) : (
         <div className={PRODUCT_GRID}>
           {activeCategory.items.map((product) => (
-            <button
-              key={product.id}
-              type="button"
-              onClick={() => onAdd(product)}
-              className="flex min-h-16 flex-col items-start justify-center gap-0.5 rounded-lg border border-border-strong bg-transparent p-2 text-start text-foreground transition-colors hover:border-border-accent-hover hover:bg-accent active:border-border-accent-hover active:bg-accent-hover"
-            >
-              <span className="w-full truncate text-sm font-medium">{product.name}</span>
-
-              <span className="text-sm font-bold text-foreground-muted">
-                <MoneyDisplay amount={product.price_minor} />
-              </span>
-            </button>
+            <PosProductCard key={product.id} product={product} onAdd={onAdd} />
           ))}
         </div>
       )}
     </section>
+  )
+}
+
+/**
+ * One category in the middle level of the hierarchy.
+ *
+ * It wears the category's own palette — the same `categoryTone` its products
+ * will wear one level down — so the two levels of the hierarchy agree visually
+ * and the cashier can recognise a category by colour before reading it.
+ */
+function CategoryTile({
+  id,
+  name,
+  itemCount,
+  onPick,
+}: Readonly<{
+  readonly id: number
+  readonly name: string
+  readonly itemCount: number
+  readonly onPick: () => void
+}>) {
+  const { t } = useTranslation()
+  const tone = categoryTone(id)
+
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      data-testid={`pos-category-${id}`}
+      data-category-tone={tone.slot}
+      className={cn(
+        'flex min-h-24 flex-col items-start justify-center gap-1 rounded-lg border p-3 text-start',
+        'transition-[border-color,box-shadow] duration-150 motion-reduce:transition-none',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+        tone.background,
+        tone.border,
+        'hover:border-border-accent-hover hover:shadow-md',
+      )}
+    >
+      <span className={cn('line-clamp-2 text-base leading-snug font-bold', tone.foreground)}>
+        {name}
+      </span>
+
+      <span className="text-caption text-foreground-subtle">
+        {t('pos.itemTypesCount', { count: itemCount })}
+      </span>
+    </button>
   )
 }
 

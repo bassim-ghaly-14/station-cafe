@@ -43,7 +43,6 @@ import {
 } from '@/services/posApi'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { tableBadgeVariant } from '@/lib/status-badge'
-import { cn } from '@/lib/utils'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import type { UserRole } from '@/lib/roles'
 import { useRouter, type View } from '@/app/router'
@@ -83,6 +82,20 @@ export default function PosPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null)
   const [activeOrder, setActiveOrder] = useState<PosOrder | null>(null)
+  /**
+   * Whether the POS is showing the FULL-SCREEN order workspace.
+   *
+   * This is VIEW state, not order state. It is turned on by `loadOrder` — the
+   * single path every entry point (start order, open order, start takeaway,
+   * reopen takeaway) already goes through — and turned off by the workspace's
+   * own Back action. Nothing else writes it, and no backend call reads it.
+   *
+   * Crucially it is SEPARATE from `activeOrder`: pressing Back hides the
+   * workspace without discarding, cancelling or closing anything, so the order
+   * stays loaded and persisted and reopening it restores it exactly. That is
+   * what lets a cashier step out to the tables mid-sale and come straight back.
+   */
+  const [orderWorkspace, setOrderWorkspace] = useState(false)
   const [payOpen, setPayOpen] = useState(false)
   const [preview, setPreview] = useState<OrderPreview | null>(null)
   const [discount, setDiscount] = useState<DiscountSel>({ mode: null, value: null })
@@ -235,6 +248,10 @@ export default function PosPage() {
 
     setActiveOrder(order)
 
+    // Every entry point lands in the workspace, so "open an order" always means
+    // the same thing visually — there is no second, cramped way into an order.
+    setOrderWorkspace(true)
+
     // Re-sync the shared discount from the PERSISTED order row — the backend
     // is authoritative, so refresh / reopen / restart never loses the discount.
     setDiscount({
@@ -324,23 +341,29 @@ export default function PosPage() {
     }
   }
 
-  const selected = tables.find((x) => x.id === selectedTableId) ?? null
-  const takeawayActive = activeOrder?.order_type === 'TAKEAWAY'
-
   /*
-   * Progressive workspace:
+   * ONE selling workspace, TWO modes — and never a split.
    *
-   * No active order:
-   *   tables use the available width.
+   * Tables mode (no order open, or Back pressed):
+   *   the tables card owns the whole content area, at full width. It used to sit
+   *   beside a second column that repeated the very actions each table card
+   *   already carries (open / start order / close empty / open order) and
+   *   rendered an empty "pick a table" placeholder when nothing was selected.
+   *   That column duplicated the cards, reserved a fixed 22rem beside the grid
+   *   and made the cashier choose between two views of the same decision — and
+   *   it became pure dead weight the moment orders moved into the dedicated
+   *   Order Workspace. It is gone, not hidden.
    *
-   * Active order:
-   *   tables remain the dominant area.
-   *   The order panel is intentionally capped around 460px so it does not
-   *   consume the table workspace.
+   * Order mode (workspace open):
+   *   the OrderPanel replaces the tables outright. The tables are UNMOUNTED
+   *   rather than hidden, so they cost no width and no screen-reader noise
+   *   while a sale is in progress.
+   *
+   * Back is navigation only: `activeOrder` stays loaded and persisted, so the
+   * tables come back at full width with the order still one tap away.
    */
-  const hasWorkspace = activeOrder !== null || selected !== null
+  const inOrderWorkspace = orderWorkspace && activeOrder !== null
 
-  const layout = workspaceLayout(hasWorkspace)
   const counts = tableCounts(tables, counters)
 
   return (
@@ -358,12 +381,39 @@ export default function PosPage() {
       */}
       <PosHeader state={shiftState} onNavigate={navigate} />
 
-      {/* The selling workspace: its responsive class set is described on
-          `workspaceLayout`, and the DOM order below is deliberately tables
-          first. */}
-      <div className={layout.grid}>
+      {/* The selling workspace: ONE block, never a split. Tables mode is the
+          full-width tables card; order mode is the full-screen Order
+          Workspace. Nothing sits beside the grid, so the grid gets every pixel
+          and there is no second, competing order view. */}
+      {inOrderWorkspace && activeOrder ? (
+        // The takeaway identity (type badge + external number) lives in the
+        // workspace header, where it costs no vertical space and cannot be
+        // separated from the order it describes.
+        <OrderPanel
+          order={activeOrder}
+          preview={preview}
+          discount={discount}
+          serviceCharge={serviceCharge}
+          serviceChargeOptions={serviceChargeOptions}
+          onServiceChargeChange={setServiceCharge}
+          onDiscountChange={(d: DiscountSel) => setDiscount(d)}
+          onChange={setActiveOrder}
+          onRefreshTables={() => void refresh()}
+          onPay={() => setPayOpen(true)}
+          onBack={() => setOrderWorkspace(false)}
+          onDiscard={
+            // The SERVICE rejects cancelling a ticketed order, so the UI must
+            // not offer it either. `waiting_no` is written in the same
+            // transaction as the ticket row, so it is the same fact the backend
+            // reads — this hides a dead action, it is not the enforcement.
+            activeOrder.lines.length === 0 && activeOrder.waiting_no === null
+              ? () => void discardActiveOrder()
+              : undefined
+          }
+          discarding={busy === 'discard'}
+        />
+      ) : (
         <TablesCard
-          layout={layout}
           tables={tables}
           counts={counts}
           takeaways={takeaways}
@@ -378,67 +428,25 @@ export default function PosPage() {
           onOpenOrder={openOrderFor}
           onCloseEmpty={setCloseTarget}
         />
+      )}
 
-        {/* The counterpart to the tables card's `order-2`: first on a phone. */}
-        <div className={layout.orderColumn}>
-          {activeOrder ? (
-            <>
-              {takeawayActive ? <TakeawayActiveBanner order={activeOrder} /> : null}
-
-              <OrderPanel
-                order={activeOrder}
-                preview={preview}
-                discount={discount}
-                serviceCharge={serviceCharge}
-                serviceChargeOptions={serviceChargeOptions}
-                onServiceChargeChange={setServiceCharge}
-                onDiscountChange={(d: DiscountSel) => setDiscount(d)}
-                onChange={setActiveOrder}
-                onRefreshTables={() => void refresh()}
-                onPay={() => setPayOpen(true)}
-                onDiscard={
-                  // The SERVICE rejects cancelling a ticketed order, so the UI
-                  // must not offer it either. `waiting_no` is written in the
-                  // same transaction as the ticket row, so it is the same fact
-                  // the backend reads — this hides a dead action, it is not the
-                  // enforcement.
-                  activeOrder.lines.length === 0 && activeOrder.waiting_no === null
-                    ? () => void discardActiveOrder()
-                    : undefined
-                }
-                discarding={busy === 'discard'}
-              />
-            </>
-          ) : selected ? (
-            <Card>
-              <CardHeader title={selected.label} subtitle={t(`pos.state.${selected.status}`)} />
-
-              <SelectedTableActions
-                tv={selected}
-                busy={busy}
-                onOpen={() => void openSelectedTable(selected)}
-                onStartOrder={() => void startOrderFor(selected)}
-                onOpenOrder={() => void openOrderFor(selected)}
-                onCloseEmpty={() => setCloseTarget(selected)}
-              />
-            </Card>
-          ) : (
-            <p className="text-sm text-foreground-subtle">{t('pos.selectTableHint')}</p>
-          )}
-        </div>
-      </div>
-
-      <OperationalControls
-        shift={shiftState.my_shift}
-        day={dayClosingDay(user?.role, shiftState.day)}
-        revision={revision}
-        onShiftClosed={async () => {
-          toast(t('shift.closedSuccess'), 'success')
-          await refresh()
-        }}
-        onShiftRefresh={refresh}
-        onDayDone={refresh}
-      />
+      {/* Shift/day closing is OPERATIONAL work, not order work. It stays out of
+          the workspace so the order panel can own the viewport height without
+          the page growing a scrollbar underneath it — and it returns in full
+          the moment the cashier steps back to the tables. */}
+      {inOrderWorkspace ? null : (
+        <OperationalControls
+          shift={shiftState.my_shift}
+          day={dayClosingDay(user?.role, shiftState.day)}
+          revision={revision}
+          onShiftClosed={async () => {
+            toast(t('shift.closedSuccess'), 'success')
+            await refresh()
+          }}
+          onShiftRefresh={refresh}
+          onDayDone={refresh}
+        />
+      )}
 
       <PosDialogs
         activeOrder={activeOrder}
@@ -525,23 +533,12 @@ function tableCounts(tables: TableView[], counters: TableCounters | null): Table
 }
 
 /**
- * The selling workspace's responsive class set.
+ * The tables grid's responsive class set.
  *
- * Desktop: tables on the inline-start, the order panel in a 460px column at the
- * inline-end. Unchanged.
- *
- * Phone: the SAME two elements in the OPPOSITE order. With an order open the
- * order panel is what the cashier is working on — it holds the product pad, the
- * running total and the pay action — so putting it first means the products and
- * the pay button are reachable without scrolling past every table card first.
- * Before this, adding an item to an order on a phone meant: scroll down past
- * the whole table grid, scroll back up to the order panel, repeat on every
- * single item.
- *
- * The switch is `order-*` classes rather than a reordered DOM, so the reading
- * order and the desktop layout are both untouched — and the grid gets denser as
- * it grows, which is why a workspace with five open tables fits without
- * scrolling while the idle grid stays comfortable.
+ * The grid uses the FULL width the page gives it in every mode: there is no
+ * sibling column left to make room for, so the widest step (`lg:grid-cols-4`,
+ * then `2xl:grid-cols-5`) is always the one in force rather than being reserved
+ * for a context pane that no longer exists.
  *
  * The phone step is ONE table per row. The grid used to start at `grid-cols-2`,
  * which put two table cards side by side on a 360px phone: each card was then
@@ -552,25 +549,8 @@ function tableCounts(tables: TableView[], counters: TableCounters | null): Table
  * tablet/desktop density. No fixed width and no horizontal scroll is involved:
  * the grid simply has one column until there is room for another.
  */
-function workspaceLayout(hasWorkspace: boolean): WorkspaceLayout {
-  return {
-    grid: hasWorkspace ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]' : 'flex flex-col gap-4',
-    tablesCard: hasWorkspace ? 'min-w-0' : 'w-full',
-    tablesOrder: hasWorkspace ? 'order-2 xl:order-1' : undefined,
-    tablesGrid: hasWorkspace
-      ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4'
-      : 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5',
-    orderColumn: hasWorkspace ? 'order-1 min-w-0 xl:order-2' : '',
-  }
-}
-
-interface WorkspaceLayout {
-  readonly grid: string
-  readonly tablesCard: string
-  readonly tablesOrder: string | undefined
-  readonly tablesGrid: string
-  readonly orderColumn: string
-}
+const TABLES_GRID_CLASS =
+  'grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5'
 
 /**
  * The tables KPI header: the four states the grid can be in, as four tiles.
@@ -618,12 +598,15 @@ function TablesKpiBand({ counts }: { readonly counts: TableCounts }) {
  * The tables side of the selling workspace: open takeaways, the takeaway
  * action card and every table card.
  *
+ * It is the WHOLE tables mode — there is no sibling panel beside it, so it
+ * always renders full width. Every table action lives on its own card, which is
+ * why the removed context column added nothing the grid did not already offer.
+ *
  * It only reads what the page owns — selection, the active order id and the busy
  * label — and hands every mutation back to the page's own commands, so no
  * table/takeaway rule lives in here.
  */
 function TablesCard({
-  layout,
   tables,
   counts,
   takeaways,
@@ -638,7 +621,6 @@ function TablesCard({
   onOpenOrder,
   onCloseEmpty,
 }: {
-  readonly layout: WorkspaceLayout
   readonly tables: TableView[]
   readonly counts: TableCounts
   readonly takeaways: TakeawayView[] | null
@@ -656,7 +638,7 @@ function TablesCard({
   const { t } = useTranslation()
 
   return (
-    <Card aria-label={t('pos.tables')} className={cn(layout.tablesCard, layout.tablesOrder)}>
+    <Card aria-label={t('pos.tables')} className="w-full">
       <CardHeader title={t('pos.tables')} />
       <TablesKpiBand counts={counts} />
 
@@ -664,7 +646,7 @@ function TablesCard({
         <OpenTakeaways items={takeaways} activeOrderId={activeOrderId} onOpen={onReopenTakeaway} />
       ) : null}
 
-      <div className={layout.tablesGrid}>
+      <div className={TABLES_GRID_CLASS}>
         {/* Takeaway action card — always first */}
         <TakeawayCard busy={busy === 'takeaway'} onStart={onStartTakeaway} />
 
@@ -854,33 +836,6 @@ function OperationalControls({
         {day ? <DayClosingPanel dayId={day.id} revision={revision} onDone={onDayDone} /> : null}
       </div>
     </section>
-  )
-}
-
-/**
- * The banner above the order panel while a takeaway order is open.
- *
- * A takeaway is called by its external number, so that number is what the
- * banner leads with; when the backend has not issued one yet the cashier gets
- * the hint instead.
- */
-function TakeawayActiveBanner({ order }: { readonly order: PosOrder }) {
-  const { t } = useTranslation()
-
-  return (
-    <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-bold text-foreground-strong">
-      <Badge variant="info" size="sm" icon={ShoppingBag} dot>
-        {t('pos.takeawayActive')}
-      </Badge>
-
-      {typeof order.takeaway_no === 'number' ? (
-        <span>
-          {t('pos.takeawayNo')}: <span dir="ltr">#{order.takeaway_no}</span>
-        </span>
-      ) : (
-        <span className="font-medium text-foreground-subtle">{t('pos.takeawayHint')}</span>
-      )}
-    </p>
   )
 }
 
@@ -1195,7 +1150,7 @@ export function TableCard({
       aria-current={selected ? true : undefined}
       data-testid={`table-card-${tv.id}`}
       className={[
-        // One full-width row on a phone (see `workspaceLayout`), where a card
+        // One full-width row on a phone (see `TABLES_GRID_CLASS`), where a card
         // needs no extra height to sit beside another one — so the phone step
         // is the compact one and the multi-column steps keep the roomier
         // desktop card.
@@ -1364,59 +1319,5 @@ export function TableCard({
         )}
       </div>
     </article>
-  )
-}
-
-function SelectedTableActions({
-  tv,
-  busy,
-  onOpen,
-  onStartOrder,
-  onOpenOrder,
-  onCloseEmpty,
-}: {
-  readonly tv: TableView
-  readonly busy: string | null
-  readonly onOpen: () => void
-  readonly onStartOrder: () => void
-  readonly onOpenOrder: () => void
-  readonly onCloseEmpty: () => void
-}) {
-  const { t } = useTranslation()
-
-  if (tv.status === 'EMPTY') {
-    return (
-      <Button className={startActionClassName} onClick={onOpen} loading={busy === `open-${tv.id}`}>
-        <DoorOpen size={16} aria-hidden />
-        {t('pos.openTable')}
-      </Button>
-    )
-  }
-
-  if (tv.status === 'OPEN') {
-    return (
-      <div className="flex flex-wrap gap-2">
-        <Button
-          className={startActionClassName}
-          onClick={onStartOrder}
-          loading={busy === `order-${tv.id}`}
-        >
-          <ClipboardList size={16} aria-hidden />
-          {t('pos.startOrder')}
-        </Button>
-
-        <Button variant="outline" onClick={onCloseEmpty}>
-          <DoorClosed size={16} aria-hidden />
-          {t('pos.closeEmpty')}
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <Button variant="secondary" onClick={onOpenOrder}>
-      <ClipboardList size={16} aria-hidden />
-      {t('pos.openOrder')}
-    </Button>
   )
 }

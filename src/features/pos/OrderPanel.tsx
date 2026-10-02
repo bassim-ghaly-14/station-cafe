@@ -1,9 +1,8 @@
 /** Live order panel: lines, product pad, discount, customer/car, wash ticket. */
-import { useCallback, useEffect, useState } from 'react'
-import type { TFunction } from 'i18next'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, CardHeader, MoneyDisplay, useToast } from '@/components/ui'
-import { Trash2 } from '@/components/ui/icon'
+import { Badge, Button, Card, MoneyDisplay, useToast } from '@/components/ui'
+import { ArrowRight, ShoppingBag, Trash2, User } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import {
   api,
@@ -36,6 +35,7 @@ export function OrderPanel({
   onPay,
   onDiscard,
   discarding,
+  onBack,
 }: {
   readonly order: PosOrder
   readonly preview: OrderPreview | null
@@ -49,6 +49,15 @@ export function OrderPanel({
   readonly onPay: () => void
   readonly onDiscard?: () => void
   readonly discarding?: boolean
+  /**
+   * Leave the order workspace and go back to the tables overview.
+   *
+   * This is PRESENTATION ONLY: it moves the view, it never touches the order.
+   * The order stays loaded and persisted, so coming back — through the table's
+   * own "open order" action or the takeaway list — restores it exactly as it
+   * was. That is what makes the workspace safe to step out of mid-sale.
+   */
+  readonly onBack?: () => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -178,10 +187,15 @@ export function OrderPanel({
   const washTicketAction = washTicketHandler(hasWash, ticketBusy, issueTicket)
 
   return (
-    <Card>
-      <CardHeader
-        title={orderPanelTitle(order, t)}
-        subtitle={orderPanelSubtitle(order, t)}
+    <Card
+      aria-label={t('pos.orderWorkspace')}
+      className="flex min-h-0 flex-col lg:h-[calc(100dvh-12rem)] lg:overflow-hidden"
+    >
+      {/* The order header: what this order is, and the way back to the tables. */}
+      <OrderHeader
+        order={order}
+        customer={customer}
+        onBack={onBack}
         actions={
           <DiscardAction
             cancelBlocked={cancelBlocked}
@@ -190,32 +204,59 @@ export function OrderPanel({
           />
         }
       />
-      <LineList order={order} onChange={onChange} onRefreshTables={onRefreshTables} />
-      <CheckoutSummary
-        order={order}
-        shown={shown}
-        customer={customer}
-        discountLabel={discountLabel}
-        serviceCharge={serviceCharge}
-        serviceChargeOptions={serviceChargeOptions}
-        onServiceCharge={onServiceChargeChange}
-        onDiscount={() => setDiscountOpen(true)}
-        onCustomer={() => setCustomerOpen(true)}
-        onDetachCustomer={detach}
-        detaching={detaching}
-        onTicket={washTicketAction}
-        onReviewPay={onPay}
-        onPrintPreview={() => setPreviewTarget(orderPreviewTarget)}
-        onTicketPreview={ticketPreviewTarget ? () => setPreviewTarget(ticketPreviewTarget) : null}
-      />
+
+      {/*
+        The workspace body: the product pad takes the WIDER column at the
+        inline-start and the running order the narrower one at the inline-end.
+        The order column is capped and scrolls INSIDE itself on a desktop, so
+        the totals and the pay action stay reachable no matter how long the
+        product list is. Below `lg` the two stack in source order — pad first —
+        and the page scrolls, which keeps the phone free of nested scrollers.
+      */}
+      <div
+        className="grid min-h-0 gap-4 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]"
+        data-testid="order-workspace-body"
+      >
+        <div className="flex min-h-0 min-w-0 flex-col lg:overflow-y-auto lg:pe-1">
+          {prodErr ? (
+            <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
+          ) : (
+            <ProductBrowser
+              products={products ?? []}
+              qty={qty}
+              onQtyChange={setQty}
+              onAdd={addItem}
+            />
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-col lg:min-h-0 lg:overflow-y-auto">
+          <LineList order={order} onChange={onChange} onRefreshTables={onRefreshTables} />
+          <CheckoutSummary
+            order={order}
+            shown={shown}
+            customer={customer}
+            discountLabel={discountLabel}
+            serviceCharge={serviceCharge}
+            serviceChargeOptions={serviceChargeOptions}
+            onServiceCharge={onServiceChargeChange}
+            onDiscount={() => setDiscountOpen(true)}
+            onCustomer={() => setCustomerOpen(true)}
+            onDetachCustomer={detach}
+            detaching={detaching}
+            onTicket={washTicketAction}
+            onReviewPay={onPay}
+            onPrintPreview={() => setPreviewTarget(orderPreviewTarget)}
+            onTicketPreview={
+              ticketPreviewTarget ? () => setPreviewTarget(ticketPreviewTarget) : null
+            }
+          />
+        </div>
+      </div>
+
       {previewTarget ? (
         <PrintPreviewDialog target={previewTarget} onClose={() => setPreviewTarget(null)} />
       ) : null}
-      {prodErr ? (
-        <ErrorState message={prodErr} onRetry={loadProducts} retryLabel={t('app.retry')} />
-      ) : (
-        <ProductBrowser products={products ?? []} qty={qty} onQtyChange={setQty} onAdd={addItem} />
-      )}
       <OrderDialogs
         orderId={order.id}
         discountOpen={discountOpen}
@@ -319,27 +360,29 @@ function LineList({
           // The phone layout of one order line, and it is a deliberate
           // restructure rather than a wrap:
           //
-          // - the product's NAME takes the whole first line. Beside a qty
-          //   stepper, a delete button and a right-aligned amount, a name that
-          //   truncates is unreadable — and an unreadable product name on a
-          //   till is a real operational problem, not a cosmetic one;
+          // - the product's NAME takes the whole first line and WRAPS rather than
+          //   truncating. An unreadable product name on a till is a real
+          //   operational problem, not a cosmetic one: the cashier cannot ring up
+          //   what they cannot read. It wraps on desktop too, for the same
+          //   reason — the width is there, so there is nothing to gain by
+          //   cutting the name short;
           // - the stepper, the remove control and the line total share the
           //   second line at the inline end, which is where the hand is and
           //   where the money already was.
-          //
-          // `sm:flex-row` restores the original single line exactly, so the
-          // desktop order panel is byte-for-byte unchanged.
-          className="flex flex-col gap-1.5 rounded border border-border-subtle px-2 py-1.5 sm:flex-row sm:items-center sm:gap-2"
+          className="flex flex-col gap-1.5 rounded border border-border-subtle px-2 py-1.5 sm:flex-row sm:items-start sm:gap-2"
         >
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">
-              {l.product_name} <DeptBadge dept={l.department as 'CAFE' | 'WASH'} />
+            <span className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+              <span className="min-w-0 wrap-break-word">{l.product_name}</span>
+
+              <DeptBadge dept={l.department as 'CAFE' | 'WASH'} />
             </span>
+
             <span className="text-xs text-foreground-subtle">
               <MoneyDisplay amount={l.unit_price} /> × {l.quantity}
             </span>
           </span>
-          <span className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
+          <span className="flex shrink-0 items-center justify-end gap-1 sm:items-center sm:gap-2">
             <QtyStepper
               qty={l.quantity}
               onChange={(q) =>
@@ -370,7 +413,7 @@ function LineList({
             </Button>
             <MoneyDisplay
               amount={l.line_total}
-              className="w-20 text-left text-sm font-medium sm:text-end"
+              className="w-20 text-left text-sm font-bold sm:text-end"
             />
           </span>
         </li>
@@ -380,30 +423,140 @@ function LineList({
 }
 
 /**
- * The panel title: what kind of order this is, and the ticket number.
+ * The order workspace header: WHERE this order is, WHICH order it is, and the
+ * one action that leaves the workspace.
  *
- * A takeaway leads with its external `TW-` number when the backend sent one,
- * because that is the number the customer will be called by; without one it
- * still says it is a takeaway. A table order has no external number at all, so
- * the title is the ticket alone.
+ * Three compact bands rather than one dashboard row:
+ *
+ *   1. the way back, with the order-scoped action at the far end;
+ *   2. the IDENTITY — the table (or the takeaway type) at the reading-start and
+ *      the order number at the reading-end, both at heading weight so neither
+ *      can be missed or read as a footnote;
+ *   3. the facts that qualify it (state, customer, external takeaway number) at
+ *      caption weight.
+ *
+ * A takeaway has NO table, and the header says so with the existing
+ * order-type wording rather than an empty or zeroed table field: a blank table
+ * label beside a real order reads as a bug, not as information. The badge also
+ * carries the icon and the words, so the type never depends on colour alone.
+ *
+ * Both identities come from the AUTHORITATIVE order row (the backend join),
+ * never from a UI selection, so the header can never claim a table the order
+ * does not belong to. Every number is wrapped in `dir="ltr"` so a mixed
+ * Arabic+numeric run keeps its digits in reading order under RTL.
+ *
+ * The back arrow is a logical-direction glyph rather than a mirrored one: the
+ * app renders `dir="rtl"` at the shell, and "back" is toward the reading-start
+ * side, which is what `ArrowRight` already points at here — so no `rtl:`
+ * override is needed and both directions stay correct.
  */
-function orderPanelTitle(order: PosOrder, t: TFunction): string {
-  if (order.order_type !== 'TAKEAWAY') return `${t('pos.order')} ${order.id}`
-  if (typeof order.takeaway_no !== 'number')
-    return `${t('pos.takeaway')} · ${t('pos.order')} ${order.id}`
-  return `${t('pos.takeaway')} #${order.takeaway_no} · ${t('pos.order')} ${order.id}`
-}
+function OrderHeader({
+  order,
+  customer,
+  onBack,
+  actions,
+}: {
+  readonly order: PosOrder
+  readonly customer: OrderCustomer | null
+  readonly onBack?: () => void
+  readonly actions?: ReactNode
+}) {
+  const { t } = useTranslation()
 
-/**
- * The panel subtitle: the table this order belongs to, plus its state.
- *
- * Table identity comes from the authoritative order row (backend join) — never
- * from a UI selection. Takeaways have no table, so they show the state alone.
- */
-function orderPanelSubtitle(order: PosOrder, t: TFunction): string {
-  if (order.order_type === 'TABLE' && order.table_label)
-    return `${order.table_label} · ${t('pos.state.' + order.status)}`
-  return t('pos.state.' + order.status)
+  const isTakeaway = order.order_type === 'TAKEAWAY'
+  const state = t('pos.state.' + order.status)
+
+  return (
+    <div className="mb-4 border-b border-border-subtle pb-3">
+      {/* 1 — the way out, and the one order-scoped action. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {onBack ? (
+          <Button variant="outline" size="sm" onClick={onBack} data-testid="order-back">
+            <ArrowRight size={16} aria-hidden />
+            {t('pos.backToTables')}
+          </Button>
+        ) : (
+          <span />
+        )}
+
+        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      </div>
+
+      {/* 2 — the identity. Heading weight, two ends of the same line. */}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0">
+          {isTakeaway ? (
+            <Badge
+              variant="info"
+              size="md"
+              icon={ShoppingBag}
+              dot
+              data-testid="order-identity-takeaway"
+            >
+              {t('pos.takeaway')}
+            </Badge>
+          ) : (
+            <>
+              <p className="text-caption text-foreground-subtle">{t('pos.orderType.TABLE')}</p>
+
+              <p
+                className="truncate text-heading font-bold text-foreground-strong"
+                data-testid="order-identity-table"
+              >
+                {order.table_label}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="text-end">
+          <p className="text-caption text-foreground-subtle">{t('pos.order')}</p>
+
+          <p
+            className="text-heading font-bold tabular-nums text-foreground-strong"
+            data-testid="order-identity-number"
+          >
+            {/*
+              `#` and the digits are one LTR run: an isolated `#9` inside an
+              RTL line otherwise reorders the sign to the far side of the
+              number, which is exactly the kind of near-miss that makes a
+              cashier read the wrong ticket.
+            */}
+            <span dir="ltr">#{order.id}</span>
+          </p>
+        </div>
+      </div>
+
+      {/* 3 — the qualifying facts. */}
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption">
+        <span>{state}</span>
+
+        <span aria-hidden className="text-foreground-faint">
+          ·
+        </span>
+
+        {/* "بدون عميل" is a real, recorded identity — not a blank field. */}
+        <span className="inline-flex items-center gap-1">
+          <User size={13} aria-hidden />
+          {customer ? customer.name : t('pos.noCustomer')}
+        </span>
+
+        {/* The external number the customer is called by, when there is one. */}
+        {isTakeaway && typeof order.takeaway_no === 'number' ? (
+          <>
+            <span aria-hidden className="text-foreground-faint">
+              ·
+            </span>
+
+            <span className="inline-flex items-center gap-1">
+              <ShoppingBag size={13} aria-hidden />
+              {t('pos.takeawayNo')}: <span dir="ltr">#{order.takeaway_no}</span>
+            </span>
+          </>
+        ) : null}
+      </p>
+    </div>
+  )
 }
 
 /**

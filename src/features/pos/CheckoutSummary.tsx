@@ -67,9 +67,15 @@ export function CheckoutSummary({
           <span>{t('pos.serviceCharge')}</span>
           <MoneyDisplay amount={shown?.service_charge_minor ?? 0} />
         </div>
-        <div className="mt-1 flex items-center justify-between border-t border-border-subtle pt-1.5 text-base font-bold">
+        {/*
+          The total payable is the ONE number the sale turns on, so it is stated
+          once, at a size and weight nothing else on the card uses, on its own
+          tinted row rather than as a fourth line among three quieter ones. The
+          figure itself is unchanged — it is still the backend preview's total.
+        */}
+        <div className="mt-1 flex items-center justify-between rounded-md bg-surface px-2 py-1.5 text-lg font-black text-foreground-strong">
           <span>{t('pos.total')}</span>
-          <MoneyDisplay amount={shown?.total ?? subtotal} />
+          <MoneyDisplay amount={shown?.total ?? subtotal} className="text-lg font-black" />
         </div>
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-border-subtle px-3 py-2">
@@ -187,8 +193,19 @@ export function CheckoutSummary({
           <Eye size={15} aria-hidden />
           {t('pos.printPreview')}
         </Button>
-        <Button size="sm" onClick={onReviewPay} disabled={order.lines.length === 0}>
-          <Wallet size={15} aria-hidden />
+        {/*
+          Payment stays a single, unmistakable action. `lg` gives it a full-height
+          target in the workspace's narrow order column, where it is pressed
+          repeatedly; below that it is the same button at the inline-end of the
+          action row. Same handler, same command, same authorization rules.
+        */}
+        <Button
+          size="lg"
+          className="lg:w-full"
+          onClick={onReviewPay}
+          disabled={order.lines.length === 0}
+        >
+          <Wallet size={16} aria-hidden />
           {t('pos.reviewAndPay')}
         </Button>
       </div>

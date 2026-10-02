@@ -409,7 +409,9 @@ describe('PosPage takeaway entry', () => {
     expect(mocks.openTable).not.toHaveBeenCalled()
     expect(mocks.startOrder).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(screen.getByText('طلب خارجي نشط')).toBeInTheDocument())
+    // The workspace identifies the order as a TAKEAWAY by its own order-type
+    // wording — never by an absent, blank or zeroed table field.
+    await waitFor(() => expect(screen.getByTestId('order-identity-takeaway')).toBeInTheDocument())
   })
 })
 
@@ -580,7 +582,16 @@ describe('order panel identity (issue 3)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
 
-    expect(await screen.findByText('طاولة 01 · مفتوحة')).toBeInTheDocument()
+    // The table is the PROMINENT half of the identity, not a caption under the
+    // order number, and the order number is prominent beside it.
+    const identity = await screen.findByTestId('order-identity-table')
+    expect(identity).toHaveTextContent('طاولة 01')
+    expect(identity.className).toContain('text-heading')
+
+    expect(screen.getByTestId('order-identity-number')).toHaveTextContent('#9')
+
+    // The order's own state still qualifies it, at caption weight.
+    expect(screen.getByText('مفتوحة')).toBeInTheDocument()
   })
 
   it('identifies a TAKEAWAY order without rendering a table identity', async () => {
@@ -606,11 +617,14 @@ describe('order panel identity (issue 3)', () => {
       expect(mocks.getOrder).toHaveBeenCalledWith(9)
     })
 
-    // TAKEAWAY has its own explicit order-type identity.
-    expect(await screen.findByText('طلب خارجي نشط')).toBeInTheDocument()
+    // TAKEAWAY has its own explicit order-type identity — the same wording the
+    // takeaway card and the open-takeaway chips already use.
+    expect(await screen.findByTestId('order-identity-takeaway')).toHaveTextContent('طلبات خارجية')
 
-    // A takeaway order must never inherit or display the table identity.
-    expect(screen.queryByText('طاولة 01 · مفتوحة')).not.toBeInTheDocument()
+    // A takeaway must never inherit or display a table identity: not as a
+    // label, not as a blank, and not as a zero.
+    expect(screen.queryByTestId('order-identity-table')).not.toBeInTheDocument()
+    expect(screen.queryByText(/طاولة/)).not.toBeInTheDocument()
 
     // The loaded order remains the active order shown by the order workspace.
     expect(screen.getByRole('button', { name: 'مراجعة والدفع' })).toBeInTheDocument()
@@ -1108,8 +1122,13 @@ describe('print preview action beside the pay action', () => {
     fireEvent.click(await screen.findByRole('button', { name: /إضافة خدمة 10.00/ }))
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 1000))
 
-    // Re-opening the order (the same path a cashier takes to a different
-    // table) must NOT re-submit the spent charge.
+    // Returning to the tables and re-opening the order (the same path a cashier
+    // takes to a different table) must NOT re-submit the spent charge. This
+    // also covers the new navigation: Back hides the workspace WITHOUT
+    // touching the order, and the table card reopens it in full.
+    fireEvent.click(screen.getByTestId('order-back'))
+    expect(screen.getByLabelText('الطاولات')).toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: /رؤية الطلب/ }))
     await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(9, null, null, 0))
   })
@@ -1997,6 +2016,187 @@ describe('closing card system', () => {
     for (const cls of accentClasses) {
       expect(cls).toMatch(/^(bg|text|border)-(closing-(shift|day)(-(soft|foreground|border))?)$/)
     }
+  })
+})
+
+describe('full-screen order workspace (navigation)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mocks.tables.mockResolvedValue([table({ status: 'OCCUPIED', order_id: 9 })])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 1 } })
+    mocks.getOrder.mockResolvedValue(order())
+    mocks.preview.mockResolvedValue(previewOf())
+  })
+
+  it('gives the order the whole content area — the tables are not rendered beside it', async () => {
+    renderPage()
+
+    // Before opening: the tables ARE the screen.
+    expect(await screen.findByLabelText('الطاولات')).toBeInTheDocument()
+    expect(screen.queryByLabelText('مساحة الطلب')).not.toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    const workspace = await screen.findByLabelText('مساحة الطلب')
+
+    // The workspace is present and the tables card is GONE, not merely hidden
+    // behind it — so no width and no accessibility-tree noise is spent on them.
+    expect(workspace).toBeInTheDocument()
+    expect(screen.queryByLabelText('الطاولات')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('table-card-1')).not.toBeInTheDocument()
+  })
+
+  it('leaves the tables the FULL width — no side panel, no reserved column', async () => {
+    mocks.tables.mockResolvedValue([table({ id: 1 }), table({ id: 2 }), table({ id: 3 })])
+
+    renderPage()
+
+    const card = await screen.findByLabelText('الطاولات')
+
+    // The tables card is the whole workspace: full width, and NOT a grid cell
+    // sitting beside a second column. Nothing may reserve a track for a panel
+    // that no longer exists.
+    expect(card.className).toContain('w-full')
+    expect(card.className).not.toContain('min-w-0')
+    expect(card.parentElement?.className ?? '').not.toMatch(/grid-cols-\[/)
+
+    // The tables card is the ONLY selling-workspace block on the page column:
+    // there is no sibling panel at all — not a hidden one, not an empty
+    // placeholder, and not a second order view.
+    const siblings = Array.from(card.parentElement?.children ?? [])
+    expect(siblings.filter((node) => node !== card).map((node) => node.nodeName)).toEqual([
+      'HEADER',
+      'SECTION',
+    ])
+    expect(screen.queryByLabelText('مساحة الطلب')).not.toBeInTheDocument()
+
+    // ...and the grid therefore reaches the WIDEST column step, not a reduced
+    // one kept in reserve for the removed context pane.
+    const grid = screen.getByTestId('table-card-1').parentElement as HTMLElement
+    expect(grid.className).toContain('lg:grid-cols-4')
+    expect(grid.className).toContain('2xl:grid-cols-5')
+
+    // No pixel width anywhere on the path that could cause a sideways scroll.
+    expect(card.className).not.toMatch(/\d+px/)
+    expect(grid.className).not.toMatch(/\d+px/)
+    expect(grid.className).not.toContain('overflow-x')
+  })
+
+  it('keeps table selection working without the removed side panel', async () => {
+    renderPage()
+
+    const card = await screen.findByTestId('table-card-1')
+
+    // Selection is still the card's own state (aria-current on the card), not a
+    // side panel's: clicking a card marks it and nothing else changes.
+    fireEvent.click(screen.getByTestId('table-card-select-1'))
+
+    expect(card).toHaveAttribute('aria-current', 'true')
+    expect(mocks.openTable).not.toHaveBeenCalled()
+    expect(mocks.startOrder).not.toHaveBeenCalled()
+
+    // The obsolete "pick a table to see its actions here" placeholder is gone.
+    expect(screen.queryByText('اختر طاولة لعرض إجراءاتها هنا')).not.toBeInTheDocument()
+  })
+
+  it('returns to the tables on Back, and reopens the SAME order intact', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+    expect(await screen.findByText('قهوة')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('order-back'))
+
+    // Back is navigation, not a mutation: the tables return...
+    expect(screen.getByLabelText('الطاولات')).toBeInTheDocument()
+    // ...and NOTHING was discarded, cancelled or closed to get there.
+    expect(mocks.discardOrder).not.toHaveBeenCalled()
+    expect(mocks.checkout).not.toHaveBeenCalled()
+    expect(mocks.closeEmptyTable).not.toHaveBeenCalled()
+
+    // Reopening restores the persisted order in the workspace, with its lines.
+    fireEvent.click(screen.getByRole('button', { name: /رؤية الطلب/ }))
+
+    expect(await screen.findByLabelText('مساحة الطلب')).toBeInTheDocument()
+    expect(await screen.findByText('قهوة')).toBeInTheDocument()
+    expect(mocks.getOrder).toHaveBeenCalledWith(9)
+  })
+
+  it('states the table, the order and the customer in the workspace header', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    const workspace = await screen.findByLabelText('مساحة الطلب')
+
+    // The authoritative order identity — never a UI selection — and BOTH halves
+    // of it are individually addressable and prominent.
+    expect(within(workspace).getByTestId('order-identity-table')).toHaveTextContent('طاولة 01')
+    expect(within(workspace).getByTestId('order-identity-number')).toHaveTextContent('#9')
+
+    // The number is one LTR run, so `#` never drifts to the far side of the
+    // digits under the RTL shell.
+    expect(within(workspace).getByText('#9')).toHaveAttribute('dir', 'ltr')
+
+    // "بدون عميل" is a real recorded identity, not a blank field. It appears in
+    // the header AND in the checkout summary's customer row; the header must
+    // state it too, so both occurrences are asserted.
+    expect(within(workspace).getAllByText('بدون عميل').length).toBeGreaterThan(0)
+  })
+
+  it('gives the workspace a single column with its own bounded height, never a split', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    const workspace = await screen.findByLabelText('مساحة الطلب')
+
+    // The workspace card owns the viewport height so its columns can scroll
+    // INSIDE it — that is what keeps the totals and the pay action on screen
+    // while a long product list is browsed.
+    expect(workspace.className).toContain('lg:h-[calc(100dvh-12rem)]')
+    expect(workspace.className).toContain('lg:overflow-hidden')
+
+    // The body is ONE grid whose product column is flexible and whose order
+    // column is capped — the reverse of the old fixed 460px order pane, and no
+    // pixel width is hardcoded anywhere in the workspace.
+    const body = workspace.querySelector('[data-testid="order-workspace-body"]') as HTMLElement
+    expect(body.className).toContain('lg:grid-cols-[minmax(0,1fr)_22rem]')
+    expect(body.className).not.toMatch(/\d\dpx/)
+  })
+
+  it('lays the workspace out as products beside the order, each scrolling itself', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+
+    const workspace = await screen.findByLabelText('مساحة الطلب')
+    const body = workspace.querySelector('[data-testid="order-workspace-body"]') as HTMLElement
+
+    const [pad, order] = Array.from(body.children) as HTMLElement[]
+
+    // The PRODUCT pad comes first in the DOM and takes the wider track; the
+    // order comes second in the capped column. Below `lg` they stack in that
+    // same order and the page — not a nested box — is what scrolls.
+    expect(pad.className).toContain('lg:overflow-y-auto')
+    expect(order.className).toContain('lg:overflow-y-auto')
+    expect(pad.className).not.toContain('overflow-x')
+    expect(order.className).not.toContain('overflow-x')
+  })
+
+  it('keeps the operational closing controls out of the workspace, and back after it', async () => {
+    renderPage()
+
+    expect(await screen.findByLabelText('إجراءات التشغيل والتقفيل')).toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+    await screen.findByLabelText('مساحة الطلب')
+    expect(screen.queryByLabelText('إجراءات التشغيل والتقفيل')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('order-back'))
+    expect(screen.getByLabelText('إجراءات التشغيل والتقفيل')).toBeInTheDocument()
   })
 })
 
