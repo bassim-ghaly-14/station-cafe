@@ -67,6 +67,14 @@ export interface ExpenseCategory {
   name_ar: string
   is_system: boolean
   is_active: boolean
+  /**
+   * Whether an expense in this category must name an employee.
+   *
+   * This is DATA from the backend, not a code the UI recognises: the form shows
+   * the employee selector from this flag, so a future employee-linked category
+   * needs no change here. Nothing in the frontend may branch on a category code.
+   */
+  requires_employee: boolean
 }
 
 /** One `YYYY-MM` × category cell of the monthly expenses report. */
@@ -267,6 +275,15 @@ export const opsApi = {
   deleteExpenseCategory: (code: string) => call<void>('delete_expense_category', { code }),
   /** The caller's own open-shift expenses, for the POS panel. */
   shiftExpenses: () => call<Expense[]>('list_shift_expenses'),
+  /**
+   * Record an expense. The ONE creation path: the Manager page, the cashier shift
+   * panel and the LAN bridge all call this same command, so every rule below holds
+   * identically for every role.
+   *
+   * `employee_id` is required by the backend whenever the chosen category reports
+   * `requires_employee` (an advance), and ignored for every other category. It is
+   * the stable employee id — never a typed name.
+   */
   createExpense: (input: {
     category: string
     amount: number
@@ -275,6 +292,7 @@ export const opsApi = {
     is_recurring: boolean
     recurrence?: string | null
     paid_from_cash?: boolean
+    employee_id?: number | null
   }) => call<number>('create_expense', { input }),
 
   audit: (limit = 100, actionLike?: string) =>

@@ -34,6 +34,12 @@ pub const APPLICATION_DATA_TABLES: &[&str] = &[
     "payments",
     "table_sessions",
     "wash_tickets",
+    // `employee_advances` and `employee_deductions` are emptied BEFORE
+    // `expenses`: since migration 34 an advance references the expense it is, so
+    // deleting the parent first would abort the reset. Both also reference the
+    // employee, and they sit well before `employees` below.
+    "employee_advances",
+    "employee_deductions",
     "expenses",
     "credit_payments",
     "credit_accounts",
@@ -46,9 +52,9 @@ pub const APPLICATION_DATA_TABLES: &[&str] = &[
     // The employees domain hangs off `users`, and an attendance day also
     // references the shift it happened on — so the whole domain is emptied
     // before `shifts` and `employees`, and `employees` immediately before its
-    // parent `users`.
+    // parent `users`. The advance and deduction ledgers are already handled above,
+    // ahead of the expense they may be linked to.
     "attendance_days",
-    "employee_advances",
     "payroll_runs",
     "day_closings",
     "shifts",

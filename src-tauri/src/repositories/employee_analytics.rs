@@ -489,9 +489,17 @@ pub struct Advance {
     pub reversed_at: Option<String>,
 }
 
-const ADVANCE_SELECT: &str = "SELECT a.id, a.employee_id, a.amount, a.advance_date, a.reason,
-    a.status, a.created_by, u.name, a.created_at, a.reversed_at
-    FROM employee_advances a JOIN users u ON u.id = a.created_by";
+const ADVANCE_SELECT: &str = "SELECT a.id, a.employee_id,
+    -- The EXPENSE owns a linked advance's money and date; the ledger columns are
+    -- the fallback for a historical advance that has no expense. `COALESCE` is the
+    -- single place that decision is expressed, and the database freezes a linked
+    -- expense's amount/date (migration 34) so the two can never drift apart.
+    COALESCE(e.amount, a.amount),
+    COALESCE(e.expense_date, a.advance_date),
+    a.reason, a.status, a.created_by, u.name, a.created_at, a.reversed_at
+ FROM employee_advances a
+ JOIN users u ON u.id = a.created_by
+ LEFT JOIN expenses e ON e.id = a.expense_id";
 
 fn advance_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Advance> {
     Ok(Advance {
@@ -508,13 +516,25 @@ fn advance_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Advance> {
     })
 }
 
-/// Advances of one employee, newest first.
-pub fn advances_of(conn: &Db, employee_id: i64, limit: i64) -> AppResult<Vec<Advance>> {
+/// Advances of one employee inside the window, newest first.
+///
+/// `None` bounds are unbounded. The date predicate is the same inclusive
+/// business-date comparison the aggregate uses, so the ledger a manager reads and
+/// the total above the cards can never describe different days.
+pub fn advances_of(
+    conn: &Db,
+    employee_id: i64,
+    from: Option<&str>,
+    to: Option<&str>,
+    limit: i64,
+) -> AppResult<Vec<Advance>> {
     let mut stmt = conn.prepare(&format!(
         "{ADVANCE_SELECT} WHERE a.employee_id = ?1
-         ORDER BY a.advance_date DESC, a.id DESC LIMIT ?2"
+           AND (?2 IS NULL OR COALESCE(e.expense_date, a.advance_date) >= ?2)
+           AND (?3 IS NULL OR COALESCE(e.expense_date, a.advance_date) <= ?3)
+         ORDER BY COALESCE(e.expense_date, a.advance_date) DESC, a.id DESC LIMIT ?4"
     ))?;
-    let rows = stmt.query_map(params![employee_id, limit], advance_row)?;
+    let rows = stmt.query_map(params![employee_id, from, to, limit], advance_row)?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -527,6 +547,8 @@ pub fn find_advance(conn: &Db, id: i64) -> AppResult<Option<Advance>> {
     }
 }
 
+/// Insert one advance. `expense_id` links it to the expense that IS this advance;
+/// `None` is a historical/direct advance that has no expense.
 pub fn insert_advance(
     conn: &Db,
     employee_id: i64,
@@ -534,11 +556,12 @@ pub fn insert_advance(
     advance_date: &str,
     reason: &str,
     created_by: i64,
+    expense_id: Option<i64>,
 ) -> AppResult<i64> {
     conn.execute(
-        "INSERT INTO employee_advances (employee_id, amount, advance_date, reason, created_by)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![employee_id, amount, advance_date, reason, created_by],
+        "INSERT INTO employee_advances (employee_id, amount, advance_date, reason, created_by, expense_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![employee_id, amount, advance_date, reason, created_by, expense_id],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -556,12 +579,132 @@ pub fn reverse_advance(conn: &Db, id: i64, by_user: i64, reverses_id: i64) -> Ap
     .map_err(Into::into)
 }
 
-/// Live (non-reversed) advance total for a period, in piasters.
-pub fn advances_total(conn: &Db, employee_id: i64, from: &str, to: &str) -> AppResult<i64> {
+/// Live (non-reversed) advance total for an inclusive business-date window, in
+/// piasters. `None` bounds are unbounded, exactly like the rest of the period
+/// filtering in Station.
+///
+/// The date filter runs against the SAME expression every advance read uses
+/// (`COALESCE(e.expense_date, a.advance_date)`), so a linked advance is always
+/// scoped by its expense's date and a legacy one by its own. A reversed advance is
+/// excluded by status, never by deletion, and the date predicate is part of the
+/// same indexed pass — no rows are loaded into Rust to be added up.
+pub fn advances_total(
+    conn: &Db,
+    employee_id: i64,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> AppResult<i64> {
     Ok(conn.query_row(
-        "SELECT COALESCE(SUM(amount), 0) FROM employee_advances
-         WHERE employee_id = ?1 AND status = 'RECORDED'
-           AND advance_date >= ?2 AND advance_date <= ?3",
+        "SELECT COALESCE(SUM(COALESCE(e.amount, a.amount)), 0)
+         FROM employee_advances a
+         LEFT JOIN expenses e ON e.id = a.expense_id
+         WHERE a.employee_id = ?1 AND a.status = 'RECORDED'
+           AND (?2 IS NULL OR COALESCE(e.expense_date, a.advance_date) >= ?2)
+           AND (?3 IS NULL OR COALESCE(e.expense_date, a.advance_date) <= ?3)",
+        params![employee_id, from, to],
+        |r| r.get(0),
+    )?)
+}
+
+/// Advance total for EXACTLY one calendar month, the shape the monthly payroll
+/// snapshot freezes.
+///
+/// This is [`advances_total`] with the month's own bounds supplied by the caller,
+/// kept as its own name so the payroll build reads as the month operation it is.
+pub fn advances_total_for_month(
+    conn: &Db,
+    employee_id: i64,
+    first_day: &str,
+    last_day: &str,
+) -> AppResult<i64> {
+    advances_total(conn, employee_id, Some(first_day), Some(last_day))
+}
+
+// ---------------------------------------------------------------------------
+// DEDUCTIONS — withheld money, never an expense
+// ---------------------------------------------------------------------------
+
+/// One deduction, as the drawer ledger shows it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Deduction {
+    pub id: i64,
+    pub employee_id: i64,
+    /// Piasters. Always an integer.
+    pub amount: i64,
+    pub deduction_date: String,
+    pub reason: Option<String>,
+    pub created_by: i64,
+    pub created_by_name: String,
+    pub created_at: String,
+}
+
+const DEDUCTION_SELECT: &str = "SELECT d.id, d.employee_id, d.amount, d.deduction_date,
+    d.reason, d.created_by, u.name, d.created_at
+ FROM employee_deductions d JOIN users u ON u.id = d.created_by";
+
+fn deduction_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Deduction> {
+    Ok(Deduction {
+        id: row.get(0)?,
+        employee_id: row.get(1)?,
+        amount: row.get(2)?,
+        deduction_date: row.get(3)?,
+        reason: row.get(4)?,
+        created_by: row.get(5)?,
+        created_by_name: row.get(6)?,
+        created_at: row.get(7)?,
+    })
+}
+
+/// Deductions of one employee inside the window, newest first.
+///
+/// `None` bounds are unbounded. The range predicate is the same inclusive
+/// business-date comparison the advances use, so one period selects both sides of
+/// an employee's money in exactly the same way.
+pub fn deductions_of(
+    conn: &Db,
+    employee_id: i64,
+    from: Option<&str>,
+    to: Option<&str>,
+    limit: i64,
+) -> AppResult<Vec<Deduction>> {
+    let mut stmt = conn.prepare(&format!(
+        "{DEDUCTION_SELECT} WHERE d.employee_id = ?1
+           AND (?2 IS NULL OR d.deduction_date >= ?2)
+           AND (?3 IS NULL OR d.deduction_date <= ?3)
+         ORDER BY d.deduction_date DESC, d.id DESC LIMIT ?4"
+    ))?;
+    let rows = stmt.query_map(params![employee_id, from, to, limit], deduction_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn insert_deduction(
+    conn: &Db,
+    employee_id: i64,
+    amount: i64,
+    deduction_date: &str,
+    reason: Option<&str>,
+    created_by: i64,
+) -> AppResult<i64> {
+    conn.execute(
+        "INSERT INTO employee_deductions (employee_id, amount, deduction_date, reason, created_by)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![employee_id, amount, deduction_date, reason, created_by],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Deduction total for an inclusive business-date window, in piasters.
+pub fn deductions_total(
+    conn: &Db,
+    employee_id: i64,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(amount), 0) FROM employee_deductions
+         WHERE employee_id = ?1
+           AND (?2 IS NULL OR deduction_date >= ?2)
+           AND (?3 IS NULL OR deduction_date <= ?3)",
         params![employee_id, from, to],
         |r| r.get(0),
     )?)

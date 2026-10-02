@@ -16,8 +16,8 @@ use crate::repositories::employee_analytics::{AttendanceDay, EmployeeOverview, P
 use crate::repositories::employees::Employee;
 use crate::services::attendance::AttendanceAction;
 use crate::services::employees::{
-    self as employee_svc, AdvanceInput, EmployeeDetails, EmployeeInput, EmployeeList,
-    EmployeePeriod, MyAttendance, PayrollPreview,
+    self as employee_svc, AdvanceInput, DeductionInput, EmployeeDetails, EmployeeInput,
+    EmployeeList, EmployeePeriod, MyAttendance, PayrollPreview,
 };
 use crate::AppState;
 use tauri::State;
@@ -234,6 +234,18 @@ pub fn create_employee_advance(
 ) -> AppResult<i64> {
     authorized(&state, &token, "STAFF", move |conn, actor| {
         employee_svc::create_advance(conn, actor, employee_id, &input)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_employee_deduction(
+    state: State<'_, AppState>,
+    token: String,
+    employee_id: i64,
+    input: DeductionInput,
+) -> AppResult<i64> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        employee_svc::create_deduction(conn, actor, employee_id, &input)
     })
 }
 

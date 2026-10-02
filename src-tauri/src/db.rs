@@ -1677,6 +1677,114 @@ const MIGRATIONS: &[Migration] = &[
              WHERE cashier_name IS NULL;
         "#,
     },
+    Migration {
+        version: 34,
+        name: "employee-linked expenses and deductions",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- AN EMPLOYEE ADVANCE IS AN EXPENSE — linked, never duplicated
+            -- ============================================================
+            -- An advance is money that left the till to an employee, so it belongs
+            -- in the expense totals like any other spend. Before this migration the
+            -- two halves of that fact lived apart: `employee_advances` recorded the
+            -- salary side and `expenses` recorded the money side, with no way to
+            -- tell that a given expense WAS an advance.
+            --
+            -- This migration joins them with ONE stable key:
+            --   * `expenses.employee_id`   — WHO the spend is for. NULL for every
+            --     pre-existing expense, which is correct: they were not advances.
+            --   * `employee_advances.expense_id` — the expense this advance IS.
+            --     NULL for every pre-existing advance, which is equally correct:
+            --     historical advances stay exactly as they were and are never
+            --     back-filled with a fabricated expense.
+            --   * the UNIQUE index makes it a DATABASE rule that one expense can
+            --     never be claimed by two advance rows, so the link cannot fan out.
+            --
+            -- NOTHING EXISTING IS REINTERPRETED. No row is rewritten, re-dated,
+            -- re-priced or deleted by this migration; it only adds columns, one
+            -- system category, one table and the indexes below.
+
+            ALTER TABLE expenses ADD COLUMN employee_id INTEGER REFERENCES employees(id);
+            -- Range scans for "this employee's expenses inside a period", which is
+            -- the advance query behind the salary cards.
+            CREATE INDEX IF NOT EXISTS idx_expenses_employee
+                ON expenses(employee_id, expense_date);
+
+            -- ============================================================
+            -- THE EMPLOYEE REQUIREMENT IS DATA, NOT CODE
+            -- ============================================================
+            -- Station's expense categories are deliberately a TABLE, not an enum,
+            -- so the service, the repository and the UI contain no hardcoded
+            -- category code. Requiring an employee follows the same rule: it is a
+            -- PROPERTY of the category, carried in the category payload the UI
+            -- already receives. A future employee-linked category therefore needs
+            -- no frontend change at all.
+            ALTER TABLE expense_categories
+                ADD COLUMN requires_employee INTEGER NOT NULL DEFAULT 0
+                    CHECK (requires_employee IN (0,1));
+
+            -- The seeded system category for an employee advance. `is_system` keeps
+            -- it out of the ADMIN delete list, and the column CHECK keeps the flag
+            -- itself honest.
+            INSERT INTO expense_categories (code, name_ar, is_system, requires_employee)
+            VALUES ('ADVANCE', 'سلفة', 1, 1);
+
+            ALTER TABLE employee_advances
+                ADD COLUMN expense_id INTEGER REFERENCES expenses(id);
+            -- One expense, at most one advance. Partial, so the historical rows
+            -- (many NULLs) are unaffected and a legacy advance stays valid.
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_advances_expense
+                ON employee_advances(expense_id) WHERE expense_id IS NOT NULL;
+
+            -- ============================================================
+            -- THE EXPENSE OWNS A LINKED ADVANCE'S MONEY AND DATE
+            -- ============================================================
+            -- `employee_advances` keeps its own `amount` and `advance_date` columns
+            -- because the historical rows have no expense to read them from, and
+            -- because the columns are NOT NULL. For a LINKED row those columns are
+            -- a DENORMALIZED COPY, and a copy is only safe if it cannot drift. This
+            -- trigger is what makes that true: once an expense is claimed by an
+            -- advance, its amount and business date are frozen, so the copy can
+            -- never diverge from the record that is the truth. An UPDATE that would
+            -- break the invariant is refused by the DATABASE, not by a service
+            -- convention that a future caller could bypass.
+            CREATE TRIGGER IF NOT EXISTS expenses_linked_advance_frozen
+            BEFORE UPDATE OF amount, expense_date ON expenses
+            WHEN EXISTS (
+                SELECT 1 FROM employee_advances a WHERE a.expense_id = OLD.id
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'expenses.linked_advance_frozen');
+            END;
+
+            -- ============================================================
+            -- DEDUCTIONS — money withheld, never spent
+            -- ============================================================
+            -- A deduction reduces what an employee takes home and NOTHING else. It
+            -- is not a purchase, so it is deliberately NOT an expense, NOT an
+            -- expense category and NOT part of any expense aggregate: the company
+            -- neither paid it nor received it. It lives in its own table so that
+            -- distinction is enforced by the schema rather than remembered at every
+            -- call site.
+            --
+            -- It mirrors `employee_advances` deliberately: append-only, never
+            -- edited in place and never deleted, because a payroll fact that can be
+            -- silently rewritten is not a payroll fact. `reason` is nullable because
+            -- a manager may withhold a figure without justifying it in free text.
+            CREATE TABLE IF NOT EXISTS employee_deductions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id    INTEGER NOT NULL REFERENCES employees(id),
+                amount         INTEGER NOT NULL CHECK (amount > 0),  -- piasters
+                deduction_date TEXT NOT NULL,                            -- YYYY-MM-DD
+                reason         TEXT,
+                created_by     INTEGER NOT NULL REFERENCES users(id),
+                created_at     TEXT NOT NULL DEFAULT (station_now())
+            );
+            CREATE INDEX IF NOT EXISTS idx_deductions_employee_date
+                ON employee_deductions(employee_id, deduction_date);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and
@@ -1755,6 +1863,18 @@ pub fn migrate(conn: &Db) -> AppResult<()> {
     register_clock(conn)?;
     apply_migrations(conn, None)?;
     normalize_identity_keys(conn)
+}
+
+/// A TEST SEAM: migrate a connection only up to `up_to`, or all the way when
+/// `up_to` is `None`.
+///
+/// This exists so the upgrade tests can build a database written by an OLDER
+/// schema, put real rows in it, and then apply the remaining migrations to prove
+/// the upgrade preserves them. Application code never calls it: `migrate` is the
+/// only entry point the running app uses.
+pub fn migrate_up_to(conn: &Db, up_to: Option<i64>) -> AppResult<()> {
+    register_clock(conn)?;
+    apply_migrations(conn, up_to)
 }
 
 /// Apply embedded migrations in version order. `up_to` is used by tests to

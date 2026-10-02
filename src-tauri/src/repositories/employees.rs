@@ -228,6 +228,7 @@ pub fn is_user_linked(conn: &Db, user_id: i64) -> AppResult<bool> {
 pub struct DeleteBlockers {
     pub attendance_days: i64,
     pub employee_advances: i64,
+    pub employee_deductions: i64,
     pub payroll_runs: i64,
     pub orders: i64,
     pub invoices: i64,
@@ -244,19 +245,21 @@ impl DeleteBlockers {
 pub fn delete_blockers(conn: &Db, id: i64) -> AppResult<DeleteBlockers> {
     conn.query_row(
         "SELECT
-            (SELECT COUNT(*) FROM attendance_days   WHERE employee_id = ?1),
-            (SELECT COUNT(*) FROM employee_advances WHERE employee_id = ?1),
-            (SELECT COUNT(*) FROM payroll_runs      WHERE employee_id = ?1),
-            (SELECT COUNT(*) FROM orders            WHERE wash_employee_id = ?1),
-            (SELECT COUNT(*) FROM invoices          WHERE wash_employee_id = ?1)",
+            (SELECT COUNT(*) FROM attendance_days     WHERE employee_id = ?1),
+            (SELECT COUNT(*) FROM employee_advances   WHERE employee_id = ?1),
+            (SELECT COUNT(*) FROM employee_deductions  WHERE employee_id = ?1),
+            (SELECT COUNT(*) FROM payroll_runs         WHERE employee_id = ?1),
+            (SELECT COUNT(*) FROM orders               WHERE wash_employee_id = ?1),
+            (SELECT COUNT(*) FROM invoices             WHERE wash_employee_id = ?1)",
         params![id],
         |r| {
             Ok(DeleteBlockers {
                 attendance_days: r.get(0)?,
                 employee_advances: r.get(1)?,
-                payroll_runs: r.get(2)?,
-                orders: r.get(3)?,
-                invoices: r.get(4)?,
+                employee_deductions: r.get(2)?,
+                payroll_runs: r.get(3)?,
+                orders: r.get(4)?,
+                invoices: r.get(5)?,
             })
         },
     )

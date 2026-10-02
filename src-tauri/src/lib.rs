@@ -24,6 +24,8 @@ mod deletion_test;
 #[cfg(test)]
 mod employees_test;
 #[cfg(test)]
+mod employee_financials_test;
+#[cfg(test)]
 mod invoice_identity_test;
 mod error;
 mod network;
@@ -325,6 +327,7 @@ pub fn run() {
             commands::employees::delete_employee,
             commands::employees::set_employee_base_salary,
             commands::employees::create_employee_advance,
+            commands::employees::create_employee_deduction,
             commands::employees::reverse_employee_advance,
             commands::employees::payroll_preview,
             commands::employees::create_payroll_run,

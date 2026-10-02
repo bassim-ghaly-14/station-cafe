@@ -80,7 +80,13 @@ const mocks = vi.hoisted(() => ({
   closeDay: vi.fn(),
   shiftExpenses: vi.fn(async () => []),
   expenseCategories: vi.fn(async () => [
-    { code: 'SUPPLIES', name_ar: 'مشتريات', is_system: true, is_active: true },
+    {
+      code: 'SUPPLIES',
+      name_ar: 'مشتريات',
+      is_system: true,
+      is_active: true,
+      requires_employee: false,
+    },
   ]),
   createExpense: vi.fn(),
 }))

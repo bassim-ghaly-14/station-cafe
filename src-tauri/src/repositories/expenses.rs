@@ -19,13 +19,20 @@ pub struct ExpenseCategory {
     pub name_ar: String,
     pub is_system: bool,
     pub is_active: bool,
+    /// Whether an expense in this category must name an employee.
+    ///
+    /// This is DATA, not a code the UI or the service recognises: a category
+    /// carries the rule and the UI reads it from this payload, so a future
+    /// employee-linked category needs no change in any caller. Exactly one seeded
+    /// system category (the advance) sets it today.
+    pub requires_employee: bool,
 }
 
 /// Active categories, ordered for display. Inactive ones stay in the table so
 /// historical expenses keep a resolvable label.
 pub fn list_categories(conn: &Db, active_only: bool) -> AppResult<Vec<ExpenseCategory>> {
     let mut stmt = conn.prepare(
-        "SELECT code, name_ar, is_system, is_active FROM expense_categories
+        "SELECT code, name_ar, is_system, is_active, requires_employee FROM expense_categories
          WHERE (?1 = 0 OR is_active = 1)
          ORDER BY is_active DESC, id",
     )?;
@@ -35,6 +42,7 @@ pub fn list_categories(conn: &Db, active_only: bool) -> AppResult<Vec<ExpenseCat
             name_ar: r.get(1)?,
             is_system: r.get::<_, i64>(2)? != 0,
             is_active: r.get::<_, i64>(3)? != 0,
+            requires_employee: r.get::<_, i64>(4)? != 0,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -42,9 +50,10 @@ pub fn list_categories(conn: &Db, active_only: bool) -> AppResult<Vec<ExpenseCat
 
 /// A category code is valid when it exists and is active. This is the single
 /// gate the service uses, so a category can never be hardcoded in a caller.
+///
+/// A MISSING or inactive category reads as `None` — not as a database failure —
+/// so the caller turns it into a validation error.
 pub fn category_is_active(conn: &Db, code: &str) -> AppResult<bool> {
-    // A missing category is simply "not a valid category", not a database
-    // failure: the caller turns this into a validation error.
     Ok(conn
         .query_row(
             "SELECT is_active FROM expense_categories WHERE code = ?1",
@@ -53,6 +62,25 @@ pub fn category_is_active(conn: &Db, code: &str) -> AppResult<bool> {
         )
         .map(|active| active == 1)
         .unwrap_or(false))
+}
+
+/// Whether an ACTIVE category demands an employee, or `None` when the category is
+/// unknown or inactive.
+///
+/// This is the authoritative, database-driven form of the advance rule. The
+/// service calls it exactly once, inside the creation transaction, and decides
+/// from the RESULT rather than from any category code, so the same rule holds for
+/// a category added later.
+pub fn category_requires_employee(conn: &Db, code: &str) -> AppResult<Option<bool>> {
+    Ok(conn
+        .query_row(
+            "SELECT requires_employee FROM expense_categories
+             WHERE code = ?1 AND is_active = 1",
+            [code],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok()
+        .map(|flag| flag == 1))
 }
 
 /// The stored row behind a category, INCLUDING the system flag and the active
@@ -180,6 +208,10 @@ pub struct Expense {
     pub business_day_id: Option<i64>,
     pub shift_id: Option<i64>,
     pub paid_from_cash: bool,
+    /// The employee this spend is FOR, when its category requires one (an
+    /// advance). `None` for every ordinary expense — and for every expense that
+    /// predates employee-linked categories, which is not a gap but history.
+    pub employee_id: Option<i64>,
     pub user_name: Option<String>,
     pub user_role: Option<String>,
     pub created_at: String,
@@ -187,7 +219,7 @@ pub struct Expense {
 
 const EXPENSE_SELECT: &str = "SELECT e.id, e.category, c.name_ar, e.amount, e.description,
         e.expense_date, e.is_recurring, e.recurrence, e.business_day_id, e.shift_id,
-        e.paid_from_cash, u.name, u.role, e.created_at
+        e.paid_from_cash, e.employee_id, u.name, u.role, e.created_at
  FROM expenses e
  LEFT JOIN users u ON u.id = e.user_id
  LEFT JOIN expense_categories c ON c.code = e.category";
@@ -206,12 +238,18 @@ fn expense_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Expense> {
         business_day_id: r.get(8)?,
         shift_id: r.get(9)?,
         paid_from_cash: r.get::<_, i64>(10)? != 0,
-        user_name: r.get(11)?,
-        user_role: r.get(12)?,
-        created_at: r.get(13)?,
+        employee_id: r.get(11)?,
+        user_name: r.get(12)?,
+        user_role: r.get(13)?,
+        created_at: r.get(14)?,
     })
 }
 
+/// Insert one expense row and return its id.
+///
+/// `employee_id` is the linkage for an employee-linked category (an advance) and
+/// is `None` for every other spend. The service decides it from the CATEGORY, so
+/// no caller can attach an employee to a spend that is not about an employee.
 #[allow(clippy::too_many_arguments)]
 pub fn insert(
     conn: &Db,
@@ -225,11 +263,12 @@ pub fn insert(
     shift_id: Option<i64>,
     paid_from_cash: bool,
     user_id: i64,
+    employee_id: Option<i64>,
 ) -> AppResult<i64> {
     conn.execute(
         "INSERT INTO expenses (category, amount, description, expense_date, is_recurring,
-            recurrence, business_day_id, shift_id, paid_from_cash, user_id)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            recurrence, business_day_id, shift_id, paid_from_cash, user_id, employee_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         params![
             category,
             amount,
@@ -240,7 +279,8 @@ pub fn insert(
             business_day_id,
             shift_id,
             paid_from_cash as i64,
-            user_id
+            user_id,
+            employee_id
         ],
     )?;
     Ok(conn.last_insert_rowid())

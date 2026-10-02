@@ -303,6 +303,7 @@ fn every_invoice_reaches_every_chart() {
         None,
         true,
         1,
+        None,
     )
     .unwrap();
 
@@ -427,6 +428,7 @@ fn sales_total_keeps_the_invoice_total_with_discount_and_service_charge() {
         None,
         true,
         1,
+        None,
     )
     .unwrap();
     // Expenses outside the period must not leak in.
@@ -442,6 +444,7 @@ fn sales_total_keeps_the_invoice_total_with_discount_and_service_charge() {
         None,
         true,
         1,
+        None,
     )
     .unwrap();
 

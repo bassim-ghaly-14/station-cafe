@@ -24,8 +24,14 @@ import { ToastProvider } from '@/components/ui'
 import ExpensesPage from './ExpensesPage'
 
 const CATEGORIES = [
-  { code: 'SUPPLIES', name_ar: 'مشتريات', is_system: true, is_active: true },
-  { code: 'SALARY', name_ar: 'رواتب', is_system: true, is_active: true },
+  {
+    code: 'SUPPLIES',
+    name_ar: 'مشتريات',
+    is_system: true,
+    is_active: true,
+    requires_employee: false,
+  },
+  { code: 'SALARY', name_ar: 'رواتب', is_system: true, is_active: true, requires_employee: false },
 ]
 
 const mocks = vi.hoisted(() => ({

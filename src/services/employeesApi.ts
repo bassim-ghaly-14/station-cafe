@@ -202,11 +202,49 @@ export interface PayrollRun {
   finalized_at: string | null
 }
 
+/** One deduction — money withheld from a payslip, never an expense. */
+export interface Deduction {
+  id: number
+  employee_id: number
+  /** Piasters. Always an integer — never a float. */
+  amount: number
+  /** `YYYY-MM-DD`, Africa/Cairo business date. */
+  deduction_date: string
+  reason: string | null
+  created_by: number
+  created_by_name: string
+  created_at: string
+}
+
+/**
+ * The salary block for the Employees page's date range, aggregated in SQL.
+ *
+ * The drawer renders these four figures verbatim. The frontend performs NO
+ * payroll arithmetic — not even `base - advances - deductions` — because the
+ * backend already decided the period, the month count and the net.
+ */
+export interface EmployeeFinancials {
+  /** The bounds actually applied. `null` on a bound means unbounded. */
+  from: string | null
+  to: string | null
+  /** How many calendar months the salary was counted for. Never prorated by days. */
+  months: number
+  base_salary: number
+  /** Live (non-reversed) advances inside the range. */
+  advances: number
+  deductions: number
+  net_salary: number
+}
+
 export interface EmployeeDetails {
   employee: Employee
   period_row: EmployeeRow | null
   attendance: AttendanceDay[]
+  /** Advances inside the SAME period as {@link financials}. */
   advances: Advance[]
+  /** Deductions inside the same period. */
+  deductions: Deduction[]
+  financials: EmployeeFinancials
   payroll: PayrollRun[]
 }
 
@@ -235,6 +273,13 @@ export interface AdvanceInput {
   amount: number
   advance_date?: string | null
   reason: string
+}
+
+/** What the deduction dialog sends. The employee comes from the open drawer. */
+export interface DeductionInput {
+  amount: number
+  deduction_date?: string | null
+  reason?: string | null
 }
 
 export interface PayrollPreview {
@@ -344,6 +389,13 @@ export const employeesApi = {
     call<number>('create_employee_advance', { employee_id: employeeId, input }),
   reverseAdvance: (advanceId: number) =>
     call<void>('reverse_employee_advance', { advance_id: advanceId }),
+
+  /**
+   * MANAGER+ — record a deduction. It reduces the salary figures in the drawer and
+   * creates NO expense, so the expense pages are untouched by this call.
+   */
+  createDeduction: (employeeId: number, input: DeductionInput) =>
+    call<number>('create_employee_deduction', { employee_id: employeeId, input }),
 
   payrollPreview: (employeeId: number, period: string) =>
     call<PayrollPreview>('payroll_preview', { employee_id: employeeId, period }),

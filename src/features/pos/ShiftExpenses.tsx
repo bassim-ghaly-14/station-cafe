@@ -5,6 +5,7 @@ import { Field, Input, Textarea } from '@/components/ui/input'
 import { Plus, Save } from '@/components/ui/icon'
 import { parseMajor } from '@/lib/utils'
 import { opsApi, type Expense, type ExpenseCategory } from '@/services/opsApi'
+import { ExpenseEmployeeField } from '@/features/expenses/ExpenseEmployeeField'
 import { useErrText } from '@/lib/err'
 
 /**
@@ -33,8 +34,20 @@ export function ShiftExpenseDialog({
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [paidFromCash, setPaidFromCash] = useState(true)
+  /**
+   * The employee an employee-linked category (the advance) is FOR.
+   *
+   * The same SHARED selector the manager's dialog mounts, and the same
+   * `create_expense` command underneath it. A cashier therefore produces exactly
+   * the domain records a manager does — the only difference between the two paths
+   * is the existing role permission, never a second set of business rules.
+   */
+  const [employeeId, setEmployeeId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Whether the CHOSEN category demands an employee, read from the category data.
+  const requiresEmployee = categories.find((c) => c.code === category)?.requires_employee ?? false
 
   useEffect(() => {
     if (!open) return
@@ -61,6 +74,12 @@ export function ShiftExpenseDialog({
       toast(t('errors.expenses.invalid_category'), 'error')
       return
     }
+    // Immediate feedback for an employee-linked category. The backend refuses the
+    // same case authoritatively, so this is never the boundary.
+    if (requiresEmployee && employeeId === null) {
+      setError(t('errors.expenses.employee_required'))
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -70,6 +89,8 @@ export function ShiftExpenseDialog({
         description: description.trim() || null,
         is_recurring: false,
         paid_from_cash: paidFromCash,
+        // Sent only for a category that asks for one; ignored otherwise.
+        employee_id: requiresEmployee ? employeeId : null,
       })
       toast(t('shift.expenseSaved'), 'success')
       setAmount('')
@@ -93,7 +114,12 @@ export function ShiftExpenseDialog({
             id="expense-category"
             data-dialog-autofocus
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value)
+              // Switching category may remove the employee requirement, so any
+              // earlier complaint about the missing selection no longer applies.
+              setError(null)
+            }}
             className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-base"
           >
             {categories.map((c) => (
@@ -103,6 +129,15 @@ export function ShiftExpenseDialog({
             ))}
           </select>
         </Field>
+
+        {/* The SHARED employee selector — the same component the manager's expense
+            dialog mounts, driven by the same category data. */}
+        <ExpenseEmployeeField
+          category={category}
+          categories={categories}
+          employeeId={employeeId}
+          onChange={setEmployeeId}
+        />
 
         <Field label={t('app.amount')} htmlFor="expense-amount">
           <Input

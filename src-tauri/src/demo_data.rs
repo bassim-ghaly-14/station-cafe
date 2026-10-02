@@ -1059,6 +1059,9 @@ fn seed_expenses(
             if paid_from_cash { Some(shift_id) } else { None },
             paid_from_cash,
             cashier.id,
+            // Demo spends are ordinary expenses; none of them is an employee
+            // advance, so none of them may claim an employee.
+            None,
         )?;
         conn.execute(
             "UPDATE expenses SET created_at = ?2 WHERE id = ?1",
@@ -1200,6 +1203,11 @@ fn record_attendance(
 
 /// A handful of advances, so the employee drawer and payroll show real
 /// deductions from money.
+///
+/// These are DIRECT ledger entries: `expense_id` is NULL, exactly like a
+/// historical advance, so the demo data does not retroactively invent expenses for
+/// advances that were never recorded as one. New advances recorded through the
+/// Expenses screen are linked, and the salary queries read both identically.
 fn seed_advances(conn: &Db, recorder: &User, employees: &[i64], rng: &mut Rng) -> AppResult<()> {
     const REASONS: &[&str] = &["سلفة شخصية", "سلفة علاج", "سلفة سفر"];
     for employee in employees.iter().take(3) {
@@ -1212,6 +1220,7 @@ fn seed_advances(conn: &Db, recorder: &User, employees: &[i64], rng: &mut Rng) -
                 &date,
                 *rng.pick(REASONS),
                 recorder.id,
+                None,
             )?;
         }
     }
@@ -1235,7 +1244,7 @@ fn seed_payroll(conn: &Db, recorder: &User, employees: &[i64], period: &str) -> 
         )?;
         let (days, absences, leaves, minutes) =
             employee_analytics::month_attendance(conn, *employee, &first, &last)?;
-        let advances = employee_analytics::advances_total(conn, *employee, &first, &last)?;
+        let advances = employee_analytics::advances_total_for_month(conn, *employee, &first, &last)?;
         // Station documents no attendance-based deduction, so the derived
         // deduction is zero — a manager figure only, exactly as the service.
         let net = base - advances;

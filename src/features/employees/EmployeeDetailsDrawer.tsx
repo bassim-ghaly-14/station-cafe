@@ -38,18 +38,22 @@ import {
   Skeleton,
 } from '@/components/ui'
 import { DisplayDate, DisplayTime } from '@/components/ui/display-datetime'
-import { Coffee, Droplets, ArrowLeft, CalendarClock } from '@/components/ui/icon'
+import { Coffee, Droplets, ArrowLeft, CalendarClock, Wallet } from '@/components/ui/icon'
 import { useErrText } from '@/lib/err'
+import { formatDate } from '@/lib/date'
 import type { EmployeeRole } from '@/lib/roles'
 import { roleHintKey, roleLabel, roleOf } from './employee-role'
 import { formatWorkedDuration } from './attendance'
 import { AttendanceOverrideDialog } from './AttendanceOverrideDialog'
+import { DeductionDialog } from './DeductionDialog'
 import { employeesApi } from '@/services/employeesApi'
 import type {
   Advance,
   AttendanceDay,
+  Deduction,
   Employee,
   EmployeeDetails,
+  EmployeeFinancials,
   EmployeePeriod,
   EmployeeRow,
   PayrollRun,
@@ -237,13 +241,17 @@ function PerformanceSection({
 function EmployeeRecord({
   details,
   canOverride,
+  canDeduct,
   loading,
   onOverride,
+  onAddDeduction,
 }: Readonly<{
   details: EmployeeDetails
   canOverride: boolean
+  canDeduct: boolean
   loading: boolean
   onOverride: (day: AttendanceDay) => void
+  onAddDeduction: () => void
 }>) {
   const { t } = useTranslation()
   const { employee } = details
@@ -255,13 +263,13 @@ function EmployeeRecord({
 
       <PeriodSummary row={row} />
 
-      <Section title={t('employees.drawer.salary')}>
-        <dl>
-          <LedgerRow label={t('employees.drawer.baseSalary')}>
-            <MoneyDisplay amount={employee.base_salary} variant="auto" />
-          </LedgerRow>
-        </dl>
-      </Section>
+      {/* The salary figures for the page's selected period, and the deduction
+          action that belongs with them. */}
+      <SalarySection
+        financials={details.financials}
+        canDeduct={canDeduct}
+        onAddDeduction={onAddDeduction}
+      />
 
       <Section title={t('employees.drawer.attendanceTimeline')}>
         <AttendanceTimeline
@@ -274,6 +282,10 @@ function EmployeeRecord({
 
       <Section title={t('employees.drawer.advances')}>
         <AdvanceList advances={details.advances} />
+      </Section>
+
+      <Section title={t('employees.drawer.deductions')}>
+        <DeductionList deductions={details.deductions} />
       </Section>
 
       <Section title={t('employees.drawer.payroll')}>
@@ -294,8 +306,10 @@ export function EmployeeDetailsDrawer({
   employeeName,
   period,
   canOverride,
+  canDeduct = false,
   onClose,
   onOverridden,
+  onDeducted,
 }: {
   readonly employeeId: number | null
   /** The name is only for the panel's accessible title before the load lands. */
@@ -310,9 +324,26 @@ export function EmployeeDetailsDrawer({
    * the service refuses a STAFF session regardless of what is rendered.
    */
   readonly canOverride: boolean
+  /**
+   * Whether this session may RECORD a deduction.
+   *
+   * Gated on the SESSION's role rather than inherited from the drawer, for the
+   * same reason the override is: recording money withheld is a management act with
+   * its own authority check in the service, so a MANAGER-only affordance is never
+   * rendered for someone the backend would refuse.
+   */
+  readonly canDeduct?: boolean
   readonly onClose: () => void
   /** Called after an override is accepted, so the page's own queries refresh. */
   readonly onOverridden: () => void
+  /**
+   * Called after a deduction is accepted.
+   *
+   * A deduction touches NO expense figure, so the page reloads the employee
+   * surfaces (the drawer's own figures, the roster and the KPI band) and never the
+   * expenses data.
+   */
+  readonly onDeducted?: () => void
 }) {
   const { t } = useTranslation()
   const errText = useErrText(t)
@@ -322,6 +353,9 @@ export function EmployeeDetailsDrawer({
   // The single day being corrected, or null when no override is open. Mounting
   // the dialog from this value is what keeps its draft pinned to ONE day.
   const [overriding, setOverriding] = useState<AttendanceDay | null>(null)
+  // The single open deduction form, or null. Kept as state so the draft is pinned
+  // to the employee whose drawer is on screen.
+  const [deducting, setDeducting] = useState(false)
 
   // `period` is memoized by the page (see EmployeesPage), so depending on the
   // object is the same trigger as depending on its two bounds, and it cannot
@@ -372,8 +406,10 @@ export function EmployeeDetailsDrawer({
           <EmployeeRecord
             details={details}
             canOverride={canOverride}
+            canDeduct={canDeduct}
             loading={loading}
             onOverride={setOverriding}
+            onAddDeduction={() => setDeducting(true)}
           />
         ) : null}
       </Drawer>
@@ -392,6 +428,21 @@ export function EmployeeDetailsDrawer({
           onSaved={() => {
             load()
             onOverridden()
+          }}
+        />
+      ) : null}
+      {/* Same sibling rule as the override: a dialog must not be nested inside the
+          panel, or Escape and the backdrop would close both surfaces at once. */}
+      {deducting && employee ? (
+        <DeductionDialog
+          employeeId={employee.id}
+          employeeName={employee.name}
+          onClose={() => setDeducting(false)}
+          onSaved={() => {
+            // Only the employee's own figures moved: the expenses pages are not
+            // reloaded, because a deduction is not an expense.
+            load()
+            onDeducted?.()
           }}
         />
       ) : null}
@@ -527,6 +578,118 @@ function AdvanceList({ advances }: Readonly<{ readonly advances: readonly Advanc
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * The deduction history.
+ *
+ * A deduction is money withheld from a payslip, so it carries NO expense
+ * consequence at all: the reason is shown next to the figure so a manager can
+ * never confuse this ledger with the expense list, and the section says so.
+ */
+function DeductionList({ deductions }: Readonly<{ readonly deductions: readonly Deduction[] }>) {
+  const { t } = useTranslation()
+  if (deductions.length === 0) {
+    return (
+      <p className="text-caption text-foreground-subtle">{t('employees.drawer.noDeductions')}</p>
+    )
+  }
+  return (
+    <ul className="flex flex-col">
+      {deductions.map((item) => (
+        <li
+          key={item.id}
+          className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle py-2 last:border-0"
+        >
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-body">
+              {item.reason ?? t('employees.deduction.noReason')}
+            </span>
+            <span className="text-caption text-foreground-subtle">
+              <DisplayDate value={item.deduction_date} />
+              {' · '}
+              {t('employees.drawer.recordedBy', { name: item.created_by_name })}
+            </span>
+          </div>
+          <MoneyDisplay amount={item.amount} variant="auto" />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The salary block for the SELECTED PERIOD.
+ *
+ * Everything here arrives aggregated from `details.financials`: the four figures
+ * are rendered verbatim, with no arithmetic in the browser. That is the whole point
+ * of the block — the backend owns the period, the month count and the net formula,
+ * so the drawer cannot disagree with a payslip or with the expenses page.
+ *
+ * The period is stated in two places on purpose. The heading says these numbers
+ * follow the page filter, and the line under it prints the ACTUAL range that was
+ * applied. A manager who changes the date filter above the page must be able to see
+ * why these four numbers moved, without guessing.
+ */
+function SalarySection({
+  financials,
+  canDeduct,
+  onAddDeduction,
+}: Readonly<{
+  financials: EmployeeFinancials
+  canDeduct: boolean
+  onAddDeduction: () => void
+}>) {
+  const { t } = useTranslation()
+  const bounded = financials.from !== null || financials.to !== null
+  return (
+    <section className="mt-5 border-t border-border-subtle pt-4">
+      <h3 className="text-caption font-bold text-foreground-muted">
+        {t('employees.drawer.salaryPeriod')}
+      </h3>
+      <p className="mt-0.5 text-caption text-foreground-subtle">
+        {t('employees.drawer.salaryPeriodHint')}
+      </p>
+      <p className="mt-1 text-body text-foreground-muted">
+        {bounded
+          ? t('employees.drawer.salaryRange', {
+              from: formatDate(financials.from ?? ''),
+              to: formatDate(financials.to ?? ''),
+            })
+          : t('employees.drawer.salaryAllPeriods')}
+      </p>
+      <p className="mt-0.5 text-caption text-foreground-subtle">
+        {t('employees.drawer.salaryMonths', { count: financials.months })}
+      </p>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <StatBlock label={t('employees.drawer.baseSalary')}>
+          <MoneyDisplay amount={financials.base_salary} variant="auto" />
+        </StatBlock>
+        <StatBlock label={t('employees.drawer.totalAdvances')}>
+          <MoneyDisplay amount={financials.advances} variant="auto" />
+        </StatBlock>
+        <StatBlock label={t('employees.drawer.totalDeductions')}>
+          <MoneyDisplay amount={financials.deductions} variant="auto" />
+        </StatBlock>
+        <StatBlock label={t('employees.drawer.netSalary')}>
+          <MoneyDisplay amount={financials.net_salary} variant="auto" />
+        </StatBlock>
+      </div>
+
+      {canDeduct ? (
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={onAddDeduction}>
+            <Wallet size={16} aria-hidden />
+            {t('employees.deduction.add')}
+          </Button>
+          <p className="mt-1 text-caption text-foreground-subtle">
+            {t('employees.deduction.hint')}
+          </p>
+        </div>
+      ) : null}
+    </section>
   )
 }
 

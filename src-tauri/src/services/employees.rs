@@ -39,6 +39,7 @@ use crate::repositories::Db;
 use crate::repositories::{pos as pos_repo, shifts};
 use crate::services::attendance::{self, AttendanceAction, AttendanceState};
 use crate::services::auth::{self, User};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 
 /// The two employee types, as the service spells them.
@@ -1194,6 +1195,16 @@ pub struct AdvanceInput {
 /// An advance is an immutable money transaction: it is INSERTED, never updated
 /// or deleted. A later mistake is corrected by [`reverse_advance`], the same
 /// reversal pattern Station already uses for financial documents.
+///
+/// # This is the DIRECT, ledger-only path
+///
+/// An advance is money the café spent, so the ordinary way to record one is now
+/// the EXPENSE workflow (`services::ops::create_expense`), which writes the
+/// expense and its linked advance in ONE transaction. This function remains for a
+/// direct ledger entry, and it is deliberately the only path that does NOT create
+/// an expense: it therefore writes `expense_id = NULL`, which the salary queries
+/// read exactly like a historical advance. It never fabricates an expense, so one
+/// advance can never end up claimed by two records.
 pub fn create_advance(
     conn: &Db,
     actor: &User,
@@ -1201,6 +1212,97 @@ pub fn create_advance(
     input: &AdvanceInput,
 ) -> AppResult<i64> {
     auth::require_role(actor, "MANAGER")?;
+    let (amount, advance_date, reason) = validate_advance(input)?;
+    let tx = conn.unchecked_transaction()?;
+    let id = insert_advance_in(
+        &tx,
+        actor,
+        employee_id,
+        amount,
+        &advance_date,
+        &reason,
+        None,
+    )?;
+    tx.commit()?;
+    Ok(id)
+}
+
+/// The one place an advance row is written, so validation, the employee check and
+/// the audit entry cannot differ between the two creation paths.
+///
+/// The caller owns the transaction, which is what lets the expense workflow put
+/// the expense and this row in the same atomic unit.
+fn insert_advance_in(
+    tx: &crate::repositories::Db,
+    actor: &User,
+    employee_id: i64,
+    amount: Money,
+    advance_date: &str,
+    reason: &str,
+    expense_id: Option<i64>,
+) -> AppResult<i64> {
+    // The employee must exist: a foreign key would refuse the row, but naming the
+    // person in the error is what tells a manager what to fix.
+    employees::require(tx, employee_id)?;
+    let id = employee_analytics::insert_advance(
+        tx,
+        employee_id,
+        amount,
+        advance_date,
+        reason,
+        actor.id,
+        expense_id,
+    )?;
+    crate::services::audit::record(
+        tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "advance.created",
+        "employee_advance",
+        Some(&id.to_string()),
+        None,
+        Some(&serde_json::json!({
+            "employee_id": employee_id,
+            "amount": amount,
+            "advance_date": advance_date,
+            "reason": reason,
+            "expense_id": expense_id,
+        })),
+    )?;
+    Ok(id)
+}
+
+/// The public seam the EXPENSE workflow uses to write the advance half of an
+/// advance-expense, inside the transaction it already owns.
+///
+/// It is the same [`insert_advance_in`] the direct path calls, exposed because an
+/// advance created from an expense MUST be atomic with that expense: SQLite has
+/// no nested transaction, so the higher-level flow opens one transaction and both
+/// writes join it. A partial write is therefore impossible — if this fails, the
+/// expense is rolled back with it.
+pub fn link_advance_to_expense(
+    tx: &Db,
+    actor: &User,
+    employee_id: i64,
+    input: &AdvanceInput,
+    expense_id: i64,
+) -> AppResult<i64> {
+    let (amount, advance_date, reason) = validate_advance(input)?;
+    insert_advance_in(
+        tx,
+        actor,
+        employee_id,
+        amount,
+        &advance_date,
+        &reason,
+        Some(expense_id),
+    )
+}
+
+/// Validate an advance's own fields, returning the resolved amount, date and
+/// reason. Shared by the direct path and by the expense workflow, so an advance
+/// can never be valid on one screen and invalid on the other.
+fn validate_advance(input: &AdvanceInput) -> AppResult<(Money, String, String)> {
     if input.amount <= 0 {
         return Err(AppError::validation("advance.invalid_amount"));
     }
@@ -1214,34 +1316,7 @@ pub fn create_advance(
         .map(str::to_string)
         .unwrap_or_else(crate::time::today_business_date);
     attendance::validate_business_date(&advance_date)?;
-
-    let tx = conn.unchecked_transaction()?;
-    employees::require(&tx, employee_id)?;
-    let id = employee_analytics::insert_advance(
-        &tx,
-        employee_id,
-        input.amount,
-        &advance_date,
-        reason,
-        actor.id,
-    )?;
-    crate::services::audit::record(
-        &tx,
-        Some(actor.id),
-        Some(&actor.role),
-        "advance.created",
-        "employee_advance",
-        Some(&id.to_string()),
-        None,
-        Some(&serde_json::json!({
-            "employee_id": employee_id,
-            "amount": input.amount,
-            "advance_date": advance_date,
-            "reason": reason,
-        })),
-    )?;
-    tx.commit()?;
-    Ok(id)
+    Ok((input.amount, advance_date, reason.to_string()))
 }
 
 /// Reverse an advance. MANAGER+.
@@ -1261,7 +1336,7 @@ pub fn reverse_advance(conn: &Db, actor: &User, advance_id: i64) -> AppResult<()
     // A FINALIZED payroll run has already published a net figure that included
     // this money; reversing it now would silently contradict a document that was
     // already produced.
-    if payroll_uses_advance(&tx, before.employee_id, &before.advance_date)? {
+    if payroll_month_is_finalized(&tx, before.employee_id, &before.advance_date)? {
         return Err(AppError::conflict("advance.used_by_finalized_payroll"));
     }
     let changed = employee_analytics::reverse_advance(&tx, advance_id, actor.id, advance_id)?;
@@ -1282,14 +1357,21 @@ pub fn reverse_advance(conn: &Db, actor: &User, advance_id: i64) -> AppResult<()
     Ok(())
 }
 
-/// Has a FINALIZED payroll run already covered the month this advance falls in?
+/// Has a FINALIZED payroll run already covered the month this business date
+/// falls in, for this employee?
 ///
 /// Deliberately conservative: any finalized run for that employee in that month
-/// blocks the reversal, because that run has already published a net figure.
-fn payroll_uses_advance(conn: &Db, employee_id: i64, advance_date: &str) -> AppResult<bool> {
-    // `advance_date` was validated as `YYYY-MM-DD` when it was written, so the
-    // period prefix is exactly its month.
-    let period = &advance_date[..7];
+/// blocks the operation, because that run has already published a net figure.
+///
+/// This is ONE helper for BOTH directions of the same invariant — reversing an
+/// advance and recording a deduction. They are the same fact seen from two sides:
+/// either one would move a month whose payslip is already frozen, and would
+/// silently contradict a document that was already produced. Keeping a single
+/// implementation is what stops the two from drifting apart again.
+fn payroll_month_is_finalized(conn: &Db, employee_id: i64, business_date: &str) -> AppResult<bool> {
+    // The date was validated as `YYYY-MM-DD` when it was written, so the period
+    // prefix is exactly its month.
+    let period = &business_date[..7];
     Ok(conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM payroll_runs
                        WHERE employee_id = ?1 AND period = ?2 AND status = 'FINALIZED')",
@@ -1349,6 +1431,181 @@ pub fn compute_net(base_salary: Money, advances: Money, deductions: Money) -> Mo
     (base_salary - advances - deductions).max(0)
 }
 
+// ---------------------------------------------------------------------------
+// DEDUCTIONS
+// ---------------------------------------------------------------------------
+
+/// What a manager records when money is withheld from an employee's pay.
+///
+/// The employee is NOT part of this input: the drawer already knows which person it
+/// opened, so re-selecting them would only create a way to record a deduction
+/// against the wrong person. The service still receives and validates the id.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeductionInput {
+    pub amount: Money,
+    /// `None` means today, the same default the advances and expenses use.
+    pub deduction_date: Option<String>,
+    /// Optional free text. Station documents no mandatory reason, so an empty one
+    /// is a valid record rather than a rejected form.
+    pub reason: Option<String>,
+}
+
+/// Record a deduction. MANAGER+.
+///
+/// A deduction is money withheld from a payslip, not money spent, so it creates NO
+/// expense and touches no expense aggregate. It is written to `employee_deductions`
+/// and read by the salary figures only.
+pub fn create_deduction(
+    conn: &Db,
+    actor: &User,
+    employee_id: i64,
+    input: &DeductionInput,
+) -> AppResult<i64> {
+    auth::require_role(actor, "MANAGER")?;
+    if input.amount <= 0 {
+        return Err(AppError::validation("deduction.invalid_amount"));
+    }
+    let date = clean(input.deduction_date.as_deref())
+        .map(str::to_string)
+        .unwrap_or_else(crate::time::today_business_date);
+    attendance::validate_business_date(&date)?;
+    let reason = clean(input.reason.as_deref());
+
+    let tx = conn.unchecked_transaction()?;
+    // A deduction against a person who does not exist is refused by name, not left
+    // to a foreign-key failure the manager cannot act on.
+    employees::require(&tx, employee_id)?;
+    // The SAME guard an advance reversal carries, for the SAME reason. A FINALIZED
+    // payroll run has already published a net figure for this month; a deduction
+    // dated inside it would move the drawer's salary for a month that was already
+    // paid, and — because a deduction is append-only and has no reversal of its
+    // own — nothing could ever put that month back. One invariant, one helper.
+    if payroll_month_is_finalized(&tx, employee_id, &date)? {
+        return Err(AppError::conflict("deduction.month_finalized"));
+    }
+    let id = employee_analytics::insert_deduction(
+        &tx,
+        employee_id,
+        input.amount,
+        &date,
+        reason,
+        actor.id,
+    )?;
+    crate::services::audit::record(
+        &tx,
+        Some(actor.id),
+        Some(&actor.role),
+        "deduction.created",
+        "employee_deduction",
+        Some(&id.to_string()),
+        None,
+        Some(&serde_json::json!({
+            "employee_id": employee_id,
+            "amount": input.amount,
+            "deduction_date": date,
+            "reason": reason,
+        })),
+    )?;
+    tx.commit()?;
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
+// SALARY FIGURES FOR A PERIOD
+// ---------------------------------------------------------------------------
+
+/// The salary block the Employee Drawer renders, for the Employees page's own
+/// date range.
+///
+/// Every number is produced by SQL inside the service; the UI performs no
+/// arithmetic. `months` is returned so the screen can explain the base salary
+/// instead of the reader having to guess why a number moved.
+#[derive(Debug, Clone, Serialize)]
+pub struct EmployeeFinancials {
+    /// The bounds the figures were filtered by. `None` on a bound means unbounded,
+    /// exactly as the rest of Station's period handling.
+    pub from: Option<String>,
+    pub to: Option<String>,
+    /// How many calendar months the salary was counted for.
+    pub months: i64,
+    /// `base_salary × months`. Never prorated by days: a monthly salary is a
+    /// monthly amount.
+    pub base_salary: Money,
+    /// Live (non-reversed) advances inside the window.
+    pub advances: Money,
+    /// Deductions inside the window.
+    pub deductions: Money,
+    /// The one shared net formula, applied to the period totals.
+    pub net_salary: Money,
+}
+
+/// The month a business date falls in, as a comparable count of months.
+///
+/// Parsed, never string-sliced, so a malformed day can never be filed under an
+/// invented month. An unparseable value maps to 0, which can only widen a window,
+/// never narrow it into a wrong figure.
+fn month_index(day: &str) -> i64 {
+    chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d")
+        .map(|d| d.year() as i64 * 12 + d.month0() as i64)
+        .unwrap_or(0)
+}
+
+/// How many calendar months a window touches, and why.
+///
+/// A bounded window is counted from its own first and last day. An unbounded one
+/// has no start to read, so the earliest eligible month is the employee's own
+/// creation month and the latest is the current business month — never "since the
+/// beginning of time", which would multiply a monthly salary by an invented span.
+///
+/// The result is at least 1: an employee who exists has, at minimum, the month
+/// they joined, and a zero-month base salary would be a worse lie than one month.
+fn months_in_window(employee: &Employee, from: Option<&str>, to: Option<&str>) -> i64 {
+    let created = crate::time::business_date_of(
+        crate::time::parse_timestamp(&employee.created_at).unwrap_or_else(crate::time::now_utc),
+    );
+    // The employee's own creation month is the floor: a window reaching further
+    // back than they existed still starts at the month they joined.
+    let requested_start = from.map_or_else(|| created.clone(), str::to_string);
+    let first_day = if requested_start < created {
+        created
+    } else {
+        requested_start
+    };
+    let requested_end = to.map_or_else(crate::time::today_business_date, str::to_string);
+    let last_day = if requested_end < first_day {
+        first_day.clone()
+    } else {
+        requested_end
+    };
+    (month_index(&last_day) - month_index(&first_day) + 1).max(1)
+}
+
+/// Build the drawer's salary block for the selected period.
+///
+/// Two indexed aggregate reads — no ledger rows are fetched to be summed in Rust —
+/// and the net figure comes from the SAME [`compute_net`] the monthly payroll
+/// snapshot uses, so a payslip and a drawer can never state different arithmetic.
+pub fn financials(
+    conn: &Db,
+    employee: &Employee,
+    period: &EmployeePeriod,
+) -> AppResult<EmployeeFinancials> {
+    let (from, to) = period.bounds();
+    let months = months_in_window(employee, from, to);
+    let advances = employee_analytics::advances_total(conn, employee.id, from, to)?;
+    let deductions = employee_analytics::deductions_total(conn, employee.id, from, to)?;
+    let base_salary = employee.base_salary.saturating_mul(months);
+    Ok(EmployeeFinancials {
+        from: from.map(str::to_string),
+        to: to.map(str::to_string),
+        months,
+        base_salary,
+        advances,
+        deductions,
+        net_salary: compute_net(base_salary, advances, deductions),
+    })
+}
+
 /// What a payroll run WOULD contain, before it is written.
 ///
 /// Exposed as its own read so the manager sees the exact figures — attendance
@@ -1386,7 +1643,7 @@ pub fn payroll_preview(
     let employee = employees::require(conn, employee_id)?;
     let (attendance_days, absence_days, leave_days, worked_minutes) =
         employee_analytics::month_attendance(conn, employee_id, &first, &last)?;
-    let advances = employee_analytics::advances_total(conn, employee_id, &first, &last)?;
+    let advances = employee_analytics::advances_total_for_month(conn, employee_id, &first, &last)?;
     let existing = employee_analytics::run_for(conn, employee_id, &period)?;
     Ok(PayrollPreview {
         employee_id,
@@ -1433,7 +1690,7 @@ pub fn create_payroll_run(
     }
     let (attendance_days, absence_days, leave_days, worked_minutes) =
         employee_analytics::month_attendance(&tx, employee_id, &first, &last)?;
-    let advances = employee_analytics::advances_total(&tx, employee_id, &first, &last)?;
+    let advances = employee_analytics::advances_total_for_month(&tx, employee_id, &first, &last)?;
     let net = compute_net(employee.base_salary, advances, deductions);
 
     let id = employee_analytics::insert_run(
@@ -1513,7 +1770,7 @@ pub fn finalize_payroll_run(conn: &Db, actor: &User, run_id: i64) -> AppResult<P
 ///
 /// A FIXED number of queries, never one per section: the identity and its period
 /// figures come from the same `list_rows` projection the table uses, and the
-/// timeline, the advances and the payroll runs are three more reads. The UI
+/// timeline, the two ledgers and the payroll runs are four more reads. The UI
 /// therefore performs no arithmetic and cannot disagree with the table.
 #[derive(Debug, Serialize)]
 pub struct EmployeeDetails {
@@ -1522,7 +1779,13 @@ pub struct EmployeeDetails {
     /// literally the ones the table showed.
     pub period_row: Option<EmployeeRow>,
     pub attendance: Vec<employee_analytics::AttendanceDay>,
+    /// Advances inside the SELECTED PERIOD — the same range the salary cards use.
     pub advances: Vec<Advance>,
+    /// Deductions inside the same period.
+    pub deductions: Vec<employee_analytics::Deduction>,
+    /// The period's salary figures, aggregated in SQL. The four cards render these
+    /// values as they arrive.
+    pub financials: EmployeeFinancials,
     pub payroll: Vec<PayrollRun>,
 }
 
@@ -1530,6 +1793,10 @@ pub struct EmployeeDetails {
 /// never pull an unbounded history into the UI; the totals are unaffected because
 /// they are aggregated in SQL, not counted from these rows.
 const TIMELINE_LIMIT: i64 = 400;
+
+/// How many ledger rows the drawer's advances/deductions lists read, per the
+/// same reasoning as [`TIMELINE_LIMIT`]: a bounded list, aggregated totals.
+const LEDGER_LIMIT: i64 = 200;
 
 pub fn details(
     conn: &Db,
@@ -1543,7 +1810,12 @@ pub fn details(
     let period_row = employee_analytics::list_rows(conn, &period.to_period(), true, true, "")?
         .into_iter()
         .find(|row| row.id == employee_id);
+    // The salary block is built from the SAME employee row and the SAME bounds the
+    // rest of the drawer uses, so a period filter change moves every figure at once.
+    let financials = financials(conn, &employee, period)?;
     Ok(EmployeeDetails {
+        advances: employee_analytics::advances_of(conn, employee_id, from, to, LEDGER_LIMIT)?,
+        deductions: employee_analytics::deductions_of(conn, employee_id, from, to, LEDGER_LIMIT)?,
         employee,
         period_row,
         attendance: employee_analytics::days_of_employee(
@@ -1553,8 +1825,8 @@ pub fn details(
             to,
             TIMELINE_LIMIT,
         )?,
-        advances: employee_analytics::advances_of(conn, employee_id, 200)?,
         payroll: employee_analytics::runs_of(conn, employee_id)?,
+        financials,
     })
 }
 

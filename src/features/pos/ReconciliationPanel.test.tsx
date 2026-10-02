@@ -37,8 +37,20 @@ const mocks = vi.hoisted(() => ({
   // Typed as a real array so the mock keeps accepting expense rows.
   shiftExpenses: vi.fn<() => Promise<Expense[]>>(async () => []),
   expenseCategories: vi.fn(async () => [
-    { code: 'UTILITY', name_ar: 'كهرباء ومياه', is_system: true, is_active: true },
-    { code: 'SUPPLIES', name_ar: 'مشتريات', is_system: true, is_active: true },
+    {
+      code: 'UTILITY',
+      name_ar: 'كهرباء ومياه',
+      is_system: true,
+      is_active: true,
+      requires_employee: false,
+    },
+    {
+      code: 'SUPPLIES',
+      name_ar: 'مشتريات',
+      is_system: true,
+      is_active: true,
+      requires_employee: false,
+    },
   ]),
   createExpense: vi.fn(async () => 1),
   printShift: vi.fn(),

@@ -20,7 +20,8 @@ fn fresh() -> Connection {
 }
 
 /// One expense row, written through the repository so the test exercises the
-/// real schema rather than a hand-rolled insert.
+/// real schema rather than a hand-rolled insert. No employee: these are ordinary
+/// spends, and only an employee-linked CATEGORY may claim one.
 fn spend(conn: &Connection, category: &str, amount: i64, date: &str, cash: bool, recurring: bool) {
     expenses::insert(
         conn,
@@ -34,6 +35,7 @@ fn spend(conn: &Connection, category: &str, amount: i64, date: &str, cash: bool,
         None,
         cash,
         1,
+        None,
     )
     .unwrap();
 }

@@ -207,6 +207,7 @@ export default function EmployeesPage() {
           // role rather than the payload's flag. The backend enforces the same
           // rule on every command regardless of what this decides.
           canOverride={canManage}
+          canDeduct={canManage}
           onClose={() => setDetailsId(null)}
           onOverridden={() => {
             // The roster's today-column, the KPI band and the manager's own
@@ -214,6 +215,12 @@ export default function EmployeesPage() {
             list.reload()
             overview.reload()
             mine.reload()
+          }}
+          onDeducted={() => {
+            // A deduction changes the employee's salary figures only. The expense
+            // pages are deliberately NOT reloaded: a deduction is not an expense.
+            list.reload()
+            overview.reload()
           }}
         />
       ) : null}

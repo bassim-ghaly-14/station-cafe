@@ -205,6 +205,18 @@ function detailsWith(over: Record<string, unknown> = {}) {
       },
     ],
     advances: [],
+    deductions: [],
+    // The salary block the drawer renders. Every figure arrives aggregated from
+    // the backend; the test copies a real payload rather than computing one.
+    financials: {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      months: 1,
+      base_salary: 100_000,
+      advances: 0,
+      deductions: 0,
+      net_salary: 100_000,
+    },
     payroll: [],
   }
 }

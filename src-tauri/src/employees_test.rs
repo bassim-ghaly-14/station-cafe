@@ -1402,7 +1402,7 @@ fn a_reversed_advance_keeps_its_row_and_leaves_the_totals() {
     assert!(stored.reversed_at.is_some());
     // And the money is out of the totals.
     assert_eq!(
-        employee_analytics::advances_total(&conn, id, "2026-09-01", "2026-09-30").unwrap(),
+        employee_analytics::advances_total(&conn, id, Some("2026-09-01"), Some("2026-09-30")).unwrap(),
         0
     );
     // A second reversal is refused.

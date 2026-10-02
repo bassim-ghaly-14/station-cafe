@@ -51,6 +51,7 @@ import { atLeast, useOptionalSession } from '@/features/auth/useSession'
 import { opsApi, type Expense, type ExpenseCategory, type ExpenseOverview } from '@/services/opsApi'
 import { ExpensesCategoryCard, ExpensesKpiBand } from './ExpensesKpiBand'
 import { ExpenseCategoriesDialog } from './ExpenseCategoriesDialog'
+import { ExpenseEmployeeField } from './ExpenseEmployeeField'
 import { ExpensesDailyChart } from './ExpensesDailyChart'
 import { useExpensesData } from './useExpensesData'
 
@@ -380,6 +381,16 @@ function CreateExpenseDialog({
 
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
+  /**
+   * The employee an employee-linked category (the advance) is FOR.
+   *
+   * The STABLE id — never a typed name — so the salary figures always resolve to
+   * a real person. It is sent only when the chosen category asks for one; the
+   * backend enforces that independently, so this is feedback, not the rule.
+   */
+  const [employeeId, setEmployeeId] = useState<number | null>(null)
+  /** The field-level error, shown next to the selector rather than as a toast. */
+  const [employeeError, setEmployeeError] = useState<string | null>(null)
 
   // A new expense owns ONE business date — the user's local today, not a UTC day.
   const [date, setDate] = useState<string>(todayIso)
@@ -389,11 +400,22 @@ function CreateExpenseDialog({
 
   const [busy, setBusy] = useState(false)
 
+  // Whether the CHOSEN category demands an employee — read from the category data,
+  // never from a hardcoded code.
+  const requiresEmployee = categories.find((c) => c.code === category)?.requires_employee ?? false
+
   async function save() {
     const minor = parseMajor(amount)
 
     if (minor === null || minor <= 0) {
       toast(t('errors.expenses.invalid_amount'), 'error')
+      return
+    }
+
+    // Checked before the request so an incomplete form never leaves the screen.
+    // The backend refuses the same thing authoritatively.
+    if (requiresEmployee && employeeId === null) {
+      setEmployeeError(t('errors.expenses.employee_required'))
       return
     }
 
@@ -407,6 +429,9 @@ function CreateExpenseDialog({
         expense_date: date || null,
         is_recurring: recurring,
         recurrence: recurring ? recurrence : null,
+        // Sent only for a category that asks for one; the backend ignores it
+        // otherwise, so a normal expense can never be employee-linked by accident.
+        employee_id: requiresEmployee ? employeeId : null,
       })
 
       onCreated()
@@ -428,7 +453,12 @@ function CreateExpenseDialog({
         <Field label={t('expenses.category')}>
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value)
+              // A category change invalidates any earlier employee complaint:
+              // the next category may not need an employee at all.
+              setEmployeeError(null)
+            }}
             className="h-10 w-full rounded-md border border-border-strong bg-surface-input px-3 text-base"
           >
             {categories.map((c) => (
@@ -438,6 +468,19 @@ function CreateExpenseDialog({
             ))}
           </select>
         </Field>
+
+        {/* The employee selector, mounted only for a category whose data says it
+            requires one. Same shared component the cashier's dialog uses. */}
+        <ExpenseEmployeeField
+          category={category}
+          categories={categories}
+          employeeId={employeeId}
+          onChange={(value) => {
+            setEmployeeId(value)
+            if (value !== null) setEmployeeError(null)
+          }}
+          invalid={employeeError}
+        />
 
         <Field label={t('app.amount')}>
           <Input

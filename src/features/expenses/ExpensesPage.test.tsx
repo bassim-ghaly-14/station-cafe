@@ -64,7 +64,13 @@ const mocks = vi.hoisted(() => ({
   expensesMonthly: vi.fn(),
   monthlySalesPeriod: vi.fn(),
   expenseCategories: vi.fn(async () => [
-    { code: 'SUPPLIES', name_ar: 'مشتريات', is_system: true, is_active: true },
+    {
+      code: 'SUPPLIES',
+      name_ar: 'مشتريات',
+      is_system: true,
+      is_active: true,
+      requires_employee: false,
+    },
   ]),
 }))
 
@@ -202,6 +208,9 @@ describe('CreateExpenseDialog single date', () => {
       expense_date: today,
       is_recurring: false,
       recurrence: null,
+      // An ordinary category carries no employee: the id is sent as null so the
+      // backend's "requires an employee" rule, not this form, decides the outcome.
+      employee_id: null,
     })
     const sent = expenseDateFromCall()
     expect(typeof sent).toBe('string')

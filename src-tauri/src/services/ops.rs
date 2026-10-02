@@ -102,6 +102,13 @@ pub struct NewExpense {
     /// reduce expected cash; the default is the cash case.
     #[serde(default = "default_true")]
     pub paid_from_cash: bool,
+    /// The employee this spend is FOR, required by any category whose
+    /// `requires_employee` flag is set and ignored by every other one.
+    ///
+    /// It is the STABLE id, never a name typed into a text box, so the employee
+    /// behind a salary figure can always be resolved.
+    #[serde(default)]
+    pub employee_id: Option<i64>,
 }
 
 fn default_true() -> bool {
@@ -288,23 +295,18 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
     if !expenses::category_is_active(&tx, &input.category)? {
         return Err(AppError::validation("expenses.invalid_category"));
     }
-    let day = crate::repositories::shifts::current_day(&tx)?;
-    let day_id = day.as_ref().map(|d| d.id);
-    // The shift this expense belongs to: the caller's own open shift.
-    let open_shift = crate::repositories::shifts::active_shift_for(&tx, actor.id)?;
-    if !is_manager && open_shift.is_none() {
-        return Err(AppError::business("expenses.no_open_shift"));
-    }
-    // The shift this expense belongs to: the caller's OWN open shift, and only
-    // that. A manager who is not the cashier cannot charge their spend to
-    // somebody else's till, so a manager without an open shift simply records a
-    // day-level expense that belongs to no drawer.
-    let shift_id = open_shift.as_ref().map(|s| s.id);
-    let date = input
-        .expense_date
-        .clone()
-        .filter(|d| !d.trim().is_empty())
-        .unwrap_or_else(crate::services::auth::sqlite_today);
+    // An employee-linked category (the advance) additionally demands WHO. The rule
+    // is read from the category row rather than recognised by its code, so Manager
+    // and Cashier obey exactly the same data-driven requirement and a future
+    // employee-linked category needs no change here.
+    let requires_employee =
+        expenses::category_requires_employee(&tx, &input.category)?.unwrap_or(false);
+    let employee_id = if requires_employee {
+        Some(require_employee(&tx, input.employee_id)?)
+    } else {
+        None
+    };
+    let date = resolve_expense_date(&tx, actor, input, is_manager)?;
     let recurrence = if input.is_recurring {
         input.recurrence.as_deref()
     } else {
@@ -315,14 +317,29 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
         &input.category,
         input.amount,
         input.description.as_deref(),
-        &date,
+        &date.expense_date,
         input.is_recurring,
         recurrence,
-        day_id,
-        shift_id,
+        date.business_day_id,
+        date.shift_id,
         input.paid_from_cash,
         actor.id,
+        employee_id,
     )?;
+    // The salary half of an advance, written in the SAME transaction as the expense
+    // above. SQLite has no nested transaction, so the caller owns the boundary and
+    // both rows commit or neither does: an advance can never exist without its
+    // expense, and an advance expense can never exist without its ledger row.
+    if let Some(employee_id) = employee_id {
+        let advance = crate::services::employees::AdvanceInput {
+            amount: input.amount,
+            advance_date: Some(date.expense_date.clone()),
+            // The expense description IS the advance's reason: one piece of free
+            // text, entered once, so the two records cannot disagree about it.
+            reason: advance_reason(input.description.as_deref()),
+        };
+        crate::services::employees::link_advance_to_expense(&tx, actor, employee_id, &advance, id)?;
+    }
     crate::services::audit::record(
         &tx,
         Some(actor.id),
@@ -332,13 +349,78 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
         Some(&id.to_string()),
         None,
         Some(&serde_json::json!({
-            "category": input.category, "amount": input.amount, "date": date,
-            "recurring": input.is_recurring, "shift_id": shift_id,
-            "paid_from_cash": input.paid_from_cash
+            "category": input.category, "amount": input.amount, "date": date.expense_date,
+            "recurring": input.is_recurring, "shift_id": date.shift_id,
+            "paid_from_cash": input.paid_from_cash, "employee_id": employee_id
         })),
     )?;
     tx.commit()?;
     Ok(id)
+}
+
+/// The advance's reason, falling back to the category's own Arabic label.
+///
+/// A manager is not forced to type a second sentence about the same payment, and
+/// the reason column is `NOT NULL`, so the label of the category they just chose is
+/// the honest default for "why was this paid".
+fn advance_reason(description: Option<&str>) -> String {
+    description
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| "سلفة موظف".to_string())
+}
+
+/// The employee an employee-linked expense names, or a validation error.
+///
+/// `None` is refused before the row is written, and an id that names nobody is
+/// refused by NAME — which is what tells the caller to fix the selection rather
+/// than to retry.
+fn require_employee(conn: &Db, employee_id: Option<i64>) -> AppResult<i64> {
+    let Some(id) = employee_id.filter(|id| *id > 0) else {
+        return Err(AppError::validation("expenses.employee_required"));
+    };
+    crate::repositories::employees::require(conn, id)?;
+    Ok(id)
+}
+
+/// The business date and the till an expense belongs to.
+struct ExpensePlacement {
+    expense_date: String,
+    shift_id: Option<i64>,
+    business_day_id: Option<i64>,
+}
+
+/// Resolve WHERE an expense lands: its business date, the day it belongs to, and
+/// the shift whose drawer it reduces.
+///
+/// A cash expense is always attached to the caller's OWN open shift, and a
+/// cashier with no open shift is refused, because an expense belonging to no shift
+/// could never appear in a drawer reconciliation. A manager without an open shift
+/// records a day-level expense belonging to no till instead. The date is validated
+/// here so a malformed day can never be stored.
+fn resolve_expense_date(
+    conn: &Db,
+    actor: &User,
+    input: &NewExpense,
+    is_manager: bool,
+) -> AppResult<ExpensePlacement> {
+    let day = crate::repositories::shifts::current_day(conn)?;
+    let open_shift = crate::repositories::shifts::active_shift_for(conn, actor.id)?;
+    if !is_manager && open_shift.is_none() {
+        return Err(AppError::business("expenses.no_open_shift"));
+    }
+    let date = input
+        .expense_date
+        .clone()
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(crate::services::auth::sqlite_today);
+    crate::services::attendance::validate_business_date(&date)?;
+    Ok(ExpensePlacement {
+        expense_date: date,
+        shift_id: open_shift.map(|s| s.id),
+        business_day_id: day.map(|d| d.id),
+    })
 }
 
 pub fn list_expenses(

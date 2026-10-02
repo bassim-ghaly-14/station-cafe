@@ -62,6 +62,7 @@ fn expense_input(category: &str, amount: i64) -> ops_svc::NewExpense {
         is_recurring: false,
         recurrence: None,
         paid_from_cash: true,
+        employee_id: None,
     }
 }
 
