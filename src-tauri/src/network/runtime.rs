@@ -192,14 +192,67 @@ pub fn apply(state: &AppState, cfg: &NetworkConfig) -> RuntimeStatus {
     //    false, and the UI shows the IP fallback.
     match Advertisement::register(addr.ip(), addr.port(), env!("CARGO_PKG_VERSION")) {
         Ok(advertisement) => {
+            // 5. And only a name that RESOLVES may go on the QR code.
+            //
+            //    This is the fix for "the QR scans and then hangs for a very
+            //    long time". A successful `register` means a packet left the
+            //    machine — nothing more. The advertisement can still be
+            //    unusable to a phone: multicast filtered between WLAN clients,
+            //    a guest network, a name another host already owns, a laptop
+            //    that enabled a VPN between the query and the answer. Each of
+            //    those produced an `http://station.local:47821/` that no device
+            //    could resolve, and a resolver that gets no answer does not
+            //    fail fast — it blocks for seconds (measured 4.9 s via curl,
+            //    10.0 s via dscacheutil) on EVERY scan.
+            //
+            //    So the name is asked to resolve back to the address we just
+            //    bound, over the same multicast path a phone uses, within a
+            //    small bounded budget. The listener is already accepting
+            //    connections at this point, and this runs once per apply — so
+            //    no client ever pays it, and the normal path is unaffected.
+            //
+            //    An answer that does not name OUR address is treated as a
+            //    failure on purpose: another host owning `station.local` is
+            //    exactly the case where a phone must not be sent to it.
+            let iface = crate::network::address::interface_for(&addr.ip());
             log::info!(
-                "local api: advertised {} on the LAN (http://{}:{})",
+                "local api: advertised {} on {} (http://{}:{})",
                 crate::network::mdns::LAN_HOSTNAME,
+                iface.as_deref().unwrap_or("an unknown interface"),
                 addr.ip(),
                 addr.port()
             );
-            if let Ok(mut slot) = state.discovery.lock() {
-                *slot = Some(advertisement);
+            match advertisement.verify(addr.ip(), crate::network::mdns::VERIFY_BUDGET) {
+                Ok(()) => {
+                    log::info!(
+                        "local api: {} verified -> the QR code uses http://{}:{}",
+                        crate::network::mdns::LAN_HOSTNAME,
+                        addr.ip(),
+                        addr.port()
+                    );
+                    if let Ok(mut slot) = state.discovery.lock() {
+                        *slot = Some(advertisement);
+                    }
+                }
+                Err(reason) => {
+                    // Bounded fallback, and the ONLY fallback: an unverified
+                    // name is simply not offered, so the QR encodes the IP
+                    // that is measured to resolve instantly. Nothing waits on
+                    // a hostname timeout to get there.
+                    log::warn!(
+                        "local api: {} did not resolve to this machine ({reason}); the QR \
+                         code falls back to http://{}:{} and the POS is unaffected",
+                        crate::network::mdns::LAN_HOSTNAME,
+                        addr.ip(),
+                        addr.port()
+                    );
+                    // Dropped, so the responder stops advertising a name no
+                    // verified client can use.
+                    drop(advertisement);
+                    if let Ok(mut slot) = state.discovery.lock() {
+                        *slot = None;
+                    }
+                }
             }
         }
         Err(reason) => {

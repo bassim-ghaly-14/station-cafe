@@ -79,8 +79,10 @@ pub struct AppState {
     /// The running local API listener, if the owner enabled it. `None` means no
     /// port is open. Dropping the app closes it.
     pub api: Mutex<Option<network::server::ServerHandle>>,
-    /// The mDNS advertisement, if discovery started. Purely optional: `None`
-    /// leaves the API fully usable by IP.
+    /// The mDNS advertisement, if discovery started AND the name verified
+    /// resolvable. Purely optional: `None` leaves the API fully usable by IP,
+    /// which is what the QR code then encodes. A name that could not be
+    /// resolved is deliberately NOT kept — see `network::runtime`.
     pub discovery: Mutex<Option<network::mdns::Advertisement>>,
     /// The running application handle, stored so the local HTTP listener can
     /// reach the two things it must serve without a second implementation:

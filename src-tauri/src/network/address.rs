@@ -224,6 +224,25 @@ mod tests {
     }
 }
 
+/// The name of the interface that carries `ip`, when this machine can say.
+///
+/// The HTTP listener binds an address, not an interface, but the mDNS
+/// responder has to be told WHICH interface to speak on — otherwise it joins
+/// multicast on every adapter it finds (loopback, Thunderbolt bridge, VPN
+/// tunnel, virtual switch), which is how a record ends up published on an
+/// interface a manager's phone has never heard of.
+///
+/// Returning the name rather than guessing lets [`crate::network::mdns`] pin
+/// the responder to the interface the socket was actually bound on, and lets
+/// the log name the interface an operator would see in `ifconfig`.
+pub fn interface_for(ip: &IpAddr) -> Option<String> {
+    local_ip_address::list_afinet_netifas()
+        .ok()?
+        .into_iter()
+        .find(|(_, candidate)| candidate == ip)
+        .map(|(name, _)| name)
+}
+
 /// Format a host for use in a URL.
 ///
 /// An IPv6 literal MUST be bracketed or the URL is malformed and points

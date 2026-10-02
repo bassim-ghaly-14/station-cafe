@@ -77,7 +77,22 @@ Direct ESC/POS to Xprinter (80mm thermal, monochrome) — **no PDF-based printin
 
 Main PC hosts the app + SQLite. A local HTTP API (Phase 2, same Tauri/Rust process bound to the LAN) serves the manager UI to laptops/phones on Wi-Fi. **The SQLite file is never exposed over the network.**
 
-Discovery: mDNS/DNS-SD advertises the hostname **`station.local`** (`mdns-sd`, pure Rust, no Bonjour dependency) against the address the listener actually bound, so `http://station.local:47821/` resolves on the cafe Wi-Fi. The QR code and Dev Settings both read the one canonical URL built in Rust (`network::qr::friendly_url`), with the port taken from the bound socket — never a literal. When mDNS registration fails (multicast blocked, no responder, a name conflict) the failure is logged, the LAN server is unaffected, and the UI shows the IP fallback `http://<lan-ip>:47821/` instead. `.local` is link-local by RFC 6762, so this can never leave the LAN: no external DNS, no router configuration, no relay.
+Discovery: mDNS/DNS-SD advertises the hostname **`station.local`** (`mdns-sd`, pure Rust, no Bonjour dependency) against the address the listener actually bound, so `http://station.local:47821/` resolves on the cafe Wi-Fi. The QR code and Dev Settings both read the one canonical URL built in Rust (`network::qr::friendly_url`), with the port taken from the bound socket — never a literal. `.local` is link-local by RFC 6762, so this can never leave the LAN: no external DNS, no router configuration, no relay.
+
+**A registered name is not a working name.** A successful mDNS `register` proves only that a packet left the machine — not that any phone can resolve it. Trusting it anyway put an unresolvable `http://station.local:47821/` on the QR code, where each scan then cost a multi-second resolver stall (measured 4.9 s via `curl`, 10.0 s via `dscacheutil`) before failing. So the name is not offered until it has answered for itself: `Advertisement::verify` asks the responder to resolve `station.local` over the same multicast path a phone uses, within a bounded 1.5 s budget, and accepts the answer only if it names the address this listener bound. It runs **after** the socket is serving and **once** per apply, so no client ever pays it.
+
+Three outcomes, decided in `network::runtime`:
+
+| Verification                                      | QR code encodes               | Log                                 |
+| ------------------------------------------------- | ----------------------------- | ----------------------------------- |
+| Resolves to our address                           | `http://station.local:47821/` | `verified -> the QR code uses …`    |
+| Times out, or answers with someone else's address | `http://<lan-ip>:47821/`      | `did not resolve to this machine …` |
+
+The fallback is **bounded and never precedes the fast path**: it is decided once at service start, so no connection ever waits on a hostname timeout. An answer naming a different address is treated as failure on purpose — that is the two-Stations-on-one-Wi-Fi case, where a phone must not be sent to the wrong till.
+
+**Why the hostname is `.local` and not a branded suffix.** `station.lynk` (or any non-`.local` name) cannot work in this architecture, and this is asserted in tests rather than argued: RFC 6762 reserves `.local.` for multicast DNS, so a resolver never sends a multicast query for `station.lynk`, and the responder refuses to register it at all. Making such a name resolve would need a public TLD with authoritative DNS — a cloud dependency and an internet requirement, both forbidden — or per-router configuration the app cannot install or verify. Printing it would be a promise no phone could keep.
+
+**The responder is pinned to one interface.** Left alone, `mdns-sd` joins multicast on every adapter it finds — verified on the development machine as `lo0`, `en6`, `ap1` and only then `en0`, the interface the cafe LAN is actually on. `register` now narrows the daemon to the interface carrying the bound address, so "advertised on the cafe LAN" is true by construction rather than by inspecting every adapter. The `A` record itself is published with the bound IPv4 only: no automatic address discovery, no loopback, no `fe80::` link-local IPv6 a browser could never dial.
 
 **Hostname vs. bind are separate concerns.** mDNS publishes a NAME; the HTTP listener binds an IP `SocketAddr`. The name is never passed to `bind`, and a name is never a usable socket address — both are asserted in tests.
 

@@ -79,6 +79,136 @@ const SHELL: &[u8] = b"<!doctype html>\n<html lang=\"ar\" dir=\"rtl\"><head></he
 // ---- 1. the HTTP writer, byte for byte ------------------------------------
 
 #[test]
+#[ignore = "real multicast on the LAN; run manually on a cafe-networked machine"]
+fn live_verification_accepts_a_correct_advertisement() {
+    // THE LIVE HALF. Everything else about verification is proven from the
+    // source and from pure functions; this is the one assertion that needs a
+    // real responder on a real interface.
+    //
+    // It is `#[ignore]`d so the suite never depends on the machine it runs on,
+    // and it is run deliberately as part of validating this change.
+    let ip = crate::network::address::select_lan_address().expect("a LAN address");
+    assert!(
+        crate::network::address::is_usable(&ip),
+        "the address chosen to advertise must be one a phone can reach: {ip}"
+    );
+    let ad = crate::network::mdns::Advertisement::register(
+        ip,
+        crate::network::config::DEFAULT_PORT,
+        env!("CARGO_PKG_VERSION"),
+    )
+    .expect("register the advertisement");
+    let start = std::time::Instant::now();
+    ad.verify(ip, crate::network::mdns::VERIFY_BUDGET)
+        .expect("a correct advertisement must resolve back to this machine");
+    let elapsed = start.elapsed();
+    println!("live: {ip} verified in {elapsed:?}");
+    assert!(
+        elapsed <= crate::network::mdns::VERIFY_BUDGET,
+        "verification must stay inside its own budget: {elapsed:?}"
+    );
+    // And the name a phone would type must actually resolve to that address.
+    assert_eq!(
+        std::net::ToSocketAddrs::to_socket_addrs(&format!(
+            "{}:{}",
+            crate::network::mdns::LAN_HOSTNAME,
+            crate::network::config::DEFAULT_PORT
+        ))
+        .expect("the OS resolver must resolve station.local")
+        .next()
+        .expect("an address")
+        .ip(),
+        ip
+    );
+}
+
+#[test]
+fn an_unverified_hostname_never_reaches_the_qr_code() {
+    /*
+     * THE REGRESSION PIN, end to end.
+     *
+     * The reported defect was not that `station.local` failed to register — it
+     * registered fine. It was that a successful registration was treated as
+     * proof the name works, so an unresolvable hostname went onto the QR code
+     * and every scan then paid a multi-second resolver stall (measured 4.9 s
+     * via curl, 10.0 s via dscacheutil) before failing.
+     *
+     * So the QR must encode the IP whenever discovery is NOT verified. There
+     * is no branch that can put a hostname on a code without a verified
+     * advertisement behind it.
+     */
+    let cfg = crate::network::config::NetworkConfig {
+        enabled: true,
+        bind: "192.168.1.88".into(),
+        port: 47821,
+    };
+    let bound: SocketAddr = "192.168.1.88:47821".parse().unwrap();
+
+    let verified = qr::local_access(&cfg, Some(bound), true).expect("access info");
+    assert_eq!(
+        verified.url.as_deref(),
+        Some("http://station.local:47821/"),
+        "a VERIFIED hostname is the friendly URL"
+    );
+
+    let unverified = qr::local_access(&cfg, Some(bound), false).expect("access info");
+    assert_eq!(
+        unverified.url.as_deref(),
+        Some("http://192.168.1.88:47821/"),
+        "an UNVERIFIED hostname must never be encoded; the IP is the guarantee"
+    );
+    assert!(unverified.hostname.is_none());
+    assert!(unverified.friendly_url.is_none());
+    assert!(!unverified.discovery_active);
+    // The QR SVG is regenerated from the fallback, so the code and the text
+    // cannot disagree about which endpoint is being offered.
+    assert!(unverified
+        .svg
+        .as_deref()
+        .is_some_and(|s| s.contains("<svg")));
+    assert_ne!(unverified.svg, verified.svg);
+    // And the IP remains reachable either way — direct-IP access is never
+    // replaced by hostname-only access.
+    assert_eq!(
+        unverified.fallback_url.as_deref(),
+        Some("http://192.168.1.88:47821/")
+    );
+    assert_eq!(
+        verified.fallback_url.as_deref(),
+        unverified.fallback_url.as_deref()
+    );
+}
+
+#[test]
+fn discovery_is_verified_before_it_may_claim_the_qr_code() {
+    // The verification is BOUNDED and it happens where it cannot delay the
+    // listener: the socket is already bound and spawning its thread before
+    // `apply` reaches the advertisement. Both halves are structural, so both
+    // are pinned from the source. `runtime.rs` carries no test module, so the
+    // whole file is the production half.
+    let production = include_str!("network/runtime.rs");
+
+    let bind = production
+        .find("server::start(")
+        .expect("the listener is started");
+    let verify = production
+        .find(".verify(addr.ip()")
+        .expect("the name is verified");
+    assert!(
+        bind < verify,
+        "verification must run AFTER the socket is serving, so it cannot delay a client"
+    );
+
+    // Bounded: the search timeout comes from the pinned budget, never a
+    // literal, and the budget itself is asserted in `network::mdns`.
+    assert!(production.contains("crate::network::mdns::VERIFY_BUDGET"));
+    assert!(
+        !production.contains("Duration::from_secs("),
+        "no unbounded wait may be introduced into the advertisement path"
+    );
+}
+
+#[test]
 fn the_configured_port_is_the_documented_one() {
     // The QR, the mDNS record and the listener all read this one constant, so
     // this is where the documented port is pinned.

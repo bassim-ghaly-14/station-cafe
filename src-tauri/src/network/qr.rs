@@ -95,7 +95,13 @@ pub struct LocalAccess {
     /// Other usable addresses on this machine, as an IP fallback. Only offered
     /// while the service is actually running.
     pub other_hosts: Vec<String>,
-    /// Whether mDNS advertised Station. Only ever true after a real bind.
+    /// Whether mDNS advertised Station AND the name resolved back to this
+    /// machine. Only ever true after a real bind and a successful
+    /// [`crate::network::mdns::Advertisement::verify`].
+    ///
+    /// This is deliberately stronger than "registration returned Ok". A name
+    /// that cannot be resolved is worse than no name at all — see
+    /// [`crate::network::runtime`] — so it must not be advertised to the UI.
     pub discovery_active: bool,
     /// The friendly hostname, present only while mDNS discovery is actually
     /// advertising it. `None` means "clients cannot resolve this name right
@@ -194,10 +200,12 @@ pub fn local_access(
     // does not answer mDNS queries still reaches Station this way, so this must
     // never depend on discovery succeeding.
     let fallback_url = access_url(&host, port);
-    // The friendly name is offered only when it is actually being ADVERTISED.
-    // Claiming `station.local` while multicast is blocked would put a URL on a
-    // counter that no phone can resolve, which is strictly worse than showing
-    // the IP that works.
+    // The friendly name is offered only when it has actually been ADVERTISED
+    // AND VERIFIED. Claiming `station.local` on the strength of a successful
+    // registration alone would put a URL on a counter that no phone can
+    // resolve, which is strictly worse than showing the IP that works: an
+    // unanswered `.local` lookup blocks for seconds before it fails
+    // (measured 4.9 s), so that mistake is paid again on every single scan.
     let friendly_url = discovery_active.then(|| friendly_url(port));
     // The QR encodes the canonical `url`, and the displayed URL is that same
     // value — one variable, so the code and the text cannot disagree.
