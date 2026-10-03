@@ -147,6 +147,9 @@ const REQUIRED_ARGS: &[(&str, &[&str])] = &[
     ("logout", &[]),
     ("me", &[]),
     ("change_password", &["target_id", "new_password"]),
+    // Unauthenticated, like `login`: the login screen must know who may sign in
+    // before anyone has. It carries no sensitive field (see the command's docs).
+    ("list_login_accounts", &[]),
     ("list_products", &["active_only"]),
     ("create_product", &["input"]),
     ("create_category", &["name"]),
@@ -329,6 +332,7 @@ fn dispatch(
             "logout" => out(crate::commands::auth::logout(state.clone(), token.to_owned())),
             "me" => out(crate::commands::auth::me(state.clone(), token.to_owned())),
             "change_password" => out(crate::commands::auth::change_password(state.clone(), token.to_owned(), req::<_>(body, "target_id")?, req::<_>(body, "new_password")?)),
+            "list_login_accounts" => out(crate::commands::auth::list_login_accounts(state.clone())),
             "list_products" => out(crate::commands::catalog::list_products(state.clone(), token.to_owned(), opt::<_>(body, "department")?, req::<_>(body, "active_only")?)),
             "create_product" => out(crate::commands::catalog::create_product(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
             "create_category" => out(crate::commands::catalog::create_category(state.clone(), token.to_owned(), req::<_>(body, "name")?)),

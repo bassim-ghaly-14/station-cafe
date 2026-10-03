@@ -406,13 +406,36 @@ fn command_response(
     }
 }
 
+/// The commands that may run before anyone has signed in.
+///
+/// Named as a constant so the exemption is stated once and can be asserted
+/// against the dispatch table, rather than being a list buried in a `matches!`
+/// that only the HTTP layer and a human ever read.
+pub const UNAUTHENTICATED_COMMANDS: &[&str] = &["login", "db_status", "list_login_accounts"];
+
 /// Whether this command needs a valid session before it may run.
 ///
-/// Only the two genuinely unauthenticated commands are exempt: `login`, which
-/// is how a session is obtained, and `db_status`, the readiness probe the boot
-/// screen runs before anyone has signed in. Everything else authenticates.
+/// The single place this is decided, derived from the one list above. Three
+/// commands are genuinely unauthenticated, and the reason each one is here is
+/// worth recording, because getting the list wrong is not a cosmetic bug — it
+/// decides whether a phone can reach the login screen AT ALL:
+///
+/// - `login`, which is how a session is obtained.
+/// - `db_status`, the readiness probe the boot screen runs before anyone has
+///   signed in.
+/// - `list_login_accounts`, which the login screen must call to know who may
+///   sign in. It is unauthenticated by construction (see `bridge.rs`): it
+///   carries only an id, a display name and a role, and it grants nothing.
+///
+/// That last one used to be refused here. The Tauri IPC layer never had this
+/// check — the command takes no token at all — so the desktop login screen
+/// worked perfectly while the very same screen, served to a phone over the LAN
+/// after a QR scan, received a 401 and rendered an error instead of the account
+/// picker. Same bundle, same command, same database: the divergence was purely
+/// this table, which is exactly the class of bug the two surfaces are supposed
+/// to make impossible.
 pub fn requires_session(name: &str) -> bool {
-    !matches!(name, "login" | "db_status")
+    !UNAUTHENTICATED_COMMANDS.contains(&name)
 }
 
 /// Answer a non-API request from the Station React application.
@@ -655,6 +678,78 @@ fn error_response(err: &ApiError) -> ResponseBox {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// THE REGRESSION PIN for the QR login bug.
+    ///
+    /// The account picker must be reachable with NO session, on the LAN exactly
+    /// as on the desktop. It used to be exempt nowhere, so a phone that had just
+    /// scanned the QR got a 401 before the command ran and saw an error page
+    /// where the account cards should have been.
+    ///
+    /// This asserts the property from both sides: the three genuinely public
+    /// commands are reachable without a token, and NOTHING ELSE is — the
+    /// exemption list cannot quietly grow into a way around authentication.
+    #[test]
+    fn only_the_public_commands_run_without_a_session() {
+        for name in ["login", "db_status", "list_login_accounts"] {
+            assert!(
+                !requires_session(name),
+                "{name} must be reachable before anyone has signed in"
+            );
+        }
+
+        // Every other real command authenticates. Sampled across the surface,
+        // and including the account-adjacent reads, because the failure mode
+        // being guarded against is a picker that shows nobody while the rest of
+        // the app keeps working.
+        for name in [
+            "me",
+            "logout",
+            "change_password",
+            "list_products",
+            "list_customers",
+            "sales_overview",
+            "local_access_qr",
+            "get_network_config",
+        ] {
+            assert!(requires_session(name), "{name} must require a session");
+        }
+    }
+
+    /// The exemption is only safe because it is ANCHORED to commands that carry
+    /// no privilege. If a name were exempted while its dispatch arm still took a
+    /// token, the two tables would disagree — the HTTP layer would let an
+    /// unauthenticated caller reach a command whose own signature demands a
+    /// session. Every public command must therefore take NO token at all.
+    #[test]
+    fn a_public_command_never_takes_a_token() {
+        let src = include_str!("bridge.rs");
+        for name in UNAUTHENTICATED_COMMANDS {
+            let arm = src
+                .lines()
+                .find(|l| l.trim_start().starts_with(&format!("\"{name}\" =>")))
+                .unwrap_or_else(|| panic!("{name} has no dispatch arm"));
+            assert!(
+                !arm.contains("token.to_owned()"),
+                "{name} is public, so its arm must not demand a session token: {arm}"
+            );
+        }
+    }
+
+    /// A typo in a public name is the dangerous direction: it would silently
+    /// re-authenticate the login screen, which is the exact defect this change
+    /// fixes. So each exempted name must be a real dispatch arm.
+    #[test]
+    fn every_exempted_command_really_exists() {
+        let src = include_str!("bridge.rs");
+        for name in UNAUTHENTICATED_COMMANDS {
+            assert!(
+                src.lines()
+                    .any(|l| l.trim_start().starts_with(&format!("\"{name}\" =>"))),
+                "{name} is exempted from authentication but is not a command"
+            );
+        }
+    }
 
     #[test]
     fn only_a_bundle_shaped_key_may_reach_the_asset_resolver() {

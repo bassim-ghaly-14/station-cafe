@@ -38,6 +38,50 @@ fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
     })
 }
 
+/// One account the login screen is allowed to offer.
+///
+/// Deliberately three fields and no more: an id so the card is a stable React
+/// key, the display name, and the login role (which is what the avatar and the
+/// role badge are built from). There is no phone, no employee id, no salary and
+/// above all **no password or hash**: this is the one read in the whole
+/// application that happens BEFORE authentication, so it must be unusable for
+/// anything except choosing which PIN box to type into.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginAccount {
+    pub id: i64,
+    pub name: String,
+    pub role: String,
+}
+
+/// The accounts the login screen may offer, in a stable display order.
+///
+/// This is the roster filtered by the SAME two rules `login` itself enforces:
+/// the login must be ACTIVE, and the EMPLOYEE record behind it must be ACTIVE
+/// too. An INACTIVE employee therefore never appears, which is the whole point
+/// of the filter — offering a card that is guaranteed to fail would be worse
+/// than offering none.
+///
+/// It is a projection of the existing `users` ⨝ `employees` pair, not a second
+/// roster: the same rows `repositories::employees::list` reads, restricted to
+/// the login-holding ones.
+pub fn list_login_accounts(conn: &Db) -> AppResult<Vec<LoginAccount>> {
+    let mut stmt = conn.prepare(
+        "SELECT u.id, u.name, u.role
+         FROM users u
+         JOIN employees e ON e.user_id = u.id
+         WHERE u.status = 'ACTIVE' AND e.status = 'ACTIVE'
+         ORDER BY u.name",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(LoginAccount {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            role: row.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
 pub fn find_by_name(conn: &Db, name: &str) -> AppResult<Option<UserWithMeta>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, phone, role, status, created_at, updated_at, password_hash, is_seed

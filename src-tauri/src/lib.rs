@@ -204,6 +204,7 @@ pub fn run() {
             commands::auth::logout,
             commands::auth::me,
             commands::auth::change_password,
+            commands::auth::list_login_accounts,
             commands::catalog::list_products,
             commands::catalog::list_categories,
             commands::catalog::create_category,

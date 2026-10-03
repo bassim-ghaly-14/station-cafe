@@ -42,3 +42,20 @@ pub fn change_password(
         auth::change_password(conn, actor, target_id, &new_password)
     })
 }
+
+/// The account cards the login screen offers.
+///
+/// **Unauthenticated on purpose**, and the ONLY command here that is: it has to
+/// answer "who may sign in?" before anyone has signed in. It therefore returns
+/// nothing but an id, a display name and a role — see
+/// [`crate::repositories::users::LoginAccount`], which documents the projection.
+///
+/// Offering a card grants NOTHING. It is the same string a user would otherwise
+/// have typed into a username field, carried to the very same
+/// `auth::login`, which still verifies the Argon2 hash and still decides the
+/// session. Choosing someone else's card therefore gets an attacker no closer
+/// to a session than typing that person's name did.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_login_accounts(state: State<'_, AppState>) -> AppResult<Vec<users::LoginAccount>> {
+    with_conn(&state, |conn| users::list_login_accounts(conn))
+}
