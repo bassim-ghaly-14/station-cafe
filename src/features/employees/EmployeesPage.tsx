@@ -31,7 +31,9 @@ import type { EmployeeRow } from '@/services/employeesApi'
 import { EmployeeDetailsDrawer } from './EmployeeDetailsDrawer'
 import { EmployeeDialog, type EmployeeDialogMode } from './EmployeeDialog'
 import { EmployeeFilters } from './EmployeeFilters'
+import { EmployeeManagementSection } from './EmployeeManagementSection'
 import { EmployeeOverviewSection } from './EmployeeOverviewSection'
+import { partitionByManagement } from './employee-role'
 import { EmployeeRosterSection } from './EmployeeRosterSection'
 import { MyAttendanceCard } from './MyAttendanceCard'
 import { useEmployeeList, useEmployeeOverview, useMyAttendance } from './useEmployeeData'
@@ -68,10 +70,34 @@ export default function EmployeesPage() {
   const overview = useEmployeeOverview(range.from, range.to, canManage)
   const mine = useMyAttendance()
 
-  const employees = list.list?.employees ?? []
+  // The one list, memoized ONCE. `list.list?.employees ?? []` builds a NEW array
+  // on every render while the list is still loading, and a fresh array here
+  // would re-run the split below on every render and hand the table a new
+  // `employees` prop — losing row identity and defeating its memoization.
+  const employees = useMemo(() => list.list?.employees ?? [], [list.list])
   // The payload's own flag is the last word on what may be rendered.
   const managementVisible = list.list?.management_visible ?? false
   const searching = query.trim() !== ''
+
+  /**
+   * The ONE list, split into the two sections the page now has.
+   *
+   * The split is a PRESENTATION decision over data the backend already sent —
+   * no second query, no second roster, and no way for the two sections to
+   * disagree about who is in them. It happens BEFORE the roster is handed down,
+   * so `EmployeeRosterSection` can only ever receive STAFF and WASH_WORKER rows
+   * and cannot accidentally re-admit a manager.
+   *
+   * A cashier's list is not split: that payload carries no role information at
+   * all, and hiding a section a caller may not read would be a filter rather
+   * than a separation. They see the operational roster, which is the whole of
+   * what they are allowed.
+   */
+  const { management, staff } = useMemo(
+    () =>
+      managementVisible ? partitionByManagement(employees) : { management: [], staff: employees },
+    [employees, managementVisible],
+  )
 
   /**
    * Every state-changing action on this page funnels through ONE confirmation,
@@ -146,12 +172,28 @@ export default function EmployeesPage() {
         loading={overview.loading}
       />
 
+      {/* Management — ADMIN and MANAGER, separated from the operational roster.
+          Rendered only where the payload carries the role information to decide
+          it, so this can never be a section of invented membership. */}
+      {managementVisible ? (
+        <EmployeeManagementSection
+          employees={management}
+          canDelete={canDelete}
+          searching={searching}
+          onOpenDetails={openDetails}
+          onEdit={(employee) => setDialog({ kind: 'edit', employee })}
+          onRecord={pendingAction.record}
+          onToggleStatus={pendingAction.toggleStatus}
+          onDelete={pendingAction.deleteEmployee}
+        />
+      ) : null}
+
       <EmployeeRosterSection
         error={list.error}
         onRetry={list.reload}
         initialLoading={list.initialLoading}
         refreshing={list.refreshing}
-        employees={employees}
+        employees={staff}
         managementVisible={managementVisible}
         canDelete={canDelete}
         canCreate={canManage}

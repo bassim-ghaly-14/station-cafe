@@ -49,3 +49,32 @@ export function roleHintKey(role: EmployeeRole): string {
 export function roleOfRow(row: EmployeeRow): EmployeeRole {
   return roleOf(row)
 }
+
+/**
+ * Does this role belong in the MANAGEMENT section?
+ *
+ * ADMIN and MANAGER do; STAFF and WASH_WORKER do not. This is the one place
+ * that answers it, so the page's two sections and any count derived from them
+ * cannot disagree about who is who.
+ *
+ * It is deliberately derived from the PRESENTED role (the linked login's real
+ * role) rather than from `employee_type`. Every login in Station is a `CASHIER`
+ * employee, so a type-based test would file the owner and the manager under
+ * staff — exactly the mistake the separate section exists to fix.
+ */
+export function isManagementRole(role: EmployeeRole): boolean {
+  return role === 'ADMIN' || role === 'MANAGER'
+}
+
+/** The two employee sections, split from ONE list. */
+export function partitionByManagement<T extends RoleBearing>(
+  employees: readonly T[],
+): { management: T[]; staff: T[] } {
+  const management: T[] = []
+  const staff: T[] = []
+  for (const employee of employees) {
+    if (isManagementRole(roleOf(employee))) management.push(employee)
+    else staff.push(employee)
+  }
+  return { management, staff }
+}

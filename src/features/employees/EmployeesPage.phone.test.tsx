@@ -96,7 +96,12 @@ function employee(over: Record<string, unknown> = {}) {
     phone: '01001234567',
     employee_type: 'CASHIER',
     status: 'ACTIVE',
-    login_role: 'MANAGER',
+    // A STAFF login, deliberately. This file is about the operational ROSTER —
+    // the record list on a phone and the table on a wide screen — and a MANAGER
+    // or ADMIN is no longer part of that: those people are presented in their own
+    // management section above. A manager-role fixture would simply leave the
+    // roster empty and quietly stop testing the thing under test.
+    login_role: 'STAFF',
     base_salary: 300_000,
     notes: null,
     created_at: '2026-08-01 09:00:00Z',

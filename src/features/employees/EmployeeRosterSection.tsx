@@ -62,55 +62,99 @@ export function EmployeeRosterSection({
 }) {
   const { t } = useTranslation()
 
+  // The heading and its count wrap EVERY state below, including failure and
+  // loading, so the section is identified even when it has no rows to show. A
+  // heading that vanishes with its rows is a heading a screen reader loses.
+  const heading = (
+    <div className="flex items-baseline justify-between gap-3">
+      <h2 id="employee-staff-title" className="text-base font-bold text-foreground-strong">
+        {t('employees.staffSection')}
+      </h2>
+      {/* The count is the STAFF count only — management lives in its own section
+          above, so the two can never quote the same number for different sets. */}
+      <p className="text-caption tabular-nums text-foreground-subtle" aria-live="polite">
+        {t('employees.states.count', { count: employees.length })}
+      </p>
+    </div>
+  )
+
   if (error) {
-    return <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+    return (
+      <section aria-labelledby="employee-staff-title" className="flex flex-col gap-2">
+        {heading}
+        <ErrorState message={error} onRetry={onRetry} retryLabel={t('app.retry')} />
+      </section>
+    )
   }
 
   if (initialLoading) {
-    return <TableSkeleton rows={6} columns={managementVisible ? 8 : 6} />
+    return (
+      <section
+        aria-labelledby="employee-staff-title"
+        data-testid="employee-staff-section"
+        className="flex flex-col gap-2"
+      >
+        {heading}
+        <TableSkeleton rows={6} columns={managementVisible ? 8 : 6} />
+      </section>
+    )
   }
 
   if (employees.length === 0) {
     return (
-      <EmptyState
-        title={searching ? t('employees.states.noResults') : t('employees.states.noData')}
-        action={
-          searching ? (
-            <Button variant="outline" onClick={onResetFilters}>
-              {t('employees.filters.reset')}
-            </Button>
-          ) : canCreate ? (
-            <Button onClick={onCreate}>
-              <UserPlus size={18} aria-hidden />
-              {t('employees.form.createTitle')}
-            </Button>
-          ) : null
-        }
-      />
+      <section
+        aria-labelledby="employee-staff-title"
+        data-testid="employee-staff-section"
+        className="flex flex-col gap-2"
+      >
+        {heading}
+        <EmptyState
+          title={searching ? t('employees.states.noResults') : t('employees.states.noData')}
+          action={
+            searching ? (
+              <Button variant="outline" onClick={onResetFilters}>
+                {t('employees.filters.reset')}
+              </Button>
+            ) : canCreate ? (
+              <Button onClick={onCreate}>
+                <UserPlus size={18} aria-hidden />
+                {t('employees.form.createTitle')}
+              </Button>
+            ) : null
+          }
+        />
+      </section>
     )
   }
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
-        <p className="text-caption tabular-nums" aria-live="polite">
-          {t('employees.states.count', { count: employees.length })}
-        </p>
-        {/* A refresh keeps the rows on screen and marks the list busy, so
-            typing in the search field never blanks the page. */}
-        {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
-      </div>
-      <EmployeeTable
-        employees={employees}
-        managementVisible={managementVisible}
-        canDelete={canDelete}
-        onOpenDetails={onOpenDetails}
-        onEdit={onEdit}
-        onRecord={onRecord}
-        onToggleStatus={onToggleStatus}
-        onDelete={onDelete}
-        busy={refreshing}
-      />
-    </Card>
+    <section
+      aria-labelledby="employee-staff-title"
+      data-testid="employee-staff-section"
+      className="flex flex-col gap-2"
+    >
+      {heading}
+
+      <Card className="overflow-hidden p-0">
+        {/* A refresh keeps the rows on screen and marks the list busy, so typing
+            in the search field never blanks the page. */}
+        {refreshing ? (
+          <div className="flex items-center justify-end gap-3 border-b border-border-subtle px-3 py-2">
+            <ProgressBar label={t('app.loading')} className="w-24" />
+          </div>
+        ) : null}
+        <EmployeeTable
+          employees={employees}
+          managementVisible={managementVisible}
+          canDelete={canDelete}
+          onOpenDetails={onOpenDetails}
+          onEdit={onEdit}
+          onRecord={onRecord}
+          onToggleStatus={onToggleStatus}
+          onDelete={onDelete}
+          busy={refreshing}
+        />
+      </Card>
+    </section>
   )
 }
