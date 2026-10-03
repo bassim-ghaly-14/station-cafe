@@ -19,7 +19,7 @@ const KEYS = [
   'errors.employee.invalid_salary',
   'errors.employee.name_required',
   'errors.employee.invalid_type',
-  'errors.user.password_too_short',
+  'errors.user.password_invalid',
   'errors.attendance.already_checked_in',
   'errors.attendance.already_present',
   'errors.attendance.check_out_before_in',
