@@ -819,8 +819,13 @@ fn the_daily_series_is_cumulative_and_uses_the_effective_target() {
     let conn = fresh();
     let month = business_month();
     // Today and the days before it, so the fixture never reaches past the
-    // month the read stops at. Ascending, so the running sum is predictable.
-    let dates: [String; 3] = match recent_business_days(3).try_into() {
+    // month the read stops at. `recent_business_days` walks BACK from today, so
+    // it hands them over newest first; the series reads forward through the
+    // month, so they are ordered oldest first here and the running sum is
+    // predictable.
+    let mut ordered = recent_business_days(3);
+    ordered.sort();
+    let dates: [String; 3] = match ordered.try_into() {
         Ok(three) => three,
         Err(_) => {
             // The first of the month leaves only one day to report; the series is

@@ -334,9 +334,12 @@ mod tests {
         // The month ROLLS exactly on the Cairo-local first of the month.
         assert_eq!(business_month_of(utc(2026, 9, 30, 21, 30, 0)), "2026-10");
         assert_eq!(business_month_of(utc(2026, 9, 30, 20, 59, 59)), "2026-09");
-        // And a year boundary is carried, not dropped.
+        // And a year boundary is carried, not dropped. December is EET (+02:00),
+        // not the summer +03:00 the September cases above roll at, so the Cairo
+        // year turns at 22:00 UTC — one hour later than it does in September.
         assert_eq!(business_month_of(utc(2027, 1, 1, 0, 0, 0)), "2027-01");
-        assert_eq!(business_month_of(utc(2026, 12, 31, 22, 0, 0)), "2026-12");
+        assert_eq!(business_month_of(utc(2026, 12, 31, 21, 30, 0)), "2026-12");
+        assert_eq!(business_month_of(utc(2026, 12, 31, 22, 0, 0)), "2027-01");
     }
 
     #[test]
