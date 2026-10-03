@@ -1,12 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { vi } from 'vitest'
 import { Check } from './icon'
 import { Badge } from './badge'
 import { EmployeeAvatar } from './employee-avatar'
+import i18n from '@/lib/i18n'
 import { getRoleVisual } from '@/lib/roles'
 import { Loader } from './loader'
 import { Skeleton } from './skeleton'
-import { Switch, Field, Input } from './input'
+import { PasswordInput, PinInput, Switch, Field, Input } from './input'
 import { invoiceBadgeVariant, printJobBadgeVariant, tableBadgeVariant } from '@/lib/status-badge'
 
 describe('Badge', () => {
@@ -187,6 +188,159 @@ describe('semantic badge mappings', () => {
     ['OPEN', 'info'],
     ['OCCUPIED', 'success'],
   ])('maps table %s to %s', (status, expected) => expect(tableBadgeVariant(status)).toBe(expected))
+})
+
+describe('credential visibility (PasswordInput — the one implementation)', () => {
+  /** The toggle is a real control with a translated, state-aware name. */
+  function toggle(): HTMLButtonElement {
+    return screen.getByRole('button', { name: i18n.t('auth.showPassword') })
+  }
+
+  it('starts hidden and reveals, then re-masks, without touching the value', () => {
+    render(<PasswordInput aria-label="الرمز" defaultValue="2214" />)
+    const input = screen.getByLabelText('الرمز') as HTMLInputElement
+
+    // Default state is HIDDEN — the eye invites the user to look.
+    expect(input).toHaveAttribute('type', 'password')
+    expect(toggle()).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(toggle())
+    expect(input).toHaveAttribute('type', 'text')
+    // The name FLIPS with the state, so it always names the action available.
+    expect(screen.getByRole('button', { name: i18n.t('auth.hidePassword') })).toBeInTheDocument()
+    // The value is untouched: the toggle flips `type` and nothing else.
+    expect(input.value).toBe('2214')
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.hidePassword') }))
+    expect(input).toHaveAttribute('type', 'password')
+    expect(input.value).toBe('2214')
+  })
+
+  it('never submits the form it sits in', () => {
+    const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault())
+    render(
+      <form onSubmit={onSubmit}>
+        <PasswordInput aria-label="الرمز" defaultValue="2214" />
+      </form>,
+    )
+    // `type="button"`, not a submit button: revealing a credential must never
+    // post the surrounding form.
+    expect(toggle()).toHaveAttribute('type', 'button')
+    fireEvent.click(toggle())
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('renders NO toggle while the field is empty — nothing to reveal', () => {
+    render(<PasswordInput aria-label="الرمز" />)
+    const input = screen.getByLabelText('الرمز') as HTMLInputElement
+
+    expect(input.value).toBe('')
+    // The eye is not merely disabled: it is absent, because a live control that
+    // reveals nothing reads as a broken screen.
+    expect(
+      screen.queryByRole('button', { name: i18n.t('auth.showPassword') }),
+    ).not.toBeInTheDocument()
+    // And no space is reserved for a toggle that is not there.
+    expect(input.className).not.toContain('pe-11')
+  })
+
+  it('offers the toggle as soon as a value is typed, and takes it back on clear', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<PasswordInput aria-label="الرمز" onChange={onChange} />)
+    const input = screen.getByLabelText('الرمز') as HTMLInputElement
+
+    fireEvent.change(input, { target: { value: '2214' } })
+    expect(onChange).toHaveBeenCalled()
+    const button = screen.getByRole('button', { name: i18n.t('auth.showPassword') })
+    expect(input.className).toContain('pe-11')
+
+    fireEvent.click(button)
+    expect(input).toHaveAttribute('type', 'text')
+
+    fireEvent.change(input, { target: { value: '' } })
+    expect(screen.queryByRole('button', { name: /كلمة المرور/ })).not.toBeInTheDocument()
+    // Clearing re-masks: there is no plaintext left to leave visible.
+    expect(input).toHaveAttribute('type', 'password')
+    // The consumer's own handler is still called exactly as before.
+    expect(onChange).toHaveBeenCalledTimes(2)
+
+    rerender(<PasswordInput aria-label="الرمز" onChange={onChange} />)
+    expect(screen.queryByRole('button', { name: /كلمة المرور/ })).not.toBeInTheDocument()
+  })
+
+  it('is operable and named for assistive technology', () => {
+    render(<PasswordInput aria-label="الرمز" defaultValue="2214" />)
+    const button = toggle()
+    expect(button.tagName).toBe('BUTTON')
+    expect(button).toHaveAttribute('type', 'button')
+    expect(button).toHaveAccessibleName(i18n.t('auth.showPassword'))
+    expect(button).toHaveClass('focus-visible:outline-focus')
+  })
+
+  it('is disabled with its field, so a busy form cannot be revealed', () => {
+    render(<PasswordInput aria-label="الرمز" defaultValue="2214" disabled />)
+    expect(toggle()).toBeDisabled()
+  })
+})
+
+describe('PinInput', () => {
+  /** The PIN is the SAME control: numeric, masked, and revealing the same way. */
+  function renderPin(props: Partial<Parameters<typeof PinInput>[0]> = {}) {
+    const onValueChange = vi.fn()
+    const { rerender } = render(
+      <PinInput aria-label="الرمز" value="2214" onValueChange={onValueChange} {...props} />,
+    )
+    return {
+      input: screen.getByLabelText('الرمز') as HTMLInputElement,
+      onValueChange,
+      rerender: (next: Partial<Parameters<typeof PinInput>[0]>) =>
+        rerender(
+          <PinInput aria-label="الرمز" value="2214" onValueChange={onValueChange} {...next} />,
+        ),
+    }
+  }
+
+  it('reveals through the shared component, keeping the digits', () => {
+    const { input } = renderPin()
+    expect(input).toHaveAttribute('type', 'password')
+    expect(input.inputMode).toBe('numeric')
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    expect(input).toHaveAttribute('type', 'text')
+    expect(input.value).toBe('2214')
+    // The reveal changed no rule: still digits, still the same cap.
+    expect(input).toHaveAttribute('maxlength', '4')
+    expect(input).toHaveAttribute('inputmode', 'numeric')
+  })
+
+  it('resolves the toggle and the reserved padding against the SAME direction', () => {
+    // The defect this pins: `PinInput` forces `dir="ltr"` on the input so digits
+    // read left to right, but the app itself is `dir="rtl"`. CSS logical
+    // properties resolve per ELEMENT, so an `inset-inline-end` toggle in an RTL
+    // wrapper lands on the LEFT while the input's `padding-inline-end` reserve
+    // lands on the RIGHT. The eye then sat on top of the centred digits with
+    // nothing reserved for it. The wrapper must carry the input's own direction.
+    const { input } = renderPin({ length: 5, value: '2214' })
+    const wrapper = input.parentElement as HTMLElement
+    const toggle = screen.getByRole('button', { name: i18n.t('auth.showPassword') })
+
+    expect(input).toHaveAttribute('dir', 'ltr')
+    // One direction for both edges, so the reserve and the button coincide.
+    expect(wrapper).toHaveAttribute('dir', 'ltr')
+    expect(toggle.parentElement).toBe(wrapper)
+    expect(wrapper.className).toContain('relative')
+    // The toggle is still positioned logically, so it follows whatever that
+    // direction is — it is not pinned to a physical side.
+    expect(toggle.className).toContain('inset-e-2')
+    // And the reserve the digits must never slide under is still there.
+    expect(input.className).toContain('pe-14')
+  })
+
+  it('still refuses a letter, a symbol, or a sixth digit', () => {
+    const { input, onValueChange } = renderPin({ length: 5, value: '' })
+    fireEvent.change(input, { target: { value: '12a-34' } })
+    expect(onValueChange).toHaveBeenLastCalledWith('1234')
+  })
 })
 
 describe('Field', () => {

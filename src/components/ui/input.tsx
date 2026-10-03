@@ -83,37 +83,105 @@ export function Field({
 }
 
 /**
- * Password input with an accessible visibility toggle (eye / eye-off).
- * RTL-friendly: the toggle sits at the inline-end edge; layout is untouched.
+ * THE password/PIN visibility implementation — the single source of truth for
+ * whether a typed credential is masked. Every credential field in the app is
+ * this control: a plain text password, and `PinInput` (the numeric 4–5 digit
+ * variant the login screen, the employee dialog and the discount authorization
+ * dialogs use), which renders THIS component and therefore shares its toggle
+ * rather than re-implementing one.
+ *
+ * It is a pure UI abstraction: no credential rule, length rule or validation
+ * lives here. Toggling flips `type` between `password` and `text` and nothing
+ * else — the value, its length, its direction and its autocomplete are the
+ * caller's, untouched.
+ *
+ * The toggle is DERIVED from the value rather than always rendered: an empty
+ * field has nothing to reveal, so an eye sitting on it is a control that lies
+ * about what it can do. It appears the moment there is plaintext to show and
+ * goes again the moment the field is cleared. An EMPTY field therefore states
+ * what it is — nothing entered yet — which is what makes it safe to reuse for a
+ * stored credential the application cannot read back (see `EmployeeDialog`).
+ *
+ * RTL-friendly: the toggle sits at the inline-end edge (the LEFT side in the
+ * Arabic UI) via logical properties, so it follows the text direction.
  */
 import { useTranslation } from 'react-i18next'
+import { Button } from './button'
 import { Eye, EyeOff } from './icon'
 
 export function PasswordInput({
   className,
   id,
+  disabled,
+  dir,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
   const { t } = useTranslation()
-  const [visible, setVisible] = useState(false)
+  /*
+   * Whether there is anything to reveal.
+   *
+   * A controlled consumer (`PinInput` always is) states the value outright; an
+   * uncontrolled one is mirrored here from `defaultValue` and every change, so
+   * the derivation works for both without a new prop.
+   */
+  const [typed, setTyped] = useState(() => String(props.value ?? props.defaultValue ?? ''))
+  const value = props.value === undefined ? typed : String(props.value)
+  /*
+   * What is currently revealed, tracked as the VALUE it was revealed at rather
+   * than as a boolean. It is what makes "show/hide" honest about the one case a
+   * boolean gets wrong: any change to the field — typing, pasting, clearing —
+   * means the plaintext on screen is no longer the value the eye was opened
+   * for, so it re-masks instead of leaving a stale reveal behind.
+   */
+  const [revealed, setRevealed] = useState<string | null>(null)
+  const isRevealed = revealed !== null && revealed === value && value !== ''
+  const onChange = props.onChange
 
   return (
-    <div className="relative">
+    /*
+     * The wrapper carries the control's OWN `direction`, so the toggle and the
+     * reserved padding are always resolved against the SAME direction.
+     *
+     * `inset-inline-end` and `padding-inline-end` each resolve against the
+     * computed `direction` of the element they are declared on. When a consumer
+     * forces `dir="ltr"` on the input — which `PinInput` must, so digits read
+     * left to right — the input's `padding-inline-end` resolves to its RIGHT,
+     * while a toggle positioned in an RTL wrapper resolves to the wrapper's
+     * LEFT. The two land on opposite edges: the reserve stops protecting the
+     * space the eye actually occupies, and the centred digits slide underneath
+     * it. Mirroring `dir` onto the wrapper keeps both on one edge.
+     */
+    <div className="relative" dir={dir}>
       <input
         {...props}
         id={id}
-        type={visible ? 'text' : 'password'}
-        className={cn(base, 'h-10', 'pe-11', className)}
+        dir={dir}
+        disabled={disabled}
+        onChange={(event) => {
+          setTyped(event.target.value)
+          onChange?.(event)
+        }}
+        type={isRevealed ? 'text' : 'password'}
+        // The inline-end strip is reserved only while the toggle occupies it.
+        className={cn(base, 'h-10', value !== '' && 'pe-11', className)}
       />
-      <button
-        type="button"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? t('auth.hidePassword') : t('auth.showPassword')}
-        aria-pressed={visible}
-        className="absolute inset-y-0 inset-e-2 my-auto flex h-9 w-9 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-hover hover:text-foreground active:bg-surface-active"
-      >
-        {visible ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
-      </button>
+      {value !== '' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          // A disabled field has nothing to reveal, so the toggle goes with it.
+          disabled={disabled}
+          onClick={() => setRevealed(isRevealed ? null : value)}
+          aria-label={isRevealed ? t('auth.hidePassword') : t('auth.showPassword')}
+          aria-pressed={isRevealed}
+          // Positioned with LOGICAL properties, so in the Arabic RTL layout the
+          // toggle sits at the inline-end (left) edge and follows the direction.
+          className="absolute inset-y-0 inset-e-2 my-auto"
+        >
+          {isRevealed ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -230,34 +298,60 @@ export const DISCOUNT_PIN_LENGTH = 4
  * Only the characters the contract allows are accepted: non-digits are dropped
  * as they are typed, and the value is capped at four digits. The backend
  * re-validates the exact same rule — this is convenience, never security.
+ *
+ * `length` exists because the LOGIN PIN is the same kind of control with a
+ * different maximum (the credential policy allows four to five digits). One
+ * component with a length prop beats a second, near-identical PIN input that
+ * could drift from this one.
+ *
+ * The visibility toggle is NOT re-implemented here: this renders
+ * `PasswordInput`, so a PIN reveals exactly the way a password does, from the
+ * same state, with the same accessible name. Normalization, capping and paste
+ * handling stay exactly as they are — the toggle only flips the input's `type`.
  */
 export function PinInput({
   className,
   id,
   value,
   onValueChange,
+  length = DISCOUNT_PIN_LENGTH,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'onChange'> & {
   value: string
   onValueChange: (value: string) => void
+  /** Maximum accepted digits. Defaults to the discount PIN's fixed four. */
+  length?: number
 }) {
   return (
-    <input
+    <PasswordInput
       {...props}
       id={id}
-      type="password"
       inputMode="numeric"
       autoComplete="one-time-code"
       dir="ltr"
-      maxLength={DISCOUNT_PIN_LENGTH}
+      maxLength={length}
       value={value}
       onChange={(e) => {
-        const digits = e.target.value.replace(/\D+/g, '').slice(0, DISCOUNT_PIN_LENGTH)
+        const digits = e.target.value.replace(/\D+/g, '').slice(0, length)
         onValueChange(digits)
       }}
+      // A paste carries whatever the clipboard held, so the same normalization
+      // has to run on it. `maxLength` alone would let a pasted `1234-5678` in as
+      // a five-character string the backend must then reject, instead of the
+      // field quietly keeping the five digits it is allowed to hold.
+      onPaste={(e) => {
+        const pasted = e.clipboardData.getData('text')
+        if (pasted && pasted.replace(/\D+/g, '').length <= length) return
+        e.preventDefault()
+        onValueChange(pasted.replace(/\D+/g, '').slice(0, length))
+      }}
+      // The trailing `pe` reserves the inline-end strip the visibility toggle
+      // occupies, so the centred digits never slide underneath it. `h-12` and
+      // the mono tracking override `PasswordInput`'s default `h-10`.
       className={cn(
-        base,
         'h-12 text-center font-mono text-2xl tracking-[0.6em] ps-[0.6em]',
+        // Only while there is something for the toggle to reveal.
+        value.length > 0 && 'pe-14',
         className,
       )}
     />
