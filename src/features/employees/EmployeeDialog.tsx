@@ -37,15 +37,25 @@
  * separate, explicit workflow (the backend refuses it with
  * `employee.type_is_immutable`).
  *
- * # The password field SETS, never REVEALS
+ * # The credential field is the employee's OWN PIN, edited in place
  *
- * The credential field is a "new password" field: it is empty when the dialog
- * opens, masked by default, and an EMPTY value means "leave the password alone".
- * Station never has the current password — only an Argon2id hash — and the field
- * is therefore not a viewer. An ADMIN typing here is choosing the colleague's
- * next password, not reading the one they have; the label and hint say exactly
- * that. The value goes to `change_password`, which authorizes, validates, hashes
- * and persists on the Rust side, and returns nothing at all.
+ * It is presented as an editable property of the record, exactly like the name
+ * and the phone: one field, one label, and the manager either leaves it alone or
+ * types a replacement. It is NOT a "new password" prompt.
+ *
+ * The field still OPENS EMPTY, and that empty is meaningful rather than
+ * incidental: it is the whole encoding of "leave the credential alone". Station
+ * has no plaintext PIN to put in it — only an Argon2id hash — so the existing
+ * credential is represented by a masked placeholder (a bullet per slot), which
+ * states truthfully that a credential EXISTS without pretending to know its
+ * digits. The application can determine that a credential exists: it renders
+ * only for a record whose `user_id` is set, and every such row is a login that
+ * necessarily has a hash.
+ *
+ * This is Case B done properly. Nothing here is reversed, decrypted or fetched:
+ * no API returns a PIN or a hash to React, and typing a value goes to
+ * `change_password`, which authorizes, validates (4–5 digits, the SAME rule
+ * login uses), hashes and persists on the Rust side, returning nothing at all.
  *
  * Money is entered through the shared amount parsing, which yields integer
  * piasters exactly like every other amount in Station. No float ever reaches the
@@ -61,7 +71,7 @@ import {
   DialogActions,
   Field,
   Input,
-  PasswordInput,
+  PinInput,
   Select,
   Textarea,
   useToast,
@@ -69,7 +79,7 @@ import {
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { useErrText } from '@/lib/err'
 import { parseMajor } from '@/lib/utils'
-import { authApi } from '@/services/authApi'
+import { authApi, CREDENTIAL_MAX_DIGITS, isValidCredential } from '@/services/authApi'
 import { employeesApi } from '@/services/employeesApi'
 import type { EmployeeInput, EmployeeRow, EmployeeType, LoginRole } from '@/services/employeesApi'
 import { roleLabel, roleOf } from './employee-role'
@@ -77,12 +87,36 @@ import { roleLabel, roleOf } from './employee-role'
 export type EmployeeDialogMode = { kind: 'create' } | { kind: 'edit'; employee: EmployeeRow } | null
 
 /**
- * The client-side minimum password length, stated ONCE and used by both the
- * create and the change path so the two can never disagree about what this form
- * accepts. The backend's `auth::validate_password` is the real rule and is at
- * least as strict; this is immediate feedback, not a second policy.
+ * The masked representation of an EXISTING credential.
+ *
+ * Five bullets — the maximum PIN length — shown as the field's placeholder, so
+ * the empty field reads as "there is a credential here, it is simply not
+ * displayable" rather than "there is nothing here". It is deliberately NOT the
+ * real digits: the application cannot know them, and printing plausible-looking
+ * digits would be a lie the manager could act on. It is also not the stored
+ * length, which is unknowable for the same reason; the widest possible mask is
+ * the only claim that cannot be wrong.
  */
-const MIN_PASSWORD_LENGTH = 6
+const EXISTING_CREDENTIAL_MASK = '•••••'
+
+/**
+ * The client-side credential rule, stated ONCE and used by both the create and
+ * the change path so the two can never disagree about what this form accepts.
+ *
+ * It is the mirror of `services::auth::is_valid_password` in Rust — 4 to 5
+ * digits — reached through the shared helpers rather than restated here, so a
+ * change to the policy is a change in one place. The backend re-checks the very
+ * same rule before anything is written; this is immediate feedback, not a second
+ * policy, and a dialog that disagreed with the server would only produce a
+ * confusing error rather than a weaker application.
+ */
+function credentialError(value: string, t: TFunction): string | null {
+  // An EMPTY value is meaningful on edit ("leave the credential alone") and is
+  // the caller's decision to make, so it is never an error here — only a
+  // non-empty value that the policy would refuse is.
+  if (value === '' || isValidCredential(value)) return null
+  return t('errors.user.password_invalid')
+}
 
 /**
  * The role the form is collecting.
@@ -117,7 +151,7 @@ function validateEmployeeForm(
   fields: Readonly<{
     name: string
     password: string
-    newPassword: string
+    pin: string
     needsPassword: boolean
     canChangePassword: boolean
     t: TFunction
@@ -125,16 +159,20 @@ function validateEmployeeForm(
 ): Record<string, string> {
   const errors: Record<string, string> = {}
   if (fields.name.trim() === '') errors.name = fields.t('employees.form.nameRequired')
-  if (fields.needsPassword && fields.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = fields.t('errors.user.password_too_short')
+  // A new login REQUIRES a credential, so an empty one is an error here; a
+  // non-empty one must satisfy the shared 4–5 digit rule.
+  if (fields.needsPassword && fields.password === '') {
+    errors.password = fields.t('errors.user.password_invalid')
+  } else {
+    const invalid = credentialError(fields.password, fields.t)
+    if (invalid) errors.password = invalid
   }
-  if (
-    fields.canChangePassword &&
-    fields.newPassword !== '' &&
-    fields.newPassword.length < MIN_PASSWORD_LENGTH
-  ) {
-    errors.newPassword = fields.t('errors.user.password_too_short')
-  }
+  // The credential on EDIT is OPTIONAL in the only sense that matters: an EMPTY
+  // field means "keep the stored credential exactly as it is". That is the
+  // preservation guarantee, not a validation gap — the same 4–5 digit rule is
+  // applied to any value that IS typed, here and again in Rust.
+  const pinInvalid = credentialError(fields.pin, fields.t)
+  if (pinInvalid) errors.pin = pinInvalid
   return errors
 }
 
@@ -196,15 +234,21 @@ function buildEmployeeInput(
  * These are three deliberate backend commands in a fixed order, and none of them
  * rides along inside another:
  *  - the salary is a MONEY attribute with its own audited command;
- *  - a NEW password is a separate act through the auth command, not a field on
- *    the employee record. Leaving the field empty sends nothing at all, so an
- *    unrelated edit can never reset the credential.
+ *  - the credential is a separate act through the auth command, not a field on
+ *    the employee record.
+ *
+ * The last one is the guarantee this whole flow rests on: `change` is sent ONLY
+ * when the field actually holds a typed value. Leaving it empty sends NOTHING,
+ * so an unrelated edit can never reach `users.password_hash` at all — no
+ * re-hash of a hash, no empty overwrite, no silently generated PIN. Preserving
+ * the credential is achieved by not touching it, which is the only correct way
+ * to preserve a one-way hash.
  */
 async function persistEmployee(
   editing: EmployeeRow,
   input: EmployeeInput,
   baseSalary: number,
-  change: Readonly<{ canChangePassword: boolean; newPassword: string }>,
+  change: Readonly<{ canChangePassword: boolean; pin: string }>,
 ): Promise<void> {
   await employeesApi.update(editing.id, input)
   if (baseSalary !== (editing.base_salary ?? 0)) {
@@ -212,8 +256,8 @@ async function persistEmployee(
   }
   // `user_id` is guaranteed non-null by `canChangePassword`, and re-checked here
   // so the call site can never widen what an ADMIN may reach.
-  if (change.canChangePassword && change.newPassword !== '' && editing.user_id !== null) {
-    await authApi.changePassword(editing.user_id, change.newPassword)
+  if (change.canChangePassword && change.pin !== '' && editing.user_id !== null) {
+    await authApi.changePassword(editing.user_id, change.pin)
   }
 }
 
@@ -237,8 +281,16 @@ export function EmployeeDialog({
   const [type, setType] = useState<EmployeeType>('CASHIER')
   const [role, setRole] = useState<FormRole>(CASHIER_ROLE)
   const [password, setPassword] = useState('')
-  /** The NEW password an ADMIN is choosing on edit. Empty means "do not touch it". */
-  const [newPassword, setNewPassword] = useState('')
+  /**
+   * The employee's credential, edited in place. EMPTY means "do not touch the
+   * stored one" — see `persistEmployee`, which sends nothing in that case.
+   *
+   * It is a separate state from `password` because it means something different:
+   * `password` is the credential a brand-new login is created WITH, while this
+   * one may or may not replace an existing one. Merging them would make "empty"
+   * ambiguous between "required and missing" and "deliberately unchanged".
+   */
+  const [pin, setPin] = useState('')
   const [salary, setSalary] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -255,9 +307,10 @@ export function EmployeeDialog({
         (editing?.employee_type === 'WASH_WORKER' ? NO_LOGIN_ROLE : CASHIER_ROLE),
     )
     setPassword('')
-    // Always starts EMPTY, which is exactly "do not change the password". Nothing
-    // about opening this dialog can reset or reveal the stored credential.
-    setNewPassword('')
+    // Always starts EMPTY, and that empty IS the existing-credential state: the
+    // masked placeholder is what shows the manager a credential is already there.
+    // Nothing about opening this dialog can reset or reveal the stored one.
+    setPin('')
     setSalary(editing?.base_salary ? String(editing.base_salary / 100) : '')
     setNotes(editing?.notes ?? '')
     setErrors({})
@@ -273,8 +326,8 @@ export function EmployeeDialog({
   const showType = !editing && role === CASHIER_ROLE
   // A new login needs a password, because their account is created with them.
   const needsPassword = !editing && !isWashWorker
-  // Setting a NEW password is an ADMIN action on an account that exists: it needs
-  // a login to act on (`user_id`), so a wash worker is never offered one. This is
+  // Editing the credential is an ADMIN act on an account that exists: it needs a
+  // login to act on (`user_id`), so a wash worker is never offered one. This is
   // presentation only — `change_password` re-checks the caller's authority on the
   // Rust side regardless of what this form renders.
   const canChangePassword = Boolean(editing?.user_id) && atLeast(user?.role, 'ADMIN')
@@ -288,7 +341,7 @@ export function EmployeeDialog({
     const nextErrors = validateEmployeeForm({
       name,
       password,
-      newPassword,
+      pin,
       needsPassword,
       canChangePassword,
       t,
@@ -319,12 +372,12 @@ export function EmployeeDialog({
         baseSalary,
       })
       if (editing) {
-        await persistEmployee(editing, input, baseSalary, { canChangePassword, newPassword })
+        await persistEmployee(editing, input, baseSalary, { canChangePassword, pin })
       } else {
         await employeesApi.create(input)
       }
       toast(
-        canChangePassword && newPassword !== ''
+        canChangePassword && pin !== ''
           ? t('employees.form.savedWithPassword')
           : t('employees.form.saved'),
         'success',
@@ -435,9 +488,9 @@ export function EmployeeDialog({
           />
         </Field>
 
-        {/* A password is asked for exactly once, when a login is being created.
-            On EDIT the equivalent field is the optional "new password" below,
-            which sets rather than reveals. */}
+        {/* The credential being asked for when a login is CREATED. Distinct from the
+            editable field below: this one is required and becomes the stored
+            hash, while that one may or may not replace an existing hash. */}
         {needsPassword ? (
           <Field
             label={t('employees.form.password')}
@@ -445,32 +498,45 @@ export function EmployeeDialog({
             error={errors.password ?? null}
             hint={t('employees.form.passwordHint')}
           >
-            <PasswordInput
+            <PinInput
               id="employee-password"
               autoComplete="new-password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onValueChange={setPassword}
+              length={CREDENTIAL_MAX_DIGITS}
             />
           </Field>
         ) : null}
 
-        {/* SETTING a password, never revealing one. Rendered only for an ADMIN
-            editing someone who HAS a login, and OPTIONAL: empty means "leave the
-            password alone", so saving unrelated fields here never touches it.
-            Masked by the shared PasswordInput — the same control, and the same
-            eye toggle, the create form and the login screen already use. */}
+        {/* THE EMPLOYEE'S CREDENTIAL, edited in place. Label and control are
+            identical in kind to the name and phone above: this is a property of
+            the record the manager may change, not a "set up a new password"
+            prompt.
+
+            The masked placeholder is the existing credential's REPRESENTATION.
+            It renders only when `user_id` is set — that is, only when a login
+            genuinely exists and therefore genuinely has a stored hash — so the
+            claim "a credential is on file" is always true, and it claims nothing
+            about WHICH one.
+
+            The shared `PinInput` is the same numeric, masked control the login
+            screen uses, so a credential is entered the same way everywhere and a
+            letter or a sixth digit cannot be typed into either. Leaving it
+            untouched is a first-class outcome: see `persistEmployee`. */}
         {canChangePassword ? (
           <Field
-            label={t('employees.form.newPassword')}
-            htmlFor="employee-new-password"
-            error={errors.newPassword ?? null}
-            hint={t('employees.form.newPasswordHint')}
+            label={t('employees.form.pin')}
+            htmlFor="employee-pin"
+            error={errors.pin ?? null}
+            hint={t('employees.form.pinHint')}
           >
-            <PasswordInput
-              id="employee-new-password"
+            <PinInput
+              id="employee-pin"
               autoComplete="new-password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder={EXISTING_CREDENTIAL_MASK}
+              value={pin}
+              onValueChange={setPin}
+              length={CREDENTIAL_MAX_DIGITS}
             />
           </Field>
         ) : null}

@@ -35,9 +35,14 @@ vi.mock('@/services/employeesApi', () => ({
   },
 }))
 
-vi.mock('@/services/authApi', () => ({
-  authApi: { changePassword: mocks.changePassword },
-}))
+// The `authApi` COMMAND is mocked — the dialog must not reach the backend — but
+// the module's credential-policy helpers are kept REAL, because they are the
+// shared rule the dialog is supposed to be validating against. Replacing them
+// with stubs would let a dialog that enforced the wrong policy pass.
+vi.mock('@/services/authApi', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/services/authApi')>()
+  return { ...original, authApi: { changePassword: mocks.changePassword } }
+})
 
 vi.mock('@/features/auth/useSession', () => ({
   useSession: () => ({ user: { id: 1, name: 'المدير', role: mocks.role.current } }),
@@ -138,6 +143,17 @@ describe('EmployeeDialog — create', () => {
   })
 })
 
+/** The Arabic message the 4–5 digit credential rule produces, read from the locale. */
+const INVALID_CREDENTIAL = 'الرمز السري يجب أن يكون أرقامًا فقط من 4 إلى 5 أرقام'
+
+/**
+ * The edit dialog's credential field, read from the locale rather than pasted:
+ * the label has to name the EMPLOYEE'S credential (PIN / password) and must
+ * never read as "new password", and a test that hardcodes the old wording would
+ * have been the thing keeping that wording alive.
+ */
+const PIN_FIELD = 'الرقم السري / كلمة المرور'
+
 describe('EmployeeDialog — create, credentials', () => {
   it('creates a wash worker with no credential at all', async () => {
     renderCreate()
@@ -159,87 +175,110 @@ describe('EmployeeDialog — create, credentials', () => {
     fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: '123' } })
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
 
-    expect(await screen.findByText('كلمة المرور يجب ألا تقل عن 6 حروف')).toBeInTheDocument()
+    expect(await screen.findByText(INVALID_CREDENTIAL)).toBeInTheDocument()
     expect(mocks.create).not.toHaveBeenCalled()
   })
 })
 
 /**
- * The password visibility toggle is NOT a second design: the Add Employee form
- * uses the SAME `PasswordInput` primitive the login screen does, so it inherits
- * the eye / eye-off iconography, the `auth.showPassword` / `auth.hidePassword`
- * labelling and the inline-end (RTL-safe) placement for free. These tests assert
- * that contract rather than the pixels.
+ * A credential here is a 4–5 digit PIN, entered through the SAME `PinInput`
+ * the login screen uses — and therefore through the SAME visibility toggle
+ * (one reusable `PasswordInput`, not a per-screen eye button). A manager typing
+ * a credential on a colleague's behalf needs to be able to CHECK what they
+ * typed, exactly as at the login screen, so the reveal is restored here and
+ * asserted as the shared control rather than a local re-implementation.
  */
-describe('EmployeeDialog — password visibility toggle', () => {
-  const TOGGLE = 'إظهار كلمة المرور'
-  const TOGGLE_HIDE = 'إخفاء كلمة المرور'
-
+describe('EmployeeDialog — the credential field', () => {
   function passwordField() {
     return screen.getByLabelText('كلمة المرور') as HTMLInputElement
   }
 
-  it('starts masked', () => {
+  it('is a masked numeric field, like the login screen', () => {
     renderCreate()
     expect(passwordField()).toHaveAttribute('type', 'password')
+    expect(passwordField().inputMode).toBe('numeric')
   })
 
-  it('reveals and re-masks the password, keeping its value', () => {
+  /**
+   * The reveal is the SHARED control, so the assertion is on the shared
+   * accessible name, not on an icon drawn here: this fails if the dialog ever
+   * grows a second, local implementation that would drift from the login one.
+   */
+  it('reveals through the shared toggle, operating on the dialog’s own value', () => {
     renderCreate()
-    fireEvent.change(passwordField(), { target: { value: 'secret123' } })
+    fireEvent.change(passwordField(), { target: { value: '2214' } })
 
-    const toggle = screen.getByRole('button', { name: TOGGLE })
-    // An actual button — reachable by name, not a click handler on the icon.
-    expect(toggle).toHaveAttribute('type', 'button')
-    expect(toggle).toHaveAttribute('aria-pressed', 'false')
-
-    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
     expect(passwordField()).toHaveAttribute('type', 'text')
-    // The label now offers the reverse action, and the control reports pressed.
-    const hide = screen.getByRole('button', { name: TOGGLE_HIDE })
-    expect(hide).toHaveAttribute('aria-pressed', 'true')
-    // Visibility is presentation only: the value is untouched.
-    expect(passwordField().value).toBe('secret123')
+    // The SAME form value the dialog submits — the toggle reads it, never copies it.
+    expect(passwordField().value).toBe('2214')
 
-    fireEvent.click(hide)
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.hidePassword') }))
     expect(passwordField()).toHaveAttribute('type', 'password')
-    expect(passwordField().value).toBe('secret123')
+    expect(passwordField().value).toBe('2214')
   })
 
-  it('places the toggle at the inline-end edge so it mirrors in RTL', () => {
+  it('does not save the dialog when the toggle is pressed', () => {
     renderCreate()
-    const toggle = screen.getByRole('button', { name: TOGGLE })
-    // Logical, direction-agnostic positioning: the app is RTL, so this lands on
-    // the left of the field without any RTL-specific override.
-    expect(toggle.className).toContain('inset-e-2')
-    expect(toggle.className).not.toContain('left-')
-    expect(toggle.className).not.toContain('right-')
-    // The input reserves the same inline-end space for it.
-    expect(passwordField().className).toContain('pe-11')
+    fireEvent.change(passwordField(), { target: { value: '2214' } })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(mocks.update).not.toHaveBeenCalled()
   })
 
-  it('still validates the revealed value and submits it unchanged', async () => {
+  it('offers no toggle until a credential has actually been typed', () => {
+    renderCreate()
+    expect(passwordField().value).toBe('')
+    expect(
+      screen.queryByRole('button', { name: i18n.t('auth.showPassword') }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.change(passwordField(), { target: { value: '2214' } })
+    expect(screen.getByRole('button', { name: i18n.t('auth.showPassword') })).toBeInTheDocument()
+
+    fireEvent.change(passwordField(), { target: { value: '' } })
+    expect(
+      screen.queryByRole('button', { name: i18n.t('auth.showPassword') }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('cannot hold a letter, a symbol, or a sixth digit', () => {
+    renderCreate()
+
+    fireEvent.change(passwordField(), { target: { value: 'a1b2' } })
+    expect(passwordField().value).toBe('12')
+
+    fireEvent.change(passwordField(), { target: { value: '12-34' } })
+    expect(passwordField().value).toBe('1234')
+
+    fireEvent.change(passwordField(), { target: { value: '123456' } })
+    expect(passwordField().value).toBe('12345')
+  })
+
+  it('refuses a too-short PIN before the request is sent', async () => {
     renderCreate()
     fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'سعيد' } })
     fireEvent.change(passwordField(), { target: { value: '123' } })
-    fireEvent.click(screen.getByRole('button', { name: TOGGLE }))
-
-    // Revealing a short password does not make it acceptable.
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
-    expect(await screen.findByText('كلمة المرور يجب ألا تقل عن 6 حروف')).toBeInTheDocument()
+
+    expect(await screen.findByText(INVALID_CREDENTIAL)).toBeInTheDocument()
     expect(mocks.create).not.toHaveBeenCalled()
-
-    // Correcting it while visible submits exactly what was typed.
-    fireEvent.change(passwordField(), { target: { value: 'secret123' } })
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
-    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
-    expect(mocks.create.mock.calls[0][0].password).toBe('secret123')
   })
 
-  it('offers no toggle where there is no password', () => {
+  it('submits a valid PIN exactly as typed', async () => {
+    renderCreate()
+    fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'سعيد' } })
+    fireEvent.change(passwordField(), { target: { value: '2214' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled())
+    expect(mocks.create.mock.calls[0][0].password).toBe('2214')
+  })
+
+  it('offers no credential field at all for a wash worker', () => {
     renderCreate()
     fireEvent.change(screen.getByLabelText('الدور'), { target: { value: 'WASH_WORKER' } })
-    expect(screen.queryByRole('button', { name: TOGGLE })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('كلمة المرور')).not.toBeInTheDocument()
   })
 })
 
@@ -252,15 +291,15 @@ describe('EmployeeDialog — edit', () => {
     expect(screen.getByLabelText('ملاحظات')).toBeInTheDocument()
   })
 
-  it('offers no control for role, type, status, account or the current password', () => {
+  it('offers no control for role, type, status, account or the current credential', () => {
     mocks.role.current = 'MANAGER'
     const { container } = renderEdit()
     // Not disabled, not read-only inputs: ABSENT. A disabled select would still
     // advertise that the value is negotiable.
     expect(screen.queryByLabelText('الدور')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('نوع الموظف')).not.toBeInTheDocument()
-    // Not even the NEW-password field: setting a credential is an ADMIN act.
-    expect(screen.queryByLabelText('كلمة المرور الجديدة')).not.toBeInTheDocument()
+    // Not even the credential field: editing one is an ADMIN act.
+    expect(screen.queryByLabelText(PIN_FIELD)).not.toBeInTheDocument()
     expect(container.querySelectorAll('select')).toHaveLength(0)
   })
 
@@ -300,38 +339,141 @@ describe('EmployeeDialog — edit', () => {
 })
 
 /**
- * Setting a NEW password from the edit dialog.
+ * The employee edit dialog's CREDENTIAL field.
  *
- * The rule these tests pin is that the field SETS and never REVEALS: it opens
- * empty, an empty save changes nothing at all, and a typed value goes out through
- * the auth command rather than riding along on the employee record. The backend
- * enforces the real authorization — the visibility asserted here is an affordance,
- * not the boundary.
+ * The contract these tests pin is that the field is an EDITABLE PROPERTY OF THE
+ * RECORD, not a "new password" prompt, and that it is honest about the storage
+ * model it sits on:
+ *
+ *  - the label speaks of the employee's PIN/password, never of a "new" one;
+ *  - the existing credential is REPRESENTED by a mask, because the stored value
+ *    is a one-way Argon2id hash the application genuinely cannot read — so the
+ *    mask asserts "one is on file" and nothing more, and the digits are never
+ *    invented;
+ *  - the field opens EMPTY, and empty means "keep the stored credential", so an
+ *    unrelated edit sends no credential command at all and cannot reset a
+ *    colleague's login;
+ *  - a typed value goes out through the auth command against the LOGIN id,
+ *    carrying the same 4–5 digit rule login itself enforces.
+ *
+ * The backend enforces authorization and validation for real — the visibility
+ * asserted here is an affordance, not the boundary.
  */
-describe('EmployeeDialog — ADMIN sets a new password', () => {
-  const FIELD = 'كلمة المرور الجديدة'
-  const TOGGLE = 'إظهار كلمة المرور'
+describe('EmployeeDialog — ADMIN edits the employee credential', () => {
+  const FIELD = PIN_FIELD
 
-  function newPasswordField() {
+  function pinField() {
     return screen.getByLabelText(FIELD) as HTMLInputElement
   }
 
-  it('offers the field to an ADMIN and opens it empty and masked', () => {
+  it('is labelled as the employee credential, not as a new password', () => {
     mocks.role.current = 'ADMIN'
     renderEdit()
-    const field = newPasswordField()
-    expect(field).toHaveAttribute('type', 'password')
-    // Empty is the whole meaning of "unchanged": there is no value to leak, and
-    // nothing is pre-filled from a stored credential.
-    expect(field.value).toBe('')
+    expect(pinField()).toBeInTheDocument()
+    // The wording that would make this a "create a password" prompt is gone from
+    // the screen entirely, in both the label and the hint.
+    expect(screen.queryByText(/كلمة المرور الجديدة/)).not.toBeInTheDocument()
   })
 
-  it('reuses the shared show/hide toggle rather than a second design', () => {
+  it('offers the field to an ADMIN, masked, with the stored credential represented', () => {
+    mocks.role.current = 'ADMIN'
     renderEdit()
-    fireEvent.change(newPasswordField(), { target: { value: 'secret123' } })
-    fireEvent.click(screen.getByRole('button', { name: TOGGLE }))
-    expect(newPasswordField()).toHaveAttribute('type', 'text')
-    expect(newPasswordField().value).toBe('secret123')
+    const field = pinField()
+    expect(field).toHaveAttribute('type', 'password')
+    // Empty, because the plaintext is not available anywhere — but NOT an empty
+    // looking field: the mask states that a credential exists on file.
+    expect(field.value).toBe('')
+    expect(field.placeholder).toBe('•••••')
+  })
+
+  it('is a masked numeric PIN field, like the login screen', () => {
+    renderEdit()
+    expect(pinField()).toHaveAttribute('type', 'password')
+    expect(pinField().inputMode).toBe('numeric')
+  })
+
+  /**
+   * The mandatory acceptance sequence, in order, in ONE dialog: empty → no eye,
+   * type → eye, show, hide, clear → no eye again.
+   *
+   * This is the whole defect in one test. The stored credential exists, but its
+   * plaintext does not and never will, so an eye rendered on an EMPTY field is a
+   * control that promises a reveal it cannot perform.
+   */
+  it('offers no reveal for a stored credential it cannot read, only for a typed one', () => {
+    mocks.role.current = 'ADMIN'
+    renderEdit()
+    const field = pinField()
+
+    // 1. Open: empty, no usable toggle.
+    expect(field.value).toBe('')
+    expect(
+      screen.queryByRole('button', { name: i18n.t('auth.showPassword') }),
+    ).not.toBeInTheDocument()
+
+    // 2. Type: the toggle appears immediately.
+    fireEvent.change(field, { target: { value: '2214' } })
+    const show = screen.getByRole('button', { name: i18n.t('auth.showPassword') })
+
+    // 3. Show: the plaintext that was just typed, and nothing else.
+    fireEvent.click(show)
+    expect(field).toHaveAttribute('type', 'text')
+    expect(field.value).toBe('2214')
+
+    // 4. Hide: masked again, value carried through.
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.hidePassword') }))
+    expect(field).toHaveAttribute('type', 'password')
+    expect(field.value).toBe('2214')
+
+    // 5. Clear: the toggle is gone again, and nothing is left revealed.
+    fireEvent.change(field, { target: { value: '' } })
+    expect(
+      screen.queryByRole('button', { name: i18n.t('auth.showPassword') }),
+    ).not.toBeInTheDocument()
+    expect(field).toHaveAttribute('type', 'password')
+  })
+
+  it('states what the empty field means, in words, in both states', () => {
+    mocks.role.current = 'ADMIN'
+    renderEdit()
+    // The hint is the guidance for the DECISION (keep or replace), so it is
+    // present whether or not a replacement has been typed — and it never claims
+    // the typed digits are the stored one.
+    const hint = i18n.t('employees.form.pinHint')
+    expect(screen.getByText(hint)).toBeInTheDocument()
+
+    fireEvent.change(pinField(), { target: { value: '2214' } })
+    expect(screen.getByText(hint)).toBeInTheDocument()
+  })
+
+  it('reveals the replacement PIN through the same shared toggle', () => {
+    renderEdit()
+    fireEvent.change(pinField(), { target: { value: '2214' } })
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    expect(pinField()).toHaveAttribute('type', 'text')
+    expect(pinField().value).toBe('2214')
+
+    // The stored credential is still only REPRESENTED by the mask; revealing
+    // exposes what was just typed, never a hash or a plaintext from storage.
+    expect(pinField().placeholder).toBe('•••••')
+  })
+
+  it('edits the credential in place: digits only, 4 to 5 of them', () => {
+    renderEdit()
+    // The same structural cap the login screen has: a sixth digit is never held
+    // in state, and a letter or hyphen never survives.
+    fireEvent.change(pinField(), { target: { value: '22145' } })
+    expect(pinField().value).toBe('22145')
+
+    fireEvent.change(pinField(), { target: { value: '221456' } })
+    expect(pinField().value).toBe('22145')
+
+    fireEvent.change(pinField(), { target: { value: '12a4' } })
+    expect(pinField().value).toBe('124')
+
+    fireEvent.change(pinField(), { target: { value: '12-34' } })
+    expect(pinField().value).toBe('1234')
   })
 
   it('changes nothing when the field is left empty', async () => {
@@ -342,27 +484,124 @@ describe('EmployeeDialog — ADMIN sets a new password', () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalled())
     // The decisive assertion: an unrelated edit never touches the credential.
     expect(mocks.changePassword).not.toHaveBeenCalled()
-    // And it is not smuggled onto the employee payload either.
+    // And it is not smuggled onto the employee payload either, so the Rust side
+    // can never be asked to hash an empty value.
     expect(mocks.update.mock.calls[0][1].password).toBeNull()
   })
 
-  it('sends the new password through the auth command, against the LOGIN id', async () => {
+  it('changes nothing when the field is cleared after being typed into', async () => {
     renderEdit()
-    fireEvent.change(newPasswordField(), { target: { value: 'brand-new-pass' } })
+    // Typing then clearing is "no change" and must be treated exactly like never
+    // having typed at all — an empty field can never reach `change_password`.
+    fireEvent.change(pinField(), { target: { value: '55555' } })
+    fireEvent.change(pinField(), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
 
-    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, 'brand-new-pass'))
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled())
+    expect(mocks.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('edits and persists the PIN while the field is VISIBLE, and re-masks on demand', async () => {
+    renderEdit()
+    const field = pinField()
+
+    // Test 1 — open: masked.
+    expect(field).toHaveAttribute('type', 'password')
+
+    // Test 2 — show: the real input type flips and the value is untouched.
+    fireEvent.change(field, { target: { value: '2214' } })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    expect(field).toHaveAttribute('type', 'text')
+    expect(field.value).toBe('2214')
+
+    // Test 3 — hide: back to masked, with the value carried through untouched.
+    // Same open dialog, so this is a pure round trip and not a second render.
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.hidePassword') }))
+    expect(field).toHaveAttribute('type', 'password')
+    expect(field.value).toBe('2214')
+
+    // Test 4 — edit WHILE visible, then save.
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    fireEvent.change(field, { target: { value: '55555' } })
+    expect(field.value).toBe('55555')
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, '55555'))
+  })
+
+  it('persists the PIN while the field stays MASKED, identically', async () => {
+    renderEdit()
+    // Test 5 — the same edit with the eye never pressed.
+    fireEvent.change(pinField(), { target: { value: '55555' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, '55555'))
+  })
+
+  it('keeps the 4–5 digit rule while the PIN is VISIBLE', () => {
+    renderEdit()
+    fireEvent.change(pinField(), { target: { value: '2214' } })
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    const field = pinField()
+    expect(field).toHaveAttribute('type', 'text')
+
+    // Turning the type into `text` must not turn the field into a free-text box.
+    // The cap is the EMPLOYEE credential's own (5), not the discount PIN's 4.
+    fireEvent.change(field, { target: { value: '12a4' } })
+    expect(field.value).toBe('124')
+    fireEvent.change(field, { target: { value: '123456' } })
+    expect(field.value).toBe('12345')
+    fireEvent.change(field, { target: { value: '12-34' } })
+    expect(field.value).toBe('1234')
+  })
+
+  it('never saves the employee when the eye is pressed', () => {
+    renderEdit()
+    fireEvent.change(pinField(), { target: { value: '2214' } })
+
+    // Test 6 — revealing is a view action, not a submit.
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.showPassword') }))
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('auth.hidePassword') }))
+
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.changePassword).not.toHaveBeenCalled()
+    // The form state survived both presses untouched.
+    expect(pinField().value).toBe('2214')
+  })
+
+  it('sends a 4-digit replacement through the auth command, against the LOGIN id', async () => {
+    renderEdit()
+    fireEvent.change(pinField(), { target: { value: '2214' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, '2214'))
     expect(mocks.update).toHaveBeenCalled()
   })
 
-  it('rejects a too-short password before any request is sent', async () => {
+  it('sends a 5-digit replacement too — both boundary lengths are accepted', async () => {
     renderEdit()
-    fireEvent.change(newPasswordField(), { target: { value: '123' } })
+    fireEvent.change(pinField(), { target: { value: '55555' } })
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
 
-    expect(await screen.findByText('كلمة المرور يجب ألا تقل عن 6 حروف')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith(3, '55555'))
+  })
+
+  it('rejects a too-short credential before any request is sent', async () => {
+    renderEdit()
+    fireEvent.change(pinField(), { target: { value: '123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }))
+
+    expect(await screen.findByText(INVALID_CREDENTIAL)).toBeInTheDocument()
     expect(mocks.changePassword).not.toHaveBeenCalled()
     expect(mocks.update).not.toHaveBeenCalled()
+  })
+
+  it('never prefills the field from the stored credential', () => {
+    mocks.role.current = 'ADMIN'
+    renderEdit()
+    // The anti-regression for the one thing this flow must never do: seed the
+    // form from the record. No hash, no plaintext, nothing but the mask.
+    const field = pinField()
+    expect(field.value).toBe('')
+    expect(field.defaultValue).toBe('')
   })
 
   it('offers no field to a MANAGER or a STAFF', () => {
@@ -407,7 +646,7 @@ describe('EmployeeDialog — save transaction', () => {
     // never even reaches the form's own `nameRequired` validation — either way
     // no request is made.
     fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: '   ' } })
-    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: '2214' } })
 
     expect(screen.getByRole('button', { name: SAVE })).toBeDisabled()
     expect(mocks.create).not.toHaveBeenCalled()
@@ -416,7 +655,7 @@ describe('EmployeeDialog — save transaction', () => {
   it('creates a cashier with the chosen role, its credential and no salary', async () => {
     renderCreate()
     fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: ' سعاد ' } })
-    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: '2214' } })
     fireEvent.click(screen.getByRole('button', { name: SAVE }))
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalled())
@@ -425,7 +664,7 @@ describe('EmployeeDialog — save transaction', () => {
     expect(input.name).toBe('سعاد')
     expect(input.employee_type).toBe('CASHIER')
     expect(input.role).toBe('STAFF')
-    expect(input.password).toBe('secret123')
+    expect(input.password).toBe('2214')
     expect(input.phone).toBeNull()
     expect(input.notes).toBeNull()
     // No salary typed at all is a deliberate ZERO, not an omitted field.
@@ -435,7 +674,7 @@ describe('EmployeeDialog — save transaction', () => {
   it('parses the typed salary into integer piasters', async () => {
     renderCreate()
     fireEvent.change(screen.getByLabelText('الاسم'), { target: { value: 'سعاد' } })
-    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: 'secret123' } })
+    fireEvent.change(screen.getByLabelText('كلمة المرور'), { target: { value: '2214' } })
     fireEvent.change(screen.getByLabelText(SALARY), { target: { value: '2500.50' } })
     fireEvent.click(screen.getByRole('button', { name: SAVE }))
 
