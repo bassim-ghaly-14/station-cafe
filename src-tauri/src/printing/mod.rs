@@ -424,8 +424,8 @@ mod tests {
     }
 
     fn open_day_and_shift(conn: &Connection) -> auth::User {
-        let manager = login(conn, "manager", "manager123");
-        let staff = login(conn, "cashier", "cashier123");
+        let manager = login(conn, "manager", "2345");
+        let staff = login(conn, "cashier", "3456");
         shift_svc::open_day(conn, &manager).unwrap();
         shift_svc::open_shift(conn, &staff, 0).unwrap();
         staff

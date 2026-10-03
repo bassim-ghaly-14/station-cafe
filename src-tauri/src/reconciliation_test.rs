@@ -132,8 +132,8 @@ fn reconciliation_status_distinguishes_shortage_from_surplus() {
 #[test]
 fn cashier_expense_is_persisted_and_linked_to_the_active_shift() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -154,8 +154,8 @@ fn cashier_expense_is_persisted_and_linked_to_the_active_shift() {
 #[test]
 fn cashier_without_an_open_shift_cannot_record_an_expense() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     // No shift open for this cashier: the spend could never be reconciled.
     let err = ops_svc::create_expense(&conn, &staff, &expense_input("OTHER", 1_000)).unwrap_err();
@@ -165,7 +165,7 @@ fn cashier_without_an_open_shift_cannot_record_an_expense() {
 #[test]
 fn an_unknown_category_is_rejected() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     let err =
         ops_svc::create_expense(&conn, &manager, &expense_input("NONSENSE", 1_000)).unwrap_err();
     assert_eq!(err.kind(), crate::error::ErrorKind::Validation);
@@ -174,7 +174,7 @@ fn an_unknown_category_is_rejected() {
 #[test]
 fn a_non_positive_expense_amount_is_rejected() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     assert!(ops_svc::create_expense(&conn, &manager, &expense_input("OTHER", 0)).is_err());
     assert!(ops_svc::create_expense(&conn, &manager, &expense_input("OTHER", -5)).is_err());
 }
@@ -182,8 +182,8 @@ fn a_non_positive_expense_amount_is_rejected() {
 #[test]
 fn an_expense_is_never_counted_against_a_shift_it_was_not_booked_to() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     let first = shift_svc::open_shift(&conn, &staff, 0).unwrap();
@@ -205,8 +205,8 @@ fn an_expense_is_never_counted_against_a_shift_it_was_not_booked_to() {
 #[test]
 fn only_cash_expenses_reduce_the_drawer() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
     let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -238,8 +238,8 @@ fn only_cash_expenses_reduce_the_drawer() {
 #[test]
 fn the_expense_breakdown_groups_by_category_with_counts() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     ops_svc::create_expense(&conn, &staff, &expense_input("UTILITY", 1_000)).unwrap();
@@ -263,8 +263,8 @@ fn the_expense_breakdown_groups_by_category_with_counts() {
 #[test]
 fn shift_closing_persists_every_reconciliation_figure() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
     let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -296,8 +296,8 @@ fn shift_closing_persists_every_reconciliation_figure() {
 #[test]
 fn a_surplus_is_never_reported_as_a_shortage() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let total = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -312,8 +312,8 @@ fn a_surplus_is_never_reported_as_a_shortage() {
 #[test]
 fn a_closed_shift_reconciliation_is_immutable() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     sell_cafe_cash(&conn, &staff, "مياه");
@@ -330,8 +330,8 @@ fn a_closed_shift_reconciliation_is_immutable() {
 #[test]
 fn a_double_close_is_rejected() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
@@ -341,8 +341,8 @@ fn a_double_close_is_rejected() {
 #[test]
 fn a_manager_cannot_close_a_shift_they_do_not_own() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     assert!(shift_svc::close_shift(&conn, &manager, 0).is_err());
@@ -351,8 +351,8 @@ fn a_manager_cannot_close_a_shift_they_do_not_own() {
 #[test]
 fn a_negative_handover_amount_is_rejected() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     assert!(shift_svc::close_shift(&conn, &staff, -1).is_err());
@@ -405,8 +405,8 @@ fn invoice_snap(conn: &Connection, invoice_id: i64) -> invoices::InvoiceRow {
 #[test]
 fn a_hybrid_invoice_is_counted_once_in_the_areas_but_pays_both_departments() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -447,8 +447,8 @@ fn a_hybrid_invoice_is_counted_once_in_the_areas_but_pays_both_departments() {
 #[test]
 fn the_service_total_is_the_invoice_level_charge_and_is_explicit() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -481,8 +481,8 @@ fn the_service_total_is_the_invoice_level_charge_and_is_explicit() {
 #[test]
 fn card_and_credit_sales_never_inflate_the_expected_drawer() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 20_000).unwrap();
 
@@ -509,8 +509,8 @@ fn card_and_credit_sales_never_inflate_the_expected_drawer() {
 #[test]
 fn every_invoice_contributes_to_the_shift_and_its_money_to_the_drawer() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let first = sell_cafe_cash(&conn, &staff, "مياه");
@@ -553,8 +553,8 @@ fn sell_card(conn: &Connection, actor: &auth::User) -> i64 {
 #[test]
 fn a_day_with_all_shifts_closed_includes_every_shift() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = crate::repositories::shifts::current_day(&conn)
         .unwrap()
@@ -589,8 +589,8 @@ fn a_day_with_all_shifts_closed_includes_every_shift() {
 #[test]
 fn an_open_shift_is_excluded_from_the_day_closing() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     // Settled shift with real money in it.
@@ -632,8 +632,8 @@ fn an_open_shift_is_excluded_from_the_day_closing() {
 #[test]
 fn several_closed_shifts_plus_one_open_shift_include_only_the_closed_ones() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     let mut totals = Vec::new();
@@ -667,8 +667,8 @@ fn several_closed_shifts_plus_one_open_shift_include_only_the_closed_ones() {
 #[test]
 fn a_day_with_only_an_open_shift_cannot_be_closed() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
     sell_cafe_cash(&conn, &staff, "مياه");
@@ -693,8 +693,8 @@ fn a_day_with_only_an_open_shift_cannot_be_closed() {
 #[test]
 fn a_day_can_be_closed_after_its_shifts_were_settled() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = crate::repositories::shifts::current_day(&conn)
         .unwrap()
@@ -725,7 +725,7 @@ fn a_day_can_be_closed_after_its_shifts_were_settled() {
 #[test]
 fn a_business_day_with_no_activity_is_closed_and_recorded_as_an_empty_closing() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
 
     let result = shift_svc::close_day(&conn, &manager).unwrap();
@@ -759,8 +759,8 @@ fn a_business_day_with_no_activity_is_closed_and_recorded_as_an_empty_closing() 
 #[test]
 fn an_empty_shift_closing_is_persisted_and_settles_its_day() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
 
@@ -790,8 +790,8 @@ fn an_empty_shift_closing_is_persisted_and_settles_its_day() {
 #[test]
 fn closing_an_empty_day_unblocks_the_next_business_day() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
@@ -806,8 +806,8 @@ fn closing_an_empty_day_unblocks_the_next_business_day() {
 #[test]
 fn closing_an_already_closed_day_is_rejected() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
@@ -818,8 +818,8 @@ fn closing_an_already_closed_day_is_rejected() {
 #[test]
 fn an_expense_is_included_in_the_day_totals_exactly_once() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
 
     // The shifts open with enough float that the handover is never negative.
@@ -857,8 +857,8 @@ fn an_expense_is_included_in_the_day_totals_exactly_once() {
 #[test]
 fn the_day_report_stays_stable_after_the_day_is_closed() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -888,8 +888,8 @@ fn the_day_report_stays_stable_after_the_day_is_closed() {
 #[test]
 fn only_a_manager_may_close_the_business_day() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
@@ -904,8 +904,8 @@ fn only_a_manager_may_close_the_business_day() {
 #[test]
 fn the_day_closing_aggregates_a_shared_cash_reconciliation() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     // Shift 1 balances, shift 2 is short: the day nets them off.
@@ -954,8 +954,8 @@ fn printed_text(doc: &crate::printing::ir::PrintDoc) -> String {
 #[test]
 fn the_printed_shift_closing_carries_every_reconciliation_line() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1005,8 +1005,8 @@ fn the_printed_shift_closing_carries_every_reconciliation_line() {
 #[test]
 fn the_printed_day_closing_reports_only_the_included_shifts() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = crate::repositories::shifts::current_day(&conn)
         .unwrap()
@@ -1060,8 +1060,8 @@ fn the_printed_day_closing_reports_only_the_included_shifts() {
 fn an_invoice_with_several_payment_rows_is_counted_once_at_invoice_level() {
     use invoices::InvoiceLine;
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -1169,8 +1169,8 @@ fn an_invoice_with_several_payment_rows_is_counted_once_at_invoice_level() {
 fn area_counts_partition_every_invoice_including_zero_money_documents() {
     use invoices::InvoiceLine;
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let seed = sell_cafe_cash(&conn, &staff, "مياه");
@@ -1249,8 +1249,8 @@ fn area_counts_partition_every_invoice_including_zero_money_documents() {
 #[test]
 fn a_day_level_manager_expense_enters_the_day_closing_exactly_once() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
 
     // The manager owns no shift: this expense belongs to the day, not a drawer.
@@ -1326,8 +1326,8 @@ fn a_day_level_manager_expense_enters_the_day_closing_exactly_once() {
 #[test]
 fn the_open_shift_warning_reports_the_excluded_money() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 1_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1347,8 +1347,8 @@ fn the_open_shift_warning_reports_the_excluded_money() {
 #[test]
 fn the_live_day_view_matches_the_shift_drawer() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
     let first = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1387,8 +1387,8 @@ fn printed_lines(doc: &crate::printing::ir::PrintDoc) -> Vec<String> {
 #[test]
 fn every_printed_closing_line_fits_the_printer_width() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1437,8 +1437,8 @@ fn every_printed_closing_line_fits_the_printer_width() {
 #[test]
 fn the_printed_settlement_status_uses_the_backends_own_magnitudes() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1490,8 +1490,8 @@ fn the_printed_settlement_status_uses_the_backends_own_magnitudes() {
 #[test]
 fn a_closed_shift_document_ignores_expense_rows_changed_after_the_closing() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1542,8 +1542,8 @@ fn a_closed_shift_document_ignores_expense_rows_changed_after_the_closing() {
 #[test]
 fn a_closed_day_breakdown_is_the_closing_snapshot_not_a_live_query() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1584,8 +1584,8 @@ fn a_closed_day_breakdown_is_the_closing_snapshot_not_a_live_query() {
 #[test]
 fn the_day_expense_total_is_the_sum_of_the_included_shift_snapshots() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     let mut ids = Vec::new();
@@ -1665,8 +1665,8 @@ fn sell_credit(conn: &Connection, actor: &auth::User, manager: &auth::User) -> i
 #[test]
 fn the_live_day_header_and_the_closing_agree_on_credit() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -1697,8 +1697,8 @@ fn the_live_day_header_and_the_closing_agree_on_credit() {
 #[test]
 fn a_day_blocked_for_lack_of_a_settled_shift_can_still_be_closed_afterwards() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 4_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));
@@ -1726,8 +1726,8 @@ fn a_day_blocked_for_lack_of_a_settled_shift_can_still_be_closed_afterwards() {
 #[test]
 fn a_shift_closing_persists_the_state_at_commit_not_a_stale_preview() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
     let cash = invoice_total(&conn, sell_cafe_cash(&conn, &staff, "مياه"));

@@ -557,7 +557,7 @@ fn the_demo_dataset_reports_its_own_persisted_closes() {
 
     // The demo leaves its POS busy but its day closed, so the day under test is
     // opened here exactly as a real café would open one after loading history.
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     let day = crate::repositories::shifts::current_day(&conn).unwrap();
     let day = match day {
         Some(day) => day,

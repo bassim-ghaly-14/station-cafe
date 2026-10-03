@@ -136,7 +136,9 @@ mod tests {
             conn,
             &crate::services::auth::LoginInput {
                 name: name.into(),
-                password: format!("{name}123"),
+                password: crate::demo_data::demo_password_of(name)
+                    .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                    .into(),
             },
         )
         .unwrap()

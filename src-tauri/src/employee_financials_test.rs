@@ -36,7 +36,9 @@ fn login(conn: &Connection, name: &str) -> User {
         conn,
         &auth::LoginInput {
             name: name.into(),
-            password: format!("{name}123"),
+            password: crate::demo_data::demo_password_of(name)
+                .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                .into(),
         },
     )
     .unwrap()
@@ -1107,7 +1109,7 @@ fn the_upgrade_from_the_previous_schema_preserves_every_existing_row() {
             name: "مدير",
             phone: None,
             role: "MANAGER",
-            password_hash: &auth::hash_password("secret123").unwrap(),
+            password_hash: &auth::hash_password("6666").unwrap(),
             is_seed: false,
         },
     )
@@ -1217,7 +1219,7 @@ fn the_upgrade_from_the_previous_schema_preserves_every_existing_row() {
         &conn,
         &auth::LoginInput {
             name: "مدير".into(),
-            password: "secret123".into(),
+            password: "6666".into(),
         },
     )
     .unwrap()

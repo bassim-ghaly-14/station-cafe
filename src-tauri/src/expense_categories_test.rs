@@ -50,15 +50,15 @@ fn login(conn: &Connection, name: &str, password: &str) -> User {
 }
 
 fn admin(conn: &Connection) -> User {
-    login(conn, "admin", "admin123")
+    login(conn, "admin", "1234")
 }
 
 fn manager(conn: &Connection) -> User {
-    login(conn, "manager", "manager123")
+    login(conn, "manager", "2345")
 }
 
 fn staff(conn: &Connection) -> User {
-    login(conn, "cashier", "cashier123")
+    login(conn, "cashier", "3456")
 }
 
 /// A category created through the service, so no test starts from a fixture the

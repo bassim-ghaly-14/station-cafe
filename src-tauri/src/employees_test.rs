@@ -39,9 +39,20 @@ fn login_as(conn: &Connection, name: &str, password: &str) -> User {
     .user
 }
 
-/// Log in as one of the `{name}123` starter accounts.
+/// Log in as one of the seeded starter accounts.
+///
+/// The PIN is read from the demo table rather than reconstructed as
+/// `{name}123`: that construction matched an older, looser credential policy and
+/// would now build a value the policy refuses, so a helper that guessed would
+/// make every test using it fail for a reason that has nothing to do with what
+/// the test is about.
 fn login(conn: &Connection, name: &str) -> User {
-    login_as(conn, name, &format!("{name}123"))
+    login_as(
+        conn,
+        name,
+        crate::demo_data::demo_password_of(name)
+            .unwrap_or_else(|| panic!("{name} is not a seeded demo account")),
+    )
 }
 
 /// The employee record behind a seeded login.
@@ -102,11 +113,38 @@ fn row_for(conn: &Connection, id: i64) -> employee_analytics::EmployeeRow {
 /// the very property these tests exist to protect, so the expectation and the
 /// production reduction are measured against the same "one person, one row" rule
 /// while remaining independent of how the KPI figures are computed.
+/// The ACTIVE roster — the exact population the KPI band reduces.
+///
+/// A separate helper from `rows` because the two genuinely differ: `rows`
+/// includes inactive employees, which is what the "show inactive" filter needs,
+/// while the overview is computed over the active roster only. A test that
+/// compares a figure derived from one against a figure derived from the other
+/// is comparing two different populations.
+fn rows_active(conn: &Connection) -> Vec<employee_analytics::EmployeeRow> {
+    employee_analytics::list_rows(
+        conn,
+        &Period {
+            from: None,
+            to: None,
+        },
+        true,
+        false,
+        "",
+    )
+    .unwrap()
+}
+
+/// The fixture headcount, derived from the SAME population the KPI band reads.
+///
+/// See [`rows_active`]: this counts active employees only, so it agrees with
+/// `emp::overview` by construction rather than by coincidence. The demo dataset
+/// deliberately contains an inactive employee and an inactive wash worker, so the
+/// difference between the two populations is real rather than theoretical.
 fn fixture_headcount(conn: &Connection) -> (i64, i64, i64) {
     let mut seen = std::collections::BTreeSet::new();
     let mut cashiers = 0;
     let mut wash_workers = 0;
-    for row in rows(conn, None, None) {
+    for row in rows_active(conn) {
         if !seen.insert(row.id) {
             continue;
         }
@@ -450,7 +488,7 @@ fn deactivating_an_employee_suspends_the_linked_login() {
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "cashier123".into(),
+            password: "3456".into(),
         },
     )
     .unwrap_err();
@@ -709,7 +747,7 @@ fn a_cashier_is_created_with_a_working_login_and_the_chosen_role() {
             notes: None,
             user_id: None,
             role: Some("MANAGER".into()),
-            password: Some("kareema123".into()),
+            password: Some("4321".into()),
         },
     )
     .unwrap();
@@ -720,7 +758,7 @@ fn a_cashier_is_created_with_a_working_login_and_the_chosen_role() {
     assert_eq!(employee.login_role.as_deref(), Some("MANAGER"));
 
     // And the credential works: the new manager can sign in immediately.
-    let signed_in = login_as(&conn, "كريمة", "kareema123");
+    let signed_in = login_as(&conn, "كريمة", "4321");
     assert_eq!(signed_in.role, "MANAGER");
 
     // The one-to-one link is real, so attendance resolves to this person.
@@ -773,7 +811,7 @@ fn only_an_admin_may_create_another_admin() {
             notes: None,
             user_id: None,
             role: Some("ADMIN".into()),
-            password: Some("secret123".into()),
+            password: Some("6666".into()),
         },
     )
     .unwrap_err();
@@ -792,7 +830,7 @@ fn only_an_admin_may_create_another_admin() {
             notes: None,
             user_id: None,
             role: Some("ADMIN".into()),
-            password: Some("secret123".into()),
+            password: Some("6666".into()),
         },
     )
     .unwrap();
@@ -823,7 +861,7 @@ fn a_wash_worker_is_never_given_a_credential() {
             notes: None,
             user_id: None,
             role: Some("MANAGER".into()),
-            password: Some("whatever123".into()),
+            password: Some("5555".into()),
         },
     )
     .unwrap();
@@ -972,7 +1010,7 @@ fn the_permission_matrix_is_enforced_by_the_service() {
         &manager,
         &EmployeeInput {
             role: Some("STAFF".into()),
-            password: Some("secret123".into()),
+            password: Some("6666".into()),
             ..profile("موظف جديد")
         },
     )
@@ -1271,7 +1309,10 @@ fn the_cashier_headcount_names_the_staff_role_not_the_employee_type() {
     // mistake the table's badge never makes. "كاشير" is the STAFF role, so the
     // headcount must agree with the badge on the row below it.
     let overview = emp::overview(&conn, &manager, &EmployeePeriod::default()).unwrap();
-    let cashiers: i64 = rows(&conn, None, None)
+    // Counted from the ACTIVE roster, which is the population the overview reduces:
+    // counting the inactive-inclusive list here would make this compare two
+    // different populations and disagree by however many stopped people exist.
+    let cashiers: i64 = rows_active(&conn)
         .iter()
         .filter(|r| r.login_role.as_deref() == Some("STAFF"))
         .count() as i64;
@@ -1315,7 +1356,10 @@ fn headcounts_count_unique_employee_records_never_duplicated_rows() {
     assert_eq!(overview.total_wash_workers, wash_workers);
 
     // And the same person handed to the reduction twice is still one person.
-    let mut rows = rows(&conn, None, None);
+    // Read from the ACTIVE roster, because that is what the overview was
+    // reduced from — doubling a different population would compare two
+    // different lists and prove nothing about de-duplication.
+    let mut rows = rows_active(&conn);
     let doubled = rows.clone();
     rows.extend(doubled);
     let reduced = emp::reduce_overview(&rows);
@@ -1484,7 +1528,7 @@ fn payroll_derives_no_deduction_from_an_absence() {
             notes: None,
             user_id: None,
             role: None,
-            password: Some("nogha123".into()),
+            password: Some("6789".into()),
         },
     )
     .unwrap();
@@ -1708,7 +1752,7 @@ fn an_admin_can_set_a_new_password_for_an_employee() {
     let cashier = login(&conn, "cashier");
     let target = user_of(&conn, employee_of(&conn, &cashier));
 
-    auth::change_password(&conn, &admin, target, "brand-new-pass")
+    auth::change_password(&conn, &admin, target, "1212")
         .expect("an ADMIN may set a colleague's password");
 
     // The proof is behavioural, not structural: the old credential is dead and the
@@ -1717,7 +1761,7 @@ fn an_admin_can_set_a_new_password_for_an_employee() {
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "cashier123".into(),
+            password: "3456".into(),
         }
     )
     .is_err());
@@ -1725,7 +1769,7 @@ fn an_admin_can_set_a_new_password_for_an_employee() {
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "brand-new-pass".into(),
+            password: "1212".into(),
         },
     )
     .expect("the new password authenticates");
@@ -1742,14 +1786,14 @@ fn setting_a_new_password_replaces_the_old_one() {
     let target = user_of(&conn, employee_of(&conn, &manager));
 
     let before = stored_hash(&conn, target);
-    auth::change_password(&conn, &admin, target, "second-secret").unwrap();
+    auth::change_password(&conn, &admin, target, "3434").unwrap();
     let after = stored_hash(&conn, target);
 
     // Argon2id salts every hash, so a genuinely different value proves a fresh
     // hash was computed rather than a stale one written back.
     assert_ne!(before, after);
-    assert!(auth::verify_password("second-secret", &after));
-    assert!(!auth::verify_password("manager123", &after));
+    assert!(auth::verify_password("3434", &after));
+    assert!(!auth::verify_password("2345", &after));
 }
 
 /// SECURITY: only the hash is persisted. The plaintext must appear nowhere in the
@@ -1761,7 +1805,7 @@ fn only_the_hash_is_persisted_never_the_plaintext() {
     let admin = login(&conn, "admin");
     let cashier = login(&conn, "cashier");
     let target = user_of(&conn, employee_of(&conn, &cashier));
-    let plaintext = "plaintext-must-not-persist";
+    let plaintext = "4242";
 
     auth::change_password(&conn, &admin, target, plaintext).unwrap();
 
@@ -1832,7 +1876,7 @@ fn an_ordinary_employee_edit_does_not_change_the_password() {
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "cashier123".into(),
+            password: "3456".into(),
         }
     )
     .is_ok());
@@ -1840,16 +1884,35 @@ fn an_ordinary_employee_edit_does_not_change_the_password() {
 
 /// A password below the shared minimum is refused BEFORE anything is written.
 #[test]
-fn a_too_short_password_is_rejected_and_changes_nothing() {
+fn a_credential_the_policy_forbids_is_rejected_and_changes_nothing() {
     let conn = fresh();
     let admin = login(&conn, "admin");
     let cashier = login(&conn, "cashier");
     let target = user_of(&conn, employee_of(&conn, &cashier));
     let before = stored_hash(&conn, target);
 
-    let err = auth::change_password(&conn, &admin, target, "1234").unwrap_err();
-    assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
-    assert_eq!(stored_hash(&conn, target), before);
+    // Every shape the 4–5 digit PIN rule refuses. The point of the test is that a
+    // refused write leaves the STORED credential untouched, so it is checked
+    // against the hash and not merely against the returned error.
+    for forbidden in ["123", "123456", "1234a", "abcd", "12-34", ""] {
+        let err = auth::change_password(&conn, &admin, target, forbidden).unwrap_err();
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "{forbidden:?} must be a validation error, got {err:?}"
+        );
+        assert_eq!(
+            stored_hash(&conn, target),
+            before,
+            "a refused credential must not touch the stored hash ({forbidden:?})"
+        );
+    }
+
+    // …and the boundary values the rule DOES accept, so the rejection above
+    // cannot be satisfied by a service that simply refuses everything.
+    for accepted in ["1234", "55555"] {
+        auth::change_password(&conn, &admin, target, accepted).unwrap();
+        assert!(auth::verify_password(accepted, &stored_hash(&conn, target)));
+    }
 }
 
 /// AUTHORIZATION, enforced at the service layer and not by the form.
@@ -1873,7 +1936,7 @@ fn a_staff_cannot_change_another_persons_password() {
         &conn,
         &auth::LoginInput {
             name: "manager".into(),
-            password: "manager123".into(),
+            password: "2345".into(),
         }
     )
     .is_ok());
@@ -1895,13 +1958,13 @@ fn another_persons_credential_stays_a_manager_capability_at_the_service() {
     let cashier = login(&conn, "cashier");
     let target = user_of(&conn, employee_of(&conn, &cashier));
 
-    auth::change_password(&conn, &manager, target, "manager-set-this")
+    auth::change_password(&conn, &manager, target, "9090")
         .expect("the service gate is MANAGER+, unchanged by this feature");
     assert!(auth::login(
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "manager-set-this".into(),
+            password: "9090".into(),
         }
     )
     .is_ok());
@@ -1914,13 +1977,13 @@ fn a_user_may_still_change_their_own_password() {
     let conn = fresh();
     let cashier = login(&conn, "cashier");
 
-    auth::change_password(&conn, &cashier, cashier.id, "self-chosen-pass").unwrap();
+    auth::change_password(&conn, &cashier, cashier.id, "5656").unwrap();
 
     assert!(auth::login(
         &conn,
         &auth::LoginInput {
             name: "cashier".into(),
-            password: "self-chosen-pass".into(),
+            password: "5656".into(),
         }
     )
     .is_ok());
@@ -1935,7 +1998,7 @@ fn a_password_change_is_written_to_the_audit_log_without_the_credential() {
     let cashier = login(&conn, "cashier");
     let target = user_of(&conn, employee_of(&conn, &cashier));
 
-    auth::change_password(&conn, &admin, target, "audited-secret").unwrap();
+    auth::change_password(&conn, &admin, target, "7878").unwrap();
 
     let (actor, before_json, after_json): (i64, Option<String>, Option<String>) = conn
         .query_row(
@@ -1950,7 +2013,7 @@ fn a_password_change_is_written_to_the_audit_log_without_the_credential() {
     // Neither half of the audit row may have captured the credential it describes.
     for json in [before_json, after_json] {
         assert!(
-            !json.unwrap_or_default().contains("audited-secret"),
+            !json.unwrap_or_default().contains("7878"),
             "the audit trail must not record the password"
         );
     }
@@ -1969,4 +2032,143 @@ fn no_employee_payload_carries_any_credential_field() {
     assert!(!json.contains("password"), "a credential leaked: {json}");
     assert!(!json.contains("hash"), "a hash leaked: {json}");
     assert!(!json.contains("$argon2"), "a PHC string leaked: {json}");
+}
+/// THE WHOLE EDIT MODAL FLOW, end to end, through the services the dialog calls.
+///
+/// The unit tests above each pin one rule. This one walks the sequence the
+/// employee edit dialog actually performs, in the order it performs it, so that
+/// no combination of individually-correct rules can leave the record in a state
+/// the manager did not ask for:
+///
+///   1. open the dialog  — the dialog reads the employee payload, which carries
+///      no credential of any kind (so "the field opens empty" has nothing to be
+///      filled from, and there is no value that could be prefilled wrongly);
+///   2. save an UNRELATED field — no credential command is issued at all, and the
+///      colleague can still sign in with the PIN they always had;
+///   3. replace the PIN — the new one authenticates and the old one stops
+///      working, which is the only honest proof the change landed;
+///   4. save another unrelated field AFTER the change — the replacement survives,
+///      so an ordinary edit can never quietly undo the previous one.
+#[test]
+fn the_edit_modal_flow_preserves_then_replaces_an_existing_credential() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let employee_id = employee_of(&conn, &cashier);
+    let target = user_of(&conn, employee_id);
+    let original = crate::demo_data::demo_password_of("cashier").unwrap();
+
+    let edit = |name: &str| EmployeeInput {
+        name: name.into(),
+        phone: None,
+        employee_type: emp::CASHIER.into(),
+        base_salary: Some(0),
+        notes: None,
+        user_id: None,
+        role: None,
+        // What the dialog sends on every edit: the credential is NOT an employee
+        // field, so it never rides along on the payload in either direction.
+        password: None,
+    };
+
+    // 1. OPEN. The dialog's only credential source is the employee payload.
+    let opened = serde_json::to_string(&emp::details(
+        &conn,
+        &admin,
+        employee_id,
+        &EmployeePeriod::default(),
+    )
+    .unwrap()
+    .employee)
+    .unwrap();
+    assert!(
+        !opened.contains("password") && !opened.contains("$argon2"),
+        "the dialog must have no credential to prefill from: {opened}"
+    );
+
+    // 2. SAVE WITHOUT TOUCHING THE CREDENTIAL.
+    let hash_before = stored_hash(&conn, target);
+    emp::update_employee(&conn, &admin, employee_id, &edit("كاشير معدّل")).unwrap();
+    assert_eq!(
+        stored_hash(&conn, target),
+        hash_before,
+        "an unrelated edit must not rewrite the credential"
+    );
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: original.into(),
+        }
+    )
+    .is_ok());
+
+    // 3. REPLACE IT: the dialog issues `change_password` for the LOGIN id only.
+    let replacement = if original == "55555" { "2214" } else { "55555" };
+    auth::change_password(&conn, &admin, target, replacement).unwrap();
+    assert!(
+        auth::login(
+            &conn,
+            &auth::LoginInput {
+                name: "cashier".into(),
+                password: original.into(),
+            }
+        )
+        .is_err(),
+        "the replaced credential must stop authenticating"
+    );
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: replacement.into(),
+        }
+    )
+    .is_ok());
+
+    // 4. AND ANOTHER UNRELATED EDIT MUST NOT UNDO IT.
+    let hash_after = stored_hash(&conn, target);
+    emp::update_employee(&conn, &admin, employee_id, &edit("كاشير معدّل مرة أخرى")).unwrap();
+    assert_eq!(stored_hash(&conn, target), hash_after);
+    assert!(auth::login(
+        &conn,
+        &auth::LoginInput {
+            name: "cashier".into(),
+            password: replacement.into(),
+        }
+    )
+    .is_ok());
+}
+
+/// The credential policy is enforced by the SERVICE, so the dialog's guarantee
+/// does not depend on the field being well-behaved. Every value the issue lists
+/// as invalid is refused here, and — the part that matters — a refused write
+/// leaves the stored hash byte-for-byte identical, so a rejected credential can
+/// never leave a colleague unable to sign in.
+#[test]
+fn the_service_refuses_every_credential_the_edit_dialog_cannot_hold() {
+    let conn = fresh();
+    let admin = login(&conn, "admin");
+    let cashier = login(&conn, "cashier");
+    let target = user_of(&conn, employee_of(&conn, &cashier));
+    let before = stored_hash(&conn, target);
+
+    for invalid in ["123", "123456", "abcd", "12a4", "12-34", "", "  ", "٢٢١٤"] {
+        let err = auth::change_password(&conn, &admin, target, invalid).unwrap_err();
+        assert!(
+            matches!(err, AppError::Validation(_)),
+            "{invalid:?} must be a validation error, got {err:?}"
+        );
+        assert_eq!(
+            stored_hash(&conn, target),
+            before,
+            "a refused credential must leave the stored hash untouched ({invalid:?})"
+        );
+    }
+    // Both accepted boundary lengths, so the refusal above cannot be satisfied by
+    // a service that simply refuses everything.
+    for valid in ["1234", "55555"] {
+        auth::change_password(&conn, &admin, target, valid).unwrap();
+        assert!(auth::verify_password(valid, &stored_hash(&conn, target)));
+    }
 }

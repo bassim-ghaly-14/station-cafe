@@ -51,7 +51,7 @@ mod runtime_tests {
             conn,
             &auth::LoginInput {
                 name: "manager".into(),
-                password: "manager123".into(),
+                password: "2345".into(),
             },
         )
         .unwrap()
@@ -382,7 +382,9 @@ fn login_token(conn: &rusqlite::Connection, name: &str) -> String {
         conn,
         &auth::LoginInput {
             name: name.into(),
-            password: format!("{name}123"),
+            password: crate::demo_data::demo_password_of(name)
+                    .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                    .into(),
         },
     )
     .unwrap()
@@ -538,7 +540,7 @@ fn login_returns_a_usable_token_and_safe_identity() {
     let conn = fresh();
     let _limiter = login_limiter_guard();
     crate::network::server::reset_login_limiter_for_tests();
-    let out = api::handle(&login_body("manager", "manager123"), &conn).unwrap();
+    let out = api::handle(&login_body("manager", "2345"), &conn).unwrap();
     assert_eq!(out.status, 200);
     assert_eq!(out.body["user"]["role"], "MANAGER");
     assert!(out.body["user"]["phone"].is_null(), "no phone is returned");
@@ -558,7 +560,7 @@ fn a_network_login_uses_the_shared_session_table_and_is_audited() {
     let before: i64 = conn
         .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
         .unwrap();
-    api::handle(&login_body("manager", "manager123"), &conn).unwrap();
+    api::handle(&login_body("manager", "2345"), &conn).unwrap();
     let after: i64 = conn
         .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
         .unwrap();
@@ -612,7 +614,7 @@ fn a_correct_login_is_never_locked_out_by_earlier_typos() {
     for _ in 0..5 {
         let _ = api::handle(&attempt("typo"), &conn);
     }
-    assert_eq!(api::handle(&attempt("manager123"), &conn).unwrap().status, 200);
+    assert_eq!(api::handle(&attempt("2345"), &conn).unwrap().status, 200);
 }
 
 // ---- bind resolution ----------------------------------------------------
@@ -883,7 +885,9 @@ mod web_tests {
             &conn.lock().unwrap(),
             &auth::LoginInput {
                 name: name.into(),
-                password: format!("{name}123"),
+                password: crate::demo_data::demo_password_of(name)
+                    .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                    .into(),
             },
         )
         .unwrap()
@@ -1183,13 +1187,13 @@ mod web_tests {
         let (status, raw) = post(
             addr,
             "/api/v1/auth/login",
-            r#"{"name":"manager","password":"manager123"}"#,
+            r#"{"name":"manager","password":"2345"}"#,
         );
         assert_eq!(status, 200, "{raw}");
         assert!(raw.contains("\"token\""), "{raw}");
         assert!(raw.contains("MANAGER"), "{raw}");
         // The response carries a session, never the password.
-        assert!(!raw.contains("manager123"), "{raw}");
+        assert!(!raw.contains("2345"), "{raw}");
 
         let (status, _) = post(
             addr,
@@ -1284,7 +1288,9 @@ mod qr_access_tests {
             conn,
             &auth::LoginInput {
                 name: name.into(),
-                password: format!("{name}123"),
+                password: crate::demo_data::demo_password_of(name)
+                    .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                    .into(),
             },
         )
         .unwrap()

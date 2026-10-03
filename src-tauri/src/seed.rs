@@ -39,6 +39,64 @@ use crate::services::auth;
 /// Marker written into `app_settings` after the initial seed completes.
 const SEED_MARKER: &str = "seed.completed_at";
 
+/// Reconcile the credential of a starter account that exists but was NOT
+/// created by this seed.
+///
+/// # Why this exists
+///
+/// `users::insert` is `ON CONFLICT(name) DO NOTHING`, so a starter account that
+/// already exists is left exactly as it is. That is correct for a row this seed
+/// created — an administrator may legitimately have changed that person's PIN
+/// through the Employees page, and re-running the seed must never silently
+/// revert a real password change.
+///
+/// It is NOT correct for the row the DEVELOPER RESET creates. That reset
+/// preserves one account by re-inserting it directly (with `is_seed = 0`,
+/// because it did not come from this seed), and it is documented to recreate it
+/// "under the very same credentials" as the official seed. Before this function
+/// existed, that contract was silently broken for any database whose reset ran
+/// against a build with a different developer PIN: the reset wrote the old
+/// credential, the seed then skipped the existing name, and the account was
+/// permanently unable to authenticate — the owner locked out of the very tool
+/// that exists to restore access, and offered on the login screen as an account
+/// guaranteed to fail.
+///
+/// # The rule
+///
+/// A starter account whose existing row is NOT seed-owned (`is_seed = 0`) is
+/// one this application manufactured, not one a person chose, so its credential
+/// is restored to the official one. A seed-owned row (`is_seed = 1`) is left
+/// completely alone.
+///
+/// This is deliberately driven off `DEFAULT_USERS` and the `is_seed` flag. There
+/// is no name comparison against any particular account, so it repairs the
+/// developer account, the cafe owner's account and any starter account added in
+/// future without a special case, and it can never touch an account a human
+/// created or renamed.
+fn reconcile_starter_credentials(conn: &Db) -> AppResult<()> {
+    for (name, _, _, password) in DEFAULT_USERS {
+        let existing = users::find_by_name(conn, name)?;
+        let Some(record) = existing else { continue };
+        if record.is_seed {
+            continue;
+        }
+
+        // Only rewrite when the stored hash really does not already match, so a
+        // healthy database is left byte-for-byte alone and `updated_at` is not
+        // churned on every launch.
+        if auth::verify_password(password, &record.password_hash) {
+            continue;
+        }
+
+        let hash = auth::hash_password(password)?;
+        users::set_password(conn, record.user.id, &hash)?;
+        log::warn!(
+            "seed: restored the official credential for the non-seeded starter account {name}"
+        );
+    }
+    Ok(())
+}
+
 /// Marker for the current starter catalog version.
 const CATALOG_SEED_MARKER: &str = "seed.catalog.v4.completed_at";
 
@@ -56,6 +114,18 @@ pub const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
     ("amira", None, "MANAGER", "20192"),
     ("momo", None, "STAFF", "11111"),
     ("foly", None, "STAFF", "22222"),
+    // The café's own owner account. An ADMIN like any other: it gets its
+    // permissions from the SAME `users.role` every other admin has, so it needs
+    // no special case anywhere in the authorization code.
+    ("Bassam", None, "ADMIN", "55555"),
+    // The owner/developer account. It is here, in the OFFICIAL dataset, because
+    // it is a real account of this business and not a demonstration fixture —
+    // see `DEVELOPER_ACCOUNT` in `services::developer`, which is the very same
+    // account, recreated under the very same credentials whenever the database
+    // is cleared. Having it in the official seed is what lets one person drive
+    // BOTH data modes: "Load Official Data" and "Load Demo Data" are both
+    // ADMIN-gated, and this account is an ADMIN in both.
+    ("Belly", None, "ADMIN", "2214"),
 ];
 
 /// Usernames that used to be demonstration accounts in this seed.
@@ -384,6 +454,14 @@ pub fn run_if_empty(conn: &Db) -> AppResult<()> {
     // Existing installation: synchronize the current catalog once.
     sync_catalog_if_needed(conn)?;
 
+    // A starter account this application manufactured itself (rather than
+    // seeded) must still hold its official credential. This is what unblocks an
+    // installation whose developer reset ran against an earlier build: the
+    // account is offered on the login screen, and without this it could never
+    // sign in. Idempotent, and it never touches a seed-owned row or any
+    // credential a person changed.
+    reconcile_starter_credentials(conn)?;
+
     Ok(())
 }
 
@@ -601,6 +679,7 @@ fn insert_default_products(conn: &Db) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::db::migrate;
+    use crate::services::auth::login;
     use rusqlite::Connection;
 
     #[test]
@@ -1265,26 +1344,330 @@ mod tests {
         assert_eq!(count(&conn, "users"), DEFAULT_USERS.len() as i64);
     }
 
-    /// A FRESH install with no ADMIN anywhere must still seed successfully.
+    /// The two owner ADMIN accounts the business asked for, verified through the
+    /// REAL login path rather than by reading the row.
     ///
-    /// Regression guard for the opening-stock movement, which used to be
-    /// attributed to "the first ADMIN user" and therefore had no user at all
-    /// once the demonstration admin was removed from the seed.
+    /// Going through `auth::login` is the point: it proves the seeded Argon2
+    /// hash really matches the documented PIN and that the resulting session
+    /// really carries the ADMIN role, which is what authorizes the developer
+    /// data actions. A row-level assertion would pass even if the password had
+    /// been hashed from something else.
     #[test]
-    fn the_official_seed_succeeds_without_any_admin_account() {
+    fn the_owner_admin_accounts_sign_in_with_their_documented_pins() {
+        use crate::services::auth::{self, LoginInput};
+
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
 
+        for (name, password) in [("Bassam", "55555"), ("Belly", "2214")] {
+            let session = auth::login(
+                &conn,
+                &LoginInput {
+                    name: name.into(),
+                    password: password.into(),
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name} must be able to sign in: {e}"));
+
+            assert_eq!(session.user.name, name);
+            assert_eq!(
+                session.user.role, "ADMIN",
+                "{name} must hold the full ADMIN role"
+            );
+        }
+    }
+
+    /// A seeded credential must satisfy the ONE credential policy, on every row.
+    ///
+    /// Driven off the table rather than a list of literals, so adding an account
+    /// with a six-digit or letter-bearing PIN fails here immediately instead of
+    /// producing an account nobody can ever sign in to.
+    #[test]
+    fn every_seeded_credential_satisfies_the_credential_policy() {
+        for (name, _, _, password) in DEFAULT_USERS {
+            assert!(
+                crate::services::auth::is_valid_password(password),
+                "{name} has a PIN the login policy would refuse: {password:?}"
+            );
+        }
+    }
+
+    /// The account picker offers an account, and that account can actually sign
+    /// in. This is the end-to-end statement of the bug this fixes.
+    ///
+    /// The failure it guards against was silent and total: the login screen
+    /// listed the account, the owner typed the documented PIN, and
+    /// authentication refused — with the account unreachable through the very
+    /// developer tool whose purpose is to restore access. Every layer is the
+    /// real one: the same `list_login_accounts` projection the picker renders
+    /// and the same `auth::login` the submit button calls.
+    ///
+    /// The stale credential is written here directly, exactly as an earlier
+    /// build's developer reset would have left it, so the test reproduces the
+    /// real broken state rather than a simplified stand-in.
+    #[test]
+    fn an_offered_starter_account_can_actually_sign_in() {
+        use crate::repositories::users::LoginAccount;
+        use crate::services::auth::{self, LoginInput};
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        // Reproduce the broken state: the reset re-inserted this account with a
+        // credential from an earlier build, so the seed skipped the existing
+        // name and left the stale hash in place.
+        conn.execute(
+            "UPDATE users SET password_hash = ?1, is_seed = 0 WHERE name = 'Belly'",
+            [&auth::hash_password("0000000").unwrap()],
+        )
+        .unwrap();
+        assert!(
+            login(
+                &conn,
+                &LoginInput {
+                    name: "Belly".into(),
+                    password: "2214".into(),
+                }
+            )
+            .is_err(),
+            "precondition: the stale credential must really not authenticate"
+        );
+
+        // Startup is what repairs it.
+        run_if_empty(&conn).unwrap();
+
+        // 1. The picker still offers it...
+        let offered = users::list_login_accounts(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|a: LoginAccount| a.name)
+            .collect::<Vec<_>>();
+        assert!(
+            offered.contains(&"Belly".to_string()),
+            "the account must remain on the login screen"
+        );
+
+        // 2. ...and selecting it and typing the documented PIN now works.
+        let session = login(
+            &conn,
+            &LoginInput {
+                name: "Belly".into(),
+                password: "2214".into(),
+            },
+        )
+        .expect("the offered account must be able to authenticate");
+        assert_eq!(session.user.name, "Belly");
+        assert_eq!(session.user.role, "ADMIN");
+
+        // 3. A wrong PIN is still refused. Repairing the credential must not
+        //    weaken authentication in any way.
+        assert!(
+            login(
+                &conn,
+                &LoginInput {
+                    name: "Belly".into(),
+                    password: "9999".into(),
+                }
+            )
+            .is_err(),
+            "a wrong PIN must still be refused"
+        );
+
+        // 4. An ordinary seeded account is untouched and still signs in.
+        let other = login(
+            &conn,
+            &LoginInput {
+                name: "amira".into(),
+                password: "20192".into(),
+            },
+        )
+        .expect("an existing seeded account must still sign in");
+        assert_eq!(other.user.role, "MANAGER");
+    }
+
+    /// The repair is driven by the seed TABLE and the `is_seed` flag, never by a
+    /// name. Proven here for the two cases that make that safe.
+    ///
+    /// A credential a person changed on a SEED-owned account must survive
+    /// startup untouched — that is a real password change, not drift, and
+    /// silently reverting it would be a data-loss bug far worse than the one
+    /// being fixed. And an account this application never seeded must be
+    /// invisible to the repair.
+    #[test]
+    fn the_credential_repair_never_reverts_a_real_password_change() {
+        use crate::services::auth::{self, LoginInput};
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        // The café's owner genuinely changes amira's PIN through the app.
+        let amira = users::find_by_name(&conn, "amira").unwrap().unwrap();
+        users::set_password(&conn, amira.user.id, &auth::hash_password("4321").unwrap()).unwrap();
+
+        run_if_empty(&conn).unwrap();
+
+        assert!(
+            login(
+                &conn,
+                &LoginInput {
+                    name: "amira".into(),
+                    password: "4321".into(),
+                }
+            )
+            .is_ok(),
+            "a real password change on a seeded account must survive startup"
+        );
+        assert!(
+            login(
+                &conn,
+                &LoginInput {
+                    name: "amira".into(),
+                    password: "20192".into(),
+                }
+            )
+            .is_err(),
+            "the seed must not silently restore the original PIN over a real change"
+        );
+
+        // An account the seed never created is not touched, even though the
+        // repair runs. Its name appears nowhere in the starter table.
+        conn.execute(
+            "INSERT INTO users (name, phone, role, password_hash, is_seed)
+             VALUES ('Temporary', NULL, 'STAFF', ?1, 0)",
+            [&auth::hash_password("9090").unwrap()],
+        )
+        .unwrap();
+        run_if_empty(&conn).unwrap();
+        let after = users::find_by_name(&conn, "Temporary").unwrap().unwrap();
+        assert!(
+            auth::verify_password("9090", &after.password_hash),
+            "an account the seed does not own must never be rewritten"
+        );
+    }
+
+    /// Startup is idempotent: running it again changes nothing and keeps every
+    /// starter account able to sign in.
+    #[test]
+    fn the_credential_repair_is_idempotent() {
+        use crate::services::auth::{self, LoginInput};
+
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        conn.execute(
+            "UPDATE users SET password_hash = ?1, is_seed = 0 WHERE name = 'Belly'",
+            [&auth::hash_password("0000000").unwrap()],
+        )
+        .unwrap();
+
+        run_if_empty(&conn).unwrap();
+        let first = users::find_by_name(&conn, "Belly").unwrap().unwrap().user;
+        run_if_empty(&conn).unwrap();
+        let second = users::find_by_name(&conn, "Belly").unwrap().unwrap().user;
+
+        assert_eq!(
+            first.updated_at, second.updated_at,
+            "a healthy database must not be rewritten on every launch"
+        );
+        assert!(
+            login(
+                &conn,
+                &LoginInput {
+                    name: "Belly".into(),
+                    password: "2214".into(),
+                }
+            )
+            .is_ok(),
+            "the account must still authenticate after repeated startups"
+        );
+    }
+
+
+    /// An existing employee is never promoted by re-running the seed.
+    ///
+    /// The seed inserts by name and is a no-op on a conflict, so a person the
+    /// café has already re-roled keeps the role they were given. This is the
+    /// guard on the requirement that adding the owner admins must not turn
+    /// anybody else into one.
+    #[test]
+    fn re_running_the_seed_never_changes_an_existing_accounts_role() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        // The café demotes a starter manager to an ordinary cashier.
+        let user_id: i64 = conn
+            .query_row("SELECT id FROM users WHERE name = 'amira'", [], |r| r.get(0))
+            .unwrap();
+        conn.execute("UPDATE users SET role = 'STAFF' WHERE id = ?1", [user_id])
+            .unwrap();
+
+        // Forcing the seed body to run again — the marker normally stops it.
+        conn.execute("DELETE FROM app_settings WHERE key = ?1", [SEED_MARKER])
+            .unwrap();
+        run_if_empty(&conn).unwrap();
+
+        let role: String = conn
+            .query_row("SELECT role FROM users WHERE id = ?1", [user_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            role, "STAFF",
+            "the seed must never re-promote an account the café demoted"
+        );
+    }
+
+    /// The opening stock is attributed to a real user even with NO admin present.
+    ///
+    /// Regression guard for the opening-stock movement, which used to be
+    /// attributed to "the first ADMIN user" and therefore had no actor at all
+    /// once that account was removed from the seed.
+    ///
+    /// The official dataset DOES ship the café's own ADMIN accounts now, so the
+    /// guard can no longer assert their absence — that would be testing the
+    /// dataset rather than the attribution rule. Instead every admin is removed
+    /// first and the catalog synchronization is then forced, which is exactly
+    /// the situation the original bug produced: a catalog landing on a database
+    /// where nobody holds the strongest role.
+    #[test]
+    fn the_official_catalog_lands_with_no_admin_account_at_all() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        run_if_empty(&conn).unwrap();
+
+        // Strip every admin, exactly as the dataset looked before the owner
+        // accounts were added. The ROLE is demoted rather than the row deleted:
+        // a login is referenced by its employee record, so deleting one would
+        // trip a foreign key long before the catalog was ever reached.
+        conn.execute("UPDATE users SET role = 'STAFF' WHERE role = 'ADMIN'", [])
+            .unwrap();
         let admins: i64 = conn
             .query_row("SELECT COUNT(*) FROM users WHERE role = 'ADMIN'", [], |r| {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(admins, 0, "the official dataset ships no admin by design");
+        assert_eq!(admins, 0, "this test is only meaningful with no admin at all");
 
-        // The catalog's opening stock still landed, attributed to a real user.
+        // Clear the seeded catalog, then re-run the synchronization an existing
+        // installation performs.
+        conn.execute("DELETE FROM stock_movements", []).unwrap();
+        conn.execute("DELETE FROM inventory_items", []).unwrap();
+        conn.execute("DELETE FROM products", []).unwrap();
+        conn.execute("DELETE FROM app_settings WHERE key = ?1", [CATALOG_SEED_MARKER])
+            .unwrap();
+
+        run_if_empty(&conn).unwrap();
+
+        // The catalog's opening stock still landed…
         let tracked: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM inventory_items i
@@ -1294,7 +1677,9 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(tracked > 0);
+        assert!(tracked > 0, "the catalog must land even with no admin");
+
+        // …and every movement it wrote names a real actor rather than a null.
         let orphan_movements: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM stock_movements WHERE user_id IS NULL",

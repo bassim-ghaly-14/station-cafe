@@ -105,8 +105,8 @@ fn pay_cash(conn: &Connection, staff: &auth::User, order_id: i64) -> checkout::C
 #[test]
 fn a_cashier_can_still_discard_an_order_that_has_no_wash_ticket() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (_, order_id) = open_day_shift_and_order(&conn, &manager, &staff);
 
     pos_svc::discard_order(&conn, &staff, order_id).unwrap();
@@ -120,8 +120,8 @@ fn a_cashier_can_still_discard_an_order_that_has_no_wash_ticket() {
 #[test]
 fn a_cashier_cannot_cancel_an_order_after_the_wash_ticket_is_issued() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (_, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
 
@@ -137,8 +137,8 @@ fn a_cashier_cannot_cancel_an_order_after_the_wash_ticket_is_issued() {
 #[test]
 fn the_rule_cannot_be_side_stepped_by_removing_the_wash_lines_first() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (_, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
 
@@ -162,8 +162,8 @@ fn the_rule_cannot_be_side_stepped_by_removing_the_wash_lines_first() {
 #[test]
 fn a_refused_cancellation_never_mutates_the_historical_ticket_or_the_order() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (_, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
     let read_ticket = |conn: &Connection| -> (i64, i64, String) {
@@ -189,8 +189,8 @@ fn a_refused_cancellation_never_mutates_the_historical_ticket_or_the_order() {
 #[test]
 fn a_manager_keeps_the_existing_discard_right_over_an_unticketed_order() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     let table = pos::list_tables(&conn, None).unwrap().remove(0);
@@ -212,8 +212,8 @@ fn a_manager_keeps_the_existing_discard_right_over_an_unticketed_order() {
 #[test]
 fn todays_issued_wash_ticket_is_returned_for_the_open_business_day() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
 
@@ -236,8 +236,8 @@ fn todays_issued_wash_ticket_is_returned_for_the_open_business_day() {
 #[test]
 fn every_ticket_of_the_day_is_returned_not_just_the_last_one() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, _) =
         ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
 
@@ -275,8 +275,8 @@ fn every_ticket_of_the_day_is_returned_not_just_the_last_one() {
 #[test]
 fn a_ticket_carries_the_persisted_reference_to_its_own_invoice() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
     let paid = pay_cash(&conn, &staff, order_id);
@@ -298,8 +298,8 @@ fn a_ticket_carries_the_persisted_reference_to_its_own_invoice() {
 #[test]
 fn a_ticket_without_an_invoice_still_appears() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, _) =
         ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
 
@@ -315,8 +315,8 @@ fn a_ticket_without_an_invoice_still_appears() {
 #[test]
 fn two_orders_of_one_customer_keep_their_own_invoice() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, first) =
         ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
 
@@ -358,8 +358,8 @@ fn two_orders_of_one_customer_keep_their_own_invoice() {
 #[test]
 fn the_day_boundary_is_the_business_day_not_the_calendar_label() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (first_day, first_order) =
         ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
     pay_cash(&conn, &staff, first_order);
@@ -396,8 +396,8 @@ fn the_day_boundary_is_the_business_day_not_the_calendar_label() {
 #[test]
 fn the_daily_read_is_narrowed_by_the_backend_only() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, order_id) =
         ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
 
@@ -437,8 +437,8 @@ fn the_daily_read_is_narrowed_by_the_backend_only() {
 #[test]
 fn an_empty_business_day_returns_a_valid_empty_result() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let (day_id, _) = open_day_shift_and_order(&conn, &manager, &staff);
 
     let rows = pos_svc::daily_wash_tickets(&conn, Some(day_id), None, None).unwrap();

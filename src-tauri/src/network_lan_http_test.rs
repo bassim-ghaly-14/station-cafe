@@ -462,7 +462,7 @@ fn a_loopback_or_wildcard_bind_can_never_be_configured() {
         &conn,
         &crate::services::auth::LoginInput {
             name: "manager".into(),
-            password: "manager123".into(),
+            password: "2345".into(),
         },
     )
     .unwrap()

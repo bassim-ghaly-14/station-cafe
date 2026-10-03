@@ -43,7 +43,9 @@ fn login(conn: &Connection, name: &str) -> User {
         conn,
         &auth::LoginInput {
             name: name.into(),
-            password: format!("{name}123"),
+            password: crate::demo_data::demo_password_of(name)
+                .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                .into(),
         },
     )
     .unwrap()
@@ -105,7 +107,7 @@ fn unused_cashier(conn: &Connection, manager: &User, name: &str) -> (i64, i64) {
             name,
             phone: None,
             role: "STAFF",
-            password_hash: &auth::hash_password("unused123").unwrap(),
+            password_hash: &auth::hash_password("7777").unwrap(),
             is_seed: false,
         },
     )

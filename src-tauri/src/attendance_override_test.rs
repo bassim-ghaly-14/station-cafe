@@ -36,7 +36,12 @@ fn fresh() -> Connection {
 
 /// Log in as one of the seeded starter accounts.
 fn login(conn: &Connection, name: &str) -> User {
-    login_with(conn, name, &format!("{name}123"))
+    login_with(
+        conn,
+        name,
+        crate::demo_data::demo_password_of(name)
+            .unwrap_or_else(|| panic!("{name} is not a seeded demo account")),
+    )
 }
 
 /// Log in with an explicit password — the starter list is not uniform (`momo` and

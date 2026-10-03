@@ -97,7 +97,7 @@ fn employee_name(conn: &Connection, user_id: i64) -> String {
 
 /// A selling till: an open business day and an open shift for `staff`.
 fn open_till(conn: &Connection, staff: &auth::User) {
-    let manager = login(conn, "manager", "manager123");
+    let manager = login(conn, "manager", "2345");
     shift_svc::open_day(conn, &manager).unwrap();
     shift_svc::open_shift(conn, staff, 0).unwrap();
 }
@@ -105,7 +105,7 @@ fn open_till(conn: &Connection, staff: &auth::User) {
 #[test]
 fn an_invoice_persists_the_cashier_who_raised_it() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     open_till(&conn, &staff);
 
     let inv = snapshot(&conn, sell(&conn, &staff, None));
@@ -121,7 +121,7 @@ fn an_invoice_persists_the_cashier_who_raised_it() {
 #[test]
 fn an_invoice_persists_the_customer_identity_and_details() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     open_till(&conn, &staff);
 
     let customer_id = customers::insert(&conn, "عميل مسجّل", Some("01001234567"), None).unwrap();
@@ -140,7 +140,7 @@ fn an_invoice_persists_the_customer_identity_and_details() {
 #[test]
 fn a_customer_less_invoice_still_carries_its_explicit_identity_and_cashier() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     open_till(&conn, &staff);
 
     let inv = snapshot(&conn, sell(&conn, &staff, None));
@@ -157,7 +157,7 @@ fn a_customer_less_invoice_still_carries_its_explicit_identity_and_cashier() {
 #[test]
 fn a_renamed_employee_or_customer_does_not_change_an_existing_invoice() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     open_till(&conn, &staff);
 
     let customer_id = customers::insert(&conn, "اسم قديم", Some("01001234567"), None).unwrap();
@@ -198,7 +198,7 @@ fn a_renamed_employee_or_customer_does_not_change_an_existing_invoice() {
 #[test]
 fn the_printed_invoice_is_stable_when_the_employee_and_customer_change() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     open_till(&conn, &staff);
 
     let customer_id = customers::insert(&conn, "عميل أول", Some("01001234567"), None).unwrap();
@@ -249,8 +249,8 @@ fn the_printed_invoice_is_stable_when_the_employee_and_customer_change() {
 #[test]
 fn the_open_shift_identifies_its_cashier_and_blocks_a_second_shift() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();

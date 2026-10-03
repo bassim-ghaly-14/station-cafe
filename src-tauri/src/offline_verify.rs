@@ -93,8 +93,8 @@ fn the_whole_employees_feature_runs_with_no_network() {
     let dir = scratch_dir("workflow");
     let conn = open_real_db(&dir);
 
-    let manager = login_as(&conn, "manager", "manager123");
-    let cashier = login_as(&conn, "cashier", "cashier123");
+    let manager = login_as(&conn, "manager", "2345");
+    let cashier = login_as(&conn, "cashier", "3456");
     let cashier_id = cashier_of(&conn, &cashier);
 
     // --- 1. A wash worker exists and has NO login -----------------------

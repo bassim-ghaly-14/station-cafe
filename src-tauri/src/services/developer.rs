@@ -4,13 +4,31 @@ use crate::error::AppResult;
 use crate::repositories::{developer, Db};
 use crate::services::auth::{self, require_role, User};
 
+/// The NAME of the account the developer data reset preserves and recreates.
+///
+/// It is looked up in `seed::DEFAULT_USERS` rather than spelled out with its
+/// credentials here: the official seed installs this account, so the reset must
+/// recreate the SAME one. Writing the credentials a second time is how a reset
+/// ends up producing an account whose PIN no longer matches the seeded one, and
+/// the failure is a lock-out discovered at the worst possible moment.
 const DEVELOPER_USERNAME: &str = "Belly";
-const DEVELOPER_PASSWORD: &str = "2214Q";
+
+/// The developer account exactly as the official seed defines it.
+fn developer_account() -> AppResult<(&'static str, &'static str)> {
+    crate::seed::DEFAULT_USERS
+        .iter()
+        .find(|(name, ..)| *name == DEVELOPER_USERNAME)
+        .map(|(name, _, _, password)| (*name, *password))
+        .ok_or_else(|| {
+            crate::error::AppError::internal("the official seed has no Belly account")
+        })
+}
 
 pub fn clear_database(conn: &Db, actor: &User) -> AppResult<()> {
     require_role(actor, "ADMIN")?;
-    let password_hash = auth::hash_password(DEVELOPER_PASSWORD)?;
-    developer::clear_all(conn, DEVELOPER_USERNAME, &password_hash)
+    let (username, password) = developer_account()?;
+    let password_hash = auth::hash_password(password)?;
+    developer::clear_all(conn, username, &password_hash)
 }
 
 /// Explicit developer action that invokes the one canonical starter seed.
@@ -58,6 +76,7 @@ pub fn load_demo_data(conn: &Db, actor: &User) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::db::migrate;
+    use crate::repositories::users;
     use crate::services::auth::LoginInput;
     use rusqlite::Connection;
 
@@ -134,7 +153,7 @@ mod tests {
             .unwrap();
         assert_eq!(row.0, "Belly");
         assert_eq!(row.1, "ADMIN");
-        assert_ne!(row.2, "2214Q");
+        assert_ne!(row.2, "2214");
         assert!(row.2.starts_with("$argon2"));
         assert_eq!(row.3, 0);
     }
@@ -208,7 +227,7 @@ mod tests {
             &conn,
             &LoginInput {
                 name: "Belly".into(),
-                password: "2214Q".into(),
+                password: "2214".into(),
             },
         )
         .unwrap();
@@ -237,14 +256,14 @@ mod tests {
 
         load_official_data(&conn, &admin).unwrap();
 
-        // The preserved developer account plus every starter account. Derived
-        // from the seed list itself, so adding a starter account cannot make
-        // this assertion lie.
-        assert_eq!(
-            count(&conn, "users"),
-            crate::seed::DEFAULT_USERS.len() as i64 + 1
-        );
-        for name in ["Belly", "amira", "momo", "foly"] {
+        // Every starter account, INCLUDING the owner account the reset preserves.
+        // There is no "+1" for the preserved account: the owner IS one of the
+        // starter accounts now, so adding one would count it twice — which is
+        // exactly the sort of off-by-one that makes a reset look like it
+        // duplicated somebody. Derived from the seed list so adding a starter
+        // account cannot make this assertion lie.
+        assert_eq!(count(&conn, "users"), crate::seed::DEFAULT_USERS.len() as i64);
+        for name in ["Belly", "amira", "momo", "foly", "Bassam"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -341,14 +360,23 @@ mod tests {
 
         assert_eq!(count(&conn, "users"), users_before);
         assert_eq!(count(&conn, "products"), products_before);
-        let belly_exists: i64 = conn
+        // The rollback restored the PRE-CLEAR state, and the owner account is
+        // part of the official dataset — so after a rolled-back clear it is
+        // exactly where it was before, still holding the PIN the seed installed.
+        // (Before the owner account joined the official seed this read 0: the
+        // clear was the only thing that ever created it, so a surviving row would
+        // have meant the rollback had NOT happened.)
+        let owner_hash: String = conn
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM users WHERE name = 'Belly')",
+                "SELECT password_hash FROM users WHERE name = 'Belly'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(belly_exists, 0);
+        assert!(
+            auth::verify_password("2214", &owner_hash),
+            "the preserved owner account must still authenticate after a rollback"
+        );
         auth::login(
             &conn,
             &LoginInput {
@@ -610,5 +638,53 @@ mod tests {
                 Err(crate::error::AppError::Unauthorized(_))
             ));
         }
+    }
+
+    /// The owner admin can drive BOTH data modes, and holds full ADMIN in each.
+    ///
+    /// This is the requirement the two datasets are usually confused about:
+    /// "Load Official Data" and "Load Demo Data" are two DIFFERENT commands with
+    /// two different bodies, and an account that can do only one of them is of
+    /// no use to the person who has to switch between them. Both are authorized
+    /// by the ordinary `require_role(actor, "ADMIN")` check — there is no
+    /// separate developer flag anywhere, and this test is what proves the
+    /// existing mechanism was sufficient rather than a new one being needed.
+    #[test]
+    fn the_owner_admin_account_can_drive_both_data_modes() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        // The real starter seed, not the `db()` helper's service call: the point
+        // is that a freshly installed database already carries this account.
+        crate::seed::run_if_empty(&conn).unwrap();
+
+        let owner = auth::login(
+            &conn,
+            &LoginInput {
+                name: "Belly".into(),
+                password: "2214".into(),
+            },
+        )
+        .expect("Belly must be able to sign in to a freshly seeded database")
+        .user;
+        assert_eq!(owner.role, "ADMIN");
+
+        // OFFICIAL mode: the real starter dataset, with no demo record in it.
+        load_official_data(&conn, &owner).unwrap();
+        assert_eq!(count(&conn, "cafe_tables"), 12);
+        assert_eq!(count(&conn, "invoices"), 0, "official data has no trading history");
+
+        // DEMO mode: a full dataset on top, and the same session is still an
+        // ADMIN afterwards — the reset destroys the session TABLE, not the role.
+        load_demo_data(&conn, &owner).unwrap();
+        assert!(count(&conn, "invoices") > 0, "demo data must exercise the reports");
+
+        // …and the owner account survived the demo reset, still as an ADMIN, so
+        // the person can sign straight back in and drive both modes again.
+        let after = users::find_by_name(&conn, "Belly")
+            .unwrap()
+            .expect("the owner account must survive the demo reset");
+        assert_eq!(after.user.role, "ADMIN");
+        assert!(auth::verify_password("2214", &after.password_hash));
     }
 }

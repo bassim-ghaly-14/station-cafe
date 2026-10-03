@@ -53,9 +53,9 @@ fn wash_service(conn: &Connection, name: &str) -> i64 {
 #[test]
 fn fixed_service_charge_options_and_authorized_discounts() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let developer = login(&conn, "admin", "1234");
+    let staff = login(&conn, "cashier", "3456");
 
     settings::set_service_charge(
         &conn,
@@ -164,9 +164,9 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     let conn = fresh();
 
     // ---- manager creates a cashier, staff logs in --------------------------
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
-    let hash = auth::hash_password("staff123").unwrap();
+    let hash = auth::hash_password("5555").unwrap();
 
     let staff_id = crate::repositories::users::insert(
         &conn,
@@ -200,7 +200,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
     )
     .unwrap();
 
-    let staff = login(&conn, "hassan", "staff123");
+    let staff = login(&conn, "hassan", "5555");
     assert_eq!(staff.role, "STAFF");
 
     // ---- day + shift -------------------------------------------------------
@@ -303,7 +303,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
 
     pos_svc::mark_ready_to_pay(&conn, &staff, order_id).unwrap();
 
-    let developer = login(&conn, "admin", "admin123");
+    let developer = login(&conn, "admin", "1234");
     settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
     // ---- pay CASH with change ---------------------------------------------
     let result = checkout::checkout(
@@ -444,7 +444,7 @@ fn full_pos_lifecycle_preserves_financial_integrity() {
 fn table_cannot_be_opened_without_an_active_shift() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
     shift_svc::open_day(&conn, &manager).unwrap();
 
@@ -459,8 +459,8 @@ fn table_cannot_be_opened_without_an_active_shift() {
 #[test]
 fn flexible_sequential_shifts_and_incremental_settlement_do_not_double_count() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
 
@@ -500,8 +500,8 @@ fn flexible_sequential_shifts_and_incremental_settlement_do_not_double_count() {
 #[test]
 fn shift_closing_and_settlement_reject_unsafe_states() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
 
     // Only one global ACTIVE shift, even for a different cashier.
@@ -525,8 +525,8 @@ fn shift_closing_and_settlement_reject_unsafe_states() {
 #[test]
 fn one_shift_business_day_can_be_settled_then_final_closed() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 100).unwrap();
     shift_svc::close_shift(&conn, &staff, 100).unwrap();
@@ -547,8 +547,8 @@ fn active_shift_and_business_day_survive_restart_after_midnight() {
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
-        let manager = login(&conn, "manager", "manager123");
-        let staff = login(&conn, "cashier", "cashier123");
+        let manager = login(&conn, "manager", "2345");
+        let staff = login(&conn, "cashier", "3456");
         shift_svc::open_day(&conn, &manager).unwrap();
         let day = shifts::current_day(&conn).unwrap().unwrap();
         let shift = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
@@ -594,8 +594,8 @@ fn active_shift_and_business_day_survive_restart_after_midnight() {
 #[test]
 fn shift_opening_reuses_open_business_day() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let day_id = shift_svc::open_day(&conn, &manager).unwrap();
     let before: i64 = conn
         .query_row("SELECT COUNT(*) FROM business_days", [], |r| r.get(0))
@@ -619,8 +619,8 @@ fn shift_opening_reuses_open_business_day() {
 #[test]
 fn shift_opening_implicitly_opens_a_day_after_close() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     shift_svc::close_shift(&conn, &staff, 0).unwrap();
@@ -639,7 +639,7 @@ fn shift_opening_implicitly_opens_a_day_after_close() {
 #[test]
 fn shift_opening_preserves_duplicate_shift_protection() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     assert!(shift_svc::open_shift(&conn, &staff, 0).is_err());
 }
@@ -647,7 +647,7 @@ fn shift_opening_preserves_duplicate_shift_protection() {
 #[test]
 fn failed_business_day_creation_does_not_create_shift() {
     let conn = fresh();
-    let staff = login(&conn, "cashier", "cashier123");
+    let staff = login(&conn, "cashier", "3456");
     conn.execute_batch("CREATE TRIGGER fail_business_day BEFORE INSERT ON business_days BEGIN SELECT RAISE(ABORT, 'day creation failed'); END;").unwrap();
     let err = shift_svc::open_shift(&conn, &staff, 0).unwrap_err();
     assert_eq!(err.kind(), crate::error::ErrorKind::BusinessRule);
@@ -662,7 +662,7 @@ fn failed_business_day_creation_does_not_create_shift() {
 fn day_cannot_be_opened_twice() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
     shift_svc::open_day(&conn, &manager).unwrap();
 
@@ -675,7 +675,7 @@ fn day_cannot_be_opened_twice() {
 fn day_cannot_close_while_a_shift_is_open() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &manager, 10_000).unwrap();
@@ -689,7 +689,7 @@ fn day_cannot_close_while_a_shift_is_open() {
 fn credit_flow_tracks_outstanding_until_settled() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &manager, 0).unwrap();
@@ -773,8 +773,8 @@ fn credit_flow_tracks_outstanding_until_settled() {
 #[test]
 fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_default() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
 
     // An installation that never configured it reads the default: a trading year.
     assert_eq!(
@@ -829,8 +829,8 @@ fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_def
 fn takeaway_order_has_takeaway_number_and_no_table_session() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
@@ -887,8 +887,8 @@ fn takeaway_order_has_takeaway_number_and_no_table_session() {
 fn open_order_pays_directly_with_no_payment_request_step() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
@@ -1026,8 +1026,8 @@ fn open_order_pays_directly_with_no_payment_request_step() {
 fn open_takeaway_orders_stay_discoverable_until_paid() {
     let conn = fresh();
 
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
 
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
@@ -1111,8 +1111,8 @@ fn open_takeaway_orders_stay_discoverable_until_paid() {
 #[test]
 fn discount_survives_reload_and_reaches_invoice() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
 
@@ -1126,7 +1126,7 @@ fn discount_survives_reload_and_reaches_invoice() {
     )
     .unwrap();
 
-    let developer = login(&conn, "admin", "admin123");
+    let developer = login(&conn, "admin", "1234");
     settings::set_discount_authorization_pin(&conn, &developer, "4820").unwrap();
     settings::set_service_charge(
         &conn,
@@ -1199,7 +1199,7 @@ fn discount_survives_reload_and_reaches_invoice() {
 #[test]
 fn table_count_controls_active_sequence_and_reuses_ids() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     let original: Vec<(i64, String)> = pos::list_tables(&conn, None)
         .unwrap()
         .into_iter()
@@ -1239,7 +1239,7 @@ fn table_count_controls_active_sequence_and_reuses_ids() {
 #[test]
 fn table_count_reduction_rejects_open_session_atomically() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &manager, 0).unwrap();
     let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
@@ -1260,7 +1260,7 @@ fn table_count_reduction_rejects_open_session_atomically() {
 fn table_count_reduction_rejects_open_and_ready_orders() {
     for ready in [false, true] {
         let conn = fresh();
-        let manager = login(&conn, "manager", "manager123");
+        let manager = login(&conn, "manager", "2345");
         shift_svc::open_day(&conn, &manager).unwrap();
         shift_svc::open_shift(&conn, &manager, 0).unwrap();
         let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
@@ -1286,7 +1286,7 @@ fn table_count_reduction_rejects_open_and_ready_orders() {
 #[test]
 fn table_count_deactivation_preserves_historical_order_references() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &manager, 0).unwrap();
     let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
@@ -1378,8 +1378,8 @@ fn invoice_total(conn: &Connection, invoice_id: i64) -> i64 {
 #[test]
 fn closed_shift_snapshot_is_never_recomputed() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
     sell_cafe_cash(&conn, &staff, "هوت شوكليت");
@@ -1410,8 +1410,8 @@ fn closed_shift_snapshot_is_never_recomputed() {
 #[test]
 fn a_closed_shift_is_no_longer_treated_as_active() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 0).unwrap();
     sell_cafe_cash(&conn, &staff, "هوت شوكليت");
@@ -1429,8 +1429,8 @@ fn a_closed_shift_is_no_longer_treated_as_active() {
 #[test]
 fn active_shift_state_reports_live_totals_after_every_completed_sale() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let shift_id = shift_svc::open_shift(&conn, &staff, 10_000).unwrap();
 
@@ -1468,8 +1468,8 @@ fn active_shift_state_reports_live_totals_after_every_completed_sale() {
 #[test]
 fn shift_closing_dialog_and_card_always_agree() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 5_000).unwrap();
     sell_cafe_cash(&conn, &staff, "هوت شوكليت");
@@ -1488,8 +1488,8 @@ fn shift_closing_dialog_and_card_always_agree() {
 #[test]
 fn closing_persists_the_same_numbers_the_live_view_reported() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     shift_svc::open_shift(&conn, &staff, 1_000).unwrap();
     sell_cafe_cash(&conn, &staff, "هوت شوكليت");
@@ -1508,8 +1508,8 @@ fn closing_persists_the_same_numbers_the_live_view_reported() {
 #[test]
 fn closed_business_days_are_addressable_by_their_own_id_for_the_reports_list() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
     let day_date: String = conn
@@ -1545,8 +1545,8 @@ fn closed_business_days_are_addressable_by_their_own_id_for_the_reports_list() {
 #[test]
 fn a_historical_day_report_is_reproducible_from_the_stored_snapshot() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
     shift_svc::open_shift(&conn, &staff, 2_000).unwrap();
@@ -1578,7 +1578,7 @@ fn an_unknown_day_reference_is_a_controlled_domain_error_not_a_crash() {
 
     // A closed day whose snapshot is missing is reported as a domain error too,
     // never as a generic internal failure.
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
     shift_svc::open_day(&conn, &manager).unwrap();
     let day_id = shifts::current_day(&conn).unwrap().unwrap().id;
     conn.execute(

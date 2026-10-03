@@ -93,18 +93,29 @@ use rusqlite::params;
 
 /// Demonstration logins: `(name, password, role)`.
 ///
-/// These are DEMO CREDENTIALS. They are intentionally trivial so a reviewer can
-/// sign in as each role, and they exist only after someone has explicitly chosen
-/// "Load Demo Data". They are never created by the official seed, by a
+/// These are DEMO CREDENTIALS. They exist only after someone has explicitly
+/// chosen "Load Demo Data". They are never created by the official seed, by a
 /// migration, or by application startup.
+///
+/// Every password here is a 4–5 digit PIN, because that is the ONE credential
+/// policy `services::auth::validate_password` enforces for every account in
+/// Station. A demo dataset whose own logins the policy would refuse would make
+/// the login screen look broken, so the fixtures follow the real rule instead
+/// of inventing an easier one for themselves.
 ///
 /// `is_seed = 1` marks them the way the official seed marks its own rows, so
 /// they stay identifiable as baseline/demo rows rather than café records.
 pub const DEMO_USERS: &[(&str, &str, &str)] = &[
-    ("admin", "admin123", "ADMIN"),
-    ("manager", "manager123", "MANAGER"),
-    ("cashier", "cashier123", "STAFF"),
-    ("sara", "sara1234", "STAFF"),
+    ("admin", "1234", "ADMIN"),
+    ("manager", "2345", "MANAGER"),
+    ("cashier", "3456", "STAFF"),
+    ("sara", "4567", "STAFF"),
+    // A second ADMIN, so the demo exercises what the management section of the
+    // Employees page actually has to render: more than one person holding the
+    // strongest role.
+    ("karim", "5678", "ADMIN"),
+    // A second MANAGER, for the same reason one level down.
+    ("nadia", "6789", "MANAGER"),
 ];
 
 /// Wash workers: `(name, base salary in piastres)`.
@@ -116,6 +127,49 @@ pub const DEMO_WASH_WORKERS: &[(&str, i64)] = &[
     ("كريم سمير", 165_000),
     ("سيد فتحي", 150_000),
 ];
+
+/// A former wash worker: `(name, base salary in piastres)`.
+///
+/// INACTIVE coverage, and it is deliberately the wash side that carries it. An
+/// inactive employee is the one state the Employees page filters out by default,
+/// so without such a row the "show inactive" switch has nothing to reveal and
+/// the status badge is never seen in its second state. He also has a real
+/// history — attendance and wash attributions before he left — so his row is a
+/// person who stopped working rather than a person who never existed.
+pub const DEMO_INACTIVE_WASH_WORKER: (&str, i64) = ("هشام فتحي", 140_000);
+
+/// A suspended cashier login: `(name, password)`.
+///
+/// The login-holding half of the inactive coverage, and the one the LOGIN SCREEN
+/// depends on: `users::list_login_accounts` filters on the employee status as
+/// well as the login status, so this account is exactly the case that must NOT
+/// appear as an account card. A dataset where every account is active cannot
+/// demonstrate that filter, so it would leave the rule untested by the app
+/// itself.
+///
+/// He keeps attendance history, so the roster shows a stopped colleague rather
+/// than an empty record.
+pub const DEMO_INACTIVE_STAFF: (&str, &str) = ("طارق ياسر", "8901");
+
+/// The seeded PIN of a demo account, for tests that need to sign in as one.
+///
+/// It lives beside [`DEMO_USERS`] on purpose. Several test modules across the
+/// crate need to authenticate as a seeded account, and each of them used to
+/// reconstruct the PIN as `format!("{name}123")` — a guess that silently
+/// stopped matching the moment the credential policy changed, turning every
+/// one of those tests red for a reason that had nothing to do with what they
+/// were testing. Reading the value from the table that defines it means the
+/// fixture can change without touching any caller, and a caller that names an
+/// account which does not exist fails with a message that says so.
+///
+/// `None` for an unknown name, so a caller must decide what that means rather
+/// than authenticating with an empty PIN.
+pub fn demo_password_of(name: &str) -> Option<&'static str> {
+    DEMO_USERS
+        .iter()
+        .find(|(demo_name, ..)| *demo_name == name)
+        .map(|(_, password, _)| *password)
+}
 
 /// Handle on the demo accounts the dataset generator works through.
 struct Accounts {
@@ -210,6 +264,86 @@ fn seed_accounts(conn: &Db) -> AppResult<Accounts> {
             )?,
         };
         wash_employees.push(id);
+    }
+
+    // An INACTIVE wash worker, created through the same repository as the
+    // active ones and then marked INACTIVE. He is deliberately NOT pushed into
+    // `wash_employees`: that list is the pool the generator attributes live wash
+    // jobs and attendance to, and a person who has left must not be handed new
+    // work. He exists so the "include inactive" filter has a row to reveal.
+    {
+        let (name, base_salary) = DEMO_INACTIVE_WASH_WORKER;
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM employees
+                 WHERE employee_type = 'WASH_WORKER' AND name = ?1 AND user_id IS NULL",
+                params![name],
+                |r| r.get(0),
+            )
+            .ok();
+        if existing.is_none() {
+            let id = employees::insert(
+                conn,
+                &NewEmployee {
+                    name,
+                    phone: None,
+                    employee_type: "WASH_WORKER",
+                    base_salary,
+                    notes: None,
+                    user_id: None,
+                },
+            )?;
+            employees::set_status(conn, id, "INACTIVE")?;
+        }
+    }
+
+    // The suspended cashier login, with the SAME pairing `set_employee_status`
+    // performs: the `users` row and the `employees` row are suspended together,
+    // in that order, so the two can never be left disagreeing.
+    {
+        let (name, password) = DEMO_INACTIVE_STAFF;
+        let user = match users::find_by_name(conn, name)? {
+            Some(existing) => existing.user,
+            None => {
+                let hash = auth::hash_password(password)?;
+                let id = users::insert(
+                    conn,
+                    &users::NewUser {
+                        name,
+                        phone: None,
+                        role: "STAFF",
+                        password_hash: &hash,
+                        is_seed: true,
+                    },
+                )?
+                .ok_or_else(|| {
+                    AppError::internal(format!("demo account {name} could not be created"))
+                })?;
+                users::find_by_id(conn, id)?
+                    .ok_or_else(|| AppError::internal("demo account vanished after insert"))?
+            }
+        };
+        if employees::find_by_user(conn, user.id)?.is_none() {
+            employees::insert(
+                conn,
+                &NewEmployee {
+                    name,
+                    phone: None,
+                    employee_type: "CASHIER",
+                    base_salary: 0,
+                    notes: None,
+                    user_id: Some(user.id),
+                },
+            )?;
+        }
+        // Both rows, so the account is genuinely unusable: `auth::login` refuses
+        // on either check, and `list_login_accounts` filters on both too. The
+        // employee is resolved through `find_by_user` — the same read the
+        // deactivation service uses — rather than by re-deriving an id here.
+        if let Some(employee) = employees::find_by_user(conn, user.id)? {
+            employees::set_status(conn, employee.id, "INACTIVE")?;
+        }
+        users::set_status(conn, user.id, "SUSPENDED")?;
     }
 
     let admin = admins
@@ -1873,10 +2007,10 @@ mod tests {
     #[test]
     fn every_demo_role_signs_in_with_its_documented_password() {
         let conn = demo_db();
-        assert_eq!(login(&conn, "admin", "admin123").role, "ADMIN");
-        assert_eq!(login(&conn, "manager", "manager123").role, "MANAGER");
-        assert_eq!(login(&conn, "cashier", "cashier123").role, "STAFF");
-        assert_eq!(login(&conn, "sara", "sara1234").role, "STAFF");
+        assert_eq!(login(&conn, "admin", "1234").role, "ADMIN");
+        assert_eq!(login(&conn, "manager", "2345").role, "MANAGER");
+        assert_eq!(login(&conn, "cashier", "3456").role, "STAFF");
+        assert_eq!(login(&conn, "sara", "4567").role, "STAFF");
     }
 
     /// A wash worker has no login at all — that is what the CHECK is for.
@@ -2193,6 +2327,106 @@ mod tests {
         );
     }
 
+    /// The demo roster covers every role AND both activation states, and the
+    /// inactive people are genuinely unusable rather than merely flagged.
+    ///
+    /// This is the coverage the requirement asks for, asserted rather than
+    /// assumed: a dataset in which every account is active cannot demonstrate
+    /// the login picker's filter or the Employees page's "include inactive"
+    /// switch, so both would be untested by the application itself.
+    #[test]
+    fn the_roster_covers_every_role_and_both_activation_states() {
+        let conn = demo_db();
+
+        // Every role the application distinguishes is represented…
+        for role in ["ADMIN", "MANAGER", "STAFF"] {
+            assert!(
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM users WHERE role = '{role}'")
+                ) > 0,
+                "the demo dataset has no {role} account"
+            );
+        }
+        // …including more than one of the two management roles, so the
+        // management section actually has a grid to lay out.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM users WHERE role = 'ADMIN'") > 1,
+            "one admin cannot exercise a management grid"
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM users WHERE role = 'MANAGER'") > 1,
+            "one manager cannot exercise a management grid"
+        );
+
+        // A wash worker with no login at all, and an INACTIVE one of each kind.
+        assert!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employees WHERE employee_type = 'WASH_WORKER' AND user_id IS NULL"
+            ) > 0
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM employees WHERE status = 'INACTIVE'") > 0,
+            "no inactive employee, so the inactive filter has nothing to reveal"
+        );
+
+        // An inactive person kept their history: they stopped working, they did
+        // not never exist.
+        let inactive_with_history: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM employees e
+                 WHERE e.status = 'INACTIVE'
+                   AND EXISTS (SELECT 1 FROM attendance_days a WHERE a.employee_id = e.id)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            inactive_with_history > 0,
+            "an inactive employee with no history looks like a fixture, not a person"
+        );
+    }
+
+    /// The demo accounts are exactly the ones the login screen may offer — no
+    /// more and no fewer.
+    ///
+    /// This is the cross-module contract between the dataset and the account
+    /// picker, asserted from the DATASET's side: every account it seeds is
+    /// offered, and the suspended one it seeds is not.
+    #[test]
+    fn the_dataset_offers_every_active_account_and_hides_the_suspended_one() {
+        use crate::repositories::users;
+
+        let conn = demo_db();
+
+        let offered = users::list_login_accounts(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|a| a.name)
+            .collect::<Vec<_>>();
+
+        // Every seeded demo login appears…
+        for (name, ..) in DEMO_USERS {
+            assert!(
+                offered.iter().any(|offered| offered == name),
+                "{name} is seeded but is not offered as an account"
+            );
+        }
+        // …and the suspended one never does.
+        assert!(
+            !offered.iter().any(|n| n == DEMO_INACTIVE_STAFF.0),
+            "a suspended account must never be offered as a login card"
+        );
+        // The offered payload carries an id, a name and a role — and nothing
+        // that could be used for anything but choosing which PIN to type.
+        for account in users::list_login_accounts(&conn).unwrap() {
+            assert!(account.id > 0);
+            assert!(!account.name.is_empty());
+            assert!(["ADMIN", "MANAGER", "STAFF"].contains(&account.role.as_str()));
+        }
+    }
+
     /// PART 12 — shifts are settled with real closing snapshots, and the drawer
     /// arithmetic holds on every one of them.
     #[test]
@@ -2316,11 +2550,11 @@ mod tests {
         }
 
         // Role ranking is untouched.
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         assert!(auth::require_role(&staff, "ADMIN").is_err());
         assert!(auth::require_role(&staff, "MANAGER").is_err());
         assert!(auth::require_role(&staff, "STAFF").is_ok());
-        assert!(auth::require_role(&login(&conn, "admin", "admin123"), "ADMIN").is_ok());
+        assert!(auth::require_role(&login(&conn, "admin", "1234"), "ADMIN").is_ok());
     }
 
     /// PART 17.8 — the dataset obeys the business rules it claims to.

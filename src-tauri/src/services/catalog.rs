@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn an_admin_can_delete_a_product() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = product_id(&conn, "كابتشينو");
 
         delete_product(&conn, &admin, id).unwrap();
@@ -237,8 +237,8 @@ mod tests {
 
     /// An open business day AND shift, so the POS order path is reachable.
     fn open_day(conn: &Connection) {
-        let admin = login(conn, "admin", "admin123");
-        let staff = login(conn, "cashier", "cashier123");
+        let admin = login(conn, "admin", "1234");
+        let staff = login(conn, "cashier", "3456");
         shifts::open_day(conn, &admin).unwrap();
         shifts::open_shift(conn, &staff, 0).unwrap();
     }
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn an_active_product_is_sellable_by_a_cashier() {
         let conn = fresh();
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         let id = product_id(&conn, "كابتشينو");
 
         let sellable = catalog::list(&conn, Some("CAFE"), true).unwrap();
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn an_inactive_product_cannot_be_added_to_an_order() {
         let conn = fresh();
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         let id = deactivate(&conn, "كابتشينو");
         open_day(&conn);
 
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn re_activating_a_product_makes_it_sellable_again() {
         let conn = fresh();
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         let id = deactivate(&conn, "كابتشينو");
         open_day(&conn);
         assert!(!catalog::list(&conn, Some("CAFE"), true)
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn a_deleted_product_is_absent_even_from_the_manager_catalog() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = product_id(&conn, "كابتشينو");
 
         delete_product(&conn, &admin, id).unwrap();
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn a_deleted_item_is_absent_from_every_active_catalog_query() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = product_id(&conn, "كابتشينو");
 
         // Both the POS query and the management "everything" query.
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn a_staff_user_cannot_delete() {
         let conn = fresh();
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         let id = product_id(&conn, "كابتشينو");
 
         let err = delete_product(&conn, &staff, id).unwrap_err();
@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn a_manager_cannot_delete() {
         let conn = fresh();
-        let manager = login(&conn, "manager", "manager123");
+        let manager = login(&conn, "manager", "2345");
         let id = product_id(&conn, "كابتشينو");
 
         let err = delete_product(&conn, &manager, id).unwrap_err();
@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn deleting_an_unknown_or_already_deleted_item_is_not_found() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = product_id(&conn, "كابتشينو");
 
         assert!(matches!(
@@ -491,8 +491,8 @@ mod tests {
     #[test]
     fn a_historical_invoice_survives_the_delete_with_its_original_snapshot() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
-        let staff = login(&conn, "cashier", "cashier123");
+        let admin = login(&conn, "admin", "1234");
+        let staff = login(&conn, "cashier", "3456");
         shifts::open_day(&conn, &admin).unwrap();
         shifts::open_shift(&conn, &staff, 0).unwrap();
 
@@ -548,8 +548,8 @@ mod tests {
     #[test]
     fn a_deleted_item_cannot_be_reactivated_or_edited() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
-        let manager = login(&conn, "manager", "manager123");
+        let admin = login(&conn, "admin", "1234");
+        let manager = login(&conn, "manager", "2345");
         let id = product_id(&conn, "كابتشينو");
 
         delete_product(&conn, &admin, id).unwrap();
@@ -583,8 +583,8 @@ mod tests {
     #[test]
     fn a_service_can_be_deleted_with_its_history_intact() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
-        let staff = login(&conn, "cashier", "cashier123");
+        let admin = login(&conn, "admin", "1234");
+        let staff = login(&conn, "cashier", "3456");
         shifts::open_day(&conn, &admin).unwrap();
         shifts::open_shift(&conn, &staff, 0).unwrap();
 
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn a_deleted_item_leaves_the_inventory_and_stock_alert_queries() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         // A tracked item whose opening stock is zero, so it IS a stock alert.
         let water = product_id(&conn, "مياه");
 
@@ -645,8 +645,8 @@ mod tests {
     #[test]
     fn a_deleted_item_cannot_be_added_to_a_new_pos_transaction() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
-        let staff = login(&conn, "cashier", "cashier123");
+        let admin = login(&conn, "admin", "1234");
+        let staff = login(&conn, "cashier", "3456");
         shifts::open_day(&conn, &admin).unwrap();
         shifts::open_shift(&conn, &staff, 0).unwrap();
 
@@ -695,7 +695,7 @@ mod tests {
     #[test]
     fn a_manager_can_rename_a_category() {
         let conn = fresh();
-        let manager = login(&conn, "manager", "manager123");
+        let manager = login(&conn, "manager", "2345");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
 
         // A name the seeded catalog does not already use.
@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn renaming_a_category_keeps_the_creation_rules() {
         let conn = fresh();
-        let manager = login(&conn, "manager", "manager123");
+        let manager = login(&conn, "manager", "2345");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
         catalog::insert_category(&conn, "حلويات").unwrap();
 
@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn a_staff_user_cannot_rename_a_category() {
         let conn = fresh();
-        let staff = login(&conn, "cashier", "cashier123");
+        let staff = login(&conn, "cashier", "3456");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
 
         let err = rename_category(&conn, &staff, id, "مشروبات ساخنة").unwrap_err();
@@ -747,7 +747,7 @@ mod tests {
     #[test]
     fn a_manager_cannot_delete_a_category() {
         let conn = fresh();
-        let manager = login(&conn, "manager", "manager123");
+        let manager = login(&conn, "manager", "2345");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
 
         let err = delete_category(&conn, &manager, id).unwrap_err();
@@ -761,7 +761,7 @@ mod tests {
     #[test]
     fn an_admin_can_delete_an_empty_category() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
 
         delete_category(&conn, &admin, id).unwrap();
@@ -780,7 +780,7 @@ mod tests {
     #[test]
     fn a_category_with_products_cannot_be_deleted() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let id = catalog::insert_category(&conn, "مشروبات").unwrap();
         let product = product_id(&conn, "كابتشينو");
         catalog::update(
@@ -814,7 +814,7 @@ mod tests {
     #[test]
     fn the_system_category_cannot_be_deleted() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
         let system = category_id(&conn, "عام");
 
         let err = delete_category(&conn, &admin, system).unwrap_err();
@@ -827,7 +827,7 @@ mod tests {
     #[test]
     fn deleting_an_unknown_category_is_a_not_found() {
         let conn = fresh();
-        let admin = login(&conn, "admin", "admin123");
+        let admin = login(&conn, "admin", "1234");
 
         let err = delete_category(&conn, &admin, 9_999).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)), "{err:?}");

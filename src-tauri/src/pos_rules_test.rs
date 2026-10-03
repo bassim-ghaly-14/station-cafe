@@ -78,15 +78,15 @@ fn pay_cash(
 /// Configure THE one global shared discount PIN, exactly the way an ADMIN
 /// does it from the settings screen.
 fn configure_shared_pin(conn: &Connection, pin: &str) {
-    let admin = login(conn, "admin", "admin123");
+    let admin = login(conn, "admin", "1234");
     settings::set_discount_authorization_pin(conn, &admin, pin).unwrap();
 }
 
 #[test]
 fn adding_the_same_product_twice_increments_one_line() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
 
     let tea = cafe_product(&conn, "شاي");
@@ -107,8 +107,8 @@ fn adding_the_same_product_twice_increments_one_line() {
 #[test]
 fn distinct_purchasable_items_stay_on_separate_lines() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
 
     // The same drink in two sizes are two catalog items, hence two lines.
@@ -197,8 +197,8 @@ fn a_search_without_a_query_lists_the_registered_customers() {
 #[test]
 fn an_invoice_without_a_customer_is_recorded_as_no_customer() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
 
     pos_svc::add_line(&conn, &staff, order_id, cafe_product(&conn, "شاي"), 1).unwrap();
@@ -222,9 +222,9 @@ fn an_invoice_without_a_customer_is_recorded_as_no_customer() {
 #[test]
 fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let developer = login(&conn, "admin", "1234");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     configure_shared_pin(&conn, "4820");
 
@@ -325,9 +325,9 @@ fn discount_amount_is_open_ended_and_bounded_only_by_the_subtotal() {
 #[test]
 fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let developer = login(&conn, "admin", "1234");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     configure_shared_pin(&conn, "4820");
     settings::set_discount_options(
@@ -380,8 +380,8 @@ fn an_applied_discount_is_persisted_and_survives_configuration_changes() {
 #[test]
 fn a_wrong_shared_pin_does_not_apply_the_discount() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     configure_shared_pin(&conn, "4820");
     pos_svc::add_line(
@@ -434,8 +434,8 @@ fn a_wrong_shared_pin_does_not_apply_the_discount() {
 #[test]
 fn the_discount_pin_is_one_global_shared_credential() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     pos_svc::add_line(
         &conn,
@@ -471,7 +471,7 @@ fn the_discount_pin_is_one_global_shared_credential() {
             name: "second-cashier",
             phone: None,
             role: "STAFF",
-            password_hash: &auth::hash_password("staff123").unwrap(),
+            password_hash: &auth::hash_password("5555").unwrap(),
             is_seed: false,
         },
     )
@@ -493,7 +493,7 @@ fn the_discount_pin_is_one_global_shared_credential() {
         },
     )
     .unwrap();
-    let other_cashier = login(&conn, "second-cashier", "staff123");
+    let other_cashier = login(&conn, "second-cashier", "5555");
     assert_eq!(other_cashier.id, second);
     settings::authorize_discount(&conn, &other_cashier, order_id, 500, Some("4820")).unwrap();
 
@@ -517,7 +517,7 @@ fn the_discount_pin_is_one_global_shared_credential() {
 
     // A manager's / admin's / cashier's LOGIN password is not a discount
     // credential — it only works if it happens to equal the shared PIN.
-    for login_password in ["manager123", "admin123", "cashier123"] {
+    for login_password in ["2345", "1234", "3456"] {
         let err = settings::authorize_discount(&conn, &staff, order_id, 500, Some(login_password))
             .unwrap_err();
         assert_eq!(
@@ -543,7 +543,7 @@ fn the_discount_pin_is_one_global_shared_credential() {
 #[test]
 fn the_shared_discount_pin_must_be_exactly_four_ascii_digits() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
+    let manager = login(&conn, "manager", "2345");
 
     // Valid: four digits, leading zeros included. The PIN is a STRING, so 0097
     // is never normalized into 97.
@@ -576,9 +576,9 @@ fn the_shared_discount_pin_must_be_exactly_four_ascii_digits() {
 #[test]
 fn a_manager_or_admin_configures_the_shared_pin_and_a_cashier_cannot() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let developer = login(&conn, "admin", "admin123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let developer = login(&conn, "admin", "1234");
+    let staff = login(&conn, "cashier", "3456");
 
     assert!(
         !settings::get_discount_authorization(&conn)
@@ -661,8 +661,8 @@ fn a_manager_or_admin_configures_the_shared_pin_and_a_cashier_cannot() {
 #[test]
 fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     configure_shared_pin(&conn, "4820");
     pos_svc::add_line(
@@ -741,8 +741,8 @@ fn a_client_cannot_smuggle_a_discount_past_authorization_at_checkout() {
 #[test]
 fn an_unconfigured_pin_blocks_discounts_but_service_charge_stays_free() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
     pos_svc::add_line(
         &conn,
@@ -799,8 +799,8 @@ fn an_unconfigured_pin_blocks_discounts_but_service_charge_stays_free() {
 #[test]
 fn historical_percentage_discounts_stay_readable_and_payable() {
     let conn = fresh();
-    let manager = login(&conn, "manager", "manager123");
-    let staff = login(&conn, "cashier", "cashier123");
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
     let order_id = open_order(&conn, &manager, &staff);
 
     pos_svc::add_line(

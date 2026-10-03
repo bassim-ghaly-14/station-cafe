@@ -73,6 +73,16 @@ fn hex(bytes: &[u8]) -> String {
 /// Authenticate + create a session. Returns the raw token (client stores it;
 /// only the hash is persisted).
 pub fn login(conn: &Db, input: &LoginInput) -> AppResult<SessionInfo> {
+    // The credential is a 4–5 digit PIN, so a value containing a letter, a
+    // symbol or a length outside that range could never have been stored by
+    // any supported path. It is refused BEFORE the lookup, which means it is
+    // refused identically for every username — known or not — so this check
+    // cannot be used to probe which accounts exist, and it never reaches the
+    // Argon2 verification below.
+    if !is_valid_password(&input.password) {
+        return Err(AppError::unauthorized("auth.bad_credentials"));
+    }
+
     let record = users::find_by_name(conn, &input.name)?
         .ok_or_else(|| AppError::unauthorized("auth.bad_credentials"))?;
 
@@ -244,16 +254,45 @@ pub fn change_password(
     )
 }
 
-/// Minimum password length for Station accounts.
+/// Employee credentials are a **4–5 digit PIN**: digits only, never fewer than
+/// four and never more than five.
 ///
-/// Five characters allows staff passwords/PIN-style credentials such as
-/// `20192` while still preventing empty or trivially short values.
-pub fn validate_password(p: &str) -> AppResult<()> {
-    if p.len() < 5 {
-        return Err(AppError::validation("user.password_too_short"));
-    }
+/// This is ONE rule, applied everywhere a credential is created, changed, reset
+/// or presented for authentication:
+///
+///  - `change_password` and `create_employee`, through this very function;
+///  - every seed — the official one and the demo one;
+///  - the developer account the database reset recreates;
+///  - `login` itself, so a value the policy could never have stored is refused
+///    rather than hashed and compared.
+///
+/// The rule is a length bound ON TOP of "every character is an ASCII digit",
+/// never a character-class allowance: a hyphenated or spaced "PIN" is not a PIN
+/// here, and a value that happens to also be a phone fragment is
+/// indistinguishable from one that is not.
+///
+/// It says nothing about how the credential is STORED, which remains Argon2id
+/// through [`hash_password`]. A short credential is a business requirement of
+/// this café; storing it in the clear would be a security regression, and the
+/// two are unrelated.
+pub const PASSWORD_MIN_DIGITS: usize = 4;
+pub const PASSWORD_MAX_DIGITS: usize = 5;
 
-    Ok(())
+/// Is this string a well-formed employee PIN? Pure, so the rule is stated once
+/// and testable without a database.
+pub fn is_valid_password(password: &str) -> bool {
+    let bytes = password.as_bytes();
+    (PASSWORD_MIN_DIGITS..=PASSWORD_MAX_DIGITS).contains(&bytes.len())
+        && bytes.iter().all(u8::is_ascii_digit)
+}
+
+/// The service-level rule every write path funnels through.
+pub fn validate_password(password: &str) -> AppResult<()> {
+    if is_valid_password(password) {
+        Ok(())
+    } else {
+        Err(AppError::validation("user.password_invalid"))
+    }
 }
 
 #[cfg(test)]
@@ -319,7 +358,7 @@ mod tests {
     #[test]
     fn an_active_employee_with_correct_credentials_signs_in() {
         let conn = fresh();
-        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        let session = try_login(&conn, "cashier", "3456").unwrap();
         assert_eq!(session.user.name, "cashier");
         assert_eq!(session.user.role, "STAFF");
         // The session is usable: the employee check must not break the
@@ -335,10 +374,10 @@ mod tests {
     #[test]
     fn an_inactive_employee_cannot_sign_in_with_the_correct_password() {
         let conn = fresh();
-        let manager = as_user(&conn, "manager", "manager123");
+        let manager = as_user(&conn, "manager", "2345");
         set_employee_status(&conn, &manager, "cashier", "INACTIVE");
 
-        let err = try_login(&conn, "cashier", "cashier123").unwrap_err();
+        let err = try_login(&conn, "cashier", "3456").unwrap_err();
         assert!(
             matches!(err, AppError::Unauthorized(_)),
             "an inactive employee must be refused, got {err:?}"
@@ -351,7 +390,7 @@ mod tests {
     #[test]
     fn an_inactive_employee_with_wrong_credentials_also_fails() {
         let conn = fresh();
-        let manager = as_user(&conn, "manager", "manager123");
+        let manager = as_user(&conn, "manager", "2345");
         set_employee_status(&conn, &manager, "cashier", "INACTIVE");
 
         assert!(try_login(&conn, "cashier", "wrong-password").is_err());
@@ -363,10 +402,10 @@ mod tests {
     #[test]
     fn a_deactivated_employee_cannot_create_a_new_session() {
         let conn = fresh();
-        let manager = as_user(&conn, "manager", "manager123");
+        let manager = as_user(&conn, "manager", "2345");
 
         // A session established BEFORE the deactivation...
-        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        let session = try_login(&conn, "cashier", "3456").unwrap();
         assert!(require_user(&conn, &session.token).is_ok());
 
         set_employee_status(&conn, &manager, "cashier", "INACTIVE");
@@ -376,7 +415,7 @@ mod tests {
             require_user(&conn, &session.token).is_err(),
             "a deactivated employee must not keep using the session they hold"
         );
-        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+        assert!(try_login(&conn, "cashier", "3456").is_err());
     }
 
     /// The employee record is the AUTHORITATIVE source, not the login's own
@@ -385,7 +424,7 @@ mod tests {
     #[test]
     fn an_inactive_employee_is_refused_even_if_the_login_row_says_active() {
         let conn = fresh();
-        let cashier = as_user(&conn, "cashier", "cashier123");
+        let cashier = as_user(&conn, "cashier", "3456");
         let id = employee_of(&conn, &cashier);
 
         // Desynchronise the pair behind the service's back.
@@ -406,7 +445,7 @@ mod tests {
             "the login row is deliberately still active"
         );
 
-        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+        assert!(try_login(&conn, "cashier", "3456").is_err());
     }
 
     /// REGRESSION: re-activating an employee restores login, so deactivation
@@ -414,13 +453,13 @@ mod tests {
     #[test]
     fn re_activating_an_employee_restores_login() {
         let conn = fresh();
-        let manager = as_user(&conn, "manager", "manager123");
+        let manager = as_user(&conn, "manager", "2345");
 
         set_employee_status(&conn, &manager, "cashier", "INACTIVE");
-        assert!(try_login(&conn, "cashier", "cashier123").is_err());
+        assert!(try_login(&conn, "cashier", "3456").is_err());
 
         set_employee_status(&conn, &manager, "cashier", "ACTIVE");
-        let session = try_login(&conn, "cashier", "cashier123").unwrap();
+        let session = try_login(&conn, "cashier", "3456").unwrap();
         assert_eq!(session.user.role, "STAFF");
     }
 
@@ -430,20 +469,20 @@ mod tests {
     #[test]
     fn employee_status_and_role_authorization_are_independent() {
         let conn = fresh();
-        let manager = as_user(&conn, "manager", "manager123");
-        let cashier = as_user(&conn, "cashier", "cashier123");
+        let manager = as_user(&conn, "manager", "2345");
+        let cashier = as_user(&conn, "cashier", "3456");
 
         // While active, the role gate alone decides.
         assert!(require_role(&cashier, "MANAGER").is_err());
         assert!(require_role(&manager, "MANAGER").is_ok());
 
         // Suspending the manager refuses them at the door entirely.
-        let admin = as_user(&conn, "admin", "admin123");
+        let admin = as_user(&conn, "admin", "1234");
         set_employee_status(&conn, &admin, "manager", "INACTIVE");
-        assert!(try_login(&conn, "manager", "manager123").is_err());
+        assert!(try_login(&conn, "manager", "2345").is_err());
 
         // The untouched cashier is unaffected by a colleague's status.
-        assert!(try_login(&conn, "cashier", "cashier123").is_ok());
+        assert!(try_login(&conn, "cashier", "3456").is_ok());
     }
 
     /// The catalog-visibility capability is the authorization model the product
@@ -467,7 +506,7 @@ mod tests {
             &conn,
             &LoginInput {
                 name: "admin".into(),
-                password: "admin123".into(),
+                password: "1234".into(),
             },
         )
         .unwrap();
@@ -497,17 +536,24 @@ mod tests {
     fn seeded_accounts_roles() {
         let conn = fresh();
 
-        for (name, role) in [("manager", "MANAGER"), ("cashier", "STAFF")] {
+        // The password comes from the demo table itself rather than being
+        // reconstructed here, so this test cannot drift from the fixture it is
+        // meant to describe — and cannot accidentally hardcode a value the
+        // credential policy would now reject.
+        for (name, password, role) in crate::demo_data::DEMO_USERS {
+            if *role != "MANAGER" && *role != "STAFF" {
+                continue;
+            }
             let s = login(
                 &conn,
                 &LoginInput {
-                    name: name.into(),
-                    password: format!("{name}123"),
+                    name: (*name).into(),
+                    password: (*password).into(),
                 },
             )
             .unwrap();
 
-            assert_eq!(s.user.role, role);
+            assert_eq!(&s.user.role, role);
         }
     }
 
@@ -519,14 +565,133 @@ mod tests {
         assert!(!verify_password("wrong", &h));
     }
 
+    /// The credential policy itself, stated once: 4–5 DIGITS, nothing else.
+    ///
+    /// The valid cases come first, then every rejected shape from the rule —
+    /// too short, too long, letters, symbols, mixed — because a policy test that
+    /// only checks the happy path is how a policy quietly stops being enforced.
     #[test]
-    fn password_validation_accepts_five_characters() {
-        assert!(validate_password("20192").is_ok());
+    fn the_credential_policy_accepts_four_and_five_digits() {
+        for pin in ["1234", "2214", "55555", "98765", "0000"] {
+            assert!(is_valid_password(pin), "{pin} must be a valid PIN");
+            assert!(validate_password(pin).is_ok(), "{pin} must be accepted");
+        }
     }
 
     #[test]
-    fn password_validation_rejects_less_than_five_characters() {
-        assert!(validate_password("1234").is_err());
+    fn the_credential_policy_rejects_everything_that_is_not_four_or_five_digits() {
+        // Too short, too long, letters, symbols, whitespace, and the mixed cases
+        // — each of which the rule names explicitly.
+        for pin in [
+            "",       // empty
+            "1",      // one digit
+            "123",    // three digits: the length the old policy allowed
+            "123456", // six digits: the length the old policy allowed
+            "1234567",
+            "1234a",  // letters
+            "abcd",
+            "12-34",  // a symbol
+            "12 34",  // whitespace
+            "١٢٣٤",        // Arabic-Indic digits are not ASCII digits
+            "1234a5",      // mixed
+            "a1234",
+            "12.45",
+        ] {
+            assert!(!is_valid_password(pin), "{pin} must not be a valid PIN");
+            let err = validate_password(pin).unwrap_err();
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{pin} must be a validation error, got {err:?}"
+            );
+        }
+    }
+
+    /// The policy is enforced at AUTHENTICATION, not only when a credential is
+    /// written.
+    ///
+    /// A six-digit or letter-bearing value can no longer be stored by any
+    /// supported path, so presenting one must fail — and it must fail with the
+    /// SAME error an unknown account or a wrong PIN produces, so the check
+    /// cannot be used to discover which usernames exist.
+    #[test]
+    fn login_refuses_a_credential_the_policy_would_never_have_stored() {
+        let conn = fresh();
+
+        for password in ["123", "123456", "1234a", "abcd", "12-34", ""] {
+            for name in ["cashier", "no-such-account"] {
+                let err = try_login(&conn, name, password).unwrap_err();
+                assert!(
+                    matches!(err, AppError::Unauthorized(_)),
+                    "{name}/{password} must be refused as unauthorized, got {err:?}"
+                );
+            }
+        }
+    }
+
+    /// Hashing is untouched by the policy.
+    ///
+    /// A 4-digit credential is still stored as an Argon2id PHC string and never
+    /// in the clear, and the stored value still verifies. This is the guard on
+    /// the requirement that a short PIN must not become a plaintext one.
+    #[test]
+    fn a_short_pin_is_still_hashed_and_never_stored_in_the_clear() {
+        let h = hash_password("2214").unwrap();
+
+        assert!(h.starts_with("$argon2"));
+        assert!(!h.contains("2214"));
+        assert!(verify_password("2214", &h));
+        assert!(!verify_password("2215", &h));
+    }
+
+    /// The login screen's account list, filtered by the same two rules login
+    /// enforces.
+    ///
+    /// Asserted against a dataset that contains every interesting case — an
+    /// active admin, a suspended login, an employee whose HR record was stopped
+    /// while the login still says ACTIVE, and a wash worker with no login at all.
+    #[test]
+    fn the_login_account_list_offers_exactly_the_accounts_that_may_sign_in() {
+        let conn = fresh();
+
+        let offered = |c: &Connection| -> Vec<String> {
+            crate::repositories::users::list_login_accounts(c)
+                .unwrap()
+                .into_iter()
+                .map(|a| a.name)
+                .collect()
+        };
+
+        // The baseline: the seeded accounts, every one of which can sign in.
+        let before = offered(&conn);
+        assert!(before.contains(&"cashier".to_string()));
+        assert!(before.contains(&"manager".to_string()));
+
+        // Suspending the EMPLOYEE must remove the account even though the login
+        // row still says ACTIVE. This is the case that proves the query consults
+        // both tables rather than only `users`.
+        let manager = as_user(&conn, "manager", crate::demo_data::demo_password_of("manager").unwrap());
+        set_employee_status(&conn, &manager, "cashier", "INACTIVE");
+        assert!(
+            !offered(&conn).contains(&"cashier".to_string()),
+            "an INACTIVE employee must not be offered as a login card"
+        );
+
+        // Reactivating puts them back: the list is a live read, not a snapshot.
+        set_employee_status(&conn, &manager, "cashier", "ACTIVE");
+        assert!(offered(&conn).contains(&"cashier".to_string()));
+
+        // A WASH_WORKER has no login at all, so there is nothing to offer.
+        assert!(
+            !offered(&conn)
+                .iter()
+                .any(|n| n.contains("محمود") || n.contains("كريم")),
+            "a wash worker must never appear as a login account"
+        );
+
+        // The list is stable and ordered, so the screen does not reshuffle on
+        // every load.
+        let twice = (offered(&conn), offered(&conn));
+        assert_eq!(twice.0, twice.1);
     }
 
     #[test]
