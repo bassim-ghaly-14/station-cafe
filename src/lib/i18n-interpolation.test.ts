@@ -20,7 +20,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import i18n from './i18n'
-import { formatWorkedDuration } from '@/features/employees/attendance'
+import { formatWorkDuration } from '@/features/employees/attendance'
 import ar from '@/locales/ar/translations.json'
 
 type Catalogue = Record<string, unknown>
@@ -115,9 +115,9 @@ describe('representative interpolations', () => {
     )
   })
 
-  it('interpolates an hours/minutes pair in both orders the app renders', () => {
-    expect(i18n.t('employees.duration.hoursMinutes', { hours: 8, minutes: 10 })).toBe('8س 10د')
-    expect(i18n.t('employees.duration.minutes', { minutes: 45 })).toBe('45د')
+  it('interpolates a worked duration in both display modes', () => {
+    expect(i18n.t('employees.duration.minutesOnly', { minutes: 485 })).toBe('485 د')
+    expect(i18n.t('employees.duration.hoursOnly', { hours: '8.1' })).toBe('8.1 س')
   })
 
   it('surfaces a missing variable instead of hiding it', () => {
@@ -142,8 +142,11 @@ describe('keys computed at runtime', () => {
 
   it('formats a worked duration through the translator it is handed', () => {
     const translate = (key: string, options?: Record<string, unknown>) => i18n.t(key, options)
-    expect(formatWorkedDuration(490, translate)).toBe('8س 10د')
-    expect(formatWorkedDuration(45, translate)).toBe('45د')
+    // Both modes, end to end through real Arabic — this is the test that would
+    // catch a duration key left declaring a variable its caller stopped passing.
+    expect(formatWorkDuration(485, 'minutes', translate)).toBe('485 د')
+    expect(formatWorkDuration(485, 'hours', translate)).toBe('8.1 س')
+    expect(formatWorkDuration(45, 'minutes', translate)).toBe('45 د')
   })
 
   it('resolves the POS table legend from the counts object it is given', () => {

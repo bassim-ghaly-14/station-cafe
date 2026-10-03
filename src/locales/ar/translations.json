@@ -1319,9 +1319,14 @@
     "demoSuccess": "تم تحميل البيانات التجريبية بنجاح. سجّل الدخول بحساب تجريبي.",
     "demoCredentialsTitle": "حسابات الدخول التجريبية",
     "demoCredentialsHint": "حسابات للاختبار فقط، ولا تُنشأ إلا عند تحميل البيانات التجريبية.",
-    "demoCredentialsAdmin": "admin / admin123 — مدير النظام",
-    "demoCredentialsManager": "manager / manager123 — مدير",
-    "demoCredentialsCashier": "cashier / cashier123 — كاشير",
+    "demoCredentialsAdmin": "admin / 1234 — مدير النظام",
+    "demoCredentialsManager": "manager / 2345 — مدير",
+    "demoCredentialsCashier": "cashier / 3456 — كاشير",
+    "workDurationDisplay": "عرض ساعات العمل",
+    "workDurationDisplayHelp": "يحدد طريقة عرض مدة العمل في مؤشر الموظفين وجدول الموظفين: بالدقائق أو بالساعات التقريبية. لا يؤثر على الحسابات المحفوظة.",
+    "workDurationMinutes": "دقائق",
+    "workDurationHours": "ساعات",
+    "workDurationSaved": "تم تحديث عرض ساعات العمل.",
     "demoConfirmLabel": "تأكيد التحميل",
     "applicationUpdates": "تحديثات التطبيق",
     "applicationUpdatesDescription": "فحص وتثبيت تحديثات Station الموقّعة. لا يحدث فحص تلقائي — انتقل إلي هنا واضغط زر الفحص بنفسك.",
@@ -1702,8 +1707,8 @@
     },
     "staffSection": "الموظفون",
     "duration": {
-      "minutes": "{{minutes}}د",
-      "hoursMinutes": "{{hours}}س {{minutes}}د"
+      "minutesOnly": "{{minutes}} د",
+      "hoursOnly": "{{hours}} س"
     },
     "columns": {
       "employee": "الموظف",
@@ -1785,10 +1790,10 @@
       "role": "الدور",
       "roleFirstHint": "اختر الدور أولًا؛ نوع الموظف يظهر لكاشير فقط",
       "password": "كلمة المرور",
-      "passwordHint": "تُستخدم لتسجيل دخول الموظف، ٦ حروف على الأقل",
-      "newPassword": "كلمة المرور الجديدة",
-      "newPasswordHint": "اتركها فارغة لعدم تغيير كلمة المرور الحالية — لا يمكن عرض كلمة المرور الحالية",
-      "savedWithPassword": "تم حفظ بيانات الموظف وتعيين كلمة المرور الجديدة"
+      "passwordHint": "من 4 إلى 5 أرقام، تُستخدم لتسجيل دخول الموظف",
+      "pin": "الرقم السري / كلمة المرور",
+      "pinHint": "يوجد رقم سري محفوظ بالفعل. اترك الحقل فارغًا للاحتفاظ به، أو أدخل رقمًا جديدًا من 4 إلى 5 أرقام لتغييره.",
+      "savedWithPassword": "تم حفظ بيانات الموظف وتغيير الرقم السري"
     },
     "kpi": {
       "loading": "جارٍ تحميل المؤشرات",

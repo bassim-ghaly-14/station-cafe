@@ -43,7 +43,7 @@ import { useErrText } from '@/lib/err'
 import { formatDate } from '@/lib/date'
 import type { EmployeeRole } from '@/lib/roles'
 import { roleHintKey, roleLabel, roleOf } from './employee-role'
-import { formatWorkedDuration } from './attendance'
+import { useWorkDurationFormatter } from './attendance'
 import { AttendanceOverrideDialog } from './AttendanceOverrideDialog'
 import { DeductionDialog } from './DeductionDialog'
 import { employeesApi } from '@/services/employeesApi'
@@ -137,11 +137,12 @@ function EmployeeHeader({ employee, role }: Readonly<{ employee: Employee; role:
 /** The period summary — the same figures the table row showed. */
 function PeriodSummary({ row }: Readonly<{ row: EmployeeRow | null }>) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
   return (
     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
       <StatBlock label={t('employees.drawer.attendance')}>{row?.attendance_days ?? 0}</StatBlock>
       <StatBlock label={t('employees.drawer.hours')}>
-        {formatWorkedDuration(row?.worked_minutes ?? 0, t)}
+        {formatDuration(row?.worked_minutes ?? 0)}
       </StatBlock>
       <StatBlock label={t('employees.drawer.absence')}>{row?.absence_days ?? 0}</StatBlock>
       <StatBlock label={t('employees.drawer.leave')}>{row?.leave_days ?? 0}</StatBlock>
@@ -473,6 +474,7 @@ function AttendanceTimeline({
   onOverride: (day: AttendanceDay) => void
 }>) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
   if (days.length === 0) {
     return (
       <p className="text-caption text-foreground-subtle">{t('employees.drawer.noAttendance')}</p>
@@ -511,7 +513,7 @@ function AttendanceTimeline({
                 </span>
                 <span className="text-body font-bold tabular-nums text-foreground-strong">
                   {day.worked_minutes !== null
-                    ? formatWorkedDuration(day.worked_minutes, t)
+                    ? formatDuration(day.worked_minutes)
                     : t('employees.drawer.openDay')}
                 </span>
               </>

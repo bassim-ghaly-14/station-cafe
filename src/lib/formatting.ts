@@ -40,6 +40,29 @@ export type DateFormatId =
 
 export type TimeFormatId = '12h' | '24h'
 
+/**
+ * How a worked DURATION is written on screen.
+ *
+ * This is a PRESENTATION choice about a value the backend already computed in
+ * minutes. It is emphatically not a change to what is stored: an employee who
+ * worked 485 minutes still has 485 minutes in `attendance_days`, and payroll,
+ * reports and every calculation keep reading that number. Only the rendering
+ * differs.
+ *
+ *  - `minutes` — the raw total: `485 د`. Exact, and what the column used to
+ *    imply for a sub-hour day.
+ *  - `hours` — an APPROXIMATE decimal number of hours: `8.1 س`, never
+ *    `8س 06د`. The point of the mode is a single glance-readable figure, so the
+ *    minute remainder is deliberately dropped rather than appended.
+ */
+export type WorkDurationDisplay = 'minutes' | 'hours'
+
+export interface WorkDurationSettings {
+  display: WorkDurationDisplay
+}
+
+export const WORK_DURATION_DISPLAY_OPTIONS: readonly WorkDurationDisplay[] = ['minutes', 'hours']
+
 export interface DateFormatSettings {
   dateFormat: DateFormatId
   timeFormat: TimeFormatId
@@ -51,6 +74,8 @@ export interface FormattingPreferences {
   date: DateFormatSettings
   /** The centralized chart bar colours, edited in the same Dev Settings page. */
   charts: ChartColorSettings
+  /** How worked durations are written, edited in the same Dev Settings page. */
+  workDuration: WorkDurationSettings
 }
 
 export const FORMATTING_STORAGE_KEY = 'station.formatting.preferences.v1'
@@ -70,6 +95,17 @@ export const DEFAULT_FORMATTING: FormattingPreferences = {
     timeFormat: '24h',
     showSeconds: false,
   },
+  // `hours`, not `minutes`, and deliberately so.
+  //
+  // The rule asked for a sensible default "based on the current behavior, so
+  // existing installations do not unexpectedly change presentation". Before this
+  // setting existed, Station rendered a worked duration as `8س 10د` — that is,
+  // it was HOUR-LED, with the hour the prominent figure and the minutes a
+  // trailing detail. `hours` preserves that: an existing café still reads its
+  // hours column as a number of hours, just rounded to one decimal instead of
+  // carrying a second figure. Choosing `minutes` would instead re-present a
+  // familiar 8-hour day as the unfamiliar `485`, which is the larger surprise.
+  workDuration: { display: 'hours' },
   charts: DEFAULT_CHART_COLORS,
 }
 
@@ -98,6 +134,21 @@ function sanitizeDateFormat(value: unknown): DateFormatId {
     : 'DD/MM/YYYY'
 }
 
+/**
+ * An unrecognised or missing display mode falls back to the DEFAULT, never to a
+ * hardcoded literal.
+ *
+ * The default is read from `DEFAULT_FORMATTING` rather than repeated, so the
+ * "no stored value" path and the documented default can never disagree — which
+ * is what makes an installation that predates this setting keep its behaviour
+ * after the sanitizing round-trip that adds the key.
+ */
+function sanitizeWorkDurationDisplay(value: unknown): WorkDurationDisplay {
+  return WORK_DURATION_DISPLAY_OPTIONS.includes(value as WorkDurationDisplay)
+    ? (value as WorkDurationDisplay)
+    : DEFAULT_FORMATTING.workDuration.display
+}
+
 /** Merge unknown persisted data over defaults; never throws. */
 export function sanitizePreferences(raw: unknown): FormattingPreferences {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
@@ -109,6 +160,9 @@ export function sanitizePreferences(raw: unknown): FormattingPreferences {
     string,
     unknown
   >
+  const workDuration = (
+    typeof r.workDuration === 'object' && r.workDuration !== null ? r.workDuration : {}
+  ) as Record<string, unknown>
   return {
     money: {
       currency: 'EGP',
@@ -127,6 +181,10 @@ export function sanitizePreferences(raw: unknown): FormattingPreferences {
     // Chart colours are sanitized by their own module — one validator for one
     // configuration, wherever it is written.
     charts: sanitizeChartColors(r.charts),
+    // An installation saved before this setting existed has no `workDuration`
+    // key at all; the sanitizer supplies the default rather than the caller
+    // having to migrate its stored blob.
+    workDuration: { display: sanitizeWorkDurationDisplay(workDuration.display) },
   }
 }
 
@@ -227,6 +285,27 @@ export function resetChartColorSettings(): void {
   setChartColorSettings(structuredClone(DEFAULT_CHART_COLORS))
 }
 
+/**
+ * Replace ONLY the worked-duration display mode.
+ *
+ * A dedicated writer, for exactly the reason the chart colours have one: this
+ * setting has its own card on the Dev Settings page with its own Save, so
+ * committing a money/date draft must never drag along a stale duration mode —
+ * and saving the duration must never roll back a money setting the user changed
+ * a moment earlier. Sanitizing, persisting and notifying all still happen through
+ * this one store, like every other writer here.
+ */
+export function setWorkDurationSettings(next: WorkDurationSettings): void {
+  current = sanitizePreferences({ ...current, workDuration: next })
+  persist()
+  notify()
+}
+
+/** Reset ONLY the worked-duration display mode to the Station default. */
+export function resetWorkDurationSettings(): void {
+  setWorkDurationSettings({ display: DEFAULT_FORMATTING.workDuration.display })
+}
+
 /** Reset ONLY formatting preferences (never unrelated settings). */
 export function resetFormattingPreferences(): void {
   current = structuredClone(DEFAULT_FORMATTING)
@@ -256,10 +335,16 @@ export function cloneFormattingPreferences(source?: FormattingPreferences): Form
  *
  * The chart colours are deliberately NOT taken from `next`: they are written
  * only through `setChartColorSettings`, so saving a money/date draft can never
- * roll a colour the user changed in another card back to an older value.
+ * roll a colour the user changed in another card back to an older value. The
+ * worked-duration mode is preserved for the same reason — it has its own card
+ * and its own Save, so it is never a passenger in this write.
  */
 export function replaceFormattingPreferences(next: FormattingPreferences): void {
-  current = sanitizePreferences({ ...next, charts: current.charts })
+  current = sanitizePreferences({
+    ...next,
+    charts: current.charts,
+    workDuration: current.workDuration,
+  })
   persist()
   notify()
 }
@@ -267,8 +352,9 @@ export function replaceFormattingPreferences(next: FormattingPreferences): void 
 /**
  * Deep value equality — drives the Dev Settings dirty state.
  *
- * Money and date only: the chart colours are a setting of their own with their
- * own card, their own dirty state and their own writer.
+ * The chart colours and the worked-duration mode are settings of their own,
+ * each with its own card, its own dirty state and its own writer, so neither is
+ * compared here.
  */
 export function formattingPreferencesEqual(
   a: FormattingPreferences,
@@ -298,4 +384,16 @@ export function useMoneySettings(): MoneyFormatSettings {
 
 export function useDateSettings(): DateFormatSettings {
   return useFormattingPreferences().date
+}
+
+/**
+ * The worked-duration display mode, reactively.
+ *
+ * Every duration consumer — the employee KPI, the roster column, the details
+ * drawer and the personal attendance card — reads the mode through this hook
+ * rather than importing the store directly, so the setting is subscribed in one
+ * place and a change in Dev Settings repaints all of them at once.
+ */
+export function useWorkDurationSettings(): WorkDurationSettings {
+  return useFormattingPreferences().workDuration
 }

@@ -33,12 +33,15 @@ import { useErrText } from '@/lib/err'
 import {
   COMPACT_THRESHOLD_OPTIONS,
   DATE_FORMAT_OPTIONS,
+  WORK_DURATION_DISPLAY_OPTIONS,
   cloneFormattingPreferences,
   defaultFormattingPreferences,
   formattingPreferencesEqual,
   replaceFormattingPreferences,
+  setWorkDurationSettings,
   useFormattingPreferences,
   type FormattingPreferences,
+  type WorkDurationDisplay,
 } from '@/lib/formatting'
 import { useSession } from '@/features/auth/useSession'
 import { ChartColorsCard } from './ChartColorsCard'
@@ -117,6 +120,20 @@ export default function DevSettingsPage() {
   // Controls edit a local DRAFT. Only "Save Changes" commits it to the central
   // store, so experimenting never changes the rest of the application.
   const saved = useFormattingPreferences()
+
+  // The worked-duration mode is a setting with its OWN card, its own draft and
+  // its own Save, exactly like the chart colours: it is read by the employees
+  // surface, not by the money or date formatters, so letting it ride along in
+  // their draft would mean saving a money setting could silently roll it back.
+  const [durationDraft, setDurationDraft] = useState<WorkDurationDisplay>(
+    () => saved.workDuration.display,
+  )
+  const durationDirty = durationDraft !== saved.workDuration.display
+
+  function saveWorkDuration() {
+    setWorkDurationSettings({ display: durationDraft })
+    toast(t('dev.workDurationSaved'), 'success')
+  }
 
   const [draft, setDraft] = useState<FormattingPreferences>(() => cloneFormattingPreferences(saved))
 
@@ -911,6 +928,50 @@ export default function DevSettingsPage() {
             loading={busy === 'period'}
             onClick={() => void applyMonthlyPeriod()}
           >
+            {t('app.save')}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Worked-duration display — a DISPLAY preference, grouped with the tables
+          and the chart window rather than inside the money/date card, because it
+          is read by the employees surface and has its own Save. The two modes
+          are presented as a radio group: they are mutually exclusive choices
+          between two named presentations, not an open value, so a segmented
+          control states that better than a dropdown. */}
+      <Card data-testid="dev-work-duration">
+        <CardHeader
+          title={t('dev.workDurationDisplay')}
+          subtitle={t('dev.workDurationDisplayHelp')}
+        />
+
+        <div className="flex flex-wrap items-center gap-4">
+          <fieldset className="flex flex-wrap items-center gap-4">
+            <legend className="sr-only">{t('dev.workDurationDisplay')}</legend>
+
+            {WORK_DURATION_DISPLAY_OPTIONS.map((option) => (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 text-sm text-foreground-muted"
+              >
+                <input
+                  type="radio"
+                  name="work-duration-display"
+                  value={option}
+                  checked={durationDraft === option}
+                  onChange={() => setDurationDraft(option)}
+                  aria-label={t(
+                    option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours',
+                  )}
+                  className="size-4 accent-(--color-primary)"
+                />
+                {t(option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours')}
+              </label>
+            ))}
+          </fieldset>
+
+          <Button disabled={!durationDirty} onClick={saveWorkDuration}>
+            <Save size={16} aria-hidden />
             {t('app.save')}
           </Button>
         </div>

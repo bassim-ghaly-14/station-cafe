@@ -81,7 +81,7 @@ import {
   Trash2,
   UserX,
 } from '@/components/ui/icon'
-import { attendanceAvailability, formatWorkedDuration, todayOf } from './attendance'
+import { attendanceAvailability, todayOf, useWorkDurationFormatter } from './attendance'
 import { attendanceBadgeVariant } from '@/lib/status-badge'
 import { useIsWide } from '@/lib/use-media-query'
 import type { TodayFacts } from './attendance'
@@ -322,6 +322,7 @@ function EmployeeRecordFigures({
   readonly managementVisible: boolean
 }) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
   if (!managementVisible) {
     return (
       <div className="mt-2">
@@ -335,9 +336,7 @@ function EmployeeRecordFigures({
         <span className="tabular-nums">{employee.attendance_days}</span>
       </Figure>
       <Figure label={t('employees.columns.hours')}>
-        <span className="tabular-nums">
-          {formatWorkedDuration(employee.worked_minutes ?? 0, t)}
-        </span>
+        <span className="tabular-nums">{formatDuration(employee.worked_minutes ?? 0)}</span>
       </Figure>
       <Figure label={t('employees.columns.absence')}>
         <span className="tabular-nums">{employee.absence_days}</span>
@@ -484,6 +483,7 @@ export function EmployeeTable({
   readonly className?: string
 }) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
 
   /*
    * WHICH presentation, decided once and by the real viewport
@@ -635,9 +635,7 @@ export function EmployeeTable({
 
             {managementVisible ? (
               <DataTableCell>
-                <span className="tabular-nums">
-                  {formatWorkedDuration(employee.worked_minutes ?? 0, t)}
-                </span>
+                <span className="tabular-nums">{formatDuration(employee.worked_minutes ?? 0)}</span>
               </DataTableCell>
             ) : (
               <DataTableCell>

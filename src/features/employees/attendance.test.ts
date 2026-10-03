@@ -4,11 +4,11 @@
  * regardless, so these tests do not prove enforcement — they prove the screen
  * never offers an action the service will refuse, and never hides a legal one.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ATTENDANCE_ACTION,
   attendanceAvailability,
-  formatWorkedDuration,
+  formatWorkDuration,
   overrideDraftError,
   overrideDraftOf,
   overrideTimesOf,
@@ -17,6 +17,14 @@ import {
   type OverrideDraft,
   type TodayFacts,
 } from './attendance'
+import {
+  DEFAULT_FORMATTING,
+  reloadFormattingPreferences,
+  replaceFormattingPreferences,
+  resetFormattingPreferences,
+  sanitizePreferences,
+  setWorkDurationSettings,
+} from '@/lib/formatting'
 
 const NOT_PUNCHED: TodayFacts = {
   state: 'PRESENT',
@@ -41,6 +49,70 @@ const LEAVE: TodayFacts = {
   check_in_effective_at: null,
   check_out_effective_at: null,
 }
+
+import { isManagementRole, partitionByManagement } from './employee-role'
+
+describe('isManagementRole', () => {
+  it('places ADMIN and MANAGER in management, and nobody else', () => {
+    // The one decision the whole two-section page rests on.
+    expect(isManagementRole('ADMIN')).toBe(true)
+    expect(isManagementRole('MANAGER')).toBe(true)
+    expect(isManagementRole('STAFF')).toBe(false)
+    expect(isManagementRole('WASH_WORKER')).toBe(false)
+  })
+
+  it('decides from the login role, never from the employee type', () => {
+    // Every login in Station is a `CASHIER` employee. A test that looked at the
+    // type would file the owner and the manager under staff — the exact mistake
+    // the separate section exists to prevent.
+    const { management, staff } = partitionByManagement([
+      { employee_type: 'CASHIER', login_role: 'ADMIN' },
+      { employee_type: 'CASHIER', login_role: 'MANAGER' },
+      { employee_type: 'CASHIER', login_role: 'STAFF' },
+      { employee_type: 'WASH_WORKER', login_role: null },
+    ])
+
+    expect(management).toHaveLength(2)
+    expect(staff).toHaveLength(2)
+  })
+
+  it('puts a wash worker — who has no login — with the staff', () => {
+    const { management, staff } = partitionByManagement([
+      { employee_type: 'WASH_WORKER', login_role: null },
+    ])
+
+    expect(management).toHaveLength(0)
+    expect(staff).toHaveLength(1)
+  })
+
+  it('splits ONE list into two that never overlap and never lose a row', () => {
+    const rows = [
+      { employee_type: 'CASHIER', login_role: 'ADMIN' },
+      { employee_type: 'CASHIER', login_role: 'STAFF' },
+      { employee_type: 'CASHIER', login_role: 'MANAGER' },
+      { employee_type: 'WASH_WORKER', login_role: null },
+    ]
+    const { management, staff } = partitionByManagement(rows)
+
+    // Every row is accounted for exactly once. This is the property that makes
+    // the two sections' counts trustworthy, and it is the one a "just filter it"
+    // implementation breaks silently.
+    expect(management.length + staff.length).toBe(rows.length)
+    expect(new Set([...management, ...staff]).size).toBe(rows.length)
+  })
+
+  it('copes with an empty roster and with a role it does not recognise', () => {
+    expect(partitionByManagement([])).toEqual({ management: [], staff: [] })
+
+    // An unresolved login role must fall back to STAFF rather than vanish.
+    const { management, staff } = partitionByManagement([
+      { employee_type: 'CASHIER', login_role: null },
+      { employee_type: 'CASHIER', login_role: 'SUPER_ADMIN' },
+    ])
+    expect(management).toHaveLength(0)
+    expect(staff).toHaveLength(2)
+  })
+})
 
 describe('attendanceAvailability', () => {
   it('offers a punch on an untouched day', () => {
@@ -162,27 +234,118 @@ describe('ATTENDANCE_ACTION', () => {
   })
 })
 
-describe('formatWorkedDuration', () => {
+describe('formatWorkDuration', () => {
   // A stand-in for i18next that echoes the key, so the assertion is about the
   // SHAPE the component asked for and not about the Arabic wording.
   const t = (key: string, options?: Record<string, unknown>) =>
     `${key}:${JSON.stringify(options ?? {})}`
 
-  it('renders minutes only below an hour', () => {
-    const rendered = formatWorkedDuration(45, t)
-    expect(rendered).toContain('employees.duration.minutes')
-    expect(rendered).toContain('"minutes":45')
+  // The two modes the Dev Settings setting offers, and the exact values the
+  // requirement names.
+  it('renders a minute total in minutes mode', () => {
+    expect(formatWorkDuration(485, 'minutes', t)).toContain('"minutes":485')
   })
 
-  it('renders hours and minutes together above an hour', () => {
-    const rendered = formatWorkedDuration(490, t)
-    expect(rendered).toContain('employees.duration.hoursMinutes')
-    expect(rendered).toContain('"hours":8')
-    expect(rendered).toContain('"minutes":10')
+  it('renders an APPROXIMATE decimal hour total in hours mode', () => {
+    const rendered = formatWorkDuration(485, 'hours', t)
+    expect(rendered).toContain('employees.duration.hoursOnly')
+    // 485 / 60 = 8.083… → "8.1", and crucially NOT an "8h 5m" pair.
+    expect(rendered).toContain('"hours":"8.1"')
+    expect(rendered).not.toContain('minutes')
   })
 
-  it('renders zero without producing NaN', () => {
-    expect(formatWorkedDuration(0, t)).toContain('"minutes":0')
+  it('keeps a fixed one-decimal shape so a column of figures stays aligned', () => {
+    for (const [minutes, hours] of [
+      [0, '0.0'],
+      [30, '0.5'],
+      [390, '6.5'],
+      [600, '10.0'],
+      [485, '8.1'],
+      [90, '1.5'],
+    ] as const) {
+      expect(formatWorkDuration(minutes, 'hours', t)).toContain(`"hours":"${hours}"`)
+    }
+  })
+
+  it('rounds to the nearest tenth rather than truncating', () => {
+    // 8 minutes is 0.133h: truncating would print a misleading "0.1" while a
+    // value that rounds DOWN at the second decimal would print "0.1" too — this
+    // asserts the half-up behaviour on a value that actually rounds up.
+    expect(formatWorkDuration(95, 'hours', t)).toContain('"hours":"1.6"')
+  })
+
+  it('renders a sub-hour day as minutes when asked for minutes', () => {
+    // The old formatter had a special "under an hour" branch. In minutes mode
+    // every total is the same shape now, which is the point of the mode.
+    expect(formatWorkDuration(45, 'minutes', t)).toContain('"minutes":45')
+  })
+
+  it('renders zero without producing NaN in either mode', () => {
+    expect(formatWorkDuration(0, 'minutes', t)).toContain('"minutes":0')
+    expect(formatWorkDuration(0, 'hours', t)).toContain('"hours":"0.0"')
+  })
+
+  it('never renders a negative or non-finite duration', () => {
+    // A defensive floor, not a business rule: the backend clamps at zero, and a
+    // UI that divided a negative by 60 would print "-0.2 س" and look like data.
+    expect(formatWorkDuration(-90, 'hours', t)).toContain('"hours":"0.0"')
+    expect(formatWorkDuration(Number.NaN, 'minutes', t)).toContain('"minutes":0')
+  })
+})
+
+describe('the work-duration setting', () => {
+  // The two things a setting must do: survive a restart, and leave everything
+  // it does not own alone.
+  afterEach(() => {
+    resetFormattingPreferences()
+    reloadFormattingPreferences()
+  })
+
+  it('defaults to hours, because that is what the app displayed before', () => {
+    expect(DEFAULT_FORMATTING.workDuration.display).toBe('hours')
+    expect(sanitizePreferences({}).workDuration.display).toBe('hours')
+  })
+
+  it('falls back to the default for a missing or unrecognised stored value', () => {
+    // An installation saved before this setting existed has no key at all.
+    expect(sanitizePreferences({ money: {} }).workDuration.display).toBe('hours')
+    // A corrupt one must not become an unreachable screen state either.
+    expect(
+      sanitizePreferences({ workDuration: { display: 'fortnights' } }).workDuration.display,
+    ).toBe('hours')
+  })
+
+  it('persists across a reload, the way a restart would', () => {
+    setWorkDurationSettings({ display: 'minutes' })
+    expect(reloadFormattingPreferences().workDuration.display).toBe('minutes')
+
+    setWorkDurationSettings({ display: 'hours' })
+    expect(reloadFormattingPreferences().workDuration.display).toBe('hours')
+  })
+
+  it('never rolls the mode back when an unrelated setting is saved', () => {
+    setWorkDurationSettings({ display: 'minutes' })
+
+    // Exactly what the Dev Settings money/date "Save Changes" writes.
+    const current = reloadFormattingPreferences()
+    replaceFormattingPreferences({
+      ...current,
+      money: { ...current.money, decimalPlaces: 0 },
+    })
+
+    expect(reloadFormattingPreferences().workDuration.display).toBe('minutes')
+    expect(reloadFormattingPreferences().money.decimalPlaces).toBe(0)
+  })
+
+  it('changes the rendering, never the stored minutes', () => {
+    const t = (key: string, options?: Record<string, unknown>) =>
+      `${key}:${JSON.stringify(options ?? {})}`
+
+    // The canonical value is 485 either way; only the presentation moves.
+    expect(formatWorkDuration(485, 'minutes', t)).toContain('"minutes":485')
+    expect(formatWorkDuration(485, 'hours', t)).toContain('"hours":"8.1"')
+    // …and switching back is exact, not lossy: the total is recoverable.
+    expect(formatWorkDuration(485, 'minutes', t)).toContain('"minutes":485')
   })
 })
 

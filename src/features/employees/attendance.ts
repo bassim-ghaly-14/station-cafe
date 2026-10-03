@@ -10,7 +10,10 @@
  * no timestamp is computed — the rounding lives in Rust alone, so the screen can
  * never show an effective time the service would not have stored.
  */
+import { useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { businessWallClockToDate } from '@/lib/date'
+import { useWorkDurationSettings, type WorkDurationDisplay } from '@/lib/formatting'
 import type { AttendanceAction, AttendanceState } from '@/services/employeesApi'
 
 export type AttendanceAvailability = {
@@ -109,20 +112,61 @@ export function todayOf(employee: {
 }
 
 /**
- * Worked minutes → the compact `8س 10د` form the attendance timeline uses.
+ * Worked minutes → the on-screen form of a worked duration.
  *
- * A pure formatter, not a calculation: the minutes already come from the
- * backend, computed between the EFFECTIVE punches. An open day has no total yet,
- * so the caller renders the running state instead of a number.
+ * This is a PURE FORMATTER and the ONLY one in the application. The employee
+ * KPI, the roster's hours column, the details-drawer totals, the per-day
+ * attendance timeline and the personal attendance card all call it, so a change
+ * to the Dev Settings display mode reaches every one of them at once and no
+ * consumer can quietly keep its own idea of how a duration reads.
+ *
+ * # The mode is presentation only
+ *
+ * The minutes are already the canonical value: the backend computed them
+ * between the EFFECTIVE punches and the payroll, the reports and every
+ * calculation keep reading that same number. Nothing here rounds, rescales or
+ * rewrites what was stored — `hours` divides for DISPLAY and renders one
+ * decimal, and the stored 485 is still 485 everywhere else.
+ *
+ * `hours` is deliberately an APPROXIMATE figure (`8.1 س`) and never `8س 06د`:
+ * the point of the mode is a single glance-readable number, so the minute
+ * remainder is dropped rather than appended. `toFixed(1)` is what guarantees
+ * that shape, and it is also what keeps the value a fixed-width string so the
+ * column stays visually aligned down a column of figures.
+ *
+ * An open attendance day has no total yet, so the caller renders the running
+ * state (`—`) instead of calling this with a placeholder.
  */
-export function formatWorkedDuration(
+export function formatWorkDuration(
   minutes: number,
+  display: WorkDurationDisplay,
   translate: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  if (hours === 0) return translate('employees.duration.minutes', { minutes: rest })
-  return translate('employees.duration.hoursMinutes', { hours, minutes: rest })
+  // A negative or non-finite total is not a duration the UI should invent a
+  // reading for; zero is the honest floor and matches what the backend can
+  // store (a same-instant punch pair).
+  const total = Number.isFinite(minutes) ? Math.max(0, Math.trunc(minutes)) : 0
+
+  if (display === 'hours') {
+    return translate('employees.duration.hoursOnly', {
+      hours: (total / 60).toFixed(1),
+    })
+  }
+  return translate('employees.duration.minutesOnly', { minutes: total })
+}
+
+/**
+ * A worked duration bound to the current display setting.
+ *
+ * The hook every consumer uses, so none of them has to thread the mode through
+ * by hand or re-derive it. It re-renders its caller the moment the setting
+ * changes, which is what makes a Dev Settings edit visible immediately on an
+ * already-mounted page.
+ */
+export function useWorkDurationFormatter(): (minutes: number) => string {
+  const { display } = useWorkDurationSettings()
+  const { t } = useTranslation()
+  return useCallback((minutes: number) => formatWorkDuration(minutes, display, t), [display, t])
 }
 
 // ---------------------------------------------------------------------------

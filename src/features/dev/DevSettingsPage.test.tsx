@@ -4,6 +4,7 @@ import { ToastProvider } from '@/components/ui'
 import {
   DEFAULT_FORMATTING,
   getFormattingPreferences,
+  reloadFormattingPreferences,
   resetFormattingPreferences,
 } from '@/lib/formatting'
 import DevSettingsPage from './DevSettingsPage'
@@ -257,7 +258,7 @@ describe('DevSettingsPage', () => {
     expect(within(dialog).getByText(/سيتم حذفها نهائيًا/)).toBeInTheDocument()
     expect(within(dialog).getByText(/لا يمكن التراجع عنه/)).toBeInTheDocument()
     // …and that the session ends, so the way back in must be shown.
-    expect(within(dialog).getByText('admin / admin123 — مدير النظام')).toBeInTheDocument()
+    expect(within(dialog).getByText('admin / 1234 — مدير النظام')).toBeInTheDocument()
 
     // Cancelling must not load anything.
     fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
@@ -1005,5 +1006,66 @@ describe('DevAmountList whole-amount amounts', () => {
     // The pages' own sections are untouched by the addition.
     expect(screen.getByTestId('dev-danger-zone')).toBeInTheDocument()
     expect(screen.getByTestId('dev-local-access')).toBeInTheDocument()
+  })
+
+  /**
+   * The worked-duration mode is a DISPLAY preference with its own card and its
+   * own Save, because the employees surface reads it and the money/date form
+   * never do. These tests assert the contract the requirement names: two modes,
+   * an explicit save, and persistence through the existing settings store.
+   */
+  describe('the work-hours display setting', () => {
+    it('offers exactly two modes, with the saved one selected', async () => {
+      page()
+      const card = await screen.findByTestId('dev-work-duration')
+
+      const modes = within(card).getAllByRole('radio')
+      expect(modes).toHaveLength(2)
+      expect(within(card).getByLabelText('دقائق')).toBeInTheDocument()
+      expect(within(card).getByLabelText('ساعات')).toBeInTheDocument()
+      // The default is hours, which is what the app displayed before the setting
+      // existed, so an existing installation does not change presentation.
+      expect(within(card).getByLabelText('ساعات')).toBeChecked()
+      expect(within(card).getByLabelText('دقائق')).not.toBeChecked()
+    })
+
+    it('saves nothing until the change is saved', async () => {
+      page()
+      const card = await screen.findByTestId('dev-work-duration')
+
+      fireEvent.click(within(card).getByLabelText('دقائق'))
+
+      // Choosing is not saving: the store still holds the previous mode.
+      expect(getFormattingPreferences().workDuration.display).toBe('hours')
+      // …and the Save button is the thing that commits it.
+      expect(within(card).getByRole('button', { name: 'حفظ' })).toBeEnabled()
+
+      fireEvent.click(within(card).getByRole('button', { name: 'حفظ' }))
+
+      await waitFor(() => expect(getFormattingPreferences().workDuration.display).toBe('minutes'))
+    })
+
+    it('does not offer a save when nothing changed', async () => {
+      page()
+      const card = await screen.findByTestId('dev-work-duration')
+
+      expect(within(card).getByRole('button', { name: 'حفظ' })).toBeDisabled()
+    })
+
+    it('persists through the shared store, not a new mechanism', async () => {
+      page()
+      const card = await screen.findByTestId('dev-work-duration')
+      fireEvent.click(within(card).getByLabelText('دقائق'))
+      fireEvent.click(within(card).getByRole('button', { name: 'حفظ' }))
+
+      await waitFor(() => expect(getFormattingPreferences().workDuration.display).toBe('minutes'))
+
+      // A restart re-reads the same key the money and date settings use, and the
+      // mode comes back with them.
+      expect(reloadFormattingPreferences().workDuration.display).toBe('minutes')
+      // The default lives in the one shared default object, so the two settings
+      // cannot drift apart.
+      expect(DEFAULT_FORMATTING.workDuration.display).toBe('hours')
+    })
   })
 })

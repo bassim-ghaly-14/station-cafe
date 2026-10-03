@@ -29,7 +29,7 @@ import { Clock, DoorClosed, DoorOpen } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import type { BadgeVariant } from '@/lib/status-badge'
 import { useErrText } from '@/lib/err'
-import { attendanceAvailability, formatWorkedDuration } from './attendance'
+import { attendanceAvailability, useWorkDurationFormatter } from './attendance'
 import { roleLabel, roleOf } from './employee-role'
 import { employeesApi } from '@/services/employeesApi'
 import type { MyAttendance } from '@/services/employeesApi'
@@ -129,6 +129,7 @@ export function MyAttendanceCard({
   readonly onRecorded: () => void
 }) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
   const errText = useErrText(t)
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -296,7 +297,7 @@ export function MyAttendanceCard({
                   number must never be mistaken for a settled one. */}
               <Figure label={t('employees.mine.duration')}>
                 {mine.worked_minutes_today !== null
-                  ? formatWorkedDuration(mine.worked_minutes_today, t)
+                  ? formatDuration(mine.worked_minutes_today)
                   : '—'}
               </Figure>
             </>
