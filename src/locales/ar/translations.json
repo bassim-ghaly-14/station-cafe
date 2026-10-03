@@ -1803,9 +1803,9 @@
       "washWorkers": "عمال المغسلة",
       "topAttendance": "الأكثر حضورًا",
       "topHours": "أعلى ساعات حضور",
-      "hoursValue": "{{hours}}س {{minutes}}د",
       "topShifts": "أكثر ورديات",
-      "topCafeRevenue": "أعلى إيراد كافيه"
+      "topCafeRevenue": "أعلى إيراد كافيه",
+      "attendanceDays": "{{count}} يوم حضور"
     },
     "advance": {
       "reversed": "معكوس"

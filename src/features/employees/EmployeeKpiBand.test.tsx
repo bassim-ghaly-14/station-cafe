@@ -50,6 +50,100 @@ function headcountTile(): HTMLElement {
   return tile as HTMLElement
 }
 
+/**
+ * A leader tile: the card holding the metric label, the employee's name and the
+ * figure beneath it. Resolved from the metric LABEL so the test names the tile it
+ * means rather than whichever one happens to be first in the band.
+ */
+function leaderTile(label: string): HTMLElement {
+  const heading = screen.getByText(label)
+  const tile = heading.closest('.group')
+  expect(tile, label).not.toBeNull()
+  return tile as HTMLElement
+}
+
+/** The four leader metrics, in the order the band renders them. */
+const LEADER_LABELS = ['الأكثر حضورًا', 'أعلى ساعات حضور', 'أكثر ورديات', 'أعلى إيراد كافيه']
+
+describe('EmployeeKpiBand — the leader tiles', () => {
+  const leaders = {
+    top_attendance: { employee_id: 1, name: 'أحمد سيد', value: 23 },
+    top_hours: { employee_id: 2, name: 'محمد علي', value: 184 },
+    top_shifts: { employee_id: 3, name: 'عمر حسن', value: 21 },
+    top_cafe_revenue: { employee_id: 4, name: 'سيد إبراهيم', value: 12_540_000 },
+  }
+
+  it('names the person as the tile content, with the figure beneath the name', () => {
+    render(<EmployeeKpiBand overview={overview(leaders)} loading={false} />)
+
+    // Every leader tile states all three things, and states the NAME first.
+    // jsdom has no layout engine, so DOM order is what can honestly be asserted
+    // here; the type scale is verified in the hierarchy test below.
+    for (const [label, name] of [
+      ['الأكثر حضورًا', 'أحمد سيد'],
+      ['أعلى ساعات حضور', 'محمد علي'],
+      ['أكثر ورديات', 'عمر حسن'],
+      ['أعلى إيراد كافيه', 'سيد إبراهيم'],
+    ] as const) {
+      const tile = leaderTile(label)
+      const nodes = Array.from(tile.querySelectorAll('p'))
+      const nameIndex = nodes.findIndex((node) => node.textContent === name)
+      const figureIndex = nodes.findIndex((node) => /\d/.test(node.textContent ?? ''))
+      expect(nameIndex, `${label}: name present`).toBeGreaterThanOrEqual(0)
+      expect(figureIndex, `${label}: figure present`).toBeGreaterThanOrEqual(0)
+      // The label is the node before both; the NAME precedes the FIGURE.
+      expect(nameIndex, `${label}: name before figure`).toBeLessThan(figureIndex)
+    }
+  })
+
+  it('gives the name the tile STRONGEST type and the figure the caption scale', () => {
+    render(<EmployeeKpiBand overview={overview(leaders)} loading={false} />)
+    const tile = leaderTile('الأكثر حضورًا')
+
+    const name = within(tile).getByText('أحمد سيد')
+    // The figure line is the `p`, not the span nested inside it.
+    const figure = within(tile)
+      .getByText(/23\s*يوم حضور/)
+      .closest('p')
+    expect(figure).not.toBeNull()
+
+    // The hierarchy is a TYPE hierarchy, not a colour or an icon: the name is
+    // the larger bold line, the figure the smaller muted one beneath it.
+    expect(name.className).toMatch(/text-\[1\.25rem\]/)
+    expect(name.className).toMatch(/font-bold/)
+    expect(figure?.className).toContain('text-caption')
+  })
+
+  it('states attendance in DAYS, so the figure cannot be read as some other unit', () => {
+    render(<EmployeeKpiBand overview={overview(leaders)} loading={false} />)
+    const tile = leaderTile('الأكثر حضورًا')
+    // The unit is part of the figure: a bare `23` would be ambiguous.
+    expect(within(tile).getByText(/23\s*يوم حضور/)).toBeInTheDocument()
+    expect(within(tile).queryByText('23')).not.toBeInTheDocument()
+  })
+
+  it('keeps each metric value and its unit, unchanged from the backend', () => {
+    render(<EmployeeKpiBand overview={overview(leaders)} loading={false} />)
+    expect(within(leaderTile('الأكثر حضورًا')).getByText(/23/)).toBeInTheDocument()
+    expect(within(leaderTile('أكثر ورديات')).getByText(/21/)).toBeInTheDocument()
+    // Hours still read through the shared duration formatter, so a display-mode
+    // change in Dev Settings reaches this tile exactly as it reaches the column.
+    expect(within(leaderTile('أعلى ساعات حضور')).getByText(/س$/)).toBeInTheDocument()
+    // Revenue still reads through the shared money formatter, which renders the
+    // compact Arabic form — this tile changed no part of how money is shown.
+    expect(within(leaderTile('أعلى إيراد كافيه')).getByText(/ج\.م/)).toBeInTheDocument()
+  })
+
+  it('names no employee and states no figure when nobody leads the period', () => {
+    render(<EmployeeKpiBand overview={overview()} loading={false} />)
+    for (const label of LEADER_LABELS) {
+      const tile = leaderTile(label)
+      expect(within(tile).getByText('لا يوجد')).toBeInTheDocument()
+    }
+    // No fabricated figure anywhere in the band: a zero is not a leader.
+    expect(screen.queryByText(/0/)).not.toBeInTheDocument()
+  })
+})
 describe('EmployeeKpiBand — the headcount breakdown', () => {
   it('states the total and both type figures as separate, labelled numbers', () => {
     render(<EmployeeKpiBand overview={overview()} loading={false} />)

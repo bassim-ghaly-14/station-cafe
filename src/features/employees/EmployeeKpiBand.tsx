@@ -18,6 +18,15 @@
  * personally produce. The wash department's real revenue is reported at
  * department level in the sales workspace.
  *
+ * Hierarchy
+ * ---------
+ * Each leader tile states the metric LABEL, then the EMPLOYEE NAME, then the
+ * figure. The name is the hero: these tiles answer "who led this period", and a
+ * reader who lands on the number first has to work backwards to find out whose
+ * it was. The figure is supporting evidence, so it sits UNDER the name in the
+ * caption size and carries its unit — `23 يوم حضور`, never a bare `23`, which
+ * could be read as hours or invoices.
+ *
  * Layout
  * ------
  * A plain CSS grid runs 1 → 2 → 3 → 5 columns, so the desktop band is a single
@@ -30,31 +39,49 @@ import { CalendarClock, Clock, Coffee, TrendingUp, Users } from '@/components/ui
 import type { LucideIcon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 import type { EmployeeOverview, Leader } from '@/services/employeesApi'
+import { useWorkDurationFormatter } from './attendance'
 
 /** The band's grid is the SHARED KPI rule (`KpiGrid`): one tile per row on a
  * phone, then the same 2 → 3 → 5 progression the desktop already had. The
  * phone step used to be two columns from 360px up, which is what truncated an
  * Arabic label to nothing on a 360px phone.
  */
-/** One tile: label, value, and an optional second line of context. */
+/** One tile: label, value, and an optional second line of context.
+ *
+ * A LEADER tile (`leader`) inverts the plain one: the EMPLOYEE NAME is the hero
+ * and the figure is the supporting line beneath it. These tiles answer "who led
+ * this period, and by how much", so identity is the answer and the number is
+ * only the evidence — the same figure at 1.375rem above the name made the
+ * number the first thing the eye landed on and the person the caption.
+ *
+ * Both variants share one card shell, one icon row and one spacing scale, so
+ * the headcount tile and the four leader tiles stay visually identical in
+ * structure and differ only in what they state.
+ */
 function KpiTile({
   icon: Icon,
   label,
   children,
-  hint,
   breakdown,
+  leader,
   className,
 }: {
   readonly icon: LucideIcon
   readonly label: string
   readonly children: React.ReactNode
-  readonly hint?: React.ReactNode
   /**
    * An optional block rendered under the figure, separated by a hairline.
    * Used by the headcount tile, whose CASHIER / WASH_WORKER split carries enough
    * information to deserve a real section rather than a caption.
    */
   readonly breakdown?: React.ReactNode
+  /**
+   * When present, the tile is a LEADER tile: the employee is the hero and
+   * `children` becomes the secondary statistic beneath their name. `null` is a
+   * real state — nobody leads the period — and renders the honest "nobody"
+   * line with NO figure at all, because a zero is not a leader.
+   */
+  readonly leader?: Leader | null
   readonly className?: string
 }) {
   return (
@@ -73,12 +100,26 @@ function KpiTile({
         </span>
         <p className="min-w-0 truncate text-caption">{label}</p>
       </div>
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[1.375rem] leading-tight font-bold tabular-nums text-foreground-strong">
-          {children}
-        </span>
-        {hint ? <span className="truncate text-caption text-foreground-subtle">{hint}</span> : null}
-      </div>
+      {leader === undefined ? (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[1.375rem] leading-tight font-bold tabular-nums text-foreground-strong">
+            {children}
+          </span>
+        </div>
+      ) : (
+        /* Identity first, figure second. `min-w-0` + `truncate` is the SAME
+           containment rule the rest of the band uses for a name in a column of
+           unknown width: a long Arabic name clips INSIDE its card rather than
+           pushing it wider than its grid cell. */
+        <div className="flex flex-col gap-1">
+          <p className="min-w-0 truncate text-[1.25rem] leading-tight font-bold text-foreground-strong">
+            <LeaderName leader={leader} />
+          </p>
+          {leader ? (
+            <p className="min-w-0 truncate text-caption text-foreground-muted">{children}</p>
+          ) : null}
+        </div>
+      )}
       {breakdown ? (
         <div className="mt-auto border-t border-border-subtle pt-2.5">{breakdown}</div>
       ) : null}
@@ -140,13 +181,14 @@ function BreakdownEntry({ label, value }: { readonly label: string; readonly val
 }
 
 /**
- * The second line of a leader tile: the person's name, or an honest "nobody
- * leads this period" when there is no leader at all.
+ * The hero line of a leader tile: the person's name, or an honest "nobody leads
+ * this period" when there is no leader at all. The weight and size come from the
+ * tile, so this states only WHICH of the two it is.
  */
 function LeaderName({ leader }: Readonly<{ readonly leader: Leader | null }>) {
   const { t } = useTranslation()
   if (!leader) return <>{t('employees.kpi.none')}</>
-  return <span className="font-medium text-foreground-muted">{leader.name}</span>
+  return <>{leader.name}</>
 }
 
 export function EmployeeKpiBand({
@@ -159,6 +201,7 @@ export function EmployeeKpiBand({
   readonly className?: string
 }) {
   const { t } = useTranslation()
+  const formatDuration = useWorkDurationFormatter()
 
   if (loading && !overview) {
     return (
@@ -207,36 +250,33 @@ export function EmployeeKpiBand({
       <KpiTile
         icon={CalendarClock}
         label={t('employees.kpi.topAttendance')}
-        hint={<LeaderName leader={overview.top_attendance} />}
+        leader={overview.top_attendance}
       >
-        <span className="tabular-nums">{overview.top_attendance?.value ?? 0}</span>
-      </KpiTile>
-
-      <KpiTile
-        icon={Clock}
-        label={t('employees.kpi.topHours')}
-        hint={<LeaderName leader={overview.top_hours} />}
-      >
+        {/* `attendance_days` is already a COUNT OF DAYS (PRESENT days in the
+            range), so the figure carries its unit here rather than sitting
+            under the name as a bare number of unknown meaning. */}
         <span className="tabular-nums">
-          {t('employees.kpi.hoursValue', {
-            hours: Math.floor(topHours / 60),
-            minutes: topHours % 60,
-          })}
+          {t('employees.kpi.attendanceDays', { count: overview.top_attendance?.value ?? 0 })}
         </span>
       </KpiTile>
 
-      <KpiTile
-        icon={Coffee}
-        label={t('employees.kpi.topShifts')}
-        hint={<LeaderName leader={overview.top_shifts} />}
-      >
-        <span className="tabular-nums">{overview.top_shifts?.value ?? 0}</span>
+      <KpiTile icon={Clock} label={t('employees.kpi.topHours')} leader={overview.top_hours}>
+        {/* The same formatter the table column uses, so the tile and the row
+            beneath it can never disagree about how a duration reads — and both
+            follow the Dev Settings display mode. */}
+        <span className="tabular-nums">{formatDuration(topHours)}</span>
+      </KpiTile>
+
+      <KpiTile icon={Coffee} label={t('employees.kpi.topShifts')} leader={overview.top_shifts}>
+        <span className="tabular-nums">
+          {t('employees.performance.shifts', { count: overview.top_shifts?.value ?? 0 })}
+        </span>
       </KpiTile>
 
       <KpiTile
         icon={TrendingUp}
         label={t('employees.kpi.topCafeRevenue')}
-        hint={<LeaderName leader={overview.top_cafe_revenue} />}
+        leader={overview.top_cafe_revenue}
       >
         <MoneyDisplay amount={overview.top_cafe_revenue?.value ?? 0} variant="auto" />
       </KpiTile>
