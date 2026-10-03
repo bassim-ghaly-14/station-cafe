@@ -21,9 +21,11 @@
  * SANITISES what it cannot represent: a typed "+" arrives as "", which is
  * indistinguishable from a deliberate clear, so it has to be stopped as a key.
  * This is a Dev Settings presentation rule for these two lists only — it says
- * nothing about how money is represented or stored anywhere else. The rows
- * themselves are untouched: the same single input, the same reorder buttons, the
- * same remove button, no second field and no second set of controls.
+ * nothing about how money is represented or stored anywhere else, and nothing
+ * about the CUSTOM amount a cashier may type at the till, which goes through the
+ * shared `parseMajor` convention instead. The rows themselves are untouched: the
+ * same single input, the same reorder buttons, the same remove button, no second
+ * field and no second set of controls.
  *
  * REACT IDENTITY IS POSITION, NEVER THE AMOUNT. An earlier version keyed each
  * row by its own value, which meant that the single keystroke that changed the

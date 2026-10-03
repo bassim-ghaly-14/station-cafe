@@ -52,6 +52,25 @@ fn manager(conn: &Connection) -> auth::User {
 }
 
 /// The empty-close count the backend reports — the single authoritative figure.
+
+/// The ADMIN account.
+///
+/// The table count is ADMIN-only in both the command and the service, so the
+/// one test that RESIZES the cafe signs in as an administrator while the
+/// lifecycle tests around it keep using the manager who actually works the
+/// floor. That split is the rule under test, not a convenience.
+fn admin(conn: &Connection) -> auth::User {
+    // Index 3 is the cafe owner's ADMIN account in `DEFAULT_USERS`; the earlier
+    // entries are the manager and the two cashiers, so the role assertion below
+    // is what proves the right account was taken.
+    let (name, _phone, role, password) = crate::seed::DEFAULT_USERS[3];
+    let user = login(conn, name, password);
+    assert_eq!(user.role, role, "the owner account must be an admin");
+    assert_eq!(user.role, "ADMIN");
+    user
+}
+
+/// The empty-close count the backend reports — the single authoritative figure.
 fn empty_closes(conn: &Connection) -> i64 {
     pos_svc::day_lifecycle_counts(conn).unwrap().closed_empty
 }
@@ -468,7 +487,7 @@ fn retiring_a_table_never_erases_the_closes_it_recorded() {
     empty_close(&conn, &actor, last);
     assert_eq!(empty_closes(&conn), 1);
 
-    pos_svc::set_table_count(&conn, &actor, (tables.len() - 1) as i64).unwrap();
+    pos_svc::set_table_count(&conn, &admin(&conn), (tables.len() - 1) as i64).unwrap();
     assert!(
         !pos_svc::list_tables(&conn)
             .unwrap()

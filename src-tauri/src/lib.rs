@@ -36,6 +36,8 @@ mod network_test;
 #[cfg(test)]
 mod network_lan_http_test;
 #[cfg(test)]
+mod dev_settings_roles_test;
+#[cfg(test)]
 mod expense_categories_test;
 mod expenses_analytics_test;
 mod money;

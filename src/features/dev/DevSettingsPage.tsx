@@ -49,6 +49,7 @@ import { LocalAccessCard } from './LocalAccessCard'
 import { ApplicationUpdatesCard } from './ApplicationUpdatesCard'
 import { FormattingPreview } from './FormattingPreview'
 import { RevenueTargetsCard } from './RevenueTargetsCard'
+import { canOpenDevSettings, canSeeDevSection, loadsAdminSettings } from './devSectionAccess'
 
 /** Shared control styling for the formatting selects. */
 const SELECT =
@@ -171,45 +172,61 @@ export default function DevSettingsPage() {
     setDraft(defaultFormattingPreferences())
   }
 
-  // Loads every setting displayed on this page.
+  // Loads every setting DISPLAYED on this page.
+  //
+  // The ADMIN-only reads (table count, monthly chart window) are conditional:
+  // those controls exist only for an ADMIN, so a manager's page asks the
+  // backend for exactly what it renders and nothing more. The rest of the page
+  // is the same load for both roles, because both roles see the same four
+  // operation groups (service charge, discount, PIN, credit).
   const loadSettings = useCallback(async () => {
-    const [
-      serviceCharge,
-      discountOptions,
-      discountAuthorization,
-      creditConfig,
-      tables,
-      monthlySalesPeriod,
-    ] = await Promise.all([
-      settingsApi.serviceCharge(),
-      settingsApi.discountOptions(),
-      settingsApi.discountAuthorization().catch(() => ({ configured: false })),
-      settingsApi.credit(),
-      api.tables(),
-      settingsApi.monthlySalesPeriod().catch(() => ({ months: MONTHLY_SALES_PERIOD_MONTHS[1] })),
-    ])
+    const [serviceCharge, discountOptions, discountAuthorization, creditConfig, admin] =
+      await Promise.all([
+        settingsApi.serviceCharge(),
+        settingsApi.discountOptions(),
+        settingsApi.discountAuthorization().catch(() => ({ configured: false })),
+        settingsApi.credit(),
+        loadsAdminSettings(user?.role)
+          ? Promise.all([
+              api.tables(),
+              settingsApi
+                .monthlySalesPeriod()
+                .catch(() => ({ months: MONTHLY_SALES_PERIOD_MONTHS[1] })),
+            ])
+          : Promise.resolve(null),
+      ])
 
     setServiceAmounts(serviceCharge.amounts.map((amount) => String(amount / 100)))
     setDiscountAmounts(discountOptions.amounts.map((amount) => String(amount / 100)))
     setDiscountPinConfigured(discountAuthorization.configured)
     setCredit(creditConfig)
-    setTableCount(tables.length)
-    setSavedTableCount(tables.length)
-    setMonthlyPeriod(monthlySalesPeriod.months)
-    setSavedMonthlyPeriod(monthlySalesPeriod.months)
-  }, [])
+    if (admin) {
+      const [tables, monthlySalesPeriod] = admin
+      setTableCount(tables.length)
+      setSavedTableCount(tables.length)
+      setMonthlyPeriod(monthlySalesPeriod.months)
+      setSavedMonthlyPeriod(monthlySalesPeriod.months)
+    }
+  }, [user?.role])
 
-  // Dev Settings are ADMIN-only configuration and must be re-read whenever the
-  // resolved role changes, so the form can never show a manager what was loaded
-  // for a different role. External async init on role resolution.
+  // The page is MANAGER+, and must be re-read whenever the resolved role
+  // changes, so the form can never show one role what was loaded for another.
+  // External async init on role resolution.
   useEffect(() => {
-    if (user?.role !== 'ADMIN') return
+    if (!canOpenDevSettings(user?.role)) return
 
     // oxlint-disable-next-line react/set-state-in-effect -- role-driven read.
     void loadSettings().catch((error) => toast(errText(error), 'error'))
   }, [user?.role, loadSettings, toast, errText])
 
-  if (user?.role !== 'ADMIN') return null
+  // Nothing at all for STAFF: the page is not theirs to open, so it renders no
+  // header, no controls and no empty shells. The backend refuses every command
+  // behind it independently — this is presentation, not the boundary.
+  if (!canOpenDevSettings(user?.role)) return null
+
+  const see = (section: Parameters<typeof canSeeDevSection>[1]) =>
+    canSeeDevSection(user?.role, section)
+  const isAdmin = user?.role === 'ADMIN'
 
   async function saveSettings() {
     setBusy('settings')
@@ -444,6 +461,8 @@ export default function DevSettingsPage() {
           <div className="flex flex-col gap-3 md:col-span-2">
             <h3 className="font-bold text-foreground">{t('dev.serviceCharge')}</h3>
 
+            <p className="text-sm text-foreground-muted">{t('dev.serviceChargeHelp')}</p>
+
             <DevAmountList
               className="flex flex-col gap-3"
               label={t('dev.serviceCharge')}
@@ -560,101 +579,114 @@ export default function DevSettingsPage() {
         </Button>
       </Card>
 
-      {/* Chart bar colours — one card, one store, every chart in the app. */}
-      <ChartColorsCard />
-      <LocalAccessCard />
+      {/*
+        Chart bar colours and global display formatting are PRESENTATION
+        preferences, not cafe configuration, so they stay ADMIN-only: a manager's
+        page must not be able to restyle every screen in the application.
+      */}
+      {isAdmin ? (
+        <>
+          {/* Chart bar colours — one card, one store, every chart in the app. */}
+          <ChartColorsCard />
+        </>
+      ) : null}
+
+      {/* Local Network Access — a MANAGER-visible section: the address their
+          phone uses, the QR for it, and the switch that starts the service. */}
+      {see('local-network-access') ? <LocalAccessCard /> : null}
 
       {/* Global display formatting */}
-      <Card>
-        <CardHeader
-          title={t('dev.displayFormatting')}
-          subtitle={t('dev.displayFormattingDescription')}
-        />
+      {isAdmin ? (
+        <Card>
+          <CardHeader
+            title={t('dev.displayFormatting')}
+            subtitle={t('dev.displayFormattingDescription')}
+          />
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          {/* Right side: formatting controls */}
-          <div className="flex min-w-0 flex-col gap-6 lg:order-2">
-            {/* Money formatting */}
-            <section className="flex flex-col gap-4">
-              <h3 className="font-bold text-foreground">{t('dev.moneyFormatting')}</h3>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            {/* Right side: formatting controls */}
+            <div className="flex min-w-0 flex-col gap-6 lg:order-2">
+              {/* Money formatting */}
+              <section className="flex flex-col gap-4">
+                <h3 className="font-bold text-foreground">{t('dev.moneyFormatting')}</h3>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={t('dev.decimalPlaces')}>
-                  <select
-                    aria-label={t('dev.decimalPlaces')}
-                    className={SELECT}
-                    value={draft.money.decimalPlaces}
-                    onChange={(e) =>
-                      patchDraft({
-                        money: {
-                          decimalPlaces: Number(e.target.value) as 0 | 1 | 2,
-                        },
-                      })
-                    }
-                  >
-                    <option value="0">0</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                  </select>
-                </Field>
-
-                <Field label={t('dev.currencyPosition')}>
-                  <select
-                    aria-label={t('dev.currencyPosition')}
-                    className={SELECT}
-                    value={draft.money.currencyPosition}
-                    onChange={(e) =>
-                      patchDraft({
-                        money: {
-                          currencyPosition: e.target.value as 'after' | 'before',
-                        },
-                      })
-                    }
-                  >
-                    <option value="after">{t('dev.currencyAfter')}</option>
-                    <option value="before">{t('dev.currencyBefore')}</option>
-                  </select>
-                </Field>
-
-                <Field label={t('dev.compactThreshold')} hint={t('dev.compactThresholdHelp')}>
-                  <select
-                    aria-label={t('dev.compactThreshold')}
-                    className={SELECT}
-                    value={draft.money.compactThreshold}
-                    onChange={(e) =>
-                      patchDraft({
-                        money: {
-                          compactThreshold: Number(e.target.value),
-                        },
-                      })
-                    }
-                  >
-                    {COMPACT_THRESHOLD_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {value.toLocaleString('en-US')}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                {/* Thousands separator */}
-                <Field label={t('dev.thousandsSeparator')}>
-                  <div className="flex h-10 items-center gap-3">
-                    <Switch
-                      tone="state"
-                      checked={draft.money.useThousandsSeparator}
-                      onCheckedChange={(useThousandsSeparator) =>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={t('dev.decimalPlaces')}>
+                    <select
+                      aria-label={t('dev.decimalPlaces')}
+                      className={SELECT}
+                      value={draft.money.decimalPlaces}
+                      onChange={(e) =>
                         patchDraft({
                           money: {
-                            useThousandsSeparator,
+                            decimalPlaces: Number(e.target.value) as 0 | 1 | 2,
                           },
                         })
                       }
-                      label={t('dev.thousandsSeparator')}
-                    />
+                    >
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                    </select>
+                  </Field>
 
-                    <span
-                      className={`
+                  <Field label={t('dev.currencyPosition')}>
+                    <select
+                      aria-label={t('dev.currencyPosition')}
+                      className={SELECT}
+                      value={draft.money.currencyPosition}
+                      onChange={(e) =>
+                        patchDraft({
+                          money: {
+                            currencyPosition: e.target.value as 'after' | 'before',
+                          },
+                        })
+                      }
+                    >
+                      <option value="after">{t('dev.currencyAfter')}</option>
+                      <option value="before">{t('dev.currencyBefore')}</option>
+                    </select>
+                  </Field>
+
+                  <Field label={t('dev.compactThreshold')} hint={t('dev.compactThresholdHelp')}>
+                    <select
+                      aria-label={t('dev.compactThreshold')}
+                      className={SELECT}
+                      value={draft.money.compactThreshold}
+                      onChange={(e) =>
+                        patchDraft({
+                          money: {
+                            compactThreshold: Number(e.target.value),
+                          },
+                        })
+                      }
+                    >
+                      {COMPACT_THRESHOLD_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {value.toLocaleString('en-US')}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  {/* Thousands separator */}
+                  <Field label={t('dev.thousandsSeparator')}>
+                    <div className="flex h-10 items-center gap-3">
+                      <Switch
+                        tone="state"
+                        checked={draft.money.useThousandsSeparator}
+                        onCheckedChange={(useThousandsSeparator) =>
+                          patchDraft({
+                            money: {
+                              useThousandsSeparator,
+                            },
+                          })
+                        }
+                        label={t('dev.thousandsSeparator')}
+                      />
+
+                      <span
+                        className={`
                         text-sm font-semibold
                         transition-colors duration-200
                         ${
@@ -663,427 +695,447 @@ export default function DevSettingsPage() {
                             : 'text-accent'
                         }
                       `}
-                    >
-                      {draft.money.useThousandsSeparator ? t('app.enabled') : t('app.disabled')}
-                    </span>
-                  </div>
-                </Field>
+                      >
+                        {draft.money.useThousandsSeparator ? t('app.enabled') : t('app.disabled')}
+                      </span>
+                    </div>
+                  </Field>
 
-                {/* Show currency */}
-                <Field label={t('dev.showCurrency')}>
-                  <div className="flex h-10 items-center gap-3">
-                    <Switch
-                      tone="state"
-                      checked={draft.money.showCurrency}
-                      onCheckedChange={(showCurrency) =>
-                        patchDraft({
-                          money: {
-                            showCurrency,
-                          },
-                        })
-                      }
-                      label={t('dev.showCurrency')}
-                    />
-
-                    <span
-                      className={`
-                        text-sm font-semibold
-                        transition-colors duration-200
-                        ${draft.money.showCurrency ? 'text-foreground-muted' : 'text-accent'}
-                      `}
-                    >
-                      {draft.money.showCurrency ? t('app.enabled') : t('app.disabled')}
-                    </span>
-                  </div>
-                </Field>
-
-                {/* Compact values */}
-                <Field label={t('dev.compactValues')}>
-                  <div className="flex h-10 items-center gap-3">
-                    <Switch
-                      tone="state"
-                      checked={draft.money.compactLargeValues}
-                      onCheckedChange={(compactLargeValues) =>
-                        patchDraft({
-                          money: {
-                            compactLargeValues,
-                          },
-                        })
-                      }
-                      label={t('dev.compactValues')}
-                    />
-
-                    <span
-                      className={`
-                        text-sm font-semibold
-                        transition-colors duration-200
-                        ${draft.money.compactLargeValues ? 'text-foreground-muted' : 'text-accent'}
-                      `}
-                    >
-                      {draft.money.compactLargeValues ? t('app.enabled') : t('app.disabled')}
-                    </span>
-                  </div>
-                </Field>
-              </div>
-            </section>
-
-            {/* Date & time formatting */}
-            <section className="flex flex-col gap-4 border-t border-border pt-6">
-              <h3 className="font-bold text-foreground">{t('dev.dateTimeFormatting')}</h3>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label={t('dev.dateFormat')}>
-                  <select
-                    aria-label={t('dev.dateFormat')}
-                    className={SELECT}
-                    value={draft.date.dateFormat}
-                    onChange={(e) =>
-                      patchDraft({
-                        date: {
-                          dateFormat: e.target.value as FormattingPreferences['date']['dateFormat'],
-                        },
-                      })
-                    }
-                  >
-                    {DATE_FORMAT_OPTIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label={t('dev.timeFormat')}>
-                  <select
-                    aria-label={t('dev.timeFormat')}
-                    className={SELECT}
-                    value={draft.date.timeFormat}
-                    onChange={(e) =>
-                      patchDraft({
-                        date: {
-                          timeFormat: e.target.value as '12h' | '24h',
-                        },
-                      })
-                    }
-                  >
-                    <option value="24h">24h</option>
-                    <option value="12h">12h</option>
-                  </select>
-                </Field>
-
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Field label={t('dev.showSeconds')}>
+                  {/* Show currency */}
+                  <Field label={t('dev.showCurrency')}>
                     <div className="flex h-10 items-center gap-3">
                       <Switch
                         tone="state"
-                        checked={draft.date.showSeconds}
-                        onCheckedChange={(showSeconds) =>
+                        checked={draft.money.showCurrency}
+                        onCheckedChange={(showCurrency) =>
                           patchDraft({
-                            date: {
-                              showSeconds,
+                            money: {
+                              showCurrency,
                             },
                           })
                         }
-                        label={t('dev.showSeconds')}
+                        label={t('dev.showCurrency')}
                       />
 
                       <span
                         className={`
-                          text-sm font-semibold
-                          transition-colors duration-200
-                          ${draft.date.showSeconds ? 'text-foreground-muted' : 'text-accent'}
-                        `}
+                        text-sm font-semibold
+                        transition-colors duration-200
+                        ${draft.money.showCurrency ? 'text-foreground-muted' : 'text-accent'}
+                      `}
                       >
-                        {draft.date.showSeconds ? t('app.enabled') : t('app.disabled')}
+                        {draft.money.showCurrency ? t('app.enabled') : t('app.disabled')}
+                      </span>
+                    </div>
+                  </Field>
+
+                  {/* Compact values */}
+                  <Field label={t('dev.compactValues')}>
+                    <div className="flex h-10 items-center gap-3">
+                      <Switch
+                        tone="state"
+                        checked={draft.money.compactLargeValues}
+                        onCheckedChange={(compactLargeValues) =>
+                          patchDraft({
+                            money: {
+                              compactLargeValues,
+                            },
+                          })
+                        }
+                        label={t('dev.compactValues')}
+                      />
+
+                      <span
+                        className={`
+                        text-sm font-semibold
+                        transition-colors duration-200
+                        ${draft.money.compactLargeValues ? 'text-foreground-muted' : 'text-accent'}
+                      `}
+                      >
+                        {draft.money.compactLargeValues ? t('app.enabled') : t('app.disabled')}
                       </span>
                     </div>
                   </Field>
                 </div>
-              </div>
-            </section>
-          </div>
+              </section>
 
-          {/* Left side: live preview */}
-          <section className="flex min-w-0 flex-col gap-4 lg:order-1 lg:border-s lg:border-border lg:pe-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="flex flex-wrap items-center gap-2 font-bold text-foreground">
-                {t('dev.preview')}
+              {/* Date & time formatting */}
+              <section className="flex flex-col gap-4 border-t border-border pt-6">
+                <h3 className="font-bold text-foreground">{t('dev.dateTimeFormatting')}</h3>
 
-                {formattingDirty ? (
-                  <Badge
-                    data-testid="formatting-dirty"
-                    variant="warning"
-                    size="sm"
-                    shape="pill"
-                    dot
-                  >
-                    {t('dev.unsavedChanges')}
-                  </Badge>
-                ) : null}
-              </h3>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={t('dev.dateFormat')}>
+                    <select
+                      aria-label={t('dev.dateFormat')}
+                      className={SELECT}
+                      value={draft.date.dateFormat}
+                      onChange={(e) =>
+                        patchDraft({
+                          date: {
+                            dateFormat: e.target
+                              .value as FormattingPreferences['date']['dateFormat'],
+                          },
+                        })
+                      }
+                    >
+                      {DATE_FORMAT_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={resetDraft}
-                  disabled={!formattingDirty}
-                  data-testid="formatting-reset-draft"
-                >
-                  <RotateCcw size={16} aria-hidden />
-                  {t('dev.resetChanges')}
-                </Button>
+                  <Field label={t('dev.timeFormat')}>
+                    <select
+                      aria-label={t('dev.timeFormat')}
+                      className={SELECT}
+                      value={draft.date.timeFormat}
+                      onChange={(e) =>
+                        patchDraft({
+                          date: {
+                            timeFormat: e.target.value as '12h' | '24h',
+                          },
+                        })
+                      }
+                    >
+                      <option value="24h">24h</option>
+                      <option value="12h">12h</option>
+                    </select>
+                  </Field>
 
-                <Button
-                  variant="outline"
-                  onClick={loadDefaultsIntoDraft}
-                  data-testid="formatting-load-defaults"
-                >
-                  {t('dev.resetFormatting')}
-                </Button>
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <Field label={t('dev.showSeconds')}>
+                      <div className="flex h-10 items-center gap-3">
+                        <Switch
+                          tone="state"
+                          checked={draft.date.showSeconds}
+                          onCheckedChange={(showSeconds) =>
+                            patchDraft({
+                              date: {
+                                showSeconds,
+                              },
+                            })
+                          }
+                          label={t('dev.showSeconds')}
+                        />
 
-                <Button
-                  onClick={saveFormatting}
-                  disabled={!formattingDirty}
-                  data-testid="formatting-save"
-                >
-                  <Save size={16} aria-hidden />
-                  {t('dev.saveFormatting')}
-                </Button>
-              </div>
+                        <span
+                          className={`
+                          text-sm font-semibold
+                          transition-colors duration-200
+                          ${draft.date.showSeconds ? 'text-foreground-muted' : 'text-accent'}
+                        `}
+                        >
+                          {draft.date.showSeconds ? t('app.enabled') : t('app.disabled')}
+                        </span>
+                      </div>
+                    </Field>
+                  </div>
+                </div>
+              </section>
             </div>
 
-            <FormattingPreview draft={draft} />
-          </section>
-        </div>
-      </Card>
+            {/* Left side: live preview */}
+            <section className="flex min-w-0 flex-col gap-4 lg:order-1 lg:border-s lg:border-border lg:pe-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex flex-wrap items-center gap-2 font-bold text-foreground">
+                  {t('dev.preview')}
 
-      {/* Tables */}
-      <Card data-testid="dev-tables">
-        <CardHeader title={t('dev.tables')} subtitle={t('dev.tableCountHelp')} />
+                  {formattingDirty ? (
+                    <Badge
+                      data-testid="formatting-dirty"
+                      variant="warning"
+                      size="sm"
+                      shape="pill"
+                      dot
+                    >
+                      {t('dev.unsavedChanges')}
+                    </Badge>
+                  ) : null}
+                </h3>
 
-        <div className="flex items-center gap-3">
-          <Button
-            size="icon"
-            variant="outline"
-            disabled={tableCount <= 1}
-            aria-label={t('dev.decrease')}
-            onClick={() => setTableCount((count) => Math.max(1, count - 1))}
-          >
-            <Minus size={18} aria-hidden />
-          </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={resetDraft}
+                    disabled={!formattingDirty}
+                    data-testid="formatting-reset-draft"
+                  >
+                    <RotateCcw size={16} aria-hidden />
+                    {t('dev.resetChanges')}
+                  </Button>
 
-          <output
-            className="min-w-16 text-center text-3xl font-bold"
-            aria-label={t('dev.tableCount')}
-          >
-            {tableCount}
-          </output>
+                  <Button
+                    variant="outline"
+                    onClick={loadDefaultsIntoDraft}
+                    data-testid="formatting-load-defaults"
+                  >
+                    {t('dev.resetFormatting')}
+                  </Button>
 
-          <Button
-            size="icon"
-            variant="outline"
-            disabled={tableCount >= 99}
-            aria-label={t('dev.increase')}
-            onClick={() => setTableCount((count) => Math.min(99, count + 1))}
-          >
-            <Plus size={18} aria-hidden />
-          </Button>
+                  <Button
+                    onClick={saveFormatting}
+                    disabled={!formattingDirty}
+                    data-testid="formatting-save"
+                  >
+                    <Save size={16} aria-hidden />
+                    {t('dev.saveFormatting')}
+                  </Button>
+                </div>
+              </div>
 
-          <Button
-            disabled={!tableCountChanged}
-            loading={busy === 'tables'}
-            onClick={() => void applyTableCount()}
-          >
-            {t('app.save')}
-          </Button>
-        </div>
-      </Card>
-
-      {/* Monthly sales chart window */}
-      <Card data-testid="dev-monthly-period">
-        <CardHeader
-          title={t('dev.monthlySalesPeriod')}
-          subtitle={t('dev.monthlySalesPeriodHelp')}
-        />
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-48">
-            <Field label={t('dev.monthlySalesPeriodMonths')}>
-              <Select
-                aria-label={t('dev.monthlySalesPeriodMonths')}
-                value={String(monthlyPeriod)}
-                onChange={(event) => setMonthlyPeriod(Number(event.target.value))}
-              >
-                {MONTHLY_SALES_PERIOD_MONTHS.map((months) => (
-                  <option key={months} value={months}>
-                    {t('dev.monthsOption', { count: months })}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+              <FormattingPreview draft={draft} />
+            </section>
           </div>
+        </Card>
+      ) : null}
 
-          <Button
-            disabled={!monthlyPeriodChanged}
-            loading={busy === 'period'}
-            onClick={() => void applyMonthlyPeriod()}
-          >
-            {t('app.save')}
-          </Button>
-        </div>
-      </Card>
+      {/* Tables — ADMIN-only. The number of cafe tables is a system
+          configuration with no manager-facing meaning on this page. */}
+      {isAdmin ? (
+        <Card data-testid="dev-tables">
+          <CardHeader title={t('dev.tables')} subtitle={t('dev.tableCountHelp')} />
+
+          <div className="flex items-center gap-3">
+            <Button
+              size="icon"
+              variant="outline"
+              disabled={tableCount <= 1}
+              aria-label={t('dev.decrease')}
+              onClick={() => setTableCount((count) => Math.max(1, count - 1))}
+            >
+              <Minus size={18} aria-hidden />
+            </Button>
+
+            <output
+              className="min-w-16 text-center text-3xl font-bold"
+              aria-label={t('dev.tableCount')}
+            >
+              {tableCount}
+            </output>
+
+            <Button
+              size="icon"
+              variant="outline"
+              disabled={tableCount >= 99}
+              aria-label={t('dev.increase')}
+              onClick={() => setTableCount((count) => Math.min(99, count + 1))}
+            >
+              <Plus size={18} aria-hidden />
+            </Button>
+
+            <Button
+              disabled={!tableCountChanged}
+              loading={busy === 'tables'}
+              onClick={() => void applyTableCount()}
+            >
+              {t('app.save')}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* Monthly sales chart window — ADMIN-only: a REPORTING window, not one of
+          the manager's operational sections. */}
+      {isAdmin ? (
+        <Card data-testid="dev-monthly-period">
+          <CardHeader
+            title={t('dev.monthlySalesPeriod')}
+            subtitle={t('dev.monthlySalesPeriodHelp')}
+          />
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <Field label={t('dev.monthlySalesPeriodMonths')}>
+                <Select
+                  aria-label={t('dev.monthlySalesPeriodMonths')}
+                  value={String(monthlyPeriod)}
+                  onChange={(event) => setMonthlyPeriod(Number(event.target.value))}
+                >
+                  {MONTHLY_SALES_PERIOD_MONTHS.map((months) => (
+                    <option key={months} value={months}>
+                      {t('dev.monthsOption', { count: months })}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <Button
+              disabled={!monthlyPeriodChanged}
+              loading={busy === 'period'}
+              onClick={() => void applyMonthlyPeriod()}
+            >
+              {t('app.save')}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Worked-duration display — a DISPLAY preference, grouped with the tables
           and the chart window rather than inside the money/date card, because it
           is read by the employees surface and has its own Save. The two modes
           are presented as a radio group: they are mutually exclusive choices
           between two named presentations, not an open value, so a segmented
-          control states that better than a dropdown. */}
-      <Card data-testid="dev-work-duration">
-        <CardHeader
-          title={t('dev.workDurationDisplay')}
-          subtitle={t('dev.workDurationDisplayHelp')}
-        />
+          control states that better than a dropdown. ADMIN-only, like the rest
+          of the presentation group. */}
+      {isAdmin ? (
+        <Card data-testid="dev-work-duration">
+          <CardHeader
+            title={t('dev.workDurationDisplay')}
+            subtitle={t('dev.workDurationDisplayHelp')}
+          />
 
-        <div className="flex flex-wrap items-center gap-4">
-          <fieldset className="flex flex-wrap items-center gap-4">
-            <legend className="sr-only">{t('dev.workDurationDisplay')}</legend>
+          <div className="flex flex-wrap items-center gap-4">
+            <fieldset className="flex flex-wrap items-center gap-4">
+              <legend className="sr-only">{t('dev.workDurationDisplay')}</legend>
 
-            {WORK_DURATION_DISPLAY_OPTIONS.map((option) => (
-              <label
-                key={option}
-                className="flex cursor-pointer items-center gap-2 text-sm text-foreground-muted"
-              >
-                <input
-                  type="radio"
-                  name="work-duration-display"
-                  value={option}
-                  checked={durationDraft === option}
-                  onChange={() => setDurationDraft(option)}
-                  aria-label={t(
-                    option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours',
-                  )}
-                  className="size-4 accent-(--color-primary)"
-                />
-                {t(option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours')}
-              </label>
-            ))}
-          </fieldset>
+              {WORK_DURATION_DISPLAY_OPTIONS.map((option) => (
+                <label
+                  key={option}
+                  className="flex cursor-pointer items-center gap-2 text-sm text-foreground-muted"
+                >
+                  <input
+                    type="radio"
+                    name="work-duration-display"
+                    value={option}
+                    checked={durationDraft === option}
+                    onChange={() => setDurationDraft(option)}
+                    aria-label={t(
+                      option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours',
+                    )}
+                    className="size-4 accent-(--color-primary)"
+                  />
+                  {t(option === 'minutes' ? 'dev.workDurationMinutes' : 'dev.workDurationHours')}
+                </label>
+              ))}
+            </fieldset>
 
-          <Button disabled={!durationDirty} onClick={saveWorkDuration}>
-            <Save size={16} aria-hidden />
-            {t('app.save')}
-          </Button>
-        </div>
-      </Card>
+            <Button disabled={!durationDirty} onClick={saveWorkDuration}>
+              <Save size={16} aria-hidden />
+              {t('app.save')}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
-      {/* Monthly revenue targets — the cafe/wash business configuration, next to
-          the table count and the monthly chart window it belongs with. */}
-      <RevenueTargetsCard />
+      {/* Monthly revenue targets — the cafe/wash business configuration. A
+          MANAGER-visible section: the cafe target, the wash target and the
+          active month's override of either. They stay two separate targets —
+          there is deliberately no combined overall figure. */}
+      {see('monthly-targets') ? <RevenueTargetsCard /> : null}
 
-      {/* Danger zone */}
-      <section
-        aria-labelledby="dev-danger-zone"
-        data-testid="dev-danger-zone"
-        className="flex flex-col gap-4 rounded-lg border border-destructive-border bg-destructive-soft/40 p-4"
-      >
-        <div className="flex flex-col gap-1">
-          <h2
-            id="dev-danger-zone"
-            className="flex items-center gap-2 text-base font-bold text-destructive-soft-foreground"
-          >
-            <TriangleAlert size={18} aria-hidden />
-            {t('dev.dangerZone')}
-          </h2>
+      {/* Danger zone — ADMIN-only. These three actions clear or rebuild the
+          whole database; the service authorizes each one as ADMIN regardless of
+          what this page renders. */}
+      {isAdmin ? (
+        <section
+          aria-labelledby="dev-danger-zone"
+          data-testid="dev-danger-zone"
+          className="flex flex-col gap-4 rounded-lg border border-destructive-border bg-destructive-soft/40 p-4"
+        >
+          <div className="flex flex-col gap-1">
+            <h2
+              id="dev-danger-zone"
+              className="flex items-center gap-2 text-base font-bold text-destructive-soft-foreground"
+            >
+              <TriangleAlert size={18} aria-hidden />
+              {t('dev.dangerZone')}
+            </h2>
 
-          <p className="text-xs text-foreground-subtle">{t('dev.dangerZoneDescription')}</p>
-        </div>
-
-        {/* Load official data */}
-        <div className="flex flex-col gap-3 rounded-md border border-border bg-surface-card p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <RefreshCw size={18} aria-hidden className="mt-0.5 shrink-0 text-foreground-muted" />
-
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-foreground-strong">
-                {t('dev.dangerZoneLoadTitle')}
-              </h3>
-
-              <p className="text-xs text-foreground-muted">{t('dev.dangerZoneLoadDescription')}</p>
-            </div>
+            <p className="text-xs text-foreground-subtle">{t('dev.dangerZoneDescription')}</p>
           </div>
 
-          <Button
-            className="shrink-0 self-start sm:self-auto"
-            loading={busy === 'seed'}
-            disabled={busy !== null}
-            onClick={() => void loadOfficialData()}
-          >
-            <RefreshCw size={16} aria-hidden />
-            {t('dev.dangerZoneLoadTitle')}
-          </Button>
-        </div>
+          {/* Load official data */}
+          <div className="flex flex-col gap-3 rounded-md border border-border bg-surface-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <RefreshCw size={18} aria-hidden className="mt-0.5 shrink-0 text-foreground-muted" />
 
-        {/* Load DEMO data — deliberately a SEPARATE card from the official one.
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-foreground-strong">
+                  {t('dev.dangerZoneLoadTitle')}
+                </h3>
+
+                <p className="text-xs text-foreground-muted">
+                  {t('dev.dangerZoneLoadDescription')}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              className="shrink-0 self-start sm:self-auto"
+              loading={busy === 'seed'}
+              disabled={busy !== null}
+              onClick={() => void loadOfficialData()}
+            >
+              <RefreshCw size={16} aria-hidden />
+              {t('dev.dangerZoneLoadTitle')}
+            </Button>
+          </div>
+
+          {/* Load DEMO data — deliberately a SEPARATE card from the official one.
             The two actions are visually and verbally distinct: different icon,
             different heading, an explicit "demo" label, and its own destructive
             confirmation. They must never be confusable. */}
-        <div className="flex flex-col gap-3 rounded-md border border-warning-border bg-warning-soft/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <Sparkles size={18} aria-hidden className="mt-0.5 shrink-0 text-foreground-muted" />
+          <div className="flex flex-col gap-3 rounded-md border border-warning-border bg-warning-soft/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <Sparkles size={18} aria-hidden className="mt-0.5 shrink-0 text-foreground-muted" />
 
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-foreground-strong">{t('dev.demoTitle')}</h3>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-foreground-strong">{t('dev.demoTitle')}</h3>
 
-              <p className="text-xs text-foreground-muted">{t('dev.demoDescription')}</p>
+                <p className="text-xs text-foreground-muted">{t('dev.demoDescription')}</p>
+              </div>
             </div>
+
+            <Button
+              className="shrink-0 self-start sm:self-auto"
+              loading={busy === 'demo'}
+              disabled={busy !== null}
+              onClick={() => setConfirmDemo(true)}
+            >
+              <Sparkles size={16} aria-hidden />
+              {t('dev.demoTitle')}
+            </Button>
           </div>
 
-          <Button
-            className="shrink-0 self-start sm:self-auto"
-            loading={busy === 'demo'}
-            disabled={busy !== null}
-            onClick={() => setConfirmDemo(true)}
-          >
-            <Sparkles size={16} aria-hidden />
-            {t('dev.demoTitle')}
-          </Button>
-        </div>
+          {/* Clear database */}
+          <div className="flex flex-col gap-3 rounded-md border border-destructive-border bg-surface-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <Trash2 size={18} aria-hidden className="mt-0.5 shrink-0 text-destructive" />
 
-        {/* Clear database */}
-        <div className="flex flex-col gap-3 rounded-md border border-destructive-border bg-surface-card p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <Trash2 size={18} aria-hidden className="mt-0.5 shrink-0 text-destructive" />
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-foreground-strong">
+                  {t('dev.dangerZoneClearTitle')}
+                </h3>
 
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-foreground-strong">
-                {t('dev.dangerZoneClearTitle')}
-              </h3>
-
-              <p className="text-xs text-foreground-muted">{t('dev.dangerZoneClearDescription')}</p>
+                <p className="text-xs text-foreground-muted">
+                  {t('dev.dangerZoneClearDescription')}
+                </p>
+              </div>
             </div>
+
+            <Button
+              className="shrink-0 self-start sm:self-auto"
+              variant="destructive"
+              loading={busy === 'clear'}
+              disabled={busy !== null}
+              onClick={() => setConfirmClear(true)}
+            >
+              <Trash2 size={16} aria-hidden />
+              {t('dev.dangerZoneClearTitle')}
+            </Button>
           </div>
+        </section>
+      ) : null}
 
-          <Button
-            className="shrink-0 self-start sm:self-auto"
-            variant="destructive"
-            loading={busy === 'clear'}
-            disabled={busy !== null}
-            onClick={() => setConfirmClear(true)}
-          >
-            <Trash2 size={16} aria-hidden />
-            {t('dev.dangerZoneClearTitle')}
-          </Button>
-        </div>
-      </section>
-
-      {/* Application Updates — the LAST section of the page, after the Danger
-          Zone. Placed here deliberately: it is the newest, least frequent and
-          least reversible-looking control on the page, and a manager scanning
-          top-down should reach the data tools long before the one that can
-          close the app. The dialogs below are overlays, not sections, and stay
-          at the end of the container. */}
-      <ApplicationUpdatesCard />
+      {/* Application Updates — MANAGER-visible. Manual check, manual install,
+          and the open-business-day / open-shift gate that refuses to close the
+          app mid-sale are all unchanged; only who may REACH the section changed.
+          It stays the LAST section of the page, after the Danger Zone: it is the
+          newest, least frequent and least reversible-looking control here. */}
+      {see('application-update') ? <ApplicationUpdatesCard /> : null}
 
       {/* Clear confirmation */}
       <Dialog

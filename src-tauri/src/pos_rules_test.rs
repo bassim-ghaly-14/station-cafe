@@ -7,8 +7,8 @@
 //! traffic, so a passing test means the command path is protected too.
 
 use crate::db::migrate;
-use crate::repositories::{catalog, customers, invoices, pos};
 use crate::demo_data::seed_for_development as run_if_empty;
+use crate::repositories::{catalog, customers, invoices, pos};
 use crate::services::{auth, checkout, pos as pos_svc, settings, shifts as shift_svc};
 use rusqlite::Connection;
 
@@ -796,6 +796,160 @@ fn an_unconfigured_pin_blocks_discounts_but_service_charge_stays_free() {
     assert_eq!(invoice.discount_minor, 0);
 }
 
+/// Open a business day + a cashier shift, then a table with one cafe line, and
+/// return the open order together with its authoritative subtotal.
+fn service_charge_fixture(conn: &Connection) -> (auth::User, auth::User, i64, i64) {
+    let manager = login(conn, "manager", "2345");
+    let staff = login(conn, "cashier", "3456");
+    let order_id = open_order(conn, &manager, &staff);
+    pos_svc::add_line(conn, &staff, order_id, cafe_product(conn, "قهوة تركي دبل"), 1).unwrap();
+    let subtotal = pos_svc::preview(conn, order_id, None, None, None).unwrap().subtotal;
+    (manager, staff, order_id, subtotal)
+}
+
+/// Pay the order with an explicit service charge and no discount.
+fn pay_with_service_charge(
+    conn: &Connection,
+    staff: &auth::User,
+    order_id: i64,
+    service_charge_minor: Option<i64>,
+) -> checkout::CheckoutResult {
+    checkout::checkout(
+        conn,
+        staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: None,
+            discount_value: None,
+            discount_pin: None,
+            service_charge_minor,
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// SERVICE CHARGE — quick amounts, CUSTOM amounts, and the absence of any
+// authorization on either path.
+//
+// Every rule is asserted through the two real callers (`pos::preview` and
+// `checkout::checkout`), so a passing test means the command path is protected
+// too — exactly like every other rule in this file. The shared rule itself is
+// `settings::resolve_service_charge`; nothing here re-implements it.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_configured_quick_amount_is_applied_exactly() {
+    let conn = fresh();
+    let (manager, staff, order_id, subtotal) = service_charge_fixture(&conn);
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000, 2_000, 3_000, 5_000],
+        },
+    )
+    .unwrap();
+
+    let preview = pos_svc::preview(&conn, order_id, None, None, Some(2_000)).unwrap();
+    assert_eq!(preview.service_charge_minor, 2_000);
+    assert_eq!(preview.total, subtotal + 2_000);
+
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(2_000));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 2_000);
+    assert_eq!(invoice.total, subtotal + 2_000);
+}
+
+#[test]
+fn a_custom_service_charge_outside_the_quick_amounts_is_accepted_without_authorization() {
+    let conn = fresh();
+    let (manager, staff, order_id, subtotal) = service_charge_fixture(&conn);
+    // The presets are 10/20/30/50 — 37 is deliberately not one of them.
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000, 2_000, 3_000, 5_000],
+        },
+    )
+    .unwrap();
+
+    // NO discount PIN is configured at all in this database, and NO credential
+    // is ever sent: the custom service charge must still succeed. The discount
+    // path, under exactly these conditions, is refused.
+    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
+
+    let preview = pos_svc::preview(&conn, order_id, None, None, Some(3_700)).unwrap();
+    assert_eq!(preview.service_charge_minor, 3_700);
+    assert_eq!(preview.total, subtotal + 3_700);
+
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(3_700));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 3_700);
+    assert_eq!(invoice.total, subtotal + 3_700);
+    assert_eq!(invoice.discount_minor, 0);
+}
+
+#[test]
+fn the_service_charge_is_replaced_not_stacked_when_another_amount_is_chosen() {
+    let conn = fresh();
+    let (manager, staff, order_id, subtotal) = service_charge_fixture(&conn);
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![2_000],
+        },
+    )
+    .unwrap();
+
+    // 20.00, then 37.00. A service charge is ONE invoice-level figure, so the
+    // second selection REPLACES the first — the total is never 20 + 37.
+    let first = pos_svc::preview(&conn, order_id, None, None, Some(2_000)).unwrap();
+    assert_eq!(first.total, subtotal + 2_000);
+
+    let second = pos_svc::preview(&conn, order_id, None, None, Some(3_700)).unwrap();
+    assert_eq!(second.service_charge_minor, 3_700);
+    assert_eq!(second.total, subtotal + 3_700);
+
+    // And the settled invoice carries only the replacement.
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(3_700));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 3_700);
+    assert_eq!(invoice.total, subtotal + 3_700);
+}
+
+#[test]
+fn no_service_charge_is_zero_and_neither_omission_nor_zero_is_an_error() {
+    let conn = fresh();
+    let (_manager, staff, order_id, subtotal) = service_charge_fixture(&conn);
+
+    // Absent (a client that sends nothing) and an explicit zero are the SAME
+    // outcome, so "cleared" and "never chosen" can never disagree.
+    let omitted = pos_svc::preview(&conn, order_id, None, None, None).unwrap();
+    let explicit_zero = pos_svc::preview(&conn, order_id, None, None, Some(0)).unwrap();
+    assert_eq!(omitted.service_charge_minor, 0);
+    assert_eq!(explicit_zero.service_charge_minor, 0);
+    assert_eq!(omitted.total, subtotal);
+    assert_eq!(explicit_zero.total, subtotal);
+
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(0));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 0);
+    assert_eq!(invoice.total, subtotal);
+}
+
 #[test]
 fn historical_percentage_discounts_stay_readable_and_payable() {
     let conn = fresh();
@@ -823,4 +977,137 @@ fn historical_percentage_discounts_stay_readable_and_payable() {
         .unwrap();
     assert_eq!(invoice.discount_minor, 500);
     assert_eq!(invoice.total, preview.total);
+}
+
+#[test]
+fn a_negative_service_charge_is_refused_at_preview_and_at_checkout() {
+    let conn = fresh();
+    let (_manager, staff, order_id, _subtotal) = service_charge_fixture(&conn);
+
+    // The shared rule refuses it, so the UI can never display a negative charge
+    // the backend would then refuse to settle. `None` is always valid: no charge.
+    assert!(settings::resolve_service_charge(Some(-1)).is_err());
+    assert!(settings::resolve_service_charge(Some(i64::MIN)).is_err());
+    assert!(settings::resolve_service_charge(None).is_ok());
+    assert!(pos_svc::preview(&conn, order_id, None, None, Some(-500)).is_err());
+
+    // A modified client calling checkout directly is refused identically — the
+    // money rule is enforced below the command layer, not in the dialog.
+    let err = checkout::checkout(
+        &conn,
+        &staff,
+        &checkout::CheckoutInput {
+            order_id,
+            method: "CASH".into(),
+            discount_mode: None,
+            discount_value: None,
+            discount_pin: None,
+            service_charge_minor: Some(-500),
+            received: Some(1_000_000),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "business rule violation: settings.invalid_service_charge"
+    );
+
+    // Nothing was created by the refused attempt: the order is still payable.
+    assert_eq!(pos_svc::get_order(&conn, order_id).unwrap().status, "OPEN");
+}
+
+#[test]
+fn a_custom_service_charge_survives_a_quick_amount_list_change() {
+    let conn = fresh();
+    let (manager, staff, order_id, subtotal) = service_charge_fixture(&conn);
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000],
+        },
+    )
+    .unwrap();
+
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(3_700));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 3_700);
+    assert_eq!(invoice.total, subtotal + 3_700);
+
+    // The manager then rewrites the quick amounts. The quick list is a UI
+    // shortcut, so removing every preset can never rewrite a settled invoice.
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig { amounts: vec![] },
+    )
+    .unwrap();
+    let (reloaded, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded.service_charge, 3_700);
+    assert_eq!(reloaded.total, subtotal + 3_700);
+}
+
+#[test]
+fn a_service_charge_is_free_of_authorization_where_a_discount_is_not() {
+    let conn = fresh();
+    let (_manager, staff, order_id, _subtotal) = service_charge_fixture(&conn);
+    // The cafe HAS configured the shared PIN, and this cashier does NOT know it.
+    configure_shared_pin(&conn, "4820");
+
+    // Discount: refused without the credential.
+    assert!(
+        pos_svc::set_discount(&conn, &staff, order_id, Some("FIXED"), Some(500), None).is_err(),
+        "a discount still needs the shared PIN"
+    );
+
+    // Service charge: accepted with no credential at all, quick or custom.
+    let preview = pos_svc::preview(&conn, order_id, None, None, Some(3_700)).unwrap();
+    assert_eq!(preview.service_charge_minor, 3_700);
+    let result = pay_with_service_charge(&conn, &staff, order_id, Some(3_700));
+    let (invoice, _) = invoices::get_invoice_full(&conn, result.invoice_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(invoice.service_charge, 3_700);
+    assert_eq!(invoice.discount_minor, 0);
+}
+
+#[test]
+fn the_configured_quick_amounts_reject_zero_and_duplicates() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "2345");
+    // Start from an explicit, known configuration rather than whatever the seed
+    // ships, so the final assertion is about THIS save and nothing else.
+    settings::set_service_charge(
+        &conn,
+        &manager,
+        &settings::ServiceChargeConfig {
+            amounts: vec![1_000],
+        },
+    )
+    .unwrap();
+
+    // The CONFIGURATION list keeps its original rule: a preset that is zero or
+    // repeated would render as a dead or duplicate button. This is a setting
+    // rule and is unchanged by custom amounts being allowed at the till.
+    for amounts in [vec![0], vec![1_000, 1_000], vec![-2_000]] {
+        let label = format!("{amounts:?} must be refused");
+        assert!(
+            settings::set_service_charge(
+                &conn,
+                &manager,
+                &settings::ServiceChargeConfig { amounts }
+            )
+            .is_err(),
+            "{label}"
+        );
+    }
+    // A refused configuration leaves the stored list untouched.
+    assert_eq!(
+        settings::get_service_charge(&conn).unwrap().amounts,
+        vec![1_000]
+    );
 }

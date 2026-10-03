@@ -371,7 +371,10 @@ pub fn set_discount_options(
     token: String,
     config: DiscountOptionsConfig,
 ) -> AppResult<()> {
-    authorized(&state, &token, "ADMIN", move |conn, actor| {
+    // MANAGER+ owns the quick-pick amounts: a manager configures the discount
+    // options in Dev Settings, exactly like the service-charge amounts beside
+    // them. The rule itself is unchanged — the list is still only UI shortcuts.
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
         crate::services::settings::set_discount_options(conn, actor, &config)
     })
 }
@@ -455,14 +458,14 @@ pub fn set_monthly_sales_period(
 ///
 /// The month travels with the read instead of being derived by the caller, so
 /// the UI labels the right month without asking the browser what month it thinks
-/// it is. Authorization is ADMIN, like the page: reading the yardstick the
-/// business is measured against is a configuration read, not a sales read.
+/// it is. Authorization is MANAGER+, matching the page: the cafe/wash targets
+/// are operational configuration a manager owns.
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_revenue_targets(
     state: State<'_, AppState>,
     token: String,
 ) -> AppResult<RevenueTargetsView> {
-    authorized(&state, &token, "ADMIN", |conn, _| {
+    authorized(&state, &token, "MANAGER", |conn, _| {
         let month = crate::time::current_business_month();
         Ok(RevenueTargetsView {
             month: month.clone(),
@@ -473,21 +476,21 @@ pub fn get_revenue_targets(
     })
 }
 
-/// ADMIN sets the cafe-wide DEFAULT monthly targets. It cannot touch any month's
-/// override, and it is validated server-side, so the UI is never trusted with the
-/// whole-pound rule or the authorization.
+/// MANAGER+ sets the cafe-wide DEFAULT monthly targets. It cannot touch any
+/// month's override, and it is validated server-side, so the UI is never trusted
+/// with the whole-pound rule or the authorization.
 #[tauri::command(rename_all = "snake_case")]
 pub fn set_revenue_targets(
     state: State<'_, AppState>,
     token: String,
     defaults: crate::services::settings::RevenueTargetDefaults,
 ) -> AppResult<()> {
-    authorized(&state, &token, "ADMIN", move |conn, actor| {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
         settings::set_revenue_target_defaults(conn, actor, &defaults)
     })
 }
 
-/// ADMIN sets (or clears) ONE department's override for the CURRENT month.
+/// MANAGER+ sets (or clears) ONE department's override for the CURRENT month.
 ///
 /// `amount_minor` of `None` clears that department's override. The month is not
 /// an argument: the backend resolves which month is active, so a stale or
@@ -500,7 +503,7 @@ pub fn set_revenue_target_override(
     amount_minor: Option<i64>,
 ) -> AppResult<()> {
     let department = department_from(&department)?;
-    authorized(&state, &token, "ADMIN", move |conn, actor| {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
         settings::set_revenue_target_override(
             conn,
             actor,

@@ -102,7 +102,16 @@ fn fixed_service_charge_options_and_authorized_discounts() {
         pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(3_000)).unwrap();
     assert_eq!(selected.discount_minor, 2_960);
     assert_eq!(selected.service_charge_minor, 3_000);
-    assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(2_500)).is_err());
+
+    // The configured list is a set of QUICK-PICK SHORTCUTS, never a whitelist:
+    // an amount that is not one of them (2.50 against 10/30/50/70/100) is a
+    // valid service charge, while a NEGATIVE one never is. That is the whole
+    // difference between the old preset-only rule and the custom amount a
+    // cashier may now type.
+    let custom =
+        pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(2_500)).unwrap();
+    assert_eq!(custom.service_charge_minor, 2_500);
+    assert!(pos_svc::preview(&conn, order_id, Some("PERCENT"), Some(20_000), Some(-1)).is_err());
 
     // The cafe's ONE shared discount PIN is configured by an ADMIN — global
     // configuration, never a per-cashier credential, and stored as a hash.
@@ -773,6 +782,7 @@ fn credit_flow_tracks_outstanding_until_settled() {
 #[test]
 fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_default() {
     let conn = fresh();
+    let admin = login(&conn, "admin", "1234");
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
 
@@ -787,7 +797,7 @@ fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_def
     for months in settings::MONTHLY_SALES_PERIOD_MONTHS {
         settings::set_monthly_sales_period(
             &conn,
-            &manager,
+            &admin,
             &settings::MonthlySalesPeriodConfig { months },
         )
         .unwrap();
@@ -803,7 +813,7 @@ fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_def
         assert!(
             settings::set_monthly_sales_period(
                 &conn,
-                &manager,
+                &admin,
                 &settings::MonthlySalesPeriodConfig { months },
             )
             .is_err(),
@@ -816,13 +826,26 @@ fn the_monthly_sales_chart_window_is_a_persisted_setting_with_a_twelve_month_def
         24
     );
 
-    // A cashier cannot reconfigure a management report.
+    // The chart window is ADMIN-only — it is not on the manager's Dev Settings
+    // allowlist, which grants the operational sections and nothing else.
+    assert!(settings::set_monthly_sales_period(
+        &conn,
+        &manager,
+        &settings::MonthlySalesPeriodConfig { months: 6 },
+    )
+    .is_err());
+    // A cashier cannot reconfigure a management report either.
     assert!(settings::set_monthly_sales_period(
         &conn,
         &staff,
         &settings::MonthlySalesPeriodConfig { months: 6 },
     )
     .is_err());
+    // Neither refusal changed the stored window.
+    assert_eq!(
+        settings::get_monthly_sales_period(&conn).unwrap().months,
+        24
+    );
 }
 
 #[test]
@@ -1206,24 +1229,31 @@ fn table_count_controls_active_sequence_and_reuses_ids() {
         .map(|table| (table.id, table.label))
         .collect();
 
-    pos_svc::set_table_count(&conn, &manager, 13).unwrap();
+    // Resizing the cafe is ADMIN-only: the table count is not on the
+    // manager Dev Settings allowlist.
+    let admin = login(&conn, "admin", "1234");
+    assert!(
+        pos_svc::set_table_count(&conn, &manager, 20).is_err(),
+        "the table count is not on the manager allowlist"
+    );
+    pos_svc::set_table_count(&conn, &admin, 13).unwrap();
     let thirteen = pos::list_tables(&conn, None).unwrap();
     assert_eq!(thirteen.len(), 13);
     assert_eq!(thirteen[12].label, "طاولة 13");
 
-    pos_svc::set_table_count(&conn, &manager, 10).unwrap();
+    pos_svc::set_table_count(&conn, &admin, 10).unwrap();
     let ten = pos::list_tables(&conn, None).unwrap();
     assert_eq!(ten.len(), 10);
     assert_eq!(ten[9].label, "طاولة 10");
 
-    pos_svc::set_table_count(&conn, &manager, 12).unwrap();
+    pos_svc::set_table_count(&conn, &admin, 12).unwrap();
     let twelve = pos::list_tables(&conn, None).unwrap();
     assert_eq!(
         twelve.iter().map(|table| table.id).collect::<Vec<_>>(),
         original.iter().map(|table| table.0).collect::<Vec<_>>()
     );
 
-    pos_svc::set_table_count(&conn, &manager, 15).unwrap();
+    pos_svc::set_table_count(&conn, &admin, 15).unwrap();
     let fifteen = pos::list_tables(&conn, None).unwrap();
     assert_eq!(fifteen.len(), 15);
     assert_eq!(fifteen[12].label, "طاولة 13");
@@ -1232,8 +1262,10 @@ fn table_count_controls_active_sequence_and_reuses_ids() {
         fifteen[12].id, thirteen[12].id,
         "existing table 13 is reused, not duplicated"
     );
-    assert!(pos_svc::set_table_count(&conn, &manager, 0).is_err());
-    assert!(pos_svc::set_table_count(&conn, &manager, 100).is_err());
+    // The RANGE is refused even for an ADMIN, so what is refused here is the
+    // number, not merely the person asking.
+    assert!(pos_svc::set_table_count(&conn, &admin, 0).is_err());
+    assert!(pos_svc::set_table_count(&conn, &admin, 100).is_err());
 }
 
 #[test]
@@ -1245,7 +1277,10 @@ fn table_count_reduction_rejects_open_session_atomically() {
     let twelfth = pos::list_tables(&conn, None).unwrap().remove(11);
     pos_svc::open_table(&conn, &manager, twelfth.id).unwrap();
 
-    assert!(pos_svc::set_table_count(&conn, &manager, 10).is_err());
+    // An ADMIN asks, so the rejection is the OPEN-SESSION rule under test rather
+    // than a role refusal: nothing was disabled, because the change rolled back.
+    let admin = login(&conn, "admin", "1234");
+    assert!(pos_svc::set_table_count(&conn, &admin, 10).is_err());
     let active: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM cafe_tables WHERE is_active = 1",
@@ -1278,7 +1313,10 @@ fn table_count_reduction_rejects_open_and_ready_orders() {
             pos_svc::mark_ready_to_pay(&conn, &manager, order_id).unwrap();
         }
 
-        assert!(pos_svc::set_table_count(&conn, &manager, 10).is_err());
+        // An ADMIN asks here too, so the refusal is about the open order rather
+        // than about the role — the distinction these cases exist to separate.
+        let admin = login(&conn, "admin", "1234");
+        assert!(pos_svc::set_table_count(&conn, &admin, 10).is_err());
         assert_eq!(pos::list_tables(&conn, None).unwrap().len(), 12);
     }
 }
@@ -1315,7 +1353,10 @@ fn table_count_deactivation_preserves_historical_order_references() {
     )
     .unwrap();
 
-    pos_svc::set_table_count(&conn, &manager, 10).unwrap();
+    // Deactivating tables is ADMIN work, so this signs in as an administrator
+    // while the sale above was made by the manager who worked the floor.
+    let admin = login(&conn, "admin", "1234");
+    pos_svc::set_table_count(&conn, &admin, 10).unwrap();
     let historical = pos_svc::get_order(&conn, order_id).unwrap();
     assert_eq!(historical.table_id, Some(twelfth.id));
     assert_eq!(historical.table_label.as_deref(), Some("طاولة 12"));

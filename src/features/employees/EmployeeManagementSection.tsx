@@ -296,10 +296,7 @@ function ManagementCard({
           >
             {t('employees.actions.checkOut')}
           </Button>
-          <ActionMenu
-            items={items}
-            label={t('employees.actions.moreFor', { name: employee.name })}
-          />
+          <ActionMenu items={items} label={`${t('app.moreActions')}: ${employee.name}`} />
         </div>
       </Card>
     </li>

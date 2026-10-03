@@ -135,24 +135,29 @@ export function AccountSelector({
   /**
    * Arrow keys move along the row.
    *
-   * Bound to the VIEWPORT rather than to each button so a single keypress
-   * cannot be handled twice, and so it keeps working while focus sits on the
-   * chosen card rather than requiring focus to be re-placed after every click.
+   * Bound to each ACCOUNT BUTTON — the element that actually holds focus and the
+   * element a keyboard user reaches by tabbing — rather than to the viewport.
+   * A non-interactive wrapper carrying the listener is what the a11y rule
+   * flags: the handler has to live on a control that can genuinely receive it,
+   * and a keypress can no more be handled twice than it could before, since one
+   * keypress targets exactly one focused button.
+   *
    * Only the two horizontal arrows are claimed; every other key, including
    * Enter, Space and Tab, is left entirely to the button.
    */
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+  function onAccountKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     if (disabled || accounts.length < 2) return
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
 
     // The rail is RTL in Arabic, so the visual direction of an arrow is read
-    // from the RENDERED direction, never assumed from the locale.
-    const rtl = getComputedStyle(viewportRef.current ?? event.currentTarget).direction === 'rtl'
-    const from = activeIndex < 0 ? 0 : activeIndex
+    // from the RENDERED direction, never assumed from the locale. The button
+    // INHERITS that direction from the rail, so reading it here yields the same
+    // answer the viewport did.
+    const rtl = getComputedStyle(event.currentTarget).direction === 'rtl'
     // ArrowLeft moves the focus left ON SCREEN, ArrowRight to the right.
     const visual = event.key === 'ArrowLeft' ? -1 : 1
-    const next = stepAccount(from, visual, accounts.length, rtl)
+    const next = stepAccount(index, visual, accounts.length, rtl)
     const account = accounts[next]
     if (!account) return
 
@@ -171,7 +176,6 @@ export function AccountSelector({
       // Controlled overflow: a long roster scrolls WITHIN the rail. The page
       // itself never scrolls sideways, which is what would break the PIN field
       // and the buttons underneath it on a phone.
-      onKeyDown={onKeyDown}
       className="relative w-full overflow-hidden px-1 py-2"
     >
       <div
@@ -201,6 +205,10 @@ export function AccountSelector({
               aria-pressed={selectedNow}
               disabled={disabled}
               onClick={() => onSelect(account.name)}
+              // The arrow keys are claimed by the button that HOLDS focus, so the
+              // step starts from this card's own index rather than from a
+              // selection the user may not have reached yet.
+              onKeyDown={(event) => onAccountKeyDown(event, index)}
               data-testid={`login-account-${account.id}`}
               data-selected={selectedNow ? 'true' : 'false'}
               data-distance={distance}

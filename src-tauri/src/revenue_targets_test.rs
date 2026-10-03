@@ -1014,31 +1014,54 @@ fn defaults_and_overrides_survive_a_restart() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn configuring_a_target_is_admin_only() {
+fn configuring_a_target_is_manager_or_above() {
     let conn = fresh();
-    for name in ["manager", "cashier"] {
-        let user = actor(&conn, name);
-        assert!(
-            settings::set_revenue_target_defaults(&conn, &user, &defaults()).is_err(),
-            "{name} must not set defaults"
-        );
-        assert!(
-            settings::set_revenue_target_override(
-                &conn,
-                &user,
-                "2026-10",
-                RevenueDepartment::Cafe,
-                Some(17_500_000),
-            )
-            .is_err(),
-            "{name} must not set an override"
-        );
-        // A refused write changes nothing.
-        assert_eq!(
-            settings::get_revenue_target_defaults(&conn).unwrap(),
-            RevenueTargetDefaults::default()
-        );
-    }
+
+    // A MANAGER owns the cafe/wash yardstick and the active month's override:
+    // both are on the manager's Dev Settings allowlist.
+    let manager = actor(&conn, "manager");
+    settings::set_revenue_target_defaults(&conn, &manager, &defaults()).unwrap();
+    settings::set_revenue_target_override(
+        &conn,
+        &manager,
+        "2026-10",
+        RevenueDepartment::Cafe,
+        Some(17_500_000),
+    )
+    .unwrap();
+    assert_eq!(
+        settings::get_revenue_target_defaults(&conn).unwrap(),
+        defaults()
+    );
+
+    // A CASHIER may not. They configure nothing in Dev Settings at all.
+    let user = actor(&conn, "cashier");
+    assert!(
+        settings::set_revenue_target_defaults(&conn, &user, &defaults()).is_err(),
+        "cashier must not set defaults"
+    );
+    assert!(
+        settings::set_revenue_target_override(
+            &conn,
+            &user,
+            "2026-10",
+            RevenueDepartment::Cafe,
+            Some(17_500_000),
+        )
+        .is_err(),
+        "cashier must not set an override"
+    );
+    // A refused write changes nothing: the manager's values are still stored.
+    assert_eq!(
+        settings::get_revenue_target_defaults(&conn).unwrap(),
+        defaults()
+    );
+    assert_eq!(
+        settings::resolve_monthly_target(&conn, "2026-10", RevenueDepartment::Cafe)
+            .unwrap()
+            .target_minor,
+        17_500_000
+    );
 }
 
 #[test]

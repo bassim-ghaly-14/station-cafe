@@ -52,7 +52,15 @@ pub fn get_service_charge(conn: &Db) -> AppResult<ServiceChargeConfig> {
 }
 
 /// MANAGER+ configures the ordered fixed service-charge option list.
+///
+/// The role is re-checked HERE as well as at the command boundary, exactly like
+/// every other settings service in this file (`set_credit_config`,
+/// `set_discount_options`, …). Hiding the control in the UI proves nothing — a
+/// session holder can invoke the command directly over Tauri IPC or the LAN
+/// bridge — so the service itself refuses a role below MANAGER.
 pub fn set_service_charge(conn: &Db, actor: &User, cfg: &ServiceChargeConfig) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "MANAGER")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     let mut unique = std::collections::HashSet::new();
     if cfg
         .amounts
@@ -72,6 +80,33 @@ pub fn set_service_charge(conn: &Db, actor: &User, cfg: &ServiceChargeConfig) ->
         None,
         Some(&serde_json::to_value(cfg).unwrap_or_default()),
     )
+}
+
+/// **THE** service-charge amount rule — one function, every caller.
+///
+/// `preview`, `checkout` and the print preview all resolve the service charge
+/// through here, so a quick-pick amount and a typed custom amount can never be
+/// judged by two different rules, and an amount the POS display shows can never
+/// be one the invoice refuses.
+///
+/// The rules, and nothing else:
+///   * `None` (or `0`) means NO service charge — the same outcome, so the caller
+///     never has to distinguish "cleared" from "never chosen";
+///   * any POSITIVE amount is valid, quick-pick or not. The configured
+///     `amounts` list is a set of UI SHORTCUTS, never a whitelist: a cashier may
+///     type 37 EGP when the presets are 10/20/30/50, and the backend accepts it;
+///   * a NEGATIVE amount is refused — money is never subtracted as a charge.
+///
+/// NO AUTHORIZATION, EVER. A service charge is not an administrative discount,
+/// so this function takes no actor and no credential: selecting, entering,
+/// editing or removing one never consults the shared discount PIN
+/// (`docs/DECISIONS.md` — "Service charge is completely independent").
+pub fn resolve_service_charge(requested: Option<i64>) -> AppResult<i64> {
+    match requested {
+        None => Ok(0),
+        Some(amount) if amount >= 0 => Ok(amount),
+        Some(_) => Err(AppError::validation("settings.invalid_service_charge")),
+    }
 }
 
 /// How many CALENDAR MONTHS the monthly sales comparison chart covers.
@@ -135,13 +170,18 @@ pub fn get_monthly_sales_period(conn: &Db) -> AppResult<MonthlySalesPeriodConfig
     }
 }
 
-/// MANAGER+ configures how many months the monthly sales comparison shows.
+/// ADMIN owns the monthly sales comparison window.
+///
+/// It is deliberately NOT one of the MANAGER-visible Dev Settings sections:
+/// this window is a REPORTING/presentation choice, not one of the cafe's
+/// operational levers, so the role allowlist keeps it ADMIN-only. The READ stays
+/// MANAGER+ because the Sales and Expenses reports show this window to a manager.
 pub fn set_monthly_sales_period(
     conn: &Db,
     actor: &User,
     config: &MonthlySalesPeriodConfig,
 ) -> AppResult<()> {
-    crate::services::auth::require_role(actor, "MANAGER")
+    crate::services::auth::require_role(actor, "ADMIN")
         .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     config.validate()?;
     write_json(conn, "monthly_sales_period", config)?;
@@ -207,10 +247,13 @@ pub fn get_discount_options(conn: &Db) -> AppResult<DiscountOptionsConfig> {
     read_json(conn, "discount_options", DiscountOptionsConfig::default())
 }
 
-/// ADMIN owns the discount catalogue. Amounts must be positive and unique —
-/// a duplicated or zero option is a configuration mistake, never a sale.
+/// MANAGER+ owns the discount quick-pick catalogue, exactly like the
+/// service-charge amounts beside it. The VALIDATION is unchanged: amounts must
+/// be positive and distinct — a duplicated or zero option is a configuration
+/// mistake, never a sale. This changes only WHO may save the list, never WHAT
+/// a discount may be (that stays `validate_discount_selection`, PIN included).
 pub fn set_discount_options(conn: &Db, actor: &User, cfg: &DiscountOptionsConfig) -> AppResult<()> {
-    crate::services::auth::require_role(actor, "ADMIN")
+    crate::services::auth::require_role(actor, "MANAGER")
         .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     let mut unique = std::collections::HashSet::new();
     if cfg
@@ -404,9 +447,9 @@ pub fn set_credit_config(conn: &Db, actor: &User, cfg: &CreditConfig) -> AppResu
 //
 // # Authorization
 //
-// ADMIN, like every other Dev Settings group. A manager or cashier configuring
-// a revenue target would be configuring the yardstick the business is measured
-// against, which is exactly the change that must stay above them.
+// MANAGER+, like the other operational Dev Settings sections. A manager owns
+// the cafe/wash yardstick and the current month's override of it; the role
+// allowlist grants these two and nothing else here.
 
 /// The cafe-wide default monthly targets, used by every month with no override.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -566,7 +609,7 @@ pub fn get_revenue_target_overrides(conn: &Db, month: &str) -> AppResult<MonthTa
     Ok(all.get(&month).cloned().unwrap_or_default())
 }
 
-/// ADMIN sets the DEFAULT monthly targets.
+/// MANAGER+ sets the DEFAULT monthly targets.
 ///
 /// Writing the defaults can never touch a month's override: the two live in
 /// separate settings records and only this function writes the first one.
@@ -575,7 +618,7 @@ pub fn set_revenue_target_defaults(
     actor: &User,
     defaults: &RevenueTargetDefaults,
 ) -> AppResult<()> {
-    crate::services::auth::require_role(actor, "ADMIN")
+    crate::services::auth::require_role(actor, "MANAGER")
         .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     validate_revenue_target(defaults.cafe_minor)?;
     validate_revenue_target(defaults.wash_minor)?;
@@ -592,7 +635,7 @@ pub fn set_revenue_target_defaults(
     )
 }
 
-/// ADMIN sets (or clears) ONE department's override for ONE month.
+/// MANAGER+ sets (or clears) ONE department's override for ONE month.
 ///
 /// `amount` of `None` removes that department's override for that month, and the
 /// month immediately resolves to the default again. The OTHER department's
@@ -610,7 +653,7 @@ pub fn set_revenue_target_override(
     department: RevenueDepartment,
     amount: Option<i64>,
 ) -> AppResult<()> {
-    crate::services::auth::require_role(actor, "ADMIN")
+    crate::services::auth::require_role(actor, "MANAGER")
         .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     let month = require_month(month)?;
     if let Some(amount) = amount {

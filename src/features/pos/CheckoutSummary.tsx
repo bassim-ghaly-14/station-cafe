@@ -1,9 +1,93 @@
 /** Compact checkout summary: totals + optional customer + single pay action. */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, MoneyDisplay } from '@/components/ui'
+import { Button, Field, Input, MoneyDisplay } from '@/components/ui'
 import { Eye, HandCoins, Tag, Ticket, User, UserPlus, Wallet, X } from '@/components/ui/icon'
-import { formatMinorMoney } from '@/lib/money'
+import { formatMinorMoney, formatMinorMoneyInput } from '@/lib/money'
+import { parseMajor } from '@/lib/utils'
 import type { OrderCustomer, OrderPreview, PosOrder } from '@/services/posApi'
+
+/**
+ * The custom-amount half of the service-charge control.
+ *
+ * It is deliberately the MIRROR of `DiscountDialog` with the authorization step
+ * removed, because that contrast IS the business rule: a custom DISCOUNT is an
+ * administrative act and asks for the shared PIN, while a custom SERVICE CHARGE
+ * is ordinary till work and does not. Only the field, its validation and its
+ * Apply action exist here — there is no PIN input, no authorization dialog and
+ * no second round-trip.
+ *
+ * The money convention is the shared one (`parseMajor` / `formatMinorMoneyInput`,
+ * the same pair the discount field uses): up to seven whole pounds and at most
+ * two decimals, so a piaster-typed value can never be silently rounded, and a
+ * sign, a letter or a three-decimal number is refused rather than coerced.
+ *
+ * Replacing, not stacking: `onApply` carries ONE amount, so typing a new figure
+ * replaces the previous charge exactly the way tapping another quick amount
+ * does. Zero is a legitimate outcome and means "no service charge", which is the
+ * same thing the "No Service" button does.
+ */
+function ServiceChargeCustomAmount({
+  current,
+  error,
+  onError,
+  onApply,
+}: {
+  /** The amount currently on this invoice, in minor units. */
+  readonly current: number
+  readonly error: string | null
+  readonly onError: (message: string | null) => void
+  readonly onApply: (amount: number) => void
+}) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+
+  const apply = () => {
+    const parsed = parseMajor(value)
+    if (parsed === null) {
+      onError(t('pos.invalidServiceChargeAmount'))
+      return
+    }
+    onApply(parsed)
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <Field label={t('pos.serviceChargeCustom')} htmlFor="service-charge-custom" error={error}>
+        <Input
+          id="service-charge-custom"
+          inputMode="decimal"
+          dir="ltr"
+          autoComplete="off"
+          // The current charge is shown as the PLACEHOLDER rather than as the
+          // field's value, so the draft a cashier is typing is never overwritten
+          // by a re-render caused by their own Apply. It is the amount this
+          // field accepts, not an empty-money hint — a service charge of 0 is a
+          // real instruction ("no service charge"), so a generic "0.00" would
+          // blur that.
+          placeholder={
+            current > 0 ? formatMinorMoneyInput(current) : t('pos.serviceChargeCustomPlaceholder')
+          }
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            onError(null)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              apply()
+            }
+          }}
+        />
+      </Field>
+
+      <Button variant="outline" onClick={apply}>
+        {t('pos.serviceChargeApply')}
+      </Button>
+    </div>
+  )
+}
 
 export function CheckoutSummary({
   order,
@@ -45,6 +129,7 @@ export function CheckoutSummary({
   readonly onTicketPreview?: (() => void) | null
 }) {
   const { t } = useTranslation()
+  const [error, setError] = useState<string | null>(null)
   const subtotal = shown?.subtotal ?? order.lines.reduce((a, l) => a + l.line_total, 0)
   return (
     <section
@@ -103,55 +188,80 @@ export function CheckoutSummary({
       </div>
       {/*
         SERVICE CHARGE — an invoice-level charge, exactly like the discount, and
-        never a product line. The amounts come from Dev Settings
-        (`service_charge.amounts`) through the same settings command the POS
-        already used, so no value is hardcoded here, and applying one needs NO
-        authorization: a normal cashier selects it directly, which is the one
-        deliberate difference from the privileged discount flow.
+        never a product line. TWO ways to set it, both on this one row:
+
+          1. the QUICK amounts, configured in Dev Settings (`service_charge.amounts`)
+             and read through the same settings command the POS already used, so no
+             value is hardcoded here; and
+          2. a CUSTOM amount the cashier types, because a service charge is not a
+             closed set — a cafe that charges 37 on one table and 10 on the next
+             must not have to reconfigure the app to say so.
+
+        The quick amounts are SHORTCUTS, never a whitelist: the backend accepts
+        any positive amount (`settings::resolve_service_charge`), and choosing a
+        different one REPLACES the current charge rather than stacking on it.
+
+        NO AUTHORIZATION anywhere on this path — selecting, typing, changing or
+        clearing a service charge never asks for the shared discount PIN. That is
+        the one deliberate difference from the privileged discount flow, and it is
+        stated here rather than implied. Only the DISCOUNT needs a credential.
       */}
-      {serviceChargeOptions.length ? (
-        <div className="flex flex-col gap-1.5 border-t border-border-subtle px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1.5 text-caption font-medium text-foreground-muted">
-              <HandCoins size={15} aria-hidden />
-              {t('pos.serviceCharge')}
-            </span>
-            <span className="flex flex-wrap items-center gap-1">
+      <div className="flex flex-col gap-1.5 border-t border-border-subtle px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 text-caption font-medium text-foreground-muted">
+            <HandCoins size={15} aria-hidden />
+            {t('pos.serviceCharge')}
+          </span>
+          <span className="flex flex-wrap items-center gap-1">
+            <Button
+              size="sm"
+              variant={serviceCharge === 0 ? 'secondary' : 'ghost'}
+              aria-pressed={serviceCharge === 0}
+              onClick={() => {
+                setError(null)
+                onServiceCharge(0)
+              }}
+            >
+              {t('pos.noServiceCharge')}
+            </Button>
+            {serviceChargeOptions.map((amount) => (
               <Button
+                key={amount}
                 size="sm"
-                variant={serviceCharge === 0 ? 'secondary' : 'ghost'}
-                aria-pressed={serviceCharge === 0}
-                onClick={() => onServiceCharge(0)}
-              >
-                {t('pos.noServiceCharge')}
-              </Button>
-              {serviceChargeOptions.map((amount) => (
-                <Button
-                  key={amount}
-                  size="sm"
-                  variant={serviceCharge === amount ? 'default' : 'outline'}
-                  aria-pressed={serviceCharge === amount}
-                  aria-label={t('pos.serviceChargeOption', {
-                    amount: formatMinorMoney(amount, { variant: 'auto' }),
-                  })}
-                  onClick={() => onServiceCharge(amount)}
-                >
-                  <MoneyDisplay amount={amount} />
-                </Button>
-              ))}
-            </span>
-          </div>
-          {/* States the authorization model in the UI instead of implying a hidden
-              manager step the cashier cannot perform. */}
-          <span className="text-caption text-foreground-subtle">
-            {serviceCharge === 0
-              ? t('pos.serviceChargeNone')
-              : t('pos.serviceChargeApplied', {
-                  amount: formatMinorMoney(serviceCharge, { variant: 'auto' }),
+                variant={serviceCharge === amount ? 'default' : 'outline'}
+                aria-pressed={serviceCharge === amount}
+                aria-label={t('pos.serviceChargeOption', {
+                  amount: formatMinorMoney(amount, { variant: 'auto' }),
                 })}
+                onClick={() => {
+                  setError(null)
+                  onServiceCharge(amount)
+                }}
+              >
+                <MoneyDisplay amount={amount} />
+              </Button>
+            ))}
           </span>
         </div>
-      ) : null}
+        <ServiceChargeCustomAmount
+          current={serviceCharge}
+          error={error}
+          onError={setError}
+          onApply={(amount) => {
+            setError(null)
+            onServiceCharge(amount)
+          }}
+        />
+        {/* States the authorization model in the UI instead of implying a hidden
+            manager step the cashier cannot perform. */}
+        <span className="text-caption text-foreground-subtle">
+          {serviceCharge === 0
+            ? t('pos.serviceChargeNone')
+            : t('pos.serviceChargeApplied', {
+                amount: formatMinorMoney(serviceCharge, { variant: 'auto' }),
+              })}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
         <Button variant="destructiveGhost" size="sm" onClick={onDiscount}>
           <Tag size={15} aria-hidden />

@@ -45,7 +45,13 @@ pub fn day_lifecycle_counts(conn: &Db) -> AppResult<TableCounters> {
 
 /// Set the number of cafe tables. Table rows are retained for history: only
 /// tables outside the requested automatic sequence are deactivated.
+///
+/// ADMIN-only, re-checked HERE as well as at the command boundary: the table
+/// count is not on the manager's Dev Settings allowlist, and the service is the
+/// layer a direct command invocation cannot skip.
 pub fn set_table_count(conn: &Db, actor: &User, count: i64) -> AppResult<()> {
+    crate::services::auth::require_role(actor, "ADMIN")
+        .map_err(|_| AppError::unauthorized("auth.forbidden"))?;
     if !(1..=99).contains(&count) {
         return Err(AppError::validation("tables.invalid_count"));
     }
@@ -546,18 +552,10 @@ pub fn preview(
             AppError::Validation(m) => AppError::business(m),
             other => other,
         })?;
-    let service_charge_minor = match service_charge_minor {
-        Some(0) => 0,
-        Some(amount)
-            if settings::get_service_charge(conn)?
-                .amounts
-                .contains(&amount) =>
-        {
-            amount
-        }
-        Some(_) => return Err(AppError::business("settings.invalid_service_charge")),
-        None => 0,
-    };
+    // THE service-charge rule, shared with `checkout` and the print preview: the
+    // configured amounts are UI shortcuts, so a custom amount is accepted and a
+    // negative one is refused. Never a discount-PIN question.
+    let service_charge_minor = settings::resolve_service_charge(service_charge_minor)?;
     Ok(OrderPreview {
         subtotal,
         discount_mode: discount_mode.map(String::from),

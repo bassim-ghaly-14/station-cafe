@@ -88,7 +88,7 @@ describe('role-based navigation', () => {
     expect(views('STAFF')).toEqual(['pos', 'catalog', 'customers', 'employees', 'qr-code'])
   })
 
-  it('gives a MANAGER the financial workspaces but not settings', () => {
+  it('gives a MANAGER the financial workspaces AND the settings', () => {
     expect(views('MANAGER')).toEqual([
       'pos',
       'catalog',
@@ -98,6 +98,7 @@ describe('role-based navigation', () => {
       'sales',
       'inventory',
       'reports',
+      'dev-settings',
       'qr-code',
     ])
   })
@@ -128,17 +129,25 @@ describe('role-based navigation', () => {
     }
   })
 
-  it('keeps development settings to an ADMIN alone', () => {
+  it('opens Dev Settings for a MANAGER, never for a cashier', () => {
+    // The ENTRY is a manager-level floor. What a manager finds INSIDE the page is
+    // a narrower allowlist, decided section by section in `devSectionAccess` and
+    // enforced again on every command in Rust — the navigation entry says the
+    // door is open, not that the room is.
     expect(views('ADMIN')).toContain('dev-settings')
-    expect(views('MANAGER')).not.toContain('dev-settings')
+    expect(views('MANAGER')).toContain('dev-settings')
     expect(views('STAFF')).not.toContain('dev-settings')
   })
 
   it('never widens a destination above the role the desktop sidebar used', () => {
-    // A direct comparison against the original per-destination floors. If this
-    // fails, the mobile pass has granted something the desktop never did.
+    // A direct comparison against the per-destination floors. If this fails, the
+    // mobile pass has granted something the desktop never did.
     // `qr-code` is the one entry with no predecessor: it is a NEW destination,
     // declared STAFF because the code carries an address and nothing else.
+    // `dev-settings` is the one floor deliberately LOWERED from ADMIN to
+    // MANAGER: a manager owns the cafe's operational settings — its money,
+    // credit, targets, local access and updates — while every other section on
+    // that page remains ADMIN-only.
     const original: Record<string, UserRole> = {
       pos: 'STAFF',
       catalog: 'STAFF',
@@ -148,7 +157,7 @@ describe('role-based navigation', () => {
       sales: 'MANAGER',
       inventory: 'MANAGER',
       reports: 'MANAGER',
-      'dev-settings': 'ADMIN',
+      'dev-settings': 'MANAGER',
       'qr-code': 'STAFF',
     }
     for (const item of NAV) {
@@ -172,10 +181,14 @@ describe('role-based navigation', () => {
     expect(admin.indexOf('qr-code')).toBe(admin.indexOf('dev-settings') + 1)
   })
 
-  it('keeps the QR page out of the ADMIN-only development surface', () => {
-    // The two concepts stay distinct: Settings and its activation controls are
-    // still ADMIN-only, and the QR entry grants none of them.
-    expect(views('MANAGER')).not.toContain('dev-settings')
+  it('keeps the QR page distinct from the settings surface', () => {
+    // The two concepts stay separate: the QR entry is its own destination for
+    // every role, and opening Dev Settings grants none of the QR page's
+    // behaviour. A manager reaching the settings does NOT thereby gain anything
+    // on the QR page beyond what they already had.
+    for (const role of ['ADMIN', 'MANAGER', 'STAFF'] as const) {
+      expect(views(role), role).toContain('qr-code')
+    }
     expect(views('STAFF')).not.toContain('dev-settings')
   })
 

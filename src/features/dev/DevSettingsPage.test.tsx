@@ -10,7 +10,7 @@ import {
 import DevSettingsPage from './DevSettingsPage'
 
 const mocks = vi.hoisted(() => ({
-  user: { role: 'ADMIN' as 'ADMIN' | 'STAFF' },
+  user: { role: 'ADMIN' as 'ADMIN' | 'MANAGER' | 'STAFF' },
   loadOfficial: vi.fn(),
   loadDemo: vi.fn(),
   clear: vi.fn(),
@@ -1067,5 +1067,130 @@ describe('DevAmountList whole-amount amounts', () => {
       // cannot drift apart.
       expect(DEFAULT_FORMATTING.workDuration.display).toBe('hours')
     })
+  })
+})
+
+/**
+ * THE ROLE MATRIX for this page.
+ *
+ * These assert what each role can SEE. They are not the security boundary — a
+ * hidden section proves nothing when a session holder can invoke a command
+ * directly, which is why every one of these settings is also gated in Rust and
+ * covered by `dev_settings_roles_test` there. What these tests own is the
+ * presentation rule: a manager sees their seven sections and no leftover shell
+ * of an admin one, and an admin's page is not diminished by any of this.
+ */
+describe('DevSettingsPage role visibility', () => {
+  beforeEach(() => {
+    resetFormattingPreferences()
+    mocks.user.role = 'ADMIN'
+    mocks.serviceCharge.mockReset().mockResolvedValue({ amounts: [1000, 3000, 5000] })
+    mocks.discountOptions.mockReset().mockResolvedValue({ amounts: [2000, 5000] })
+    mocks.setDiscountOptions.mockReset().mockResolvedValue(undefined)
+    mocks.discountAuthorization.mockReset().mockResolvedValue({ configured: false })
+    mocks.setDiscountPin.mockReset().mockResolvedValue(undefined)
+    mocks.setServiceCharge.mockReset().mockResolvedValue(undefined)
+    mocks.setCredit.mockReset().mockResolvedValue(undefined)
+    mocks.credit
+      .mockReset()
+      .mockResolvedValue({ enabled: true, mode: 'LIST', allowed_customer_ids: [] })
+    mocks.tables.mockReset().mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: index + 1,
+        label: `طاولة ${String(index + 1).padStart(2, '0')}`,
+        status: 'EMPTY',
+        order_id: null,
+        session_id: null,
+        items_count: 0,
+        total_minor: 0,
+        opened_at: null,
+        opens_today: 0,
+        closed_empty_today: 0,
+      })),
+    )
+    mocks.setTableCount.mockReset().mockResolvedValue(undefined)
+    mocks.monthlySalesPeriod.mockReset().mockResolvedValue({ months: 12 })
+    mocks.setMonthlySalesPeriod.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('renders nothing at all for a cashier', () => {
+    mocks.user.role = 'STAFF'
+    page()
+    expect(screen.queryByRole('heading', { name: 'إعدادات المطوّر' })).not.toBeInTheDocument()
+    // Not one section leaked through — not even a header.
+    expect(screen.queryByLabelText('رسوم الخدمة 1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dev-tables')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dev-danger-zone')).not.toBeInTheDocument()
+  })
+
+  it('shows a manager exactly the seven allowlisted sections', async () => {
+    mocks.user.role = 'MANAGER'
+    page()
+
+    // The operational money settings: service charge, discount quick picks,
+    // the shared PIN and credit rules.
+    await waitFor(() => expect(mocks.serviceCharge).toHaveBeenCalled())
+    expect(screen.getByLabelText('رسوم الخدمة 1')).toBeInTheDocument()
+    expect(screen.getByLabelText('مبالغ الخصم السريعة 1')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'رمز تفويض الخصم' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'الدفع الآجل' })).toBeInTheDocument()
+
+    // Local access and the update section.
+    expect(screen.getByTestId('dev-local-access')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'تحديثات التطبيق' })).toBeInTheDocument()
+  })
+
+  it('keeps every other section out of a manager page — no disabled shells', async () => {
+    mocks.user.role = 'MANAGER'
+    page()
+    await waitFor(() => expect(mocks.serviceCharge).toHaveBeenCalled())
+
+    // ADMIN-only: presentation, system and developer surface.
+    expect(screen.queryByTestId('dev-tables')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dev-monthly-period')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dev-work-duration')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dev-danger-zone')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('عدد الطاولات')).not.toBeInTheDocument()
+    // No empty heading left behind where those cards used to stand.
+    expect(screen.queryByRole('heading', { name: 'الطاولات' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'منطقة الخطر' })).not.toBeInTheDocument()
+  })
+
+  it('never asks a manager for the configuration it does not display', async () => {
+    mocks.user.role = 'MANAGER'
+    page()
+    await waitFor(() => expect(mocks.serviceCharge).toHaveBeenCalled())
+
+    // The page load describes what it renders: the admin-only reads are simply
+    // not made, rather than being made and then ignored.
+    expect(mocks.tables).not.toHaveBeenCalled()
+    expect(mocks.monthlySalesPeriod).not.toHaveBeenCalled()
+    // What it DOES display, it still reads.
+    expect(mocks.discountOptions).toHaveBeenCalled()
+    expect(mocks.credit).toHaveBeenCalled()
+  })
+
+  it('lets a manager save their own quick-amount lists', async () => {
+    mocks.user.role = 'MANAGER'
+    page()
+    await waitFor(() => expect(screen.getByLabelText('رسوم الخدمة 1')).toHaveValue(10))
+
+    fireEvent.change(screen.getByLabelText('رسوم الخدمة 1'), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الإعدادات' }))
+    await waitFor(() =>
+      expect(mocks.setServiceCharge).toHaveBeenCalledWith({ amounts: [1500, 3000, 5000] }),
+    )
+  })
+
+  it('leaves the admin page complete', async () => {
+    mocks.user.role = 'ADMIN'
+    page()
+    await waitFor(() => expect(mocks.serviceCharge).toHaveBeenCalled())
+
+    expect(screen.getByTestId('dev-tables')).toBeInTheDocument()
+    expect(screen.getByTestId('dev-monthly-period')).toBeInTheDocument()
+    expect(screen.getByTestId('dev-work-duration')).toBeInTheDocument()
+    expect(screen.getByTestId('dev-danger-zone')).toBeInTheDocument()
+    expect(screen.getByTestId('dev-local-access')).toBeInTheDocument()
   })
 })

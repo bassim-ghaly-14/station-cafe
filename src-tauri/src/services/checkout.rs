@@ -95,12 +95,15 @@ pub fn checkout(conn: &Db, actor: &User, input: &CheckoutInput) -> AppResult<Che
             input.discount_pin.as_deref(),
         )?;
     }
-    let service_charge_minor = match input.service_charge_minor {
-        Some(0) => 0,
-        Some(amount) if settings::get_service_charge(&tx)?.amounts.contains(&amount) => amount,
-        Some(_) => return Err(AppError::business("settings.invalid_service_charge")),
-        None => 0,
-    };
+    // THE service-charge rule — the same `resolve_service_charge` the preview
+    // uses, so what the cashier was quoted is exactly what is snapshotted onto
+    // the invoice. A custom amount is as valid as a quick pick, a negative one
+    // is refused, and NO authorization is involved (contrast the discount above).
+    let service_charge_minor = settings::resolve_service_charge(input.service_charge_minor)
+        .map_err(|e| match e {
+            AppError::Validation(m) => AppError::business(m),
+            other => other,
+        })?;
     let total: Money = subtotal - discount_minor + service_charge_minor;
     let preview = pos_svc::OrderPreview {
         subtotal,

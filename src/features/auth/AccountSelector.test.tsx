@@ -56,6 +56,17 @@ function rail() {
 }
 
 /**
+ * One account CARD, by its position on the rail.
+ *
+ * The arrow keys are handled by the card that HOLDS FOCUS, so a keypress has to
+ * be delivered to a card rather than to the rail around it.
+ */
+function card(index: number) {
+  const track = rail().firstElementChild as HTMLElement
+  return track.children[index] as HTMLButtonElement
+}
+
+/**
  * Render the rail inside a document of the given writing direction.
  *
  * The `dir` ATTRIBUTE is used rather than a stubbed `getComputedStyle`: jsdom
@@ -122,7 +133,7 @@ describe('arrow keys', () => {
 
     // LTR: screen-right from the first card is the second.
     const ltr = renderIn('ltr', selector('user-1'))
-    fireEvent.keyDown(rail(), { key: 'ArrowRight' })
+    fireEvent.keyDown(card(0), { key: 'ArrowRight' })
     expect(onSelect).toHaveBeenLastCalledWith('user-2')
     ltr.unmount()
 
@@ -130,7 +141,7 @@ describe('arrow keys', () => {
     // other way, so screen-right from the RIGHTMOST card is the one at the end.
     onSelect.mockClear()
     renderIn('rtl', selector('user-1'))
-    fireEvent.keyDown(rail(), { key: 'ArrowRight' })
+    fireEvent.keyDown(card(0), { key: 'ArrowRight' })
     expect(onSelect).toHaveBeenLastCalledWith('user-3')
   })
 
@@ -146,11 +157,11 @@ describe('arrow keys', () => {
       />,
     )
     // In RTL the FIRST card is the rightmost, so screen-left is the NEXT one.
-    fireEvent.keyDown(rail(), { key: 'ArrowLeft' })
+    fireEvent.keyDown(card(1), { key: 'ArrowLeft' })
     expect(onSelect).toHaveBeenLastCalledWith('user-3')
     // ...and screen-right is the previous one. An implementation that simply
     // added or subtracted one index would get BOTH of these backwards.
-    fireEvent.keyDown(rail(), { key: 'ArrowRight' })
+    fireEvent.keyDown(card(1), { key: 'ArrowRight' })
     expect(onSelect).toHaveBeenLastCalledWith('user-1')
   })
 
@@ -179,7 +190,7 @@ describe('arrow keys', () => {
       />,
     )
     for (const key of ['ArrowUp', 'ArrowDown', 'Enter', ' ', 'Tab', 'a']) {
-      fireEvent.keyDown(rail(), { key })
+      fireEvent.keyDown(card(0), { key })
     }
     // Tab especially: claiming it would trap keyboard users on the rail.
     expect(onSelect).not.toHaveBeenCalled()
@@ -195,7 +206,7 @@ describe('arrow keys', () => {
         disabled
       />,
     )
-    fireEvent.keyDown(rail(), { key: 'ArrowRight' })
+    fireEvent.keyDown(card(0), { key: 'ArrowRight' })
     expect(onSelect).not.toHaveBeenCalled()
   })
 })

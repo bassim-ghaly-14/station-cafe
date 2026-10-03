@@ -123,11 +123,15 @@ export const NAV: readonly NavItem[] = [
   { view: 'sales', minRole: 'MANAGER', labelKey: 'nav.sales', icon: HandCoins, primary: false },
   { view: 'inventory', minRole: 'MANAGER', labelKey: 'nav.inventory', icon: Boxes, primary: false },
   { view: 'reports', minRole: 'MANAGER', labelKey: 'nav.reports', icon: BarChart3, primary: false },
-  // The single settings entry. It keeps the same view, route and ADMIN gate;
-  // only the label is the generic "الإعدادات" the navigation order calls for.
+  // The single settings entry. MANAGER is the floor: a manager configures the
+  // cafe's own operational settings (service charge, discount quick picks, the
+  // discount PIN, credit rules, local access, monthly targets and the update
+  // check); everything else on that page stays ADMIN-only, decided inside
+  // `DevSettingsPage` through the section allowlist in `devSectionAccess`.
+  // The label is the generic "الإعدادات" the navigation order calls for.
   {
     view: 'dev-settings',
-    minRole: 'ADMIN',
+    minRole: 'MANAGER',
     labelKey: 'nav.settings',
     icon: Settings,
     primary: false,

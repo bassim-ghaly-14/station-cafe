@@ -1101,6 +1101,144 @@ describe('print preview action beside the pay action', () => {
     expect(mocks.printPreviewTicket).toHaveBeenCalledTimes(1)
   })
 
+  /**
+   * THE CUSTOM SERVICE CHARGE.
+   *
+   * A service charge is an ordinary till figure, so the cashier may type one that
+   * is not among the configured quick amounts — with NO authorization at all. That
+   * contrast with the discount is the business rule these assert: the same screen,
+   * the same money convention, and only the discount ever asks for the PIN.
+   */
+  describe('POS custom service charge', () => {
+    beforeEach(() => {
+      mocks.getOrder.mockResolvedValue(order())
+      mocks.preview.mockResolvedValue(previewOf())
+      renderPage()
+    })
+
+    /** Enter the order workspace and wait for the checkout summary. */
+    const openWorkspace = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /رؤية الطلب/ }))
+      await screen.findByLabelText('مبلغ خدمة آخر')
+    }
+
+    const customField = () => screen.getByLabelText('مبلغ خدمة آخر')
+
+    it('applies a typed amount that is not one of the configured quick amounts', async () => {
+      await openWorkspace()
+
+      // The presets are 10/20/30/50/100 — 37 is none of them, and it is sent
+      // anyway: the quick list is a shortcut, never a whitelist.
+      fireEvent.change(customField(), { target: { value: '37' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 3700))
+    })
+
+    it('never asks for authorization, unlike a discount', async () => {
+      await openWorkspace()
+
+      fireEvent.change(customField(), { target: { value: '37' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+
+      // No PIN dialog, no authorization prompt of any kind.
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 3700))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('رمز تفويض الخصم')).not.toBeInTheDocument()
+      expect(screen.queryByText('الخصم يحتاج إلى صلاحية')).not.toBeInTheDocument()
+    })
+
+    it('keeps piastres exact rather than rounding a typed decimal', async () => {
+      await openWorkspace()
+
+      fireEvent.change(customField(), { target: { value: '37.55' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 3755))
+    })
+
+    it('refuses a malformed amount instead of coercing it', async () => {
+      await openWorkspace()
+
+      // A sign cannot even be typed into the field, so the refused shapes are the
+      // letters and a three-decimal number — each stated, never rounded.
+      for (const bad of ['abc', '1.234']) {
+        fireEvent.change(customField(), { target: { value: bad } })
+        fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+        expect(screen.getByRole('alert')).toBeInTheDocument()
+        // Nothing was submitted for an impossible amount.
+        expect(mocks.preview).not.toHaveBeenCalledWith(9, null, null, Number.NaN)
+      }
+    })
+
+    it('replaces the current charge instead of stacking on it', async () => {
+      await openWorkspace()
+
+      fireEvent.click(await screen.findByRole('button', { name: /إضافة خدمة 10.00/ }))
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 1000))
+
+      fireEvent.change(customField(), { target: { value: '37' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+
+      // The latest call carries ONE amount — the replacement, never 10 + 37.
+      await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(9, null, null, 3700))
+      expect(mocks.preview).not.toHaveBeenCalledWith(9, null, null, 4700)
+    })
+
+    it('clears the charge through the No Service control', async () => {
+      await openWorkspace()
+
+      fireEvent.click(await screen.findByRole('button', { name: /إضافة خدمة 10.00/ }))
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 1000))
+
+      fireEvent.click(screen.getByRole('button', { name: 'بدون' }))
+      await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(9, null, null, 0))
+    })
+
+    it('treats a typed zero as no service charge', async () => {
+      await openWorkspace()
+
+      fireEvent.click(await screen.findByRole('button', { name: /إضافة خدمة 10.00/ }))
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 1000))
+
+      fireEvent.change(customField(), { target: { value: '0' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+
+      await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(9, null, null, 0))
+    })
+
+    it('carries the custom charge into payment and onto the invoice', async () => {
+      mocks.checkout.mockResolvedValue({
+        invoice_id: 5,
+        invoice_no: 5,
+        total: 4300,
+        change_given: 0,
+        status: 'PAID',
+      })
+      await openWorkspace()
+
+      fireEvent.change(customField(), { target: { value: '37' } })
+      fireEvent.click(screen.getByRole('button', { name: 'تطبيق' }))
+      await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(9, null, null, 3700))
+
+      fireEvent.click(screen.getByRole('button', { name: /مراجعة والدفع/ }))
+
+      // CASH needs what the customer handed over; the dialog's own field is the
+      // one carrying the "0.00" placeholder on this screen.
+      fireEvent.change(await screen.findByPlaceholderText('0.00'), { target: { value: '60' } })
+      const pay = await screen.findByRole('button', { name: 'تأكيد الدفع' })
+      await waitFor(() => expect(pay).not.toBeDisabled())
+      fireEvent.click(pay)
+
+      // The exact typed amount — not a quick pick — is what is settled.
+      await waitFor(() =>
+        expect(mocks.checkout).toHaveBeenCalledWith(
+          expect.objectContaining({ service_charge_minor: 3700, discount_pin: null }),
+        ),
+      )
+    })
+  })
+
   it('never carries a checkout service charge onto the next order', async () => {
     // A service charge is a checkout SELECTION, not order state: it is never
     // persisted on the order, so the POS must clear it at every order-context
