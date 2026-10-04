@@ -173,12 +173,23 @@ fn day_bounds_sql(filter: &SalesFilter, offset: usize) -> (String, Vec<String>) 
 ///
 /// Written once so the "which invoices count" rule physically cannot diverge
 /// between the KPIs, the trend, the items and the invoice list.
+///
+/// The two `has_*` flags carry the invoice's own DEPARTMENT SHAPE — which
+/// departments its LINES carry — so the invoice-kind breakdown can be computed
+/// from the same set instead of from a second scan. They are derived here, in
+/// SQL, over the immutable invoice snapshot: an invoice's lines are written once
+/// at checkout and never edited afterwards, so the shape a line implies now is
+/// the shape the document had when it was issued.
 fn scoped_invoices_cte(filter: &SalesFilter) -> (String, Vec<String>) {
     let (predicate, args) = filter_sql(filter, 0);
     let sql = format!(
         "WITH inv AS (
             SELECT i.id, i.business_day_id, i.subtotal, i.discount_minor, i.service_charge,
-                   i.total, i.cafe_total, i.wash_total
+                   i.total, i.cafe_total, i.wash_total, i.order_type,
+                   EXISTS (SELECT 1 FROM invoice_lines l
+                           WHERE l.invoice_id = i.id AND l.department = 'CAFE') AS has_cafe,
+                   EXISTS (SELECT 1 FROM invoice_lines l
+                           WHERE l.invoice_id = i.id AND l.department = 'WASH') AS has_wash
             FROM invoices i
             JOIN business_days d ON d.id = i.business_day_id
             LEFT JOIN invoice_customers ic ON ic.invoice_id = i.id
@@ -209,6 +220,19 @@ pub struct SalesOverview {
 pub struct SalesSummary {
     /// Invoices in the period.
     pub invoices_count: i64,
+    /// The SAME period's invoices split by KIND. These are COUNTS of documents,
+    /// never money, and they are integers everywhere they travel.
+    ///
+    /// The four kinds are mutually exclusive and always partition
+    /// `invoices_count`: a takeaway is a takeaway whatever it contains, and every
+    /// table invoice is then cafe-only, wash-only or hybrid. The rule is the one
+    /// `printing::document_kind` already applies to pick the document an invoice
+    /// prints as, so the count of a kind and the template that kind prints with
+    /// can never disagree.
+    pub cafe_invoices: i64,
+    pub wash_invoices: i64,
+    pub hybrid_invoices: i64,
+    pub takeaway_invoices: i64,
     /// Sum of the invoice subtotals: line revenue BEFORE discount and service charge.
     pub subtotal: i64,
     pub discounts: i64,
@@ -355,11 +379,38 @@ fn share(part: i64, whole: i64) -> i64 {
     }
 }
 
+/// The one row the KPI block reads, in column order.
+///
+/// Named rather than a bare tuple because the summary now carries more columns
+/// than are readable positionally, and a wrong index here would silently report
+/// one figure under another's name.
+#[derive(Debug, Clone, Copy, Default)]
+struct SummaryRow {
+    invoices_count: i64,
+    subtotal: i64,
+    discounts: i64,
+    service_charges: i64,
+    total_sales: i64,
+    cafe_sales: i64,
+    wash_sales: i64,
+    cash: i64,
+    card: i64,
+    credit: i64,
+    takeaway_invoices: i64,
+    hybrid_invoices: i64,
+    cafe_invoices: i64,
+    wash_invoices: i64,
+}
+
 /// The KPI block. ONE query: every persisted invoice in the period is a real
 /// document, so there is no second "exception" count to run beside the totals.
+///
+/// The invoice-KIND counts are `COUNT`s over the SAME scoped set, so the four
+/// kinds always partition the headline `COUNT(*)`. They are read as integers and
+/// are never divided, scaled or formatted as money anywhere downstream.
 pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
     let (cte, args) = scoped_invoices_cte(filter);
-    let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64) = conn.query_row(
+    let row = conn.query_row(
         &format!(
             "{cte}
              SELECT COUNT(*),
@@ -371,27 +422,46 @@ pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
                     COALESCE(SUM(inv.wash_total), 0),
                     COALESCE(SUM(pay.cash), 0),
                     COALESCE(SUM(pay.card), 0),
-                    COALESCE(SUM(pay.credit), 0)
+                    COALESCE(SUM(pay.credit), 0),
+                    -- The document-KIND breakdown, in the order the printer
+                    -- classifies an invoice: a TAKEAWAY is a takeaway whatever it
+                    -- holds, and a table invoice is then hybrid, wash-only or
+                    -- cafe-only. Each invoice lands in exactly one branch, so the
+                    -- four counts always add back up to COUNT(*) above.
+                    COALESCE(SUM(CASE WHEN inv.order_type = 'TAKEAWAY' THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN inv.order_type <> 'TAKEAWAY'
+                                       AND inv.has_cafe AND inv.has_wash
+                                  THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN inv.order_type <> 'TAKEAWAY'
+                                       AND inv.has_cafe AND NOT inv.has_wash
+                                  THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN inv.order_type <> 'TAKEAWAY'
+                                       AND NOT inv.has_cafe AND inv.has_wash
+                                  THEN 1 ELSE 0 END), 0)
              FROM inv LEFT JOIN pay ON pay.invoice_id = inv.id"
         ),
         to_sql_refs(&args).as_slice(),
         |r| {
-            Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get(3)?,
-                r.get(4)?,
-                r.get(5)?,
-                r.get(6)?,
-                r.get(7)?,
-                r.get(8)?,
-                r.get(9)?,
-            ))
+            Ok(SummaryRow {
+                invoices_count: r.get(0)?,
+                subtotal: r.get(1)?,
+                discounts: r.get(2)?,
+                service_charges: r.get(3)?,
+                total_sales: r.get(4)?,
+                cafe_sales: r.get(5)?,
+                wash_sales: r.get(6)?,
+                cash: r.get(7)?,
+                card: r.get(8)?,
+                credit: r.get(9)?,
+                takeaway_invoices: r.get(10)?,
+                hybrid_invoices: r.get(11)?,
+                cafe_invoices: r.get(12)?,
+                wash_invoices: r.get(13)?,
+            })
         },
     )?;
 
-    let (
+    let SummaryRow {
         invoices_count,
         subtotal,
         discounts,
@@ -402,13 +472,24 @@ pub fn summary(conn: &Db, filter: &SalesFilter) -> AppResult<SalesSummary> {
         cash,
         card,
         credit,
-    ) = row;
+        takeaway_invoices,
+        hybrid_invoices,
+        cafe_invoices,
+        wash_invoices,
+    } = row;
     // The three payment methods partition the SETTLED money, so the shares are
     // taken against that sum — never against invoiced revenue, which would make
     // an unsettled remainder look like missing money.
     let settled = cash + card + credit;
     Ok(SalesSummary {
         invoices_count,
+        // The four kinds partition the headline count by construction; the total is
+        // re-read from the count itself rather than recomputed from the parts, so
+        // the hero can never drift from the breakdown printed beneath it.
+        cafe_invoices,
+        wash_invoices,
+        hybrid_invoices,
+        takeaway_invoices,
         subtotal,
         discounts,
         service_charges,

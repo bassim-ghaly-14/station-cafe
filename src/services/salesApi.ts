@@ -28,6 +28,16 @@ export type SalesItemSort = 'revenue' | 'quantity'
 
 export interface SalesSummary {
   invoices_count: number
+  /**
+   * The SAME period's invoices split by KIND. These are COUNTS of documents, not
+   * money, so they are plain integers and must never be passed through a money
+   * formatter. The four kinds are mutually exclusive and always sum to
+   * `invoices_count`.
+   */
+  cafe_invoices: number
+  wash_invoices: number
+  hybrid_invoices: number
+  takeaway_invoices: number
   /** Invoice subtotals: line revenue before discount and service charge. */
   subtotal: number
   discounts: number

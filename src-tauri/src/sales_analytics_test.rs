@@ -188,6 +188,301 @@ fn cash_sale(conn: &Connection, no: i64, day_id: i64, user_id: i64, amount: i64)
     id
 }
 
+/// A TABLE (non-takeaway) invoice, so the invoice-KIND breakdown can be exercised
+/// against the shapes a table order actually produces.
+///
+/// `add_invoice` above always writes a takeaway, which is the shape most of this
+/// suite sells; a table order needs a real table row because the schema CHECKs
+/// that a `TABLE` order carries a table and a takeaway carries none.
+fn add_table_invoice(
+    conn: &Connection,
+    invoice_no: i64,
+    day_id: i64,
+    user_id: i64,
+    sale: Sale,
+    lines: &[(&str, &str, i64, i64)],
+) -> i64 {
+    let existing = conn.query_row("SELECT id FROM cafe_tables ORDER BY id LIMIT 1", [], |r| {
+        r.get::<_, i64>(0)
+    });
+    let table_id: i64 = match existing {
+        Ok(id) => id,
+        // The suite's in-memory database is migrated but not seeded with tables,
+        // so the first table order creates the one table it needs.
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            conn.execute("INSERT INTO cafe_tables (label) VALUES ('01')", [])
+                .unwrap();
+            conn.last_insert_rowid()
+        }
+        Err(error) => panic!("table lookup failed: {error}"),
+    };
+    conn.execute(
+        "INSERT INTO orders (order_type, table_id, user_id, business_day_id, status)
+         VALUES ('TABLE', ?1, ?2, ?3, 'CLOSED')",
+        rusqlite::params![table_id, user_id, day_id],
+    )
+    .unwrap();
+
+    let snap: Vec<InvoiceLine> = lines
+        .iter()
+        .map(|(department, name, quantity, line_total)| InvoiceLine {
+            department: (*department).into(),
+            product_name: (*name).into(),
+            unit_price: if *quantity > 0 {
+                line_total / quantity
+            } else {
+                0
+            },
+            quantity: *quantity,
+            discount_minor: 0,
+            line_total: *line_total,
+        })
+        .collect();
+
+    invoices::insert_invoice(
+        conn,
+        invoice_no,
+        conn.last_insert_rowid(),
+        None,
+        day_id,
+        None,
+        user_id,
+        "TABLE",
+        None,
+        None,
+        sale.subtotal(),
+        sale.discount,
+        None,
+        None,
+        sale.service_charge,
+        sale.total(),
+        sale.cafe,
+        sale.wash,
+        &snap,
+    )
+    .unwrap()
+}
+
+/// A wash-only table sale, the shape no other helper in this file produces.
+fn table_wash_sale(conn: &Connection, no: i64, day_id: i64, user_id: i64, amount: i64) -> i64 {
+    add_table_invoice(
+        conn,
+        no,
+        day_id,
+        user_id,
+        Sale {
+            cafe: 0,
+            wash: amount,
+            service_charge: 0,
+            discount: 0,
+        },
+        &[("WASH", "غسيل", 1, amount)],
+    )
+}
+
+/// A hybrid table sale carrying BOTH departments.
+fn table_hybrid_sale(
+    conn: &Connection,
+    no: i64,
+    day_id: i64,
+    user_id: i64,
+    cafe: i64,
+    wash: i64,
+) -> i64 {
+    add_table_invoice(
+        conn,
+        no,
+        day_id,
+        user_id,
+        Sale {
+            cafe,
+            wash,
+            service_charge: 0,
+            discount: 0,
+        },
+        &[("CAFE", "قهوة", 1, cafe), ("WASH", "غسيل", 1, wash)],
+    )
+}
+
+/// The four invoice kinds partition the period's invoice count.
+///
+/// The classification is the one the printer already applies to choose an
+/// invoice's document, so this is the SAME business rule rather than a second
+/// opinion about what a "hybrid" invoice is. These are DOCUMENT counts: never
+/// line items, never payment rows, and never a doubled hybrid.
+#[test]
+fn invoice_kinds_partition_the_period_invoice_count() {
+    let conn = fresh();
+    let day = add_day(&conn, "2026-09-10");
+
+    // A table cafe-only order, a table wash-only order, and a table hybrid order.
+    add_table_invoice(
+        &conn,
+        1,
+        day,
+        1,
+        Sale::cafe(3_000),
+        &[("CAFE", "قهوة", 1, 3_000)],
+    );
+    table_wash_sale(&conn, 2, day, 1, 5_000);
+    table_hybrid_sale(&conn, 3, day, 1, 1_000, 2_000);
+    // And one takeaway, which is a takeaway whatever it carries.
+    cash_sale(&conn, 4, day, 1, 1_100);
+
+    let summary = sales::summary(&conn, &filter()).unwrap();
+
+    assert_eq!(summary.invoices_count, 4);
+    assert_eq!(summary.cafe_invoices, 1, "cafe-only table invoice");
+    assert_eq!(summary.wash_invoices, 1, "wash-only table invoice");
+    assert_eq!(summary.hybrid_invoices, 1, "a hybrid invoice counts ONCE");
+    assert_eq!(summary.takeaway_invoices, 1);
+    // The invariant the card is built on: the four boxes add up to the hero.
+    assert_eq!(
+        summary.cafe_invoices
+            + summary.wash_invoices
+            + summary.hybrid_invoices
+            + summary.takeaway_invoices,
+        summary.invoices_count,
+        "the invoice-kind breakdown must partition the total invoice count"
+    );
+    // Counts are counts: a small integer, never a money amount.
+    for count in [
+        summary.invoices_count,
+        summary.cafe_invoices,
+        summary.wash_invoices,
+        summary.hybrid_invoices,
+        summary.takeaway_invoices,
+    ] {
+        assert!(
+            (0..1_000_000).contains(&count),
+            "a count, not an amount: {count}"
+        );
+    }
+    // Revenue semantics are untouched by the breakdown: the hybrid invoice's money
+    // still lands in BOTH departments, because those are per-department line sums,
+    // and a takeaway's money still lands in the department its lines carry. The
+    // counts partition the DOCUMENTS; the money is unchanged by that split.
+    assert_eq!(
+        summary.cafe_sales, 5_100,
+        "3,000 cafe + 1,000 hybrid cafe + 1,100 takeaway"
+    );
+    assert_eq!(summary.wash_sales, 7_000, "5,000 wash + 2,000 hybrid wash");
+    assert_eq!(summary.total_sales, 12_100);
+    assert_eq!(summary.average_invoice, 12_100 / 4);
+}
+
+/// The takeaway rule comes first: a takeaway invoice is counted as a takeaway and
+/// never also as a cafe or wash invoice, so it can never be counted twice.
+#[test]
+fn a_takeaway_invoice_is_never_also_counted_as_a_cafe_or_wash_invoice() {
+    let conn = fresh();
+    let day = add_day(&conn, "2026-09-10");
+
+    cash_sale(&conn, 1, day, 1, 2_000);
+    cash_sale(&conn, 2, day, 1, 1_500);
+
+    let summary = sales::summary(&conn, &filter()).unwrap();
+    assert_eq!(summary.invoices_count, 2);
+    assert_eq!(summary.takeaway_invoices, 2);
+    assert_eq!(summary.cafe_invoices, 0);
+    assert_eq!(summary.wash_invoices, 0);
+    assert_eq!(summary.hybrid_invoices, 0);
+}
+
+/// An empty period reports a zero of every KIND — the card shows four zeros rather
+/// than four nulls, four "—", or a fabricated number.
+#[test]
+fn an_empty_period_reports_a_zero_of_every_invoice_kind() {
+    let conn = fresh();
+
+    let summary = sales::summary(&conn, &filter()).unwrap();
+    assert_eq!(summary.invoices_count, 0);
+    assert_eq!(summary.cafe_invoices, 0);
+    assert_eq!(summary.wash_invoices, 0);
+    assert_eq!(summary.hybrid_invoices, 0);
+    assert_eq!(summary.takeaway_invoices, 0);
+}
+
+/// The breakdown is scoped by the SAME filter as every other figure on the page,
+/// so the hero and its four boxes can never describe different periods.
+#[test]
+fn the_invoice_kind_breakdown_follows_the_same_period_filter() {
+    let conn = fresh();
+    let september = add_day(&conn, "2026-09-10");
+    let october = add_day(&conn, "2026-10-10");
+    add_table_invoice(
+        &conn,
+        1,
+        september,
+        1,
+        Sale::cafe(1_000),
+        &[("CAFE", "قهوة", 1, 1_000)],
+    );
+    add_table_invoice(
+        &conn,
+        2,
+        october,
+        1,
+        Sale::cafe(1_000),
+        &[("CAFE", "قهوة", 1, 1_000)],
+    );
+
+    let september_only = sales::summary(
+        &conn,
+        &SalesFilter {
+            from: Some("2026-09-01".into()),
+            to: Some("2026-09-30".into()),
+            ..SalesFilter::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(september_only.invoices_count, 1);
+    assert_eq!(september_only.cafe_invoices, 1);
+    assert_eq!(september_only.takeaway_invoices, 0);
+
+    let october_only = sales::summary(
+        &conn,
+        &SalesFilter {
+            from: Some("2026-10-01".into()),
+            to: Some("2026-10-31".into()),
+            ..SalesFilter::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(october_only.invoices_count, 1);
+    assert_eq!(october_only.cafe_invoices, 1);
+    assert_eq!(october_only.takeaway_invoices, 0);
+}
+
+/// One invoice settled by TWO payment rows: the shape that multiplied every
+/// invoice-level figure once per payment row. The breakdown counts DOCUMENTS, so
+/// the kinds are unaffected while the money still sums the payment rows.
+#[test]
+fn the_invoice_kind_breakdown_is_not_changed_by_a_payment_split() {
+    let conn = fresh();
+    let day = add_day(&conn, "2026-09-10");
+    let id = add_table_invoice(
+        &conn,
+        1,
+        day,
+        1,
+        Sale::cafe(3_000),
+        &[("CAFE", "قهوة", 1, 3_000)],
+    );
+    invoices::insert_payment(&conn, id, "CASH", 1_000, None, None, 1).unwrap();
+    invoices::insert_payment(&conn, id, "CARD", 2_000, None, None, 1).unwrap();
+    invoices::apply_payment_to_invoice(&conn, id, 3_000).unwrap();
+
+    let summary = sales::summary(&conn, &filter()).unwrap();
+    assert_eq!(
+        summary.invoices_count, 1,
+        "one document, not one per payment row"
+    );
+    assert_eq!(summary.cafe_invoices, 1);
+    assert_eq!(summary.cash, 1_000, "money still sums the payment rows");
+    assert_eq!(summary.card, 2_000);
+}
+
 fn filter() -> SalesFilter {
     SalesFilter::default()
 }
