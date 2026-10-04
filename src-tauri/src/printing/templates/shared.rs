@@ -78,14 +78,6 @@ pub fn is_hybrid<'a, I: IntoIterator<Item = &'a str>>(departments: I) -> bool {
     cafe && wash
 }
 
-/// The currency sentence carried by NON-invoice printed documents (shift and
-/// day closing reports, printer test page).
-///
-/// Those documents are not invoices and are not part of the invoice print
-/// system, so they keep following the application's global currency label.
-/// Invoices and receipts never come through this constant.
-const REPORT_CURRENCY_NOTE: &str = "المبالغ بالج.م";
-
 /// Format a stored instant for paper, in Station business time.
 ///
 /// A receipt must never disagree with the screen: both go through the same
@@ -96,25 +88,29 @@ pub(super) fn stamp(value: &str) -> String {
     crate::time::to_business_datetime(value)
 }
 
-/// The document header of a NON-invoice document (shift/day closing, test
-/// page): logo, title, subtitle, then the same currency sentence the
-/// application uses on screen.
+/// The document header of a NON-invoice document (shift closing, day closing,
+/// printer test page): logo, title, subtitle, then the currency sentence.
 ///
-/// Invoice and receipt documents must NOT come through here — they use
-/// [`invoice_header`], which states the currency in full and never follows the
-/// application's currency label.
+/// The currency sentence is the SAME print-layer Egyptian-pound statement the
+/// invoices use, because Station has ONE currency wording on paper. A printed
+/// document never inherits the application's on-screen abbreviation, so a shift
+/// closing and a day closing read exactly like the invoice they sit beside.
+/// Only the TITLE differs between the document families — not the wording, the
+/// typography, the alignment or the leading divider, which is what makes the two
+/// families impossible to let drift apart.
 pub(super) fn header(p: &mut EscPos, logo: bool, title: &str, subtitle: &str) {
-    header_with_currency(p, logo, title, subtitle, REPORT_CURRENCY_NOTE);
+    let note = super::invoice_format::invoice_currency_note(p.arabic_mode);
+    header_with_currency(p, logo, title, subtitle, note);
 }
 
 /// The document header of an INVOICE or RECEIPT.
 ///
-/// Identical shape to [`header`], but the currency sentence is the print-layer
-/// Egyptian-pound statement from the invoice domain, so no printed invoice can
-/// ever carry the application's global currency abbreviation.
+/// Identical to [`header`]: both now state the print-layer Egyptian-pound
+/// sentence from the invoice domain, so no printed document of any kind can ever
+/// carry the application's global currency abbreviation. The name is kept
+/// because the invoice templates say what they are at the call site.
 pub(super) fn invoice_header(p: &mut EscPos, logo: bool, title: &str, subtitle: &str) {
-    let note = super::invoice_format::invoice_currency_note(p.arabic_mode);
-    header_with_currency(p, logo, title, subtitle, note);
+    header(p, logo, title, subtitle);
 }
 
 /// The one header implementation both variants share: only the currency

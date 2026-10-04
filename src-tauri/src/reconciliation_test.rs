@@ -951,6 +951,71 @@ fn printed_text(doc: &crate::printing::ir::PrintDoc) -> String {
         .join("\n")
 }
 
+/// ONE currency wording on paper.
+///
+/// Station states amounts on a sales invoice as «المبالغ بالجنيه المصري». The
+/// shift and day closing documents sit beside that invoice and are read as part
+/// of the same set, so they state the currency with the SAME sentence — never the
+/// application's on-screen abbreviation `ج.م`, which belongs to the screen.
+///
+/// This asserts the generated printable content, not a visual inspection: the
+/// shift closing and the day closing are rendered through the real templates and
+/// their text is read back.
+#[test]
+fn the_closing_documents_state_the_currency_exactly_as_an_invoice_does() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "2345");
+    let staff = login(&conn, "cashier", "3456");
+    shift_svc::open_day(&conn, &manager).unwrap();
+    let day_id = crate::repositories::shifts::current_day(&conn)
+        .unwrap()
+        .unwrap()
+        .id;
+    let shift_id = shift_svc::open_shift(&conn, &staff, 0).unwrap();
+    sell_cafe_cash(&conn, &staff, "مياه");
+    shift_svc::close_shift(
+        &conn,
+        &staff,
+        invoice_total(&conn, invoice_of_shift(&conn, shift_id)),
+    )
+    .unwrap();
+
+    let shift_doc = crate::printing::templates::shift_closing(
+        crate::printing::escpos::ArabicMode::Cp1256,
+        0,
+        &reconciliation::shift_report(&conn, shift_id).unwrap(),
+        false,
+    );
+    let day_doc = crate::printing::templates::day_report(
+        crate::printing::escpos::ArabicMode::Cp1256,
+        0,
+        &reports::day_report(&conn, day_id).unwrap(),
+        false,
+    );
+
+    for (name, doc) in [("shift closing", &shift_doc), ("day closing", &day_doc)] {
+        let text = printed_text(doc);
+        assert!(
+            text.contains("المبالغ بالجنيه المصري"),
+            "the {name} must state the invoice currency wording:\n{text}"
+        );
+        assert!(
+            !text.contains("ج.م"),
+            "the {name} must never carry the on-screen currency abbreviation:\n{text}"
+        );
+    }
+}
+
+/// The id of the shift's single invoice, so the closing is handed the real cash.
+fn invoice_of_shift(conn: &Connection, shift_id: i64) -> i64 {
+    conn.query_row(
+        "SELECT id FROM invoices WHERE shift_id = ?1 ORDER BY id LIMIT 1",
+        [shift_id],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
 #[test]
 fn the_printed_shift_closing_carries_every_reconciliation_line() {
     let conn = fresh();
