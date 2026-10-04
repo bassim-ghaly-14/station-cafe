@@ -37,11 +37,25 @@ function AmountRow({
   )
 }
 
-/** A count-only line: the value is a document count, never an amount. */
-function CountRow({ label }: Readonly<{ readonly label: ReactNode }>) {
+/**
+ * A count-only line: the value is a document count, never an amount.
+ *
+ * `value` is the count itself and is rendered as a plain integer. A count must
+ * NEVER travel through `AmountRow`: that row hands its value to `MoneyDisplay`,
+ * which treats the number as PIASTERS and divides it by 100 before appending the
+ * currency label — so a count of 6 came out as `0.06 ج.م`. Counts are counts all
+ * the way to the screen, so they are typed, rendered and read as counts.
+ */
+function CountRow({
+  label,
+  value,
+}: Readonly<{ readonly label: ReactNode; readonly value?: ReactNode }>) {
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
       <span className="text-foreground-muted">{label}</span>
+      {value === undefined ? null : (
+        <span className="font-bold tabular-nums text-foreground-strong">{value}</span>
+      )}
     </div>
   )
 }
@@ -87,7 +101,11 @@ export function SalesSection({ data }: Readonly<{ readonly data: SalesArea }>) {
           contributed no money, which is false. */}
       <CountRow label={`${t('shift.hybridInvoices')} (${data.areas.hybrid_invoices})`} />
       <p className="pb-1 text-caption text-foreground-subtle">{t('shift.hybridInvoicesHint')}</p>
-      <AmountRow label={t('shift.invoiceCount')} amount={data.invoices_count} tone="tabular-nums" />
+      {/* The invoice count is a COUNT, never an amount: it is rendered as a plain
+          integer through `CountRow`. It must not be passed to `AmountRow`, whose
+          `MoneyDisplay` would read it as piasters and print `0.06 ج.م` for six
+          invoices. The `areas.*` figures above follow the same rule. */}
+      <CountRow label={t('shift.invoiceCount')} value={data.invoices_count} />
       <AmountRow label={t('shift.cashSales')} amount={data.cash_sales} />
       <AmountRow label={t('shift.cardSales')} amount={data.card_sales} />
       <AmountRow label={t('shift.creditSales')} amount={data.credit_sales} />

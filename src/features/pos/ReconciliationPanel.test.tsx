@@ -290,6 +290,60 @@ describe('reconciliation sections render the backend report', () => {
     expect(screen.getByText('إجمالي الخصومات').parentElement?.textContent).toContain('5.00')
   })
 
+  /**
+   * REGRESSION — the invoice count was rendered through `AmountRow`, whose
+   * `MoneyDisplay` reads its argument as PIASTERS. A count of 6 therefore
+   * printed as `0.06 ج.م`. The count is a count from the backend all the way to
+   * the screen, so this asserts the value itself, not the absence of a symbol.
+   */
+  it('renders the invoice count as an integer count, never as an amount', () => {
+    render(
+      <SessionProvider>
+        <RouterProvider>
+          <SalesSection data={{ ...shiftReport, invoices_count: 6 }} />
+        </RouterProvider>
+      </SessionProvider>,
+    )
+
+    const row = screen.getByText('عدد الفواتير').parentElement!
+    expect(row.textContent).toContain('6')
+    // The money formatter's signature output for a count of 6 read as piasters.
+    expect(row.textContent).not.toContain('0.06')
+    expect(row.textContent).not.toContain('ج.م')
+  })
+
+  it('renders a zero invoice count as a plain 0', () => {
+    render(
+      <SessionProvider>
+        <RouterProvider>
+          <SalesSection data={{ ...shiftReport, invoices_count: 0 }} />
+        </RouterProvider>
+      </SessionProvider>,
+    )
+
+    const row = screen.getByText('عدد الفواتير').parentElement!
+    expect(row.textContent).toContain('0')
+    expect(row.textContent).not.toContain('ج.م')
+  })
+
+  /**
+   * The monetary lines in the SAME block must keep their currency formatting.
+   * Fixing the count may never quietly turn an amount into a bare number.
+   */
+  it('keeps the money lines beside the count formatted as EGP', () => {
+    render(
+      <SessionProvider>
+        <RouterProvider>
+          <SalesSection data={{ ...shiftReport, invoices_count: 6 }} />
+        </RouterProvider>
+      </SessionProvider>,
+    )
+
+    expect(screen.getByText('إجمالي المبيعات').parentElement?.textContent).toContain('345.00')
+    expect(screen.getByText('إجمالي المبيعات').parentElement?.textContent).toContain('ج.م')
+    expect(screen.getByText(/فواتير الكافيه \(2\)/).parentElement?.textContent).toContain('200.00')
+  })
+
   it('lists the expense total and its per-category breakdown with counts', () => {
     render(
       <SessionProvider>
