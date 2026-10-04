@@ -5,11 +5,13 @@
 use crate::error::{AppError, AppResult};
 use crate::money::Money;
 use crate::repositories::expenses;
+use crate::repositories::pos::{self as pos_repo, TableCounters};
 use crate::repositories::shifts::{
     self, BusinessDay, DayClosingRecord, DayClosingSnapshot, DayTotals, SettlementPreview, ShiftRow,
 };
 use crate::repositories::Db;
 use crate::services::auth::User;
+use crate::services::pos as pos_svc;
 use crate::services::reconciliation;
 use serde::Serialize;
 
@@ -128,6 +130,13 @@ pub struct ShiftClosing {
     pub difference: i64,
     /// The full authoritative reconciliation that was persisted.
     pub report: reconciliation::ShiftReconciliation,
+    /// The shift's own table lifecycle, stated by the closing itself: the
+    /// sessions it opened and the ones it closed without an order.
+    ///
+    /// It is read from the persisted `table_sessions` rows the shift owns, so it
+    /// is fixed at closing time by the same transaction that fixed the money, and
+    /// the next shift starts from a clean zero by itself.
+    pub tables: TableCounters,
 }
 
 #[derive(Debug, Serialize)]
@@ -141,6 +150,10 @@ pub struct ShiftClosingPreview {
     pub cash_expenses: i64,
     pub expenses: i64,
     pub expected_cash: i64,
+    /// The table lifecycle this closing would report, from the same read the
+    /// committed closing returns — so the dialog can never quote a different
+    /// number than the result it produces.
+    pub tables: TableCounters,
     /// Full breakdown so the dialog can show the same document the printer will.
     pub report: reconciliation::ShiftReconciliation,
 }
@@ -161,6 +174,9 @@ pub fn preview_shift_close(conn: &Db, actor: &User) -> AppResult<ShiftClosingPre
         cash_expenses: shift.cash_expenses,
         expenses: shift.expenses,
         closing_at: shifts::sqlite_now(conn)?,
+        // The same read `close_shift` returns, so the figure shown before the
+        // confirmation is the figure the committed closing carries.
+        tables: pos_svc::shift_lifecycle_counts(conn, actor)?,
         report: reconciliation::shift_report(conn, shift_id)?,
         shift,
     })
@@ -240,10 +256,15 @@ pub fn close_shift_at(
     )?;
     tx.commit()?;
     let report = reconciliation::shift_report(conn, shift.id)?;
+    // Read AFTER the commit, and from the same persisted rows, so the result the
+    // caller receives is the closing that was actually written. A session cannot
+    // change once it is closed, so this is stable from here on.
+    let tables = pos_repo::shift_lifecycle_counts(conn, shift.id)?;
     Ok(ShiftClosing {
         shift: report.shift.clone(),
         expected_cash: cash.expected_cash,
         difference: cash.difference,
+        tables,
         report,
     })
 }

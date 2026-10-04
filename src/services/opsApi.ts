@@ -75,6 +75,14 @@ export interface ExpenseCategory {
    * needs no change here. Nothing in the frontend may branch on a category code.
    */
   requires_employee: boolean
+  /**
+   * Whether an expense in this category ALSO writes an advance ledger row.
+   *
+   * A salary payment is employee-linked but is NOT an advance, so this stays
+   * distinct from `requires_employee`. The frontend does not need it today; it is
+   * on the payload so the backend contract stays complete and honest.
+   */
+  records_advance: boolean
 }
 
 /** One `YYYY-MM` × category cell of the monthly expenses report. */

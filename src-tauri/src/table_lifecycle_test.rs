@@ -604,3 +604,434 @@ fn the_demo_dataset_reports_its_own_persisted_closes() {
         "the demo dataset's reported count must match its persisted rows"
     );
 }
+
+// ===========================================================================
+// SHIFT-SCOPED TABLE STATISTICS — the closing's own table lifecycle
+// ===========================================================================
+//
+// The DAY counter above answers "how many empty closes has this business day
+// seen". A shift is a different period with a different question: "how many did
+// THIS till do". These tests pin the second one without disturbing the first —
+// in particular they never weaken the rule that a close belongs to the day it
+// HAPPENED on.
+//
+// Every figure is read through the service layer, exactly like production
+// traffic, and each is cross-checked against the persisted `table_sessions` rows
+// so a passing test cannot be passing on a number the database does not hold.
+
+/// The shift-scoped counters the backend reports for the caller's active shift.
+fn shift_closes(conn: &Connection, actor: &auth::User) -> (i64, i64) {
+    let counts = pos_svc::shift_lifecycle_counts(conn, actor).unwrap();
+    (counts.opens, counts.closed_empty)
+}
+
+/// What `table_sessions` itself says for one shift, independent of any query the
+/// application builds.
+fn persisted_shift_rows(conn: &Connection, shift_id: i64) -> (i64, i64) {
+    conn.query_row(
+        "SELECT
+            (SELECT COUNT(*) FROM table_sessions WHERE shift_id = ?1),
+            (SELECT COUNT(*) FROM table_sessions
+              WHERE shift_id = ?1 AND status = 'CLOSED' AND order_id IS NULL)",
+        [shift_id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+fn active_shift_id(conn: &Connection, actor: &auth::User) -> i64 {
+    crate::repositories::shifts::active_shift_for(conn, actor.id)
+        .unwrap()
+        .expect("the caller's own ACTIVE shift")
+        .id
+}
+
+/// Close the caller's shift and open the next one, both on the SAME business day.
+fn roll_shift(conn: &Connection, actor: &auth::User) -> i64 {
+    shift_svc::close_shift_at(conn, actor, 0, "2026-09-25 12:00:00").unwrap();
+    shift_svc::open_shift(conn, actor, 0).unwrap()
+}
+
+/// Case 1 — a first opened table and an empty close are counted EXACTLY once by
+/// the shift that performed them.
+#[test]
+fn a_first_empty_close_is_counted_exactly_once_by_its_shift() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let shift = active_shift_id(&conn, &actor);
+
+    // Nothing has happened yet: the shift starts clean, at zero, not at whatever
+    // a previous shift left behind.
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "a new shift starts clean"
+    );
+    assert_eq!(persisted_shift_rows(&conn, shift), (0, 0));
+
+    let table = table_ids(&conn)[0];
+    pos_svc::open_table(&conn, &actor, table).unwrap();
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (1, 0),
+        "opening a table is an open, never a close"
+    );
+
+    pos_svc::close_empty_table(&conn, &actor, table).unwrap();
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (1, 1),
+        "the empty close is counted exactly once"
+    );
+    assert_eq!(persisted_shift_rows(&conn, shift), (1, 1));
+}
+
+/// Case 2 — a genuine table order counts as an OPEN and never as an empty close,
+/// for the shift exactly as for the day.
+#[test]
+fn a_settled_table_order_is_never_a_shift_empty_close() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let shift = active_shift_id(&conn, &actor);
+    let tables = table_ids(&conn);
+
+    normal_close(&conn, &actor, tables[0]);
+    empty_close(&conn, &actor, tables[1]);
+
+    // Two sessions belong to the shift, but only the one that never carried an
+    // order is an empty close. A paid invoice is not an empty close.
+    assert_eq!(shift_closes(&conn, &actor), (2, 1));
+    assert_eq!(persisted_shift_rows(&conn, shift), (2, 1));
+    // And the shift figure agrees with the day's, because this is one day.
+    assert_eq!(empty_closes(&conn), 1, "one business rule, two scopes");
+}
+/// Case 3 — a NEW shift starts from clean shift-scoped statistics, while the day
+/// keeps accumulating. This is the regression an endless lifetime counter could
+/// never pass.
+#[test]
+fn a_new_shift_starts_clean_while_the_day_accumulates() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let first = active_shift_id(&conn, &actor);
+    let tables = table_ids(&conn);
+
+    empty_close(&conn, &actor, tables[0]);
+    empty_close(&conn, &actor, tables[1]);
+    assert_eq!(shift_closes(&conn, &actor), (2, 2));
+
+    // The same business day, the next till period.
+    let second = roll_shift(&conn, &actor);
+    assert_ne!(second, first, "a genuinely different shift");
+
+    // The SHIFT counters reset. The DAY counter does not — it is a different
+    // period, and both figures come from the same persisted rows.
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "the new shift's statistics start clean"
+    );
+    assert_eq!(persisted_shift_rows(&conn, second), (0, 0));
+    assert_eq!(
+        persisted_shift_rows(&conn, first),
+        (2, 2),
+        "the closed shift keeps its own history"
+    );
+    assert_eq!(empty_closes(&conn), 2, "the business day keeps accumulating");
+
+    // The second shift's own closes are counted once, against the second shift.
+    empty_close(&conn, &actor, tables[2]);
+    assert_eq!(shift_closes(&conn, &actor), (1, 1));
+    assert_eq!(persisted_shift_rows(&conn, second), (1, 1));
+    assert_eq!(persisted_shift_rows(&conn, first), (2, 2));
+    assert_eq!(empty_closes(&conn), 3, "the day aggregates its shifts");
+}
+
+/// Case 4 — several shifts inside ONE Cairo business day aggregate correctly.
+#[test]
+fn several_shifts_in_one_cairo_day_aggregate_into_that_day() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let tables = table_ids(&conn);
+
+    let mut per_shift: Vec<i64> = Vec::new();
+    for index in 0..3 {
+        empty_close(&conn, &actor, tables[index]);
+        let (opens, closed) = shift_closes(&conn, &actor);
+        per_shift.push(closed);
+        // Each shift reports exactly what it did — never the running day total.
+        assert_eq!(closed, 1, "shift #{} reports only its own close", index);
+        assert_eq!(opens, 1);
+        roll_shift(&conn, &actor);
+    }
+
+    assert_eq!(per_shift, vec![1, 1, 1], "each shift counted exactly its own");
+    assert_eq!(empty_closes(&conn), 3, "the day is the aggregate of shifts");
+    assert_eq!(persisted_empty_closes(&conn), 3);
+}
+
+/// Case 6 — the shift-scoped figures are PERSISTED truth, not memory. The honest
+/// proof is a real database file that is closed and reopened.
+#[test]
+fn the_shift_statistics_survive_an_application_restart() {
+    let dir = std::env::temp_dir().join("station_shift_lifecycle_restart_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("station_cafe.db");
+
+    let (shift_before, opens_before, closed_before) = {
+        let disk = Connection::open(&file).unwrap();
+        disk.pragma_update(None, "foreign_keys", "ON").unwrap();
+        crate::db::register_clock(&disk).unwrap();
+        migrate(&disk).unwrap();
+        crate::seed::run_if_empty(&disk).unwrap();
+        let actor = manager(&disk);
+        open_day_and_shift(&disk, &actor);
+        let ids = table_ids(&disk);
+        empty_close(&disk, &actor, ids[0]);
+        normal_close(&disk, &actor, ids[1]);
+        let shift = active_shift_id(&disk, &actor);
+        let (opens, closed) = shift_closes(&disk, &actor);
+        assert_eq!((opens, closed), (2, 1));
+        // The closing the cashier performs carries the same figures.
+        let closing = shift_svc::close_shift_at(&disk, &actor, 0, "2026-09-25 12:00:00").unwrap();
+        assert_eq!(
+            (closing.tables.opens, closing.tables.closed_empty),
+            (2, 1),
+            "the closing result states the shift's own table statistics"
+        );
+        (shift, opens, closed)
+    };
+
+    {
+        // Nothing of the previous process survives except the database file.
+        let reopened = Connection::open(&file).unwrap();
+        crate::db::register_clock(&reopened).unwrap();
+        assert_eq!(
+            persisted_shift_rows(&reopened, shift_before),
+            (opens_before, closed_before),
+            "the closed shift's statistics are persisted, not remembered"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Case 7 — the opening-day vs closing-day rule, stated for BOTH scopes.
+///
+/// A session opened during shift A and closed after the café rolled over to a new
+/// business day belongs to A by `shift_id` and to the NEW day by its closing
+/// instant. Both answers are correct: the scopes describe different periods. This
+/// test exists so that relationship can never change silently.
+#[test]
+fn a_cross_day_close_is_reported_by_each_scope_on_its_own_period() {
+    let conn = fresh();
+    let actor = manager(&conn);
+
+    // Day one: open a table and leave the session open overnight.
+    open_day_and_shift(&conn, &actor);
+    let opening_shift = active_shift_id(&conn, &actor);
+    let table = table_ids(&conn)[0];
+    pos_svc::open_table(&conn, &actor, table).unwrap();
+
+    // Roll the business day over behind that still-open session. Two business
+    // days may legitimately share one calendar label; what changes is the day
+    // IDENTITY, which is exactly the real rollover.
+    shift_svc::close_shift_at(&conn, &actor, 0, "2026-09-25 23:59:00").unwrap();
+    conn.execute("UPDATE business_days SET status = 'CLOSED'", [])
+        .unwrap();
+    shift_svc::open_day(&conn, &actor).unwrap();
+    shift_svc::open_shift(&conn, &actor, 0).unwrap();
+    let closing_shift = active_shift_id(&conn, &actor);
+    assert_ne!(closing_shift, opening_shift);
+
+    // The close happens on the new day, under the new shift.
+    pos_svc::close_empty_table(&conn, &actor, table).unwrap();
+
+    // The SHIFT scope follows the shift that OWNS the session row: `shift_id` is
+    // stamped when the table opens, so that shift records both the open and the
+    // eventual close of the session it began — even when the close physically
+    // happened after the café rolled over.
+    assert_eq!(
+        persisted_shift_rows(&conn, opening_shift),
+        (1, 1),
+        "the session belongs to the shift that opened it, through its close"
+    );
+    assert_eq!(
+        persisted_shift_rows(&conn, closing_shift),
+        (0, 0),
+        "the shift that merely performed the close owns no session of its own"
+    );
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "and the live figure describes the new shift, which has done nothing yet"
+    );
+
+    // The DAY scope follows the business day the close HAPPENED on. This is the
+    // pinned rule: it is NOT the shift's scope and must never be substituted
+    // for it. The same row is reported by both scopes, each on its own period.
+    assert_eq!(
+        empty_closes(&conn),
+        1,
+        "the close belongs to the day it happened on, not the day it opened"
+    );
+    assert_eq!(
+        pos_svc::day_lifecycle_counts(&conn).unwrap().opens,
+        1,
+        "while its OPEN still counts on the day the table was opened"
+    );
+}
+/// Case 8 — an OPEN table is never counted as a close, and a refused close
+/// cannot inflate either scope.
+#[test]
+fn open_tables_and_refused_closes_stay_out_of_both_scopes() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let tables = table_ids(&conn);
+
+    // Nothing open yet: closing is refused and nothing moves.
+    assert!(pos_svc::close_empty_table(&conn, &actor, tables[0]).is_err());
+    assert_eq!(shift_closes(&conn, &actor), (0, 0));
+    assert_eq!(empty_closes(&conn), 0);
+
+    // A table opened and LEFT OPEN is an open, never a close — on either scope.
+    pos_svc::open_table(&conn, &actor, tables[0]).unwrap();
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (1, 0),
+        "an open table is not a closed one"
+    );
+    assert_eq!(empty_closes(&conn), 0, "and not for the day either");
+
+    // The close happens once. A second attempt on the same session is refused
+    // and must not count twice.
+    pos_svc::close_empty_table(&conn, &actor, tables[0]).unwrap();
+    assert!(pos_svc::close_empty_table(&conn, &actor, tables[0]).is_err());
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (1, 1),
+        "a double close counts once"
+    );
+    assert_eq!(empty_closes(&conn), 1);
+}
+
+/// With no active shift of the caller's there is no period to describe, and the
+/// answer is a truthful zero rather than an error or a leftover figure.
+#[test]
+fn without_an_active_shift_the_shift_figures_are_zero() {
+    let conn = fresh();
+    let actor = manager(&conn);
+
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "no shift, no shift-scoped figure"
+    );
+
+    open_day_and_shift(&conn, &actor);
+    empty_close(&conn, &actor, table_ids(&conn)[0]);
+    assert_eq!(shift_closes(&conn, &actor), (1, 1));
+
+    // Once closed, the caller has no ACTIVE shift — and the figures must not
+    // silently fall back onto some other shift's history.
+    shift_svc::close_shift_at(&conn, &actor, 0, "2026-09-25 12:00:00").unwrap();
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "a closed shift is not the active one"
+    );
+}
+
+/// The shift closing document must state the shift's own table statistics, and
+/// state the PREVIEW's numbers before the cashier confirms them.
+#[test]
+fn the_shift_closing_states_its_own_table_statistics() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let tables = table_ids(&conn);
+
+    empty_close(&conn, &actor, tables[0]);
+    normal_close(&conn, &actor, tables[1]);
+
+    // The preview the dialog renders and the committed closing must agree, or
+    // the cashier confirms one number and the document carries another.
+    let preview = shift_svc::preview_shift_close(&conn, &actor).unwrap();
+    let closing = shift_svc::close_shift_at(&conn, &actor, 0, "2026-09-25 12:00:00").unwrap();
+
+    assert_eq!((preview.tables.opens, preview.tables.closed_empty), (2, 1));
+    assert_eq!(
+        (closing.tables.opens, closing.tables.closed_empty),
+        (preview.tables.opens, preview.tables.closed_empty),
+        "the closing states what the preview showed"
+    );
+    // The report the printer and the screen both read carries the same block.
+    assert_eq!(
+        (
+            closing.report.tables.opens,
+            closing.report.tables.closed_empty
+        ),
+        (2, 1)
+    );
+
+    // A historical, closed shift still reports its own figures afterwards.
+    let shift_id = closing.shift.id;
+    let report = crate::services::reconciliation::shift_report(&conn, shift_id).unwrap();
+    assert_eq!(
+        (report.tables.opens, report.tables.closed_empty),
+        (2, 1),
+        "a closed shift reproduces its own table statistics"
+    );
+}
+/// Case 5 — a NEW shift starts clean, and a new business day is scoped by its
+/// own label.
+///
+/// The shift scope is unambiguous: a new till period owns no sessions, so it
+/// reports zero. The DAY scope is keyed on `day_date`, and Station business days
+/// are deliberately REPEATABLE — the existing suite already models a rollover
+/// whose new day carries the same calendar label. So the honest day-level claim
+/// is not "the number resets" but "the new day counts the closes whose own
+/// instant falls on ITS label, and nothing else is rewritten". Both are asserted.
+#[test]
+fn a_new_cairo_business_day_starts_clean() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    empty_close(&conn, &actor, table_ids(&conn)[0]);
+    assert_eq!(shift_closes(&conn, &actor), (1, 1));
+    let before = empty_closes(&conn);
+    assert_eq!(before, 1);
+
+    // Close the shift, then roll the business day over.
+    shift_svc::close_shift_at(&conn, &actor, 0, "2026-09-25 23:59:00").unwrap();
+    conn.execute("UPDATE business_days SET status = 'CLOSED'", [])
+        .unwrap();
+    shift_svc::open_day(&conn, &actor).unwrap();
+    shift_svc::open_shift(&conn, &actor, 0).unwrap();
+
+    // The new SHIFT is clean, which is the reset a cashier actually experiences.
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (0, 0),
+        "the new shift starts at zero"
+    );
+
+    // A close on the new day is counted against the new day, and the previous
+    // day's rows are neither moved nor double-counted by the rollover.
+    empty_close(&conn, &actor, table_ids(&conn)[1]);
+    assert_eq!(shift_closes(&conn, &actor), (1, 1));
+    assert_eq!(
+        empty_closes(&conn),
+        before + 1,
+        "the day counts each close on its own label, exactly once"
+    );
+    assert_eq!(
+        persisted_empty_closes(&conn),
+        before + 1,
+        "and the persisted rows agree, with the earlier day's row intact"
+    );
+}

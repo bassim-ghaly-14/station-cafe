@@ -235,6 +235,40 @@ describe('CustomersPage — manager (customer intelligence)', () => {
     expect(screen.getByText(/3 طلب/)).toBeInTheDocument()
   })
 
+  /**
+   * The order-kind card states a TOTAL and the two kinds that make it up.
+   *
+   * `order_type` is a two-valued enum, so table orders and external orders
+   * partition the period's invoices. The card used to show the external figure
+   * alone under "طلبات تيك اواي" with the hint "منها N طلب طاولة", which claimed
+   * the table orders were a subset of the takeaways. These assertions pin the
+   * corrected reading: the hero is the sum, the two labelled rows are its exact
+   * parts, and the misleading "of which" wording is gone.
+   */
+  it('states the order kinds as one total split into table and external', async () => {
+    renderPage()
+
+    // The fixture carries 4 takeaway and 5 table orders, so the hero is 9.
+    const hero = await screen.findByTestId('customers-order-kinds-hero')
+    expect(hero).toHaveTextContent('9')
+
+    // Both parts are named explicitly, so "takeaway" cannot be read as "table".
+    expect(screen.getByText('طلبات التيك أواي')).toBeInTheDocument()
+    const tableLabel = screen.getByText('طلبات الطاولة')
+    const externalLabel = screen.getByText('الطلبات الخارجية')
+    expect(tableLabel).toBeInTheDocument()
+    expect(externalLabel).toBeInTheDocument()
+
+    // Each labelled row carries its OWN figure, not the hero and not the other's.
+    expect(tableLabel.parentElement).toHaveTextContent('5')
+    expect(externalLabel.parentElement).toHaveTextContent('4')
+
+    // The old wording asserted the table orders were "of" the takeaways, which is
+    // false for a two-valued order kind. It must not come back.
+    expect(screen.queryByText(/طلبات تيك اواي/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/منها \d+ طلب طاولة/)).not.toBeInTheDocument()
+  })
+
   it('renders a deterministic customer avatar and a vehicle badge', async () => {
     renderPage()
     await screen.findByText('إجمالي العملاء')

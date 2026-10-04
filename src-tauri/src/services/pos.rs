@@ -43,6 +43,27 @@ pub fn day_lifecycle_counts(conn: &Db) -> AppResult<TableCounters> {
     pos::day_lifecycle_counts(conn, day.map(|d| d.id))
 }
 
+/// The same lifecycle counters scoped to the caller's OWN ACTIVE shift.
+///
+/// This is what the shift closing states: how many table sessions this shift
+/// opened, and how many of them it closed without an order. It is the SAME
+/// persisted `table_sessions` truth `day_lifecycle_counts` reads, scoped through
+/// the `shift_id` those rows already carry — so the shift figure resets by
+/// itself for the next shift and cannot be moved by restarting the application.
+///
+/// With no active shift of the caller's there is no period to describe, and the
+/// answer is a truthful zero — the same choice `day_lifecycle_counts` makes when
+/// no business day is open. It is never an error and never a guess.
+pub fn shift_lifecycle_counts(conn: &Db, actor: &User) -> AppResult<TableCounters> {
+    match shifts::active_shift_for(conn, actor.id)? {
+        Some(shift) => pos::shift_lifecycle_counts(conn, shift.id),
+        None => Ok(TableCounters {
+            opens: 0,
+            closed_empty: 0,
+        }),
+    }
+}
+
 /// Set the number of cafe tables. Table rows are retained for history: only
 /// tables outside the requested automatic sequence are deactivated.
 ///

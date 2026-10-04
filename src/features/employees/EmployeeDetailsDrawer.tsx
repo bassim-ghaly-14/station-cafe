@@ -669,6 +669,13 @@ function SalarySection({
         <StatBlock label={t('employees.drawer.baseSalary')}>
           <MoneyDisplay amount={financials.base_salary} variant="auto" />
         </StatBlock>
+        {/* Salary PAID, advances TAKEN BACK and deductions WITHHELD are three
+            different money sides. The salary figure is reported here beside the
+            other two — never folded into them, and never subtracted by the net
+            formula below, which is the backend's and unchanged. */}
+        <StatBlock label={t('employees.drawer.salaryPaid')}>
+          <MoneyDisplay amount={financials.salary_paid} variant="auto" />
+        </StatBlock>
         <StatBlock label={t('employees.drawer.totalAdvances')}>
           <MoneyDisplay amount={financials.advances} variant="auto" />
         </StatBlock>

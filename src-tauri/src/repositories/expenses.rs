@@ -23,16 +23,26 @@ pub struct ExpenseCategory {
     ///
     /// This is DATA, not a code the UI or the service recognises: a category
     /// carries the rule and the UI reads it from this payload, so a future
-    /// employee-linked category needs no change in any caller. Exactly one seeded
-    /// system category (the advance) sets it today.
+    /// employee-linked category needs no change in any caller. The seeded
+    /// employee-linked categories are the advance and the salary.
     pub requires_employee: bool,
+    /// Whether an expense in this category ALSO writes an advance ledger row.
+    ///
+    /// This is deliberately a SECOND fact rather than a consequence of
+    /// `requires_employee`. Both mean "this spend is about a named person", but
+    /// only an advance reduces that person's monthly pay — a salary payment does
+    /// not. Conflating them would fabricate an advance for every salary and
+    /// charge the payroll twice, so the two are stated separately and read
+    /// separately.
+    pub records_advance: bool,
 }
 
 /// Active categories, ordered for display. Inactive ones stay in the table so
 /// historical expenses keep a resolvable label.
 pub fn list_categories(conn: &Db, active_only: bool) -> AppResult<Vec<ExpenseCategory>> {
     let mut stmt = conn.prepare(
-        "SELECT code, name_ar, is_system, is_active, requires_employee FROM expense_categories
+        "SELECT code, name_ar, is_system, is_active, requires_employee, records_advance
+         FROM expense_categories
          WHERE (?1 = 0 OR is_active = 1)
          ORDER BY is_active DESC, id",
     )?;
@@ -43,6 +53,7 @@ pub fn list_categories(conn: &Db, active_only: bool) -> AppResult<Vec<ExpenseCat
             is_system: r.get::<_, i64>(2)? != 0,
             is_active: r.get::<_, i64>(3)? != 0,
             requires_employee: r.get::<_, i64>(4)? != 0,
+            records_advance: r.get::<_, i64>(5)? != 0,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -81,6 +92,26 @@ pub fn category_requires_employee(conn: &Db, code: &str) -> AppResult<Option<boo
         )
         .ok()
         .map(|flag| flag == 1))
+}
+
+/// Whether an expense in this category must ALSO write an advance ledger row.
+///
+/// `false` for every category that is unknown, inactive, or merely
+/// employee-linked — a salary payment names its employee but is not an advance,
+/// and must never reduce that person's monthly pay.
+///
+/// The service calls this exactly once, inside the creation transaction, and
+/// decides from the RESULT rather than from any category code.
+pub fn category_records_advance(conn: &Db, code: &str) -> AppResult<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT records_advance FROM expense_categories
+             WHERE code = ?1 AND is_active = 1",
+            [code],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|flag| flag == 1)
+        .unwrap_or(false))
 }
 
 /// The stored row behind a category, INCLUDING the system flag and the active

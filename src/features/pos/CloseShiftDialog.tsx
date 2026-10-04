@@ -37,6 +37,7 @@ import {
   ExpectedCashSection,
   SalesSection,
   ServicesSection,
+  TablesSection,
 } from './ReconciliationSections'
 import { statusLabelKey, statusTone } from './reconciliationStatus'
 
@@ -107,6 +108,10 @@ function ReconciliationDocument({ preview }: Readonly<{ preview: ShiftClosingPre
         cashExpenses={preview.report.cash_expenses}
         breakdown={preview.report.expense_breakdown}
       />
+      {/* The shift's own table lifecycle, from the same backend read the closing
+          result returns — so the figure the cashier confirms is the figure the
+          committed closing carries. */}
+      <TablesSection tables={preview.report.tables} />
       {/* Before a handover is entered there is nothing to compare, so only the
           expected figures are shown. */}
       <ExpectedCashSection cash={preview.report.cash} />

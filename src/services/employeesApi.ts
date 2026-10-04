@@ -230,6 +230,12 @@ export interface EmployeeFinancials {
   /** How many calendar months the salary was counted for. Never prorated by days. */
   months: number
   base_salary: number
+  /**
+   * Salary PAYMENTS recorded against this employee inside the range, read from
+   * the expense side. Reported beside the advances so "what was paid" and "what
+   * was taken back" are never confused. It is NOT an input to `net_salary`.
+   */
+  salary_paid: number
   /** Live (non-reversed) advances inside the range. */
   advances: number
   deductions: number

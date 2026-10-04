@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { MoneyDisplay } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import type { CashReconciliation, ExpenseBreakdownRow } from '@/services/shiftApi'
+import type { TableCounters } from '@/services/posApi'
 import { STATUS_LABEL, STATUS_TONE, statusMagnitude } from './reconciliationStatus'
 
 /**
@@ -178,7 +179,34 @@ export function ExpensesSection({
 }
 
 /**
- * 4. تسوية العهدة / التسليم — the drawer handover, ending on the verdict.
+ * 4. الطاولات — the SHIFT's own table lifecycle.
+ *
+ * Both figures are COUNTS of persisted `table_sessions` rows the shift owns,
+ * read by the backend through `shift_id` — never a tally this screen keeps, and
+ * never a count of the tables currently visible in the grid. That is what makes
+ * the block meaningful: it states what happened during THIS shift, so it resets
+ * by itself for the next one and reads the same after a restart.
+ *
+ * The empty-close figure carries the identical business rule the day's counter
+ * uses — a session that closed having never carried an order — so the two can
+ * never contradict each other about what an empty close is.
+ *
+ * `CountRow` is mandatory here, never `AmountRow`: these are integers, and the
+ * money row would render six closes as `0.06 ج.م`.
+ */
+export function TablesSection({ tables }: Readonly<{ readonly tables: TableCounters }>) {
+  const { t } = useTranslation()
+  return (
+    <Section title={t('shift.tablesSection')}>
+      <CountRow label={t('shift.tablesOpened')} value={tables.opens} />
+      <CountRow label={t('shift.tablesClosedEmpty')} value={tables.closed_empty} />
+      <p className="pb-1 text-caption text-foreground-subtle">{t('shift.tablesSectionHint')}</p>
+    </Section>
+  )
+}
+
+/**
+ * 5. تسوية العهدة / التسليم — the drawer handover, ending on the verdict.
  *
  * The status badge is the single most important figure on the document, so it
  * is rendered last, at the heaviest weight, with a semantic color.

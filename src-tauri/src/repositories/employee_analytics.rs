@@ -606,6 +606,38 @@ pub fn advances_total(
     )?)
 }
 
+/// Salary PAYMENTS made to one employee inside the window — the money the café
+/// actually PAID that person, as distinct from the advance they took back out of
+/// it.
+///
+/// This is the figure that makes a salary identifiable: it is read from the
+/// expense side, through `expenses.employee_id`, so it can only ever name an
+/// employee the manager selected when recording it. An advance is deliberately
+/// EXCLUDED, by the same join the advances total uses in reverse — `NOT EXISTS`
+/// on a claimed `expense_id` — so the two figures can never count one payment
+/// twice, and so an advance is never mistaken for salary.
+///
+/// It is a REPORTING total. It is deliberately not an input to the net-pay
+/// formula: what an employee takes home is `base_salary − advances − deductions`,
+/// a salary already paid must not be subtracted from it a second time.
+pub fn salary_paid_total(
+    conn: &Db,
+    employee_id: i64,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> AppResult<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(e.amount), 0)
+         FROM expenses e
+         WHERE e.employee_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM employee_advances a WHERE a.expense_id = e.id)
+           AND (?2 IS NULL OR e.expense_date >= ?2)
+           AND (?3 IS NULL OR e.expense_date <= ?3)",
+        params![employee_id, from, to],
+        |r| r.get(0),
+    )?)
+}
+
 /// Advance total for EXACTLY one calendar month, the shape the monthly payroll
 /// snapshot freezes.
 ///

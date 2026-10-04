@@ -234,6 +234,42 @@ pub fn day_lifecycle_counts(conn: &Db, business_day_id: Option<i64>) -> AppResul
         })
     })?)
 }
+
+/// The same lifecycle counters scoped to ONE SHIFT instead of the business day.
+///
+/// A shift is the till's own working period, so the same persisted
+/// `table_sessions` rows are read through `shift_id` — the column the session
+/// was already stamped with when it opened. Nothing new is stored and nothing
+/// new is counted:
+///
+///   * `opens`         — sessions opened during this shift;
+///   * `closed_empty`  — sessions that reached `CLOSED` with no order, the very
+///     same "opened, closed, never ordered" event the day counter reports.
+///
+/// Because the scope is the shift that owns the rows, a shift-scoped figure
+/// resets NATURALLY when the next shift opens (it owns no sessions yet), and it
+/// survives an application restart because it is a read of persisted rows rather
+/// than anything a caller accumulates.
+///
+/// This is a SCOPE of the one lifecycle definition, not a second definition of
+/// it: `closed_empty` carries the identical `status = 'CLOSED' AND order_id IS
+/// NULL` rule, so the shift figure and the day figure can never disagree about
+/// what an empty close is — only about which period they describe.
+pub fn shift_lifecycle_counts(conn: &Db, shift_id: i64) -> AppResult<TableCounters> {
+    Ok(conn.query_row(
+        "SELECT
+            (SELECT COUNT(*) FROM table_sessions os WHERE os.shift_id = ?1),
+            (SELECT COUNT(*) FROM table_sessions cs
+              WHERE cs.shift_id = ?1 AND cs.status = 'CLOSED' AND cs.order_id IS NULL)",
+        [shift_id],
+        |r| {
+            Ok(TableCounters {
+                opens: r.get(0)?,
+                closed_empty: r.get(1)?,
+            })
+        },
+    )?)
+}
 pub fn get_table(conn: &Db, id: i64) -> AppResult<Option<(i64, String)>> {
     let mut stmt =
         conn.prepare("SELECT id, label FROM cafe_tables WHERE id = ?1 AND is_active = 1")?;

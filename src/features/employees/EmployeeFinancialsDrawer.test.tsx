@@ -56,6 +56,7 @@ function detailsWith(financials: Partial<EmployeeDetails['financials']>): Employ
       to: '2026-10-31',
       months: 1,
       base_salary: 1_000_000,
+      salary_paid: 0,
       advances: 0,
       deductions: 0,
       net_salary: 1_000_000,

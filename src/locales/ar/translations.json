@@ -286,6 +286,10 @@
     "expenseSaved": "تم تسجيل المصروف",
     "paidFromCash": "تم الدفع من العهدة (نقدي)",
     "shiftExpenses": "مصروفات الوردية",
+    "tablesSection": "الطاولات خلال الوردية",
+    "tablesOpened": "طاولات تم فتحها",
+    "tablesClosedEmpty": "طاولات أُغلقت فارغة",
+    "tablesSectionHint": "أرقام خاصة بهذه الوردية فقط، وتُحتسب من سجلات الطاولات المحفوظة — وتبدأ من جديد مع الوردية التالية.",
     "handoverSection": "التسليم / الإقفال",
     "custodySection": "تسوية العهدة",
     "cashInflows": "إجمالي النقدية الداخلة",
@@ -935,8 +939,12 @@
       "none": "لا يوجد نشاط في هذه الفترة",
       "cafeOrders": "طلبات كافيه العملاء",
       "washOrders": "طلبات مغسلة العملاء",
-      "takeawayOrders": "طلبات تيك اواي",
-      "tableOrdersHint": "منها {{count}} طلب طاولة",
+      "orderKinds": {
+        "title": "طلبات التيك أواي",
+        "hint": "إجمالي الطلبات من النوعين: على الطاولة وخارج المحل",
+        "table": "طلبات الطاولة",
+        "external": "الطلبات الخارجية"
+      },
       "outstandingCredit": "إجمالي الأرصدة الآجلة",
       "creditHint": "الرصيد القائم على العملاء"
     },
@@ -1947,6 +1955,7 @@
       "salaryMonths": "عدد شهور الراتب المحتسبة: {{count}}",
       "totalAdvances": "إجمالي السلف",
       "totalDeductions": "إجمالي الخصومات",
+      "salaryPaid": "الرواتب المدفوعة للفترة",
       "noDeductions": "لا توجد خصومات مسجلة"
     },
     "confirm": {

@@ -1535,6 +1535,12 @@ pub struct EmployeeFinancials {
     pub advances: Money,
     /// Deductions inside the window.
     pub deductions: Money,
+    /// Salary PAYMENTS recorded against this employee inside the window.
+    ///
+    /// Reported beside the advances so a manager can tell the two money sides
+    /// apart at a glance: this is what was PAID, `advances` is what was taken
+    /// back. It is a reporting figure and is NOT an input to `net_salary`.
+    pub salary_paid: Money,
     /// The one shared net formula, applied to the period totals.
     pub net_salary: Money,
 }
@@ -1594,14 +1600,22 @@ pub fn financials(
     let months = months_in_window(employee, from, to);
     let advances = employee_analytics::advances_total(conn, employee.id, from, to)?;
     let deductions = employee_analytics::deductions_total(conn, employee.id, from, to)?;
+    // The salary payments are read from the EXPENSE side, through the employee the
+    // manager selected when recording each one. Advances are excluded there, so
+    // this never double-counts the figure above.
+    let salary_paid = employee_analytics::salary_paid_total(conn, employee.id, from, to)?;
     let base_salary = employee.base_salary.saturating_mul(months);
     Ok(EmployeeFinancials {
         from: from.map(str::to_string),
         to: to.map(str::to_string),
         months,
         base_salary,
+        salary_paid,
         advances,
         deductions,
+        // The formula is UNCHANGED and still the one shared with the payroll
+        // snapshot: a salary already paid is reported beside it, never subtracted
+        // by it.
         net_salary: compute_net(base_salary, advances, deductions),
     })
 }

@@ -153,6 +153,9 @@ const shiftReport = {
     { category: 'UTILITY', category_name: 'كهرباء ومياه', count: 2, amount: 5_000 },
     { category: 'SUPPLIES', category_name: 'مشتريات', count: 1, amount: 2_000 },
   ],
+  // The shift's OWN table lifecycle, as the backend reports it. Deliberately
+  // different from the day's figure, because the two describe different periods.
+  tables: { opens: 3, closed_empty: 2 },
   cash: cash(),
 }
 

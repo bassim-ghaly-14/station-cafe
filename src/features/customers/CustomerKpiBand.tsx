@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { Card, KpiGrid, MoneyDisplay, Skeleton } from '@/components/ui'
 import {
   Coffee,
+  ClipboardList,
   Droplets,
   HandCoins,
   Receipt,
@@ -84,6 +85,102 @@ function KpiTile({
 
 function Count({ value }: Readonly<{ readonly value: number }>) {
   return <span className="tabular-nums">{value}</span>
+}
+
+/** One labelled count inside the takeaway card's breakdown. */
+function KindBox({
+  icon: Icon,
+  label,
+  count,
+}: {
+  readonly icon: LucideIcon
+  readonly label: string
+  readonly count: number
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon size={14} aria-hidden className="shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate text-caption text-foreground-muted">{label}</span>
+      <span className="text-base font-bold text-foreground-strong tabular-nums">{count}</span>
+    </div>
+  )
+}
+
+/**
+ * The takeaway card: ONE total, split by the only two order kinds Station stores.
+ *
+ * # Why this card was reshaped
+ *
+ * It used to render the takeaway figure alone under the label "طلبات تيك اواي"
+ * with the hint "منها {{count}} طلب طاولة" — "of which N table orders". That hint
+ * asserts table orders are a SUBSET of takeaways, which is false: `order_type`
+ * is a two-valued enum (`TABLE` | `TAKEAWAY`, enforced by a CHECK constraint), so
+ * the two figures partition the period's invoices and neither contains the other.
+ * A reader was invited to subtract one from the other and get a wrong answer.
+ *
+ * # What the card now says
+ *
+ *     طلبات التيك أواي
+ *              TOTAL          ← table orders + external orders
+ *     ─────────────────────────────
+ *     طلبات الطاولةX
+ *     الطلبات الخارجية      Y
+ *
+ * The hero is the whole, and the two rows beneath it are exactly its parts, so the
+ * card states the relationship instead of implying one. Both figures are the
+ * backend's own — `customer_analytics::overview` already returns them as two
+ * disjoint aggregates over the same query — so this is presentation only: no
+ * classification is invented, and no order is counted twice or dropped.
+ *
+ * # Design
+ *
+ * It reuses the established hero + breakdown shape of
+ * `features/sales/SalesKpiBand`'s invoice-kind card — one `Card`, the same hero
+ * type scale, the same flat rows. No nested card is introduced, so the band keeps
+ * its one-row rhythm on a desktop and its one-tile-per-row phone rule.
+ */
+function CustomerOrderKindsCard({
+  overview,
+  className,
+}: {
+  readonly overview: CustomerOverview
+  readonly className?: string
+}) {
+  const { t } = useTranslation()
+  // The hero is the SUM of the two backend figures, which is also exactly the
+  // period's invoice count for these customers. Both parts are stated below it, so
+  // the reader can verify the total rather than trust it.
+  const total = overview.table_orders + overview.takeaway_orders
+  return (
+    <Card className={cn('flex flex-col gap-3 p-4', className)}>
+      <div className="flex flex-col gap-1">
+        <p className="flex items-center gap-2 text-caption">
+          <ShoppingBag size={15} aria-hidden className="text-primary" />
+          {t('customers.kpi.orderKinds.title')}
+        </p>
+        <p
+          className="text-3xl leading-tight font-extrabold text-foreground-strong tabular-nums"
+          data-testid="customers-order-kinds-hero"
+        >
+          {total}
+        </p>
+        <p className="text-caption text-foreground-subtle">{t('customers.kpi.orderKinds.hint')}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <KindBox
+          icon={ClipboardList}
+          label={t('customers.kpi.orderKinds.table')}
+          count={overview.table_orders}
+        />
+        <KindBox
+          icon={ShoppingBag}
+          label={t('customers.kpi.orderKinds.external')}
+          count={overview.takeaway_orders}
+        />
+      </div>
+    </Card>
+  )
 }
 
 export function CustomerKpiBand({
@@ -195,14 +292,47 @@ export function CustomerKpiBand({
       <KpiTile icon={Droplets} label={t('customers.kpi.washOrders')}>
         <Count value={overview.wash_orders} />
       </KpiTile>
-
-      <KpiTile
-        icon={ShoppingBag}
-        label={t('customers.kpi.takeawayOrders')}
-        hint={t('customers.kpi.tableOrdersHint', { count: overview.table_orders })}
-      >
-        <Count value={overview.takeaway_orders} />
-      </KpiTile>
     </KpiGrid>
+  )
+}
+
+/**
+ * The order-kind card, rendered as its own full-width row beneath the band.
+ *
+ * It carries a hero and a breakdown, so it does not belong in the one-row KPI
+ * grid: a tile with a sub-structure inside it would be the "excessive nested
+ * card" the design system avoids. Giving it its own row keeps its hierarchy
+ * intact and lets it span the width its two labelled rows need.
+ */
+export function CustomerOrderKinds({
+  overview,
+  loading,
+  className,
+}: {
+  readonly overview: CustomerOverview | null
+  readonly loading: boolean
+  readonly className?: string
+}) {
+  const { t } = useTranslation()
+
+  if (loading && !overview) {
+    return (
+      <Card
+        aria-busy="true"
+        aria-label={t('customers.kpi.loading')}
+        className={cn('flex flex-col gap-3 p-4', className)}
+      >
+        <Skeleton variant="text" className="h-3 w-32" accessibilityLabel="" />
+        <Skeleton variant="text" className="h-8 w-56" accessibilityLabel="" />
+      </Card>
+    )
+  }
+
+  if (!overview) return null
+
+  return (
+    <div className={cn('mt-3', className)} aria-busy={loading || undefined}>
+      <CustomerOrderKindsCard overview={overview} />
+    </div>
   )
 }

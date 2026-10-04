@@ -1338,6 +1338,7 @@ describe('shift lifecycle UI', () => {
     expenses: 0,
     cash_expenses: 0,
     expense_breakdown: [],
+    tables: { opens: 0, closed_empty: 0 },
     cash: {
       opening_cash: 1000,
       cash_inflows: 2000,
@@ -1759,6 +1760,7 @@ describe('day closing UI', () => {
     expenses: 0,
     cash_expenses: 0,
     expense_breakdown: [],
+    tables: { opens: 0, closed_empty: 0 },
     cash: {
       opening_cash: 1000,
       cash_inflows: 1000,
@@ -2038,6 +2040,7 @@ describe('closing card system', () => {
     expenses: 0,
     cash_expenses: 0,
     expense_breakdown: [],
+    tables: { opens: 0, closed_empty: 0 },
     cash: {
       opening_cash: 0,
       cash_inflows: 3000,
@@ -2081,6 +2084,7 @@ describe('closing card system', () => {
         expenses: 0,
         cash_expenses: 0,
         expense_breakdown: [],
+        tables: { opens: 0, closed_empty: 0 },
         cash: {
           opening_cash: 1000,
           cash_inflows: 2000,

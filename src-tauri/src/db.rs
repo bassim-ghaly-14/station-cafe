@@ -1785,6 +1785,61 @@ const MIGRATIONS: &[Migration] = &[
                 ON employee_deductions(employee_id, deduction_date);
         "#,
     },
+    Migration {
+        version: 35,
+        name: "salary expenses are employee-linked",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- "NEEDS AN EMPLOYEE" AND "IS AN ADVANCE" ARE TWO DIFFERENT FACTS
+            -- ============================================================
+            -- Until now `create_expense` wrote the `employee_advances` half for
+            -- EVERY employee-linked category, because those two things happened
+            -- to coincide: the advance was the only seeded employee-linked
+            -- category. Making SALARY employee-linked without this column would
+            -- silently fabricate an advance ledger row for every salary payment —
+            -- and advances are SUBTRACTED from net pay, so each payroll would be
+            -- charged twice.
+            --
+            -- Splitting them here keeps the data-driven design intact: the UI and
+            -- the service still recognise no category code, and a future
+            -- employee-linked category that is not an advance needs no code
+            -- change.
+            --
+            -- ORDER MATTERS. `records_advance` is seeded FIRST, from the
+            -- categories that ALREADY required an employee — today exactly the
+            -- advance — so the salary is not swept into it by the statement that
+            -- follows. Seeding it after would mark the salary as an advance and
+            -- reintroduce the very double-charge this column exists to prevent.
+            --
+            -- NOTHING EXISTING IS REWRITTEN. No expense row is re-dated,
+            -- re-priced, re-categorized, relinked or deleted. Existing SALARY
+            -- expenses keep `employee_id = NULL`: they predate the rule, they are
+            -- still fully readable, and inventing an employee for them would be a
+            -- fabrication. The rule applies to what is recorded from now on.
+            ALTER TABLE expense_categories
+                ADD COLUMN records_advance INTEGER NOT NULL DEFAULT 0
+                    CHECK (records_advance IN (0,1));
+
+            UPDATE expense_categories SET records_advance = 1
+                WHERE requires_employee = 1 AND records_advance = 0;
+
+            -- ============================================================
+            -- A SALARY PAYMENT IS MONEY PAID TO A NAMED PERSON
+            -- ============================================================
+            -- `requires_employee` already exists and already means "an expense in
+            -- this category must name the employee it is for". The seeded SALARY
+            -- category ('رواتب') was inserted before that column existed, so it
+            -- still carries the default 0 — which is why a salary could be booked
+            -- with nobody behind it while the identical ADVANCE flow could not.
+            -- Setting the flag is the whole fix: the service, both dialogs and the
+            -- shared selector are already driven by this column, so Salary now
+            -- follows exactly the path Advance always did, from POS and from the
+            -- Expenses page alike. It is deliberately NOT an advance, so
+            -- `records_advance` stays 0 for it.
+            UPDATE expense_categories SET requires_employee = 1 WHERE code = 'SALARY';
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

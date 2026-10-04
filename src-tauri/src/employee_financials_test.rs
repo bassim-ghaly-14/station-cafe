@@ -49,15 +49,31 @@ fn employee_of(conn: &Connection, user: &User) -> i64 {
     employees::find_by_user(conn, user.id).unwrap().unwrap().id
 }
 
-/// The seeded system category that requires an employee. Read from the category
-/// TABLE rather than hardcoded, so renaming the label cannot break the suite while
-/// the RULE (`requires_employee`) is still asserted.
+/// The seeded system category that records an ADVANCE ledger row.
+///
+/// Read from the category TABLE rather than hardcoded, so renaming the label
+/// cannot break the suite. It is selected by `records_advance` — NOT by
+/// `requires_employee`, because the salary is employee-linked too and would
+/// otherwise be mistaken for the advance.
 fn advance_category(conn: &Connection) -> String {
     expenses_repo::list_categories(conn, true)
         .unwrap()
         .into_iter()
-        .find(|c| c.requires_employee)
-        .expect("a seeded employee-linked category")
+        .find(|c| c.records_advance)
+        .expect("a seeded advance category")
+        .code
+}
+
+/// The seeded employee-linked category that is NOT an advance — the salary.
+///
+/// The counterpart of [`advance_category`], and the proof that "requires an
+/// employee" and "records an advance" are two independent facts.
+fn salary_category(conn: &Connection) -> String {
+    expenses_repo::list_categories(conn, true)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.requires_employee && !c.records_advance)
+        .expect("a seeded employee-linked category that is not an advance")
         .code
 }
 
@@ -183,6 +199,22 @@ fn legacy_advance(amount: i64, date: &str, reason: &str) -> AdvanceInput {
         advance_date: Some(date.into()),
         reason: reason.into(),
     }
+}
+
+/// Give an employee a real monthly base salary, so `compute_net` is exercised
+/// with figures that can actually go negative before the floor.
+///
+/// The seeded demo manager carries `base_salary = 0`, which would floor every net
+/// at zero and make the assertions vacuous. The salary used here is generous
+/// enough that an advance or a deduction still leaves a positive net, so a
+/// broken formula cannot hide behind the clamp.
+fn with_base_salary(conn: &Connection, _manager: &User, employee_id: i64, salary: i64) {
+    conn.execute(
+        "UPDATE employees SET base_salary = ?2, created_at = '2026-10-01 08:00:00Z' WHERE id = ?1",
+        rusqlite::params![employee_id, salary],
+    )
+    .unwrap();
+    set_created_at(conn, employee_id, "2026-10-01 08:00:00Z");
 }
 
 /// A cashier's shift, opened the way the POS opens one.
@@ -1063,22 +1095,40 @@ fn a_cashier_may_not_read_the_drawer_salary_block() {
 fn a_fresh_database_gets_the_advance_category_and_the_deduction_table() {
     let conn = fresh();
 
-    // The category exists, is a SYSTEM one, and is the only one requiring an
-    // employee today.
+    // The seeded employee-linked categories are the advance AND the salary: both
+    // are money paid to a named person, so both must name that person.
     let categories = expenses_repo::list_categories(&conn, true).unwrap();
     let linked: Vec<_> = categories.iter().filter(|c| c.requires_employee).collect();
     assert_eq!(
         linked.len(),
+        2,
+        "the advance and the salary are the seeded employee-linked categories"
+    );
+    for category in &linked {
+        assert!(
+            category.is_system,
+            "{} must not be an ADMIN-deletable category",
+            category.code
+        );
+        assert!(
+            !category.name_ar.trim().is_empty(),
+            "{} carries its Arabic label",
+            category.code
+        );
+    }
+
+    // Being employee-linked and BEING AN ADVANCE stay separate facts. Only the
+    // advance may write a ledger row that reduces monthly pay; a salary payment
+    // must not, or every payroll would be charged twice.
+    let advances: Vec<_> = categories.iter().filter(|c| c.records_advance).collect();
+    assert_eq!(
+        advances.len(),
         1,
-        "exactly one seeded employee-linked category"
+        "exactly one seeded category records an advance"
     );
     assert!(
-        linked[0].is_system,
-        "it must not be an ADMIN-deletable category"
-    );
-    assert!(
-        !linked[0].name_ar.trim().is_empty(),
-        "it carries its Arabic label"
+        advances[0].code == linked[0].code || advances[0].code == linked[1].code,
+        "the advance is one of the employee-linked categories, not a third thing"
     );
 
     // The deduction table is empty and available on a fresh install.
@@ -1518,5 +1568,425 @@ fn an_advance_and_a_deduction_agree_on_which_months_are_closed() {
         )
         .is_err(),
         "both sides of the same invariant must agree on a closed month"
+    );
+}
+
+// ===========================================================================
+// SALARY IS EMPLOYEE-LINKED — and is NOT an advance
+// ===========================================================================
+//
+// A salary payment is money paid TO a named person, exactly like an advance, so
+// it follows the same rule: name the employee or the record is refused. But it
+// is a DIFFERENT money side, so it must never write an advance ledger row —
+// advances are subtracted from monthly pay, and a salary is what is paid. These
+// tests pin both halves, plus the isolation between two employees and the fact
+// that an orphan salary is impossible at the service, not only in the UI.
+
+/// A salary recorded with no employee is refused, exactly like an advance.
+#[test]
+fn a_salary_without_an_employee_is_refused() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let category = salary_category(&conn);
+    let before_expenses = expense_count(&conn);
+    let before_advances = advance_count(&conn);
+
+    let missing = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 500_000, "2026-10-10", None),
+    )
+    .unwrap_err();
+    assert_eq!(
+        missing.to_string(),
+        "validation error: expenses.employee_required",
+        "a salary must name its employee, from either entry point"
+    );
+
+    // A stale selection — what a dropdown can still send — is refused as well.
+    for stale in [Some(0), Some(-3), Some(9_999_999)] {
+        assert!(ops_svc::create_expense(
+            &conn,
+            &manager,
+            &spend(&category, 500_000, "2026-10-10", stale)
+        )
+        .is_err());
+    }
+
+    // No orphan salary record can exist: not the expense, and not a ledger row.
+    assert_eq!(expense_count(&conn), before_expenses);
+    assert_eq!(advance_count(&conn), before_advances);
+}
+
+/// A salary WITH an employee persists exactly that employee.
+#[test]
+fn a_salary_persists_the_selected_employee() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let id = employee_of(&conn, &manager);
+    let category = salary_category(&conn);
+
+    let expense_id = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 500_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+
+    let stored = expenses_repo::list(&conn, None, None, false)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.id == expense_id)
+        .unwrap();
+    assert_eq!(stored.employee_id, Some(id), "the stable id, never a name");
+    assert_eq!(stored.amount, 500_000);
+    assert_eq!(stored.category, category);
+}
+
+/// The regression that matters most: a salary must NOT fabricate an advance.
+///
+/// If it did, `advances_total` would include the payment and `compute_net` would
+/// subtract it from that employee's monthly pay — charging the same salary twice.
+#[test]
+fn a_salary_never_records_an_advance() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let id = employee_of(&conn, &manager);
+    with_base_salary(&conn, &manager, id, 1_000_000);
+    let category = salary_category(&conn);
+
+    let expense_id = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 500_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+
+    // No ledger row at all, and nothing claiming the expense. The claim is read
+    // with a COUNT so an unmatched row is a truthful zero rather than an error.
+    assert_eq!(advance_count(&conn), 0, "a salary is not an advance");
+    let claimants: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM employee_advances WHERE expense_id = ?1",
+            [expense_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(claimants, 0, "the salary expense is claimed by no advance");
+
+    // The employee's monthly pay is untouched by the payment they received.
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.advances, 0, "net pay must not be charged for a salary");
+    assert_eq!(
+        figures.net_salary, figures.base_salary,
+        "a salary payment leaves the net formula exactly as it was"
+    );
+}
+/// An advance still behaves EXACTLY as before: both records, linked, subtracted.
+#[test]
+fn an_advance_is_unchanged_by_the_salary_rule() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let id = employee_of(&conn, &manager);
+    with_base_salary(&conn, &manager, id, 1_000_000);
+    let advance_code = advance_category(&conn);
+    let salary_code = salary_category(&conn);
+    assert_ne!(advance_code, salary_code, "two different categories");
+
+    let expense_id = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&advance_code, 200_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+
+    // Both halves exist and are linked 1:1, exactly as before.
+    assert_eq!(advance_count(&conn), 1);
+    let linked: Option<i64> = conn
+        .query_row("SELECT expense_id FROM employee_advances", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(linked, Some(expense_id));
+
+    // And it still reduces the monthly salary, while a salary does not.
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.advances, 200_000);
+    assert_eq!(figures.net_salary, figures.base_salary - 200_000);
+    assert_eq!(
+        figures.salary_paid, 0,
+        "an advance is never reported as a salary payment"
+    );
+}
+
+/// Two employees, two salaries, and neither figure ever crosses over.
+#[test]
+fn a_salary_for_one_employee_never_appears_under_another() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let cashier = open_cashier_shift(&conn);
+    let first = employee_of(&conn, &manager);
+    let second = employee_of(&conn, &cashier);
+    assert_ne!(first, second);
+    let category = salary_category(&conn);
+
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 700_000, "2026-10-10", Some(first)),
+    )
+    .unwrap();
+
+    let a = salary(&conn, first, "2026-10-01", "2026-10-31");
+    let b = salary(&conn, second, "2026-10-01", "2026-10-31");
+    assert_eq!(a.salary_paid, 700_000, "the payment is the first employee's");
+    assert_eq!(b.salary_paid, 0, "and never leaks onto the second employee");
+
+    // Two salaries for the same person in the window sum; a month without one
+    // is a truthful zero rather than a leftover.
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 300_000, "2026-10-20", Some(first)),
+    )
+    .unwrap();
+    assert_eq!(
+        salary(&conn, first, "2026-10-01", "2026-10-31").salary_paid,
+        1_000_000
+    );
+    assert_eq!(
+        salary(&conn, first, "2026-11-01", "2026-11-30").salary_paid,
+        0,
+        "a different month reports its own figure"
+    );
+}
+
+/// A salary, an advance and a deduction stay THREE separate figures, and the
+/// established money rules still hold around them.
+#[test]
+fn salary_advances_and_deductions_stay_three_separate_figures() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let id = employee_of(&conn, &manager);
+    with_base_salary(&conn, &manager, id, 1_000_000);
+    let advance_code = advance_category(&conn);
+    let salary_code = salary_category(&conn);
+
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&salary_code, 700_000, "2026-10-05", Some(id)),
+    )
+    .unwrap();
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&advance_code, 100_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+    emp::create_deduction(
+        &conn,
+        &manager,
+        id,
+        &emp::DeductionInput {
+            amount: 50_000,
+            deduction_date: Some("2026-10-15".into()),
+            reason: Some("تأخير".into()),
+        },
+    )
+    .unwrap();
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.salary_paid, 700_000, "what was PAID");
+    assert_eq!(figures.advances, 100_000, "what was taken back");
+    assert_eq!(figures.deductions, 50_000, "what was withheld");
+    // The net formula is untouched by the salary — still base − advances −
+    // deductions, the one shared with the monthly payroll snapshot.
+    assert_eq!(
+        figures.net_salary,
+        figures.base_salary - 100_000 - 50_000
+    );
+
+    // The salary and the advance are real expenses, inside the Expenses totals.
+    assert_eq!(expense_total(&conn, "2026-10-01", "2026-10-31"), 800_000);
+    // The deduction is NOT: it is withheld money, never a spend.
+    assert_ne!(
+        expense_total(&conn, "2026-10-01", "2026-10-31"),
+        850_000,
+        "a deduction must never enter the expense total"
+    );
+}
+
+/// An ordinary expense is untouched: it stores no employee even when one is sent,
+/// and it writes no ledger row.
+#[test]
+fn ordinary_expenses_are_unaffected_by_the_salary_rule() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let id = employee_of(&conn, &manager);
+    let plain = plain_category(&conn);
+
+    let expense_id = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&plain, 50_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+
+    let stored = expenses_repo::list(&conn, None, None, false)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.id == expense_id)
+        .unwrap();
+    assert_eq!(
+        stored.employee_id, None,
+        "the category decides, not the payload"
+    );
+    assert_eq!(advance_count(&conn), 0);
+    assert_eq!(
+        salary(&conn, id, "2026-10-01", "2026-10-31").salary_paid,
+        0,
+        "an ordinary expense is never a salary payment"
+    );
+}
+
+/// A cashier recording a salary from the POS produces exactly what a manager
+/// produces — the only difference is the existing role permission.
+#[test]
+fn a_cashier_may_record_a_salary_with_the_same_result_as_a_manager() {
+    let conn = fresh();
+    let manager = login(&conn, "manager");
+    let cashier = open_cashier_shift(&conn);
+    let category = salary_category(&conn);
+    let manager_employee = employee_of(&conn, &manager);
+    let cashier_employee = employee_of(&conn, &cashier);
+
+    let from_manager = ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&category, 700_000, "2026-10-10", Some(manager_employee)),
+    )
+    .unwrap();
+    let from_cashier = ops_svc::create_expense(
+        &conn,
+        &cashier,
+        &spend(&category, 300_000, "2026-10-10", Some(cashier_employee)),
+    )
+    .unwrap();
+
+    for (expense_id, employee_id) in [
+        (from_manager, manager_employee),
+        (from_cashier, cashier_employee),
+    ] {
+        let stored = expenses_repo::list(&conn, None, None, false)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == expense_id)
+            .unwrap();
+        assert_eq!(stored.employee_id, Some(employee_id));
+    }
+    // Neither produced an advance — the parity claim holds on that side too.
+    assert_eq!(advance_count(&conn), 0);
+}
+
+/// The upgrade from migration 34 to 35 adds the rule and the flag WITHOUT
+/// rewriting a single existing row.
+///
+/// The contract under test is that nothing existing is re-dated, re-priced,
+/// re-categorised, relinked or deleted — and specifically that a historical
+/// salary expense keeps `employee_id = NULL`. Inventing an employee for a row
+/// that predates the rule would be a fabrication, so it must NOT happen.
+#[test]
+fn the_upgrade_to_salary_linking_preserves_every_existing_row() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    // A database as an installation that shipped migration 34 would have left it.
+    crate::db::migrate_up_to(&conn, Some(34)).unwrap();
+
+    let user_id = crate::repositories::users::insert(
+        &conn,
+        &crate::repositories::users::NewUser {
+            name: "مدير",
+            phone: None,
+            role: "MANAGER",
+            password_hash: &auth::hash_password("6666").unwrap(),
+            is_seed: false,
+        },
+    )
+    .unwrap()
+    .unwrap();
+    let employee = employees::insert(
+        &conn,
+        &crate::repositories::employees::NewEmployee {
+            name: "مدير",
+            phone: None,
+            employee_type: "CASHIER",
+            base_salary: 1_000_000,
+            notes: None,
+            user_id: Some(user_id),
+        },
+    )
+    .unwrap();
+
+    // A pre-existing salary expense with nobody attached, and a historical
+    // advance that IS attached — written with the old schema's column list.
+    let salary_id: i64 = conn
+        .query_row(
+            "INSERT INTO expenses (category, amount, expense_date, user_id)
+             VALUES ('SALARY', 250_000, '2026-01-10', ?1) RETURNING id",
+            [user_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let advance_expense_id: i64 = conn
+        .query_row(
+            "INSERT INTO expenses (category, amount, expense_date, user_id, employee_id)
+             VALUES ('ADVANCE', 50_000, '2026-01-12', ?1, ?2) RETURNING id",
+            rusqlite::params![user_id, employee],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    // ---- upgrade ----
+    crate::db::migrate(&conn).unwrap();
+
+    // 1. Nothing existing was rewritten.
+    let (amount, date, employee_id): (i64, String, Option<i64>) = conn
+        .query_row(
+            "SELECT amount, expense_date, employee_id FROM expenses WHERE id = ?1",
+            [salary_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(amount, 250_000, "the amount is untouched");
+    assert_eq!(date, "2026-01-10", "the date is untouched");
+    assert_eq!(
+        employee_id, None,
+        "a salary that predates the rule keeps no employee — inventing one would \
+         be a fabrication, so the rule applies only to what is recorded now"
+    );
+    let still_linked: Option<i64> = conn
+        .query_row(
+            "SELECT employee_id FROM expenses WHERE id = ?1",
+            [advance_expense_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        still_linked,
+        Some(employee),
+        "the historical advance keeps its employee"
+    );
+
+    // 2. The new rule and the new flag are in place.
+    let categories = expenses_repo::list_categories(&conn, true).unwrap();
+    let salary = categories
+        .iter()
+        .find(|c| c.requires_employee && !c.records_advance)
+        .expect("the salary is now employee-linked and is not an advance");
+    assert!(!salary.name_ar.trim().is_empty(), "and still carries its label");
+    assert!(
+        categories.iter().filter(|c| c.records_advance).count() == 1,
+        "only the advance records a ledger row"
     );
 }

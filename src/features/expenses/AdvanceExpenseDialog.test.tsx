@@ -20,7 +20,10 @@ import '@/lib/i18n'
 
 /**
  * The backend's category table, as data. `requires_employee` is the ONLY thing
- * that separates the two rows, which is exactly the point under test.
+ * that decides whether the selector appears, which is exactly the point under
+ * test. `records_advance` is the separate fact the backend uses to decide
+ * whether a ledger row is written — the UI never branches on it, and neither
+ * does the salary row below.
  */
 const CATEGORIES: ExpenseCategory[] = [
   {
@@ -29,6 +32,7 @@ const CATEGORIES: ExpenseCategory[] = [
     is_system: true,
     is_active: true,
     requires_employee: false,
+    records_advance: false,
   },
   {
     code: 'ADVANCE',
@@ -36,6 +40,17 @@ const CATEGORIES: ExpenseCategory[] = [
     is_system: true,
     is_active: true,
     requires_employee: true,
+    records_advance: true,
+  },
+  {
+    // The salary is employee-linked EXACTLY like the advance, which is why the
+    // shared selector appears for it with no change to this component.
+    code: 'SALARY',
+    name_ar: 'رواتب',
+    is_system: true,
+    is_active: true,
+    requires_employee: true,
+    records_advance: false,
   },
 ]
 
@@ -138,7 +153,11 @@ function employeeField() {
   return screen.queryByRole('textbox', { name: 'ابحث بالاسم أو التليفون' })
 }
 
-function chooseCategory(code: 'SUPPLIES' | 'ADVANCE') {
+/** Any code the `CATEGORIES` fixture offers — never a hardcoded union, so a new
+ *  employee-linked category needs no change to the helpers below. */
+type CategoryCode = (typeof CATEGORIES)[number]['code']
+
+function chooseCategory(code: CategoryCode) {
   fireEvent.change(screen.getByRole('combobox'), { target: { value: code } })
 }
 
@@ -264,6 +283,50 @@ describe('Manager expense dialog — an employee-linked category', () => {
   })
 })
 
+/**
+ * SALARY behaves exactly like ADVANCE from the manager's Expenses page.
+ *
+ * The requirement is data, not code: the salary category now carries
+ * `requires_employee`, so the SHARED selector appears for it with no change to
+ * the component. These tests exist to prove that — if the flag were ever dropped
+ * again, the salary would silently become bookable with nobody behind it.
+ */
+describe('Manager expense dialog — a salary is employee-linked like an advance', () => {
+  it('shows the same required employee field for the salary category', async () => {
+    await openManagerDialog()
+    chooseCategory('SALARY')
+    await waitFor(() => expect(employeeField()).toBeInTheDocument())
+    expect(screen.getByText('الموظف *')).toBeInTheDocument()
+  })
+
+  it('refuses to submit a salary with no employee chosen', async () => {
+    await openManagerDialog()
+    chooseCategory('SALARY')
+    await waitFor(() => expect(employeeField()).toBeInTheDocument())
+    typeAmount('500')
+    clickSave()
+    await waitFor(() =>
+      expect(screen.getByText('يجب اختيار الموظف لهذه الفئة')).toBeInTheDocument(),
+    )
+    expect(mocks.createExpense).not.toHaveBeenCalled()
+  })
+
+  it('sends the chosen employee id — never a name — with the salary', async () => {
+    await openManagerDialog()
+    chooseCategory('SALARY')
+    await waitFor(() => expect(employeeField()).toBeInTheDocument())
+    typeAmount('500')
+    fireEvent.click(await screen.findByRole('button', { name: /أحمد سيد/ }))
+    clickSave()
+    await waitFor(() => expect(mocks.createExpense).toHaveBeenCalledTimes(1))
+    expect(mocks.createExpense.mock.calls[0][0]).toMatchObject({
+      category: 'SALARY',
+      amount: 50_000,
+      employee_id: 7,
+    })
+  })
+})
+
 describe('Cashier shift expense dialog — the same rule', () => {
   it('shows no employee field for a normal category', async () => {
     await openCashierDialog()
@@ -306,5 +369,39 @@ describe('Cashier shift expense dialog — the same rule', () => {
     await waitFor(() => expect(mocks.createExpense).toHaveBeenCalledTimes(1))
     expect(mocks.createExpense.mock.calls[0][0]).toMatchObject({ employee_id: null })
     await waitFor(() => expect(onCreated).toHaveBeenCalled())
+  })
+})
+
+/**
+ * A salary recorded from POS → Shift Closing is employee-linked exactly like an
+ * advance, and produces the same domain payload. This is the POS half of the
+ * requirement; the manager's Expenses page is covered in its own block above.
+ */
+describe('Cashier shift expense dialog — a salary is employee-linked too', () => {
+  it('requires an employee for the salary category, exactly like the advance', async () => {
+    await openCashierDialog()
+    chooseCategory('SALARY')
+    await waitFor(() => expect(employeeField()).toBeInTheDocument())
+    typeAmount('500')
+    clickSave()
+    await waitFor(() =>
+      expect(screen.getByText('يجب اختيار الموظف لهذه الفئة')).toBeInTheDocument(),
+    )
+    expect(mocks.createExpense).not.toHaveBeenCalled()
+  })
+
+  it('produces the same domain payload the manager form produces', async () => {
+    await openCashierDialog()
+    chooseCategory('SALARY')
+    await waitFor(() => expect(employeeField()).toBeInTheDocument())
+    typeAmount('500')
+    fireEvent.click(await screen.findByRole('button', { name: /أحمد سيد/ }))
+    clickSave()
+    await waitFor(() => expect(mocks.createExpense).toHaveBeenCalledTimes(1))
+    expect(mocks.createExpense.mock.calls[0][0]).toMatchObject({
+      category: 'SALARY',
+      amount: 50_000,
+      employee_id: 7,
+    })
   })
 })

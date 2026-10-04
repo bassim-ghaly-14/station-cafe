@@ -1,5 +1,5 @@
 /** Typed wrappers over the shift / business-day command surface. */
-import type { DayTotals } from './posApi'
+import type { DayTotals, TableCounters } from './posApi'
 import { call } from './ipc'
 
 export interface ShiftRow {
@@ -78,6 +78,12 @@ export interface ShiftReconciliation {
   cash_expenses: number
   expense_breakdown: ExpenseBreakdownRow[]
   cash: CashReconciliation
+  /**
+   * The shift's own table lifecycle. It is the SAME persisted `table_sessions`
+   * truth the day counter reads, scoped to this shift through `shift_id`, so it
+   * cannot drift from it and needs no snapshot copy of its own.
+   */
+  tables: TableCounters
 }
 
 export interface DayReconciliation {
@@ -138,6 +144,12 @@ export interface ShiftClosing {
   expected_cash: number
   difference: number
   report: ShiftReconciliation
+  /**
+   * The shift's own table lifecycle, from the persisted `table_sessions` rows
+   * the shift owns. It resets for the next shift on its own and is never a
+   * frontend tally.
+   */
+  tables: TableCounters
 }
 
 export interface ShiftClosingPreview {
@@ -150,6 +162,9 @@ export interface ShiftClosingPreview {
   cash_expenses: number
   expenses: number
   expected_cash: number
+  /** The table lifecycle this closing would report, from the same read the
+   *  committed closing returns. */
+  tables: TableCounters
   report: ShiftReconciliation
 }
 

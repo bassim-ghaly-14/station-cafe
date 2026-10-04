@@ -124,6 +124,13 @@ pub struct ShiftReconciliation {
     pub expenses: i64,
     pub cash_expenses: i64,
     pub expense_breakdown: Vec<BreakdownRow>,
+    /// The shift's own table lifecycle: sessions opened during it, and the ones
+    /// closed without an order.
+    ///
+    /// It is a read of the persisted `table_sessions` rows through their
+    /// `shift_id`, so it is reproducible for a shift that has already closed and
+    /// needs no column of its own on `shifts`.
+    pub tables: crate::repositories::pos::TableCounters,
     pub cash: CashReconciliation,
 }
 
@@ -159,6 +166,11 @@ pub fn shift_report(conn: &Db, shift_id: i64) -> AppResult<ShiftReconciliation> 
             wash_invoices: shift.wash_invoices,
             hybrid_invoices: shift.hybrid_invoices,
         },
+        // The table lifecycle is read for BOTH shift states from the same
+        // persisted rows: those rows are immutable once a session closes, so an
+        // ACTIVE shift's live read and a CLOSED shift's replay return the same
+        // numbers. There is deliberately no second, snapshot copy of them.
+        tables: crate::repositories::pos::shift_lifecycle_counts(conn, shift_id)?,
         invoices_count: shift.invoices_count,
         cafe_sales: shift.cafe_sales,
         wash_sales: shift.wash_sales,

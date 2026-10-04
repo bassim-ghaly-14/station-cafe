@@ -306,6 +306,13 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
     } else {
         None
     };
+    // Being employee-linked and BEING AN ADVANCE are separate facts, read
+    // separately from the same category row. A salary payment names its employee
+    // but records no advance: an advance is money that comes back OUT of a
+    // month's pay, and a salary is what is paid. Reading the second flag from the
+    // first would fabricate a ledger row per salary and subtract every payroll
+    // twice — so neither flag is ever inferred from the other.
+    let records_advance = expenses::category_records_advance(&tx, &input.category)?;
     let date = resolve_expense_date(&tx, actor, input, is_manager)?;
     let recurrence = if input.is_recurring {
         input.recurrence.as_deref()
@@ -330,7 +337,17 @@ pub fn create_expense(conn: &Db, actor: &User, input: &NewExpense) -> AppResult<
     // above. SQLite has no nested transaction, so the caller owns the boundary and
     // both rows commit or neither does: an advance can never exist without its
     // expense, and an advance expense can never exist without its ledger row.
-    if let Some(employee_id) = employee_id {
+    //
+    // It is gated on `records_advance`, NOT on the presence of an employee, which
+    // is what keeps an employee-linked SALARY from fabricating a ledger row.
+    if records_advance {
+        let Some(employee_id) = employee_id else {
+            // Unreachable through the flags above: a category that records an
+            // advance necessarily requires an employee. Asserted rather than
+            // unwrapped so a future flag combination fails loudly here instead of
+            // writing an advance with nobody attached to it.
+            return Err(AppError::internal("expenses.advance_without_employee"));
+        };
         let advance = crate::services::employees::AdvanceInput {
             amount: input.amount,
             advance_date: Some(date.expense_date.clone()),
