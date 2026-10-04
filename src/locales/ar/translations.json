@@ -590,6 +590,46 @@
       "emptyScope": "الفترة المختارة",
       "monthlySectionTitle": "المبيعات والمصروفات الشهرية",
       "monthlySectionDescription": "مقارنة شهرية بين إيرادات الكافيه والمغسلة ومصروفات التشغيل. عدد الشهور يُحدَّد من إعدادات، ولا تتأثر هذه الرسوم بالفترة المختارة في تبويب الرسوم البيانية."
+    },
+    "monthly": {
+      "tab": "التقارير الشهرية",
+      "description": "ملخص تنفيذي واحد لكل شهر: أداء الكافيه والمغسلة مقابل أهدافهما، وأرقام المال، وحركته عن الشهر السابق.",
+      "brand": "Station Cafe",
+      "subtitle": "ملخص الشهر — {{month}}",
+      "generated": "تقرير إداري",
+      "selectMonth": "اختر الشهر",
+      "currentMonth": "الشهر الحالي",
+      "previousMonth": "الشهر السابق",
+      "nextMonth": "الشهر التالي",
+      "print": "تصدير PDF",
+      "printError": "تعذر فتح نافذة الطباعة",
+      "loading": "جارٍ تحميل ملخص الشهر",
+      "empty": "لا يوجد ملخص متاح لهذا الشهر",
+      "performance": "الأداء مقابل الهدف",
+      "money": "المال",
+      "movement": "الحركة",
+      "keyNotes": "أهم الملاحظات",
+      "actual": "المحقق",
+      "target": "الهدف",
+      "achievement": "نسبة التحقق",
+      "revenue": "الإيرادات",
+      "expenses": "المصروفات",
+      "net": "الصافي",
+      "vsPrevious": "مقارنة بـ {{month}}",
+      "percentValue": "{{value}}%",
+      "notes": {
+        "cafeTarget": "الكافيه حقق {{percent}}% من هدفه الشهري.",
+        "washTarget": "المغسلة حققت {{percent}}% من هدفها الشهري.",
+        "revenueMovement": "الإيرادات {{direction}} {{percent}}% عن الشهر السابق.",
+        "expensesMovement": "المصروفات {{direction}} {{percent}}% عن الشهر السابق.",
+        "netMovement": "الصافي {{direction}} {{percent}}% عن الشهر السابق."
+      },
+      "trend": {
+        "up": "ارتفاع",
+        "down": "انخفاض",
+        "flat": "ثبات",
+        "unavailable": "—"
+      }
     }
   },
   "audit": {

@@ -355,3 +355,137 @@ select:focus-visible {
     opacity: 0.85;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * PRINTING THE MONTHLY EXECUTIVE REPORT
+ *
+ * The report is a ONE-PAGE A4 document produced by the WebView's own print
+ * pipeline (`window.print()`) — the same renderer that draws the bundled Cairo
+ * Arabic font and the RTL layout on screen, which is why no PDF library is
+ * needed. `@page { size: A4 }` is what makes the output an A4 sheet rather than
+ * whatever paper the printer defaults to.
+ *
+ * The application prints `body.printing-monthly`, a class the panel adds for the
+ * duration of the print job. Three rules then do the work:
+ *
+ *  - everything is hidden by `visibility`, and the report alone is made visible
+ *    again. Unlike `display: none` this keeps the sheet's own layout intact;
+ *  - the sheet is pinned to the top of the page and centred horizontally within
+ *    the printable width, so a report scrolled far down the screen still prints
+ *    on page one — with equal margins on both sides — instead of after a
+ *    screenful of blank paper;
+ *  - its height is capped at the A4 printable box with `overflow: hidden`, which
+ *    is what guarantees there is never a second, near-empty page.
+ */
+@page {
+  size: A4 portrait;
+  margin: 14mm;
+}
+
+/*
+ * A4 GEOMETRY — declared once, and every print rule reads these.
+ *
+ * A4 portrait is 210 × 297 mm, and `@page { margin: 14mm }` above takes 14 mm off
+ * each edge, so the printable content box is 182 × 269 mm. The sheet is sized
+ * from THAT number rather than from a second hand-written `182mm`, so the page
+ * margin and the sheet can never drift apart.
+ *
+ * `calc()` is used instead of a literal because the derivation is the fact: a
+ * full A4 width less one margin at each edge.
+ */
+body.printing-monthly {
+  --report-margin: 14mm;
+  --report-content-width: calc(210mm - (2 * var(--report-margin)));
+  --report-content-height: calc(297mm - (2 * var(--report-margin)));
+}
+
+@media print {
+  /*
+   * The white ground has to be PAINTED, not merely declared: browsers drop
+   * backgrounds from a printed page unless asked to keep them. Without this the
+   * sheet's own white would silently disappear and the application's own
+   * background — dark, in dark mode — would show through the paper.
+   */
+  body.printing-monthly,
+  body.printing-monthly * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.printing-monthly * {
+    visibility: hidden !important;
+  }
+
+  body.printing-monthly .print-page,
+  body.printing-monthly .print-page * {
+    visibility: visible !important;
+  }
+
+  /*
+   * WHY PHYSICAL INSETS AND NOT `inset-inline-start`.
+   *
+   * The sheet used to be pinned with `inset-inline-start: 0`, which in this RTL
+   * document resolves to `right: 0` — against the PAGE edge, not the printable
+   * content edge. The box therefore sat one margin too far to the right and its
+   * leading side fell into the unprintable margin. `inset-inline: 0` is a
+   * physical left AND right of zero, so the box is placed identically whichever
+   * direction the document runs in, `max-width` caps it at the true content
+   * width, and `margin-inline: auto` centres the remainder — which is what makes
+   * the left and right margins equal by construction rather than by arithmetic.
+   */
+  body.printing-monthly .print-page {
+    position: fixed;
+    inset-block-start: 0;
+    inset-inline: 0;
+    width: auto;
+    max-width: var(--report-content-width);
+    margin-inline: auto;
+    max-height: var(--report-content-height);
+    overflow: hidden;
+    margin-block: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  /* A section may not straddle a page boundary. */
+  body.printing-monthly .print-page section,
+  body.printing-monthly .print-page header {
+    break-inside: avoid;
+  }
+
+  /*
+   * PAPER IS PAPER.
+   *
+   * The sheet on screen is a themed surface, so its ink comes from the active
+   * theme's tokens — correct in light, correct in dark. On paper there is no
+   * theme: the ground is white, so every ink has to be re-bound to the black
+   * end of the same tokens. Without this, a manager printing from dark mode
+   * gets a white page with pale text on it, because `--foreground-strong` is a
+   * LIGHT colour there and every shared type utility reads it.
+   *
+   * They are re-declared on the sheet itself rather than on `:root` so that
+   * nothing outside the printed page is affected, and so the application comes
+   * back exactly as it was the moment the class is removed.
+   */
+  body.printing-monthly .print-page {
+    --foreground: #000000;
+    --foreground-strong: #000000;
+    --foreground-muted: #1a1a1a;
+    --foreground-subtle: #3d3d3d;
+    --foreground-faint: #3d3d3d;
+    --border: #00000026;
+    --border-subtle: #0000001a;
+    --surface-card: #ffffff;
+    --surface-muted: #00000014;
+    --primary: #000000b3;
+    /* The brand fallback mark behind the logo is painted with these two, and
+       `--accent` is a DARK brown in dark mode, so it is re-bound here as well. */
+    --accent: #f3ead9;
+    /* An explicit white GROUND, not only an explicit white surface token: the
+       paper itself must be opaque white even where no element paints it, or the
+       application's dark page background shows through the sheet. */
+    background: #ffffff;
+    color: #000000;
+  }
+}

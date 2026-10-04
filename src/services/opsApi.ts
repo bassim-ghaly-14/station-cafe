@@ -114,6 +114,58 @@ export interface ExpenseMonthlyWindow {
   report: ExpenseMonthlyReport
 }
 
+/**
+ * One department's month, as the backend resolved it.
+ *
+ * `target_minor` is the month's EFFECTIVE target — a per-month override is
+ * already applied by the one resolver, so the UI never re-resolves it. There is
+ * deliberately no combined/global target anywhere in this payload: Cafe and Wash
+ * are independent targets and must never be summed or averaged.
+ */
+export interface MonthlyPerformance {
+  /** Revenue the department earned in the month (piastres). */
+  actual_minor: number
+  /** The month's effective target (piastres). */
+  target_minor: number
+  /** Whether this month overrides the cafe-wide default. */
+  overridden: boolean
+  /**
+   * Two-decimal percentage string, or `null` when there is NO target. `null` is
+   * the established "no target" answer everywhere in Station — never `0`, which
+   * would claim nothing was achieved when nothing was measured.
+   */
+  achievement_percent: string | null
+}
+
+/** One month's money. `net_minor` is `revenue_minor - expenses_minor`. */
+export interface MonthlyMoney {
+  revenue_minor: number
+  expenses_minor: number
+  net_minor: number
+}
+
+/**
+ * The one-page executive summary of a single business month.
+ *
+ * Every figure is already calculated by the backend from the existing monthly
+ * aggregation, the existing expense period total and the existing target
+ * resolver. This payload carries nothing else — no chart series, no category
+ * ranking, no payment split — because those already exist elsewhere and a
+ * second copy of them would only be free to disagree.
+ */
+export interface MonthlyExecutiveReport {
+  /** `YYYY-MM`. */
+  month: string
+  from: string
+  to: string
+  /** The month immediately before `month`. */
+  previous_month: string
+  cafe: MonthlyPerformance
+  wash: MonthlyPerformance
+  money: MonthlyMoney
+  previous: MonthlyMoney
+}
+
 /** One category's share of the period's spend. */
 export interface ExpenseCategoryTotal {
   category: string
@@ -307,6 +359,16 @@ export const opsApi = {
     }),
   analyticsCharts: (from?: string, to?: string) =>
     call<AnalyticsCharts>('analytics_charts', { from: from ?? null, to: to ?? null }),
+  /**
+   * The executive summary of ONE business month.
+   *
+   * `month` is optional and absent means "the current business month", decided by
+   * the backend clock. There is deliberately no `from`/`to` pair: a monthly target
+   * is a statement about a calendar month, so this read cannot be narrowed to an
+   * arbitrary range the way the analytics charts can.
+   */
+  monthlyExecutive: (month?: string) =>
+    call<MonthlyExecutiveReport>('monthly_executive_report', { month: month ?? null }),
 
   closedBusinessDays: (from?: string, to?: string) =>
     call<ClosedBusinessDay[]>('list_closed_business_days', { from: from ?? null, to: to ?? null }),

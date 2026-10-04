@@ -34,12 +34,13 @@ import { AnalyticsDonutChart } from './charts/AnalyticsDonutChart'
 import { ChartEmptyReasons, ChartEmptyState } from './charts/ChartEmptyState'
 import { MonthlyComparisonSection } from './charts/MonthlyComparisonSection'
 import { OperationHistoryPanel } from './audit/OperationHistoryPanel'
+import { MonthlyReportsPanel } from './monthly/MonthlyReportsPanel'
 import { ProgressBar } from '@/components/ui/progress-bar'
 import { PrintPreviewDialog, type PrintPreviewTarget } from '@/features/pos/PrintPreviewDialog'
 import { PrintStatusPanel } from '@/features/printing/PrintStatusPanel'
 import type { ShiftRow } from '@/services/shiftApi'
 
-type Tab = 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts'
+type Tab = 'audit' | 'print' | 'shiftClosings' | 'dayClosings' | 'charts' | 'monthly'
 const RANGE_KEY = 'station.reports.dateRange'
 
 function initialRange(): { from: string; to: string } {
@@ -76,6 +77,7 @@ export default function ReportsPage() {
     { id: 'shiftClosings', label: t('reports.shiftClosings') },
     { id: 'dayClosings', label: t('reports.dayClosings') },
     { id: 'charts', label: t('reports.charts.title') },
+    { id: 'monthly', label: t('reports.monthly.tab') },
   ]
 
   return (
@@ -146,6 +148,12 @@ export default function ReportsPage() {
       {tab === 'charts' ? (
         <ChartsReport from={from} to={to} setFrom={setFrom} setTo={setTo} />
       ) : null}
+      {/*
+        The monthly executive summary. It is a ONE-PAGE document, not a set of
+        analytics: the detailed charts, closings and audit trail above already own
+        every operational figure, so this tab adds a summary and nothing else.
+      */}
+      {tab === 'monthly' ? <MonthlyReportsPanel /> : null}
     </div>
   )
 }
