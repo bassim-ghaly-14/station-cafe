@@ -8,7 +8,7 @@
  *
  * The two axes Station actually stores are kept visibly separate so a hybrid
  * order is never read twice: department (كافيه / مغسلة) comes from the invoice
- * snapshot totals, while order type (طاولات / تيك اواي) comes from the
+ * snapshot totals, while order type (طاولات / طلب خارجي) comes from the
  * invoice's own `order_type`.
  *
  * Layout
@@ -20,10 +20,16 @@
  * illegibility, and no sixth tile is invented to fill a row.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, KpiGrid, MoneyDisplay, Skeleton } from '@/components/ui'
+import {
+  Card,
+  KpiBreakdown,
+  KpiBreakdownEntry,
+  KpiGrid,
+  MoneyDisplay,
+  Skeleton,
+} from '@/components/ui'
 import {
   Coffee,
-  ClipboardList,
   Droplets,
   HandCoins,
   Receipt,
@@ -87,31 +93,12 @@ function Count({ value }: Readonly<{ readonly value: number }>) {
   return <span className="tabular-nums">{value}</span>
 }
 
-/** One labelled count inside the takeaway card's breakdown. */
-function KindBox({
-  icon: Icon,
-  label,
-  count,
-}: {
-  readonly icon: LucideIcon
-  readonly label: string
-  readonly count: number
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Icon size={14} aria-hidden className="shrink-0 text-primary" />
-      <span className="min-w-0 flex-1 truncate text-caption text-foreground-muted">{label}</span>
-      <span className="text-base font-bold text-foreground-strong tabular-nums">{count}</span>
-    </div>
-  )
-}
-
 /**
  * The takeaway card: ONE total, split by the only two order kinds Station stores.
  *
  * # Why this card was reshaped
  *
- * It used to render the takeaway figure alone under the label "طلبات تيك اواي"
+ * It used to render the takeaway figure alone under the label "طلبات طلب خارجي"
  * with the hint "منها {{count}} طلب طاولة" — "of which N table orders". That hint
  * asserts table orders are a SUBSET of takeaways, which is false: `order_type`
  * is a two-valued enum (`TABLE` | `TAKEAWAY`, enforced by a CHECK constraint), so
@@ -120,11 +107,11 @@ function KindBox({
  *
  * # What the card now says
  *
- *     طلبات التيك أواي
+ *     إجمالي الطلبات
  *              TOTAL          ← table orders + external orders
  *     ─────────────────────────────
- *     طلبات الطاولةX
- *     الطلبات الخارجية      Y
+ *         طلبات الطاولة  X
+ *       الطلبات الخارجية  Y
  *
  * The hero is the whole, and the two rows beneath it are exactly its parts, so the
  * card states the relationship instead of implying one. Both figures are the
@@ -134,10 +121,18 @@ function KindBox({
  *
  * # Design
  *
- * It reuses the established hero + breakdown shape of
- * `features/sales/SalesKpiBand`'s invoice-kind card — one `Card`, the same hero
- * type scale, the same flat rows. No nested card is introduced, so the band keeps
- * its one-row rhythm on a desktop and its one-tile-per-row phone rule.
+ * It is the SAME shape as the employees headcount tile — "إجمالي الطلبات" with
+ * its total, then the two categories that make that total up beneath a hairline
+ * (`2 — الكاشير` / `0 — عمال المغسلة`). That tile established the visual
+ * language for "one hero number with two supporting halves", so this card
+ * reuses the shared `KpiBreakdown` rather than inventing a third arrangement:
+ * hero above, figure-above-label breakdown below, identical spacing and
+ * containment.
+ *
+ * The hero sits at `1.75rem` against the breakdown's `1.125rem` — a clear
+ * primary/supporting relationship without enlarging the card. No nested card is
+ * introduced, so the band keeps its one-row rhythm on a desktop and its
+ * one-tile-per-row phone rule.
  */
 function CustomerOrderKindsCard({
   overview,
@@ -159,7 +154,7 @@ function CustomerOrderKindsCard({
           {t('customers.kpi.orderKinds.title')}
         </p>
         <p
-          className="text-3xl leading-tight font-extrabold text-foreground-strong tabular-nums"
+          className="text-[1.75rem] leading-tight font-extrabold text-foreground-strong tabular-nums"
           data-testid="customers-order-kinds-hero"
         >
           {total}
@@ -167,17 +162,22 @@ function CustomerOrderKindsCard({
         <p className="text-caption text-foreground-subtle">{t('customers.kpi.orderKinds.hint')}</p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <KindBox
-          icon={ClipboardList}
-          label={t('customers.kpi.orderKinds.table')}
-          count={overview.table_orders}
-        />
-        <KindBox
-          icon={ShoppingBag}
-          label={t('customers.kpi.orderKinds.external')}
-          count={overview.takeaway_orders}
-        />
+      {/* The two categories are the WHOLE, split — the same hero-then-breakdown
+          structure the employees headcount tile uses, and the same shared
+          primitive, so the two cards read as one family. `mt-auto` pins the
+          breakdown to the bottom of the card and the hairline separates "the
+          total" from "its parts" rather than running them together. */}
+      <div className="mt-auto border-t border-border-subtle pt-3">
+        <KpiBreakdown>
+          <KpiBreakdownEntry
+            label={t('customers.kpi.orderKinds.table')}
+            value={overview.table_orders}
+          />
+          <KpiBreakdownEntry
+            label={t('customers.kpi.orderKinds.external')}
+            value={overview.takeaway_orders}
+          />
+        </KpiBreakdown>
       </div>
     </Card>
   )

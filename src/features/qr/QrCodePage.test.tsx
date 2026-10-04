@@ -88,6 +88,10 @@ describe('QrCodePage', () => {
     vi.mocked(localAccessApi.load).mockReset()
     vi.mocked(localAccessApi.getConfig).mockReset()
     vi.mocked(localAccessApi.save).mockReset()
+    // The suite default is the desktop shell. The two browser cases below delete
+    // the marker to model the QR-scanned phone, so it is restored here rather
+    // than left deleted for whichever test happens to run after them.
+    window.__TAURI_INTERNALS__ = {}
   })
 
   it('reads the code from the existing local-access command', async () => {
@@ -176,6 +180,40 @@ describe('QrCodePage', () => {
     })
     vi.mocked(localAccessApi.load).mockResolvedValue(running)
     renderPage()
+    fireEvent.click(await screen.findByTestId('qr-code-copy'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(running.url))
+  })
+
+  it('offers no copy action to the phone that arrived through the QR', async () => {
+    // The LAN listener serves PLAIN `http://`, so `navigator.clipboard` is not
+    // exposed in that origin at all — the button could only ever throw, and its
+    // catch would turn that into a generic error toast. A control that looks
+    // functional and can never succeed is worse than no control, so it is not
+    // rendered here. The URL beneath the code stays visible either way.
+    delete window.__TAURI_INTERNALS__
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    renderPage()
+
+    await screen.findByTestId('qr-code-image')
+    expect(screen.queryByTestId('qr-code-copy')).not.toBeInTheDocument()
+    // Nothing is hidden from this user: the address they are already on is
+    // still on the page.
+    expect(screen.getByTestId('qr-code-url')).toHaveTextContent(running.url)
+  })
+
+  it('still offers copying to a browser that genuinely has the clipboard', async () => {
+    // Gating on the desktop shell alone would take a working feature away from
+    // any browser that does support it, so the capability is what decides.
+    delete window.__TAURI_INTERNALS__
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    vi.mocked(localAccessApi.load).mockResolvedValue(running)
+    renderPage()
+
     fireEvent.click(await screen.findByTestId('qr-code-copy'))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(running.url))
   })

@@ -254,7 +254,7 @@ export function CustomerStatsSection({ details }: { readonly details: CustomerDe
  * The two axes the period splits across, kept deliberately SEPARATE.
  *
  *   Axis 1 — business (كافيه / مغسلة), from the invoice snapshot totals.
- *   Axis 2 — order type (طاولة / تيك اواي), from the invoice's own
+ *   Axis 2 — order type (طاولة / طلب خارجي), from the invoice's own
  *            `order_type`.
  *
  * Each has its own hint, so nobody reads a hybrid order as two orders or adds

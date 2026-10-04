@@ -36,7 +36,7 @@ export {
 } from './input'
 export { iconSize, type LucideIcon } from './icon'
 export { Card, CardHeader } from './card'
-export { KpiGrid, KpiTile, type KpiGridProps } from './kpi'
+export { KpiGrid, KpiTile, KpiBreakdown, KpiBreakdownEntry, type KpiGridProps } from './kpi'
 export { Badge, type BadgeProps } from './badge'
 export { Loader, type LoaderProps } from './loader'
 export { Skeleton, type SkeletonProps } from './skeleton'

@@ -41,6 +41,7 @@ import { QrCode as QrCodeIcon } from '@/components/ui/icon'
 import { ErrorState } from '@/components/states'
 import { StationQrCode } from '@/components/qr/StationQrCode'
 import { localAccessApi, type LocalAccess } from '@/services/localAccessApi'
+import { isDesktop } from '@/services/ipc'
 import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
 
@@ -93,13 +94,51 @@ export default function QrCodePage() {
    */
   const copyUrl = async () => {
     if (!url) return
+    // Re-checked at the moment of the click, not only at render: the capability
+    // is a property of the browser, and a control that cannot copy must never
+    // be able to reach the "copied" toast.
+    const write = navigator.clipboard?.writeText
+    if (typeof write !== 'function') return
     try {
-      await navigator.clipboard.writeText(url)
+      await write.call(navigator.clipboard, url)
       toast(t('dev.localAccessCopied'), 'success')
     } catch {
       toast(t('app.error'), 'error')
     }
   }
+
+  /**
+   * Whether copying is a MEANINGFUL action for whoever is looking at this page.
+   *
+   * This page is reached two ways, and they are not the same audience:
+   *
+   *  - the OPERATOR on the till, who is showing the code to somebody ELSE and
+   *    genuinely needs the address as text to paste into another device. That
+   *    is the desktop shell, where `isDesktop()` is true and the clipboard
+   *    exists.
+   *
+   *  - the CUSTOMER who scanned the QR. Their phone is ALREADY on this exact
+   *    URL, the LAN listener serves plain `http://`, and `navigator.clipboard`
+   *    is only exposed in a SECURE context — so on `http://station.local:…` or
+   *    `http://192.168.x.x:…` the API is simply `undefined`. The button could
+   *    only ever throw, and its `catch` would turn that into a generic error
+   *    toast: a control that looks functional and can never succeed, offering
+   *    an action whose outcome the user already has (the phone's own share
+   *    sheet copies the address they are on).
+   *
+   * So the action is offered only where it can actually do something. It is
+   * rendered conditionally rather than hidden with CSS, for the same reason the
+   * shell swaps its navigation surface: a `display: none` button is still in the
+   * accessibility tree and still focusable by a screen reader.
+   *
+   * The capability check is kept alongside `isDesktop()` rather than instead of
+   * it: a browser that DOES expose the clipboard (a localhost origin, or a
+   * future HTTPS listener) keeps a working button rather than losing a feature
+   * the platform actually supports.
+   */
+  const canCopyUrl =
+    isDesktop() ||
+    (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function')
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -160,10 +199,15 @@ export default function QrCodePage() {
             </div>
 
             {/* Copy: the canonical URL, so what a manager pastes into a phone
-                is exactly what the code opens. */}
-            <Button onClick={() => void copyUrl()} variant="secondary" data-testid="qr-code-copy">
-              {t('dev.localAccessCopy')}
-            </Button>
+                is exactly what the code opens. Offered ONLY where copying can
+                mean something — see `canCopyUrl`. The URL beneath the code is
+                always visible and selectable, so nothing is hidden from anyone:
+                only a control that could not succeed is withheld. */}
+            {canCopyUrl ? (
+              <Button onClick={() => void copyUrl()} variant="secondary" data-testid="qr-code-copy">
+                {t('dev.localAccessCopy')}
+              </Button>
+            ) : null}
 
             {/* The IP fallback, as a secondary diagnostic line. Shown ONLY while
                 the friendly name is the primary address, so the page never

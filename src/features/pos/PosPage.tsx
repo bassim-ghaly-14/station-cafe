@@ -775,8 +775,21 @@ function PosShiftGateView({
 }) {
   const { t } = useTranslation()
 
+  /*
+   * The gate is a STARTING STATE, so it is settled in the viewport rather than
+   * pinned to the top of it.
+   *
+   * `min-h-[60vh]` with `sm:justify-center` centres the block vertically once
+   * there is room for it, while staying top-aligned on a short window or a phone
+   * where centring would push the primary action below the fold. 60vh rather than
+   * a full height is deliberate: the day's records and the closing panel may also
+   * be on this screen, and the gate must never claim the whole workspace away
+   * from them or make the page scroll to reach the button.
+   *
+   * `justify-center` is directional-agnostic, so it behaves identically in RTL.
+   */
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-[60vh] flex-col gap-4 sm:justify-center">
       {showDailyRecords ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">

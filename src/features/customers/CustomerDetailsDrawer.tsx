@@ -20,7 +20,7 @@
  * Two axes are shown separately, exactly as the data is stored, so a hybrid
  * order is never read as two orders:
  *   - department (كافيه / مغسلة) — from the invoice snapshot totals;
- *   - order type (طاولات / تيك اواي) — from the invoice's own `order_type`.
+ *   - order type (طاولات / طلب خارجي) — from the invoice's own `order_type`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'

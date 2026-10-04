@@ -34,7 +34,14 @@
  * phone stacks them. No card is squeezed into illegibility.
  */
 import { useTranslation } from 'react-i18next'
-import { Card, KpiGrid, MoneyDisplay, Skeleton } from '@/components/ui'
+import {
+  Card,
+  KpiBreakdown,
+  KpiBreakdownEntry,
+  KpiGrid,
+  MoneyDisplay,
+  Skeleton,
+} from '@/components/ui'
 import { CalendarClock, Clock, Coffee, TrendingUp, Users } from '@/components/ui/icon'
 import type { LucideIcon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
@@ -134,23 +141,11 @@ function KpiTile({
  * in and whose attendance is recorded by a colleague — so the numbers are read at
  * a glance, not decoded from a caption.
  *
- * Containment
- * -----------
- * The tile is one cell of a 5-column grid on a wide desktop and the FULL width on
- * a phone, so the available width is unknown at design time and a fixed px size
- * would break at one end or the other. Everything here is therefore intrinsic:
- *
- *  - `grid-cols-2` gives each half exactly half the tile, at every width;
- *  - `min-w-0` on each half lets its content SHRINK inside that half instead of
- *    pushing the grid — the property that makes `truncate` work at all;
- *  - the figures are `tabular-nums` in a modest step, so `9999` occupies the same
- *    width as `9` and a four-digit count cannot jump a line;
- *  - `truncate` on both the label and the figure is the final containment net: a
- *    value too wide for its half is clipped INSIDE the tile instead of pushing
- *    the card wider than its column.
- *
- * In RTL the two halves keep their logical order (cashier on the reading side),
- * because this is grid flow, not a physical left/right pair.
+ * It renders the SHARED {@link KpiBreakdown} rather than its own `<dl>`: this is
+ * the breakdown that established the shape, and the customers order-kinds card
+ * states its own total-and-categories the same way. Two bands writing that
+ * markup separately is how the spacing, the containment and the figure/label
+ * emphasis drift apart.
  */
 function HeadcountBreakdown({
   cashiers,
@@ -161,22 +156,10 @@ function HeadcountBreakdown({
 }) {
   const { t } = useTranslation()
   return (
-    <dl className="grid grid-cols-2 gap-x-3">
-      <BreakdownEntry label={t('employees.kpi.cashiers')} value={cashiers} />
-      <BreakdownEntry label={t('employees.kpi.washWorkers')} value={washWorkers} />
-    </dl>
-  )
-}
-
-/** One half of the breakdown: a figure with its type label directly beneath it. */
-function BreakdownEntry({ label, value }: { readonly label: string; readonly value: number }) {
-  return (
-    <div className="flex min-w-0 flex-col items-center gap-0.5 text-center">
-      <dd className="min-w-0 truncate text-[1.125rem] leading-tight font-bold tabular-nums text-foreground-strong">
-        {value}
-      </dd>
-      <dt className="min-w-0 truncate text-caption text-foreground-subtle">{label}</dt>
-    </div>
+    <KpiBreakdown>
+      <KpiBreakdownEntry label={t('employees.kpi.cashiers')} value={cashiers} />
+      <KpiBreakdownEntry label={t('employees.kpi.washWorkers')} value={washWorkers} />
+    </KpiBreakdown>
   )
 }
 

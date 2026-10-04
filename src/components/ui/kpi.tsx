@@ -96,3 +96,53 @@ export function KpiTile({
     </div>
   )
 }
+/**
+ * The two-category breakdown beneath a hero metric — the shape the employees
+ * headcount tile established ("عدد الموظفين" over "الكاشير / عمال المغسلة"),
+ * and which the customers order-kinds card reuses.
+ *
+ * Why a shared primitive rather than one `<dl>` per band
+ * ---------------------------------------------------
+ * Every band that states a total also states the categories that make it up, and
+ * that markup was being written again per feature. The breakdown is the part
+ * with real structure: a description list whose figures sit ABOVE their labels,
+ * in a two-column grid, separated from the hero by a hairline. Written once
+ * here, the employees tile and the customers card cannot drift in spacing,
+ * containment or emphasis — and a new band inherits the rule instead of
+ * re-deriving it.
+ *
+ * Containment, and why it is all intrinsic:
+ *
+ *  - `grid-cols-2` gives each half exactly half the tile, at every width;
+ *  - `min-w-0` on each half lets its content SHRINK inside that half instead of
+ *    pushing the grid — the property that makes `truncate` work at all;
+ *  - the figures are `tabular-nums`, so `9999` occupies the same width as `9`
+ *    and a four-digit count cannot jump a line;
+ *  - `truncate` on both the figure and the label is the final containment net: a
+ *    value too wide for its half is clipped INSIDE the card rather than pushing
+ *    it wider than its column.
+ *
+ * In RTL the two halves keep their logical order (the first category on the
+ * reading side), because this is grid flow, not a physical left/right pair.
+ */
+export function KpiBreakdown({
+  children,
+  className,
+}: Readonly<{ readonly children: ReactNode; readonly className?: string }>) {
+  return <dl className={cn('grid grid-cols-2 gap-x-3', className)}>{children}</dl>
+}
+
+/** One half of a {@link KpiBreakdown}: a figure with its category label beneath it. */
+export function KpiBreakdownEntry({
+  label,
+  value,
+}: Readonly<{ readonly label: string; readonly value: ReactNode }>) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-0.5 text-center">
+      <dd className="min-w-0 truncate text-[1.125rem] leading-tight font-bold tabular-nums text-foreground-strong">
+        {value}
+      </dd>
+      <dt className="min-w-0 truncate text-caption text-foreground-subtle">{label}</dt>
+    </div>
+  )
+}
