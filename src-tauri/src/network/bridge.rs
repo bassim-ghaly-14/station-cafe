@@ -221,6 +221,10 @@ const REQUIRED_ARGS: &[(&str, &[&str])] = &[
     ("list_shift_expenses", &[]),
     ("today_summary", &[]),
     ("analytics_charts", &[]),
+    // `month` is OPTIONAL (absent = the current business month), so this command
+    // requires nothing — exactly like `expenses_monthly`, whose `months` is
+    // optional too.
+    ("monthly_executive_report", &[]),
     ("list_audit", &["limit"]),
     ("get_print_config", &[]),
     ("set_print_config", &["config"]),
@@ -408,6 +412,7 @@ fn dispatch(
             "list_shift_expenses" => out(crate::commands::ops::list_shift_expenses(state.clone(), token.to_owned())),
             "today_summary" => out(crate::commands::ops::today_summary(state.clone(), token.to_owned())),
             "analytics_charts" => out(crate::commands::ops::analytics_charts(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?)),
+            "monthly_executive_report" => out(crate::commands::ops::monthly_executive_report(state.clone(), token.to_owned(), opt::<_>(body, "month")?)),
             "list_audit" => out(crate::commands::ops::list_audit(state.clone(), token.to_owned(), req::<_>(body, "limit")?, opt::<_>(body, "action_like")?)),
             "get_print_config" => out(crate::commands::ops::get_print_config(state.clone(), token.to_owned())),
             "set_print_config" => out(crate::commands::ops::set_print_config(state.clone(), token.to_owned(), req::<_>(body, "config")?)),

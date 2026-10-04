@@ -200,7 +200,11 @@ pub struct MonthlyTargetProgress {
 /// revenue and target always produce the same number. A target of zero returns
 /// `None`: there is no achievement to report against no target, and inventing
 /// `0%` would state that nothing was achieved when in fact nothing was measured.
-fn achievement_hundredths(actual: i64, target: i64) -> Option<i64> {
+///
+/// `pub(crate)` because a report reads the SAME rule rather than writing a
+/// second one: an achievement that the Sales page and a printed report computed
+/// differently would be two facts about the same month.
+pub(crate) fn achievement_hundredths(actual: i64, target: i64) -> Option<i64> {
     if target <= 0 {
         return None;
     }
@@ -212,7 +216,10 @@ fn achievement_hundredths(actual: i64, target: i64) -> Option<i64> {
 
 /// The percent as the UI states it: two decimals and no unit suffix, so an
 /// over-achieved month reads `114.29` and is never clamped to `100.00`.
-fn percentage_hundredths(hundredths: Option<i64>) -> Option<String> {
+///
+/// `pub(crate)` for the same reason as [`achievement_hundredths`]: the printed
+/// wording of a percentage is a presentation rule the report shares.
+pub(crate) fn percentage_hundredths(hundredths: Option<i64>) -> Option<String> {
     hundredths.map(|value| format!("{}.{:02}", value / 100, value.abs() % 100))
 }
 

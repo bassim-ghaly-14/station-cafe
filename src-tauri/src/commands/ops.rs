@@ -1,7 +1,7 @@
 // Tauri commands — inventory, expenses, reports, audit and printing.
 
 use super::common::authorized;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::printing::{self, PrintConfig, PrintJobRow, PrintOutcome, PrintPreview};
 use crate::repositories::analytics::AnalyticsCharts;
 use crate::repositories::expenses::{
@@ -198,6 +198,57 @@ pub fn analytics_charts(
 ) -> AppResult<AnalyticsCharts> {
     authorized(&state, &token, "MANAGER", move |conn, _| {
         reports::analytics_charts(conn, from.as_deref(), to.as_deref())
+    })
+}
+
+/// The monthly executive summary for one business month — the one-page figures
+/// the owner reads: both departments against their own targets, the month's
+/// money, and the month before it for comparison.
+///
+/// It takes an optional `month` (`YYYY-MM`) and nothing else. No `from`/`to`
+/// pair, no filter, no category list: a monthly target is a statement about a
+/// calendar month, so this command physically cannot be pointed at an arbitrary
+/// range the way a range report can. An absent month means the current Cairo
+/// business month, decided by the backend clock.
+#[tauri::command(rename_all = "snake_case")]
+pub fn monthly_executive_report(
+    state: State<'_, AppState>,
+    token: String,
+    month: Option<String>,
+) -> AppResult<crate::services::reports::MonthlyExecutiveReport> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        reports::monthly_executive(conn, actor, month.as_deref())
+    })
+}
+
+/// Opens the platform print dialog for the monthly executive sheet.
+///
+/// WHY THIS EXISTS AT ALL: the sheet has always been produced by the WebView's
+/// own print pipeline (`@page { size: A4 }` in `index.css`), and it still is —
+/// nothing about the document changed. What was broken was the TRIGGER. The UI
+/// called `window.print()`, which WKWebView on macOS does not implement: the
+/// click was a silent no-op, so no dialog and no PDF. `WebviewWindow::print()`
+/// is wry's own entry point, which on macOS drives
+/// `WKWebView.printOperationWithPrintInfo:` (the same native panel a user would
+/// reach through the browser menu, including "Save as PDF") and on Windows
+/// evaluates `window.print()` in WebView2, where it does work.
+///
+/// It therefore prints whatever the page currently shows, which is exactly why
+/// the caller keeps the `printing-monthly` body class set across the call: the
+/// `@media print` rules are what reduce the page to the single A4 sheet.
+///
+/// No report data crosses this boundary — the figures were already authorized
+/// and delivered by `monthly_executive_report`. This command only opens a
+/// dialog on the manager's own machine, which is why it is deliberately NOT
+/// registered on the LAN bridge: a phone must not be able to make the till
+/// print.
+#[tauri::command]
+pub fn print_monthly_report(window: tauri::WebviewWindow) -> AppResult<()> {
+    window.print().map_err(|error| {
+        // The technical detail stays on the machine that owns the panel; the
+        // caller receives the same stable key every other failure uses.
+        log::error!("monthly report print dialog failed: {error}");
+        AppError::printer("reports.monthly.print_failed")
     })
 }
 

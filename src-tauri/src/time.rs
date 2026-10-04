@@ -140,6 +140,25 @@ pub fn current_business_month() -> String {
     business_month_of(now_utc())
 }
 
+/// The business month IMMEDIATELY BEFORE `month`, `YYYY-MM`.
+///
+/// `business_date_months_ago` counts back from *today*, which is the wrong
+/// question for a report about a month the caller chose: a historical report
+/// needs the month before THAT one. The arithmetic is the same linear month
+/// index (so January − 1 is December of the previous year), done on the pure
+/// `NaiveDate` of the month's first day, so it never touches an instant and
+/// never drifts across a DST boundary.
+///
+/// `None` for anything that is not a real month, exactly like
+/// [`business_month_bounds`].
+pub fn previous_business_month(month: &str) -> Option<String> {
+    let (first, _) = business_month_bounds(month)?;
+    let date = NaiveDate::parse_from_str(&first, "%Y-%m-%d").ok()?;
+    let index = date.year() as i64 * 12 + date.month0() as i64 - 1;
+    let (year, month0) = (index.div_euclid(12), index.rem_euclid(12));
+    Some(format!("{:04}-{:02}", year, month0 + 1))
+}
+
 /// Whether a string is a well-formed month key AND a real calendar month.
 ///
 /// `2026-1` and `2026-13` are refused rather than repaired: a month identity is

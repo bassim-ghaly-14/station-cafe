@@ -41,6 +41,8 @@ mod dev_settings_roles_test;
 mod expense_categories_test;
 mod expenses_analytics_test;
 mod money;
+#[cfg(test)]
+mod monthly_executive_test;
 mod normalize;
 #[cfg(test)]
 mod offline_verify;
@@ -302,6 +304,8 @@ pub fn run() {
             commands::ops::list_shift_expenses,
             commands::ops::today_summary,
             commands::ops::analytics_charts,
+            commands::ops::monthly_executive_report,
+            commands::ops::print_monthly_report,
             commands::ops::list_audit,
             commands::ops::get_print_config,
             commands::ops::set_print_config,
