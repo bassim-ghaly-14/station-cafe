@@ -78,6 +78,11 @@ const viewMonth = parseIsoDate(today) ?? { year: 2026, month: 1, day: 1 }
 
 const SUMMARY = {
   invoices_count: 4,
+  // The invoice-kind breakdown partitions `invoices_count`: 1 + 1 + 1 + 1 = 4.
+  cafe_invoices: 1,
+  wash_invoices: 1,
+  hybrid_invoices: 1,
+  takeaway_invoices: 1,
   subtotal: 40_000,
   discounts: 2_000,
   service_charges: 1_000,
@@ -324,7 +329,9 @@ describe('SalesPage', () => {
       ).toBeGreaterThan(0)
     }
     // Invoice count and average arrive as computed aggregates, not client math.
-    expect(screen.getByText(String(SUMMARY.invoices_count))).toBeInTheDocument()
+    // The count now appears in two places — the revenue band's figure and the
+    // invoice-kind card's hero — so both are asserted rather than only one.
+    expect(screen.getAllByText(String(SUMMARY.invoices_count)).length).toBeGreaterThan(0)
     expect(
       screen.getByText(formatMinorMoney(SUMMARY.average_invoice, { variant: 'auto' })),
     ).toBeInTheDocument()
@@ -335,6 +342,102 @@ describe('SalesPage', () => {
     // The top items, with their share of the period's item revenue.
     expect(screen.getByText('كابتشينو')).toBeInTheDocument()
     expect(screen.getByText('60%')).toBeInTheDocument()
+  })
+
+  /**
+   * The invoice-COUNT card. The total is the hero and is stated as an integer
+   * count; the four kinds beneath it are the same period's invoices partitioned by
+   * document kind, so they add up to the hero.
+   */
+  it('leads with the total invoice count as an integer and breaks it down by kind', async () => {
+    renderPage()
+
+    const hero = await screen.findByTestId('sales-invoice-count-hero')
+    expect(hero).toHaveTextContent(String(SUMMARY.invoices_count))
+
+    // Each of the four kinds states its own count, straight from the payload.
+    const kind = (label: string, count: number) => {
+      const box = screen.getByText(label).closest('div')!
+      expect(box).toHaveTextContent(String(count))
+    }
+    kind('كافيه فقط', SUMMARY.cafe_invoices)
+    kind('مغسلة فقط', SUMMARY.wash_invoices)
+    kind('هجين', SUMMARY.hybrid_invoices)
+    kind('طلب خارجي فقط', SUMMARY.takeaway_invoices)
+
+    // The four kinds partition the hero, so the card cannot show a breakdown that
+    // disagrees with the total printed above it.
+    expect(
+      SUMMARY.cafe_invoices +
+        SUMMARY.wash_invoices +
+        SUMMARY.hybrid_invoices +
+        SUMMARY.takeaway_invoices,
+    ).toBe(SUMMARY.invoices_count)
+  })
+
+  /**
+   * A COUNT is never money. The card must not route a count through the money
+   * formatter, which reads its argument as piasters — that is exactly how six
+   * invoices came to be displayed as `0.06 ج.م` on the day-closing dialog.
+   */
+  it('never renders an invoice count through the money formatter', async () => {
+    mocks.overview.mockResolvedValue({
+      ...OVERVIEW,
+      summary: {
+        ...SUMMARY,
+        invoices_count: 6,
+        cafe_invoices: 6,
+        wash_invoices: 0,
+        hybrid_invoices: 0,
+        takeaway_invoices: 0,
+      },
+    })
+    renderPage()
+
+    const hero = await screen.findByTestId('sales-invoice-count-hero')
+    expect(hero).toHaveTextContent('6')
+    // The money formatter's output for a count of 6 read as piasters.
+    expect(hero.textContent).not.toContain('0.06')
+    expect(hero.textContent).not.toContain('ج.م')
+
+    // And the same rule holds for the four boxes: a zero count reads as `0`, not
+    // as a formatted amount.
+    const washBox = screen.getByText('مغسلة فقط').closest('div')!
+    expect(washBox).toHaveTextContent('0')
+    expect(washBox.textContent).not.toContain('ج.م')
+  })
+
+  it('states a zero invoice count as a plain zero', async () => {
+    mocks.overview.mockResolvedValue({
+      ...OVERVIEW,
+      summary: {
+        ...SUMMARY,
+        invoices_count: 0,
+        cafe_invoices: 0,
+        wash_invoices: 0,
+        hybrid_invoices: 0,
+        takeaway_invoices: 0,
+      },
+      trend: [],
+      items: [],
+    })
+    mocks.invoices.mockResolvedValue([])
+    renderPage()
+
+    const hero = await screen.findByTestId('sales-invoice-count-hero')
+    expect(hero).toHaveTextContent('0')
+    expect(hero.textContent).not.toContain('ج.م')
+  })
+
+  it('leaves the revenue totals unchanged by the new card', async () => {
+    renderPage()
+
+    expect(
+      await screen.findByText(formatMinorMoney(SUMMARY.total_sales, { variant: 'auto' })),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(formatMinorMoney(SUMMARY.average_invoice, { variant: 'auto' })),
+    ).toBeInTheDocument()
   })
 
   it('opens the EXISTING invoice preview when a row is selected', async () => {
