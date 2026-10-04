@@ -114,7 +114,7 @@ describe('DevSettingsPage', () => {
   it('hides the page from staff', () => {
     mocks.user.role = 'STAFF'
     page()
-    expect(screen.queryByRole('heading', { name: 'إعدادات المطوّر' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'إعدادات' })).not.toBeInTheDocument()
   })
 
   it('only exposes numeric table count control', async () => {
@@ -1116,7 +1116,7 @@ describe('DevSettingsPage role visibility', () => {
   it('renders nothing at all for a cashier', () => {
     mocks.user.role = 'STAFF'
     page()
-    expect(screen.queryByRole('heading', { name: 'إعدادات المطوّر' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'إعدادات' })).not.toBeInTheDocument()
     // Not one section leaked through — not even a header.
     expect(screen.queryByLabelText('رسوم الخدمة 1')).not.toBeInTheDocument()
     expect(screen.queryByTestId('dev-tables')).not.toBeInTheDocument()
