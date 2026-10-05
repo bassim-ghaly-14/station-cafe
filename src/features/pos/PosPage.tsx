@@ -808,7 +808,7 @@ function PosShiftGateView({
         <DayClosingPanel dayId={state.day.id} revision={revision} onDone={onDone} />
       ) : null}
 
-      <ShiftGate state={state} onReady={onReady} />
+      <ShiftGate state={state} onReady={onReady} onShiftClosed={onDone} />
     </div>
   )
 }

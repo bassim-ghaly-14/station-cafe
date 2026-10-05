@@ -1840,6 +1840,30 @@ const MIGRATIONS: &[Migration] = &[
             UPDATE expense_categories SET requires_employee = 1 WHERE code = 'SALARY';
         "#,
     },
+    Migration {
+        version: 36,
+        name: "shift closure actor",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- SHIFT CLOSURE ACTOR — who closed the shift vs who owns it
+            -- ============================================================
+            -- `shifts.user_id` is the OWNER (the cashier who opened the
+            -- shift) and never changes. Until now nothing recorded WHO
+            -- closed it: a self-close and a managerial close looked
+            -- identical, and the audit row was the only witness.
+            --
+            -- `closed_by` is the authenticated user who performed the
+            -- close (`users.id`). NULL for rows closed before this
+            -- migration — those keep their financial snapshot byte-identical
+            -- and are simply reported as "closed by the owner".
+            --
+            -- Fully additive: no row is rewritten, no status changes, no
+            -- index beyond the FK-adjacent lookup the reports already do.
+            ALTER TABLE shifts ADD COLUMN closed_by INTEGER REFERENCES users(id);
+            CREATE INDEX IF NOT EXISTS idx_shifts_closed_by ON shifts(closed_by);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

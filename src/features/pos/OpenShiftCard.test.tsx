@@ -6,15 +6,142 @@
  * `open_shift` row — never by a hardcoded name, and never by the signed-in
  * session, which may be a different person entirely.
  */
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '@/components/ui'
 import { SessionProvider } from '@/features/auth/useSession'
 import '@/lib/i18n'
 import ar from '@/locales/ar/translations.json'
-import type { ShiftRow } from '@/services/shiftApi'
+import type { ShiftClosingPreview, ShiftRow } from '@/services/shiftApi'
 import { OpenShiftCard } from './OpenShiftCard'
 import { ShiftGate } from './ShiftGate'
+
+/**
+ * The session the transport answers `me` with — the same arrangement
+ * `PosPage.test` uses. `null` (no token) is the default, so the pre-existing
+ * tests below keep seeing an anonymous session.
+ */
+const session = vi.hoisted(() => ({ user: null as Record<string, unknown> | null }))
+
+vi.mock('@/services/ipc', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/ipc')>()),
+  call: vi.fn(async (cmd: string) => {
+    if (cmd === 'me') {
+      if (!session.user) throw new Error('no session')
+      return session.user
+    }
+    throw new Error(`unexpected command: ${cmd}`)
+  }),
+}))
+
+/** The reads the managerial dialog performs, stubbed at the service layer. */
+const managedMocks = vi.hoisted(() => ({
+  previewManagedShiftClose: vi.fn(),
+  closeManagedShift: vi.fn(),
+  expensesOfShift: vi.fn(async () => []),
+}))
+
+vi.mock('@/services/shiftApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/shiftApi')>()
+  return {
+    ...actual,
+    shiftApi: {
+      ...actual.shiftApi,
+      previewManagedShiftClose: managedMocks.previewManagedShiftClose,
+      closeManagedShift: managedMocks.closeManagedShift,
+    },
+  }
+})
+
+vi.mock('@/services/opsApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/opsApi')>()
+  return {
+    ...actual,
+    opsApi: { ...actual.opsApi, expensesOfShift: managedMocks.expensesOfShift },
+  }
+})
+
+/** A backend-shaped preview, so the review dialog renders real figures. */
+const OPEN_SHIFT: ShiftRow = {
+  id: 4,
+  business_day_id: 1,
+  user_id: 2,
+  user_name: 'أحمد سيد',
+  user_role: 'STAFF',
+  status: 'ACTIVE',
+  opened_at: '2026-09-25 08:00:00Z',
+  opening_cash: 0,
+  closed_at: null,
+  cash_sales: 2000,
+  card_sales: 0,
+  credit_sales: 0,
+  service_charges: 0,
+  discounts: 0,
+  invoices_count: 1,
+  expected_cash: 2000,
+  actual_cash: null,
+  cash_difference: null,
+  cafe_invoices: 1,
+  wash_invoices: 0,
+  hybrid_invoices: 0,
+  subtotal: 2000,
+  total_sales: 2000,
+  cafe_sales: 2000,
+  wash_sales: 0,
+  expenses: 0,
+  cash_expenses: 0,
+}
+
+const PREVIEW: ShiftClosingPreview = {
+  shift: OPEN_SHIFT,
+  closing_at: '2026-09-25 14:00:00Z',
+  cash_sales: 2000,
+  card_sales: 0,
+  credit_sales: 0,
+  invoices_count: 1,
+  expected_cash: 2000,
+  cash_expenses: 0,
+  expenses: 0,
+  tables: { opens: 0, closed_empty: 0 },
+  report: {
+    shift: OPEN_SHIFT,
+    areas: { cafe_invoices: 1, wash_invoices: 0, hybrid_invoices: 0 },
+    invoices_count: 1,
+    cafe_sales: 2000,
+    wash_sales: 0,
+    subtotal: 2000,
+    discounts: 0,
+    service_charges: 0,
+    total_sales: 2000,
+    cash_sales: 2000,
+    card_sales: 0,
+    credit_sales: 0,
+    expenses: 0,
+    cash_expenses: 0,
+    expense_breakdown: [],
+    tables: { opens: 0, closed_empty: 0 },
+    cash: {
+      opening_cash: 0,
+      cash_inflows: 2000,
+      cash_outflows: 0,
+      expected_cash: 2000,
+      actual_cash: 2000,
+      difference: 0,
+      shortage: 0,
+      surplus: 0,
+      status: 'BALANCED',
+    },
+  },
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  // An anonymous session unless a test below explicitly signs someone in, so
+  // the pre-existing card tests keep exercising the no-session behaviour.
+  session.user = null
+  localStorage.clear()
+  managedMocks.previewManagedShiftClose.mockResolvedValue(PREVIEW)
+})
 
 function shift(over: Partial<ShiftRow> = {}): ShiftRow {
   return {
@@ -134,5 +261,55 @@ describe('POS open-shift card', () => {
     renderGate(owned, owned)
 
     expect(screen.queryByText(ar.shift.alreadyOpenTitle)).not.toBeInTheDocument()
+  })
+})
+
+describe('POS open-shift card — managerial recovery', () => {
+  /** Sign a role in: the token makes `SessionProvider` resolve `me`. */
+  function signIn(role: 'ADMIN' | 'MANAGER' | 'STAFF') {
+    localStorage.setItem('station.session.token', 'test-token')
+    session.user = {
+      id: 1,
+      name: 'manager',
+      phone: null,
+      role,
+      status: 'ACTIVE',
+      created_at: '',
+      updated_at: '',
+    }
+  }
+
+  it('offers the managerial close to a MANAGER and opens the review dialog', async () => {
+    signIn('MANAGER')
+    renderGate(shift(), null)
+
+    const action = await screen.findByTestId('manager-close-shift')
+    expect(action).toHaveTextContent(ar.shift.managerCloseAction)
+
+    fireEvent.click(action)
+    // The review is the SAME close document the cashier sees, driven by the
+    // MANAGER-only preview command…
+    expect(await screen.findByRole('dialog', { name: ar.shift.closeTitle })).toBeInTheDocument()
+    expect(managedMocks.previewManagedShiftClose).toHaveBeenCalledWith(4)
+    // …and opening the dialog has committed nothing.
+    expect(managedMocks.closeManagedShift).not.toHaveBeenCalled()
+  })
+
+  it('offers it to an ADMIN as well', async () => {
+    signIn('ADMIN')
+    renderGate(shift(), null)
+
+    expect(await screen.findByTestId('manager-close-shift')).toBeInTheDocument()
+  })
+
+  it('never shows the managerial action to a STAFF session', async () => {
+    signIn('STAFF')
+    renderGate(shift(), null)
+
+    // The blocked state the backend enforces for everyone else is still what
+    // a cashier sees — no manager affordance, no dialog.
+    expect(await screen.findByText(ar.shift.alreadyOpenBlocked)).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-close-shift')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

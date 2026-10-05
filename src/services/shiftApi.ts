@@ -30,6 +30,14 @@ export interface ShiftRow {
   wash_sales: number
   expenses: number
   cash_expenses: number
+  /**
+   * Who CLOSED the shift (`users.id`), distinct from `user_id` (the owner).
+   * `null` for shifts closed before the closure-actor migration. Present on
+   * every row the backend serializes; optional here so older fixtures type-check.
+   */
+  closed_by?: number | null
+  /** Display name of the closer, when known. */
+  closed_by_name?: string | null
 }
 
 /**
@@ -195,6 +203,17 @@ export const shiftApi = {
   openShift: (opening_cash: number) => call<number>('open_shift', { opening_cash }),
   previewShiftClose: () => call<ShiftClosingPreview>('preview_shift_close'),
   closeShift: (actual_cash: number) => call<ShiftClosing>('close_shift', { actual_cash }),
+  /**
+   * MANAGER+ only: the open shift whoever owns it, as the same live view the
+   * closing dialog reads. STAFF continue to see only their own shift via `state()`.
+   */
+  openShiftDetail: () => call<ShiftRow | null>('open_shift_detail'),
+  /** MANAGER+ only: closing preview of ANOTHER cashier's open shift. */
+  previewManagedShiftClose: (shift_id: number) =>
+    call<ShiftClosingPreview>('preview_managed_shift_close', { shift_id }),
+  /** MANAGER+ only: close another cashier's open shift on their behalf. */
+  closeManagedShift: (shift_id: number, actual_cash: number) =>
+    call<ShiftClosing>('close_managed_shift', { shift_id, actual_cash }),
   previewDaySettlement: () => call<SettlementPreview>('preview_day_settlement'),
   settleDay: () => call<DayClosingRecord>('settle_day'),
   daySettlementHistory: () => call<DayClosingRecord[]>('day_settlement_history'),

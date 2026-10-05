@@ -180,6 +180,20 @@ pub fn list_shift_expenses(state: State<'_, AppState>, token: String) -> AppResu
     })
 }
 
+/// The expenses of ANY shift — MANAGER+ only, for reviewing a cashier's open
+/// shift before a managerial close. The cashier's own `list_shift_expenses`
+/// keeps exactly the STAFF-level access it always had.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_expenses_of_shift(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: i64,
+) -> AppResult<Vec<Expense>> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::expenses_of_shift(conn, actor, shift_id)
+    })
+}
+
 // ---- reports & audit -------------------------------------------------------
 
 #[tauri::command(rename_all = "snake_case")]

@@ -49,6 +49,20 @@ pub fn state(conn: &Db, actor: &User) -> AppResult<DayShiftState> {
     })
 }
 
+/// The shift open RIGHT NOW as a live view — the same hydrated read the
+/// closing dialog needs — for the managerial recovery flow. MANAGER+ only
+/// (the command and this service both refuse STAFF).
+pub fn open_shift_detail(conn: &Db, actor: &User) -> AppResult<Option<ShiftRow>> {
+    require_manager(actor)?;
+    match shifts::any_active_shift(conn)? {
+        Some(mut shift) => {
+            shifts::hydrate_active_totals(conn, &mut shift)?;
+            Ok(Some(shift))
+        }
+        None => Ok(None),
+    }
+}
+
 fn require_manager(actor: &User) -> AppResult<()> {
     if matches!(actor.role.as_str(), "MANAGER" | "ADMIN") {
         Ok(())
@@ -197,14 +211,102 @@ pub fn close_shift_at(
     actual_cash: Money,
     closed_at: &str,
 ) -> AppResult<ShiftClosing> {
+    let shift = shifts::active_shift_for(conn, actor.id)?
+        .ok_or_else(|| AppError::business("shift.not_open"))?;
+    close_shift_row(
+        conn,
+        actor,
+        shift.id,
+        actual_cash,
+        closed_at,
+        "shift.closed",
+    )
+}
+
+/// Managerial close of ANOTHER cashier's open shift (operational recovery).
+/// ADMIN/MANAGER only — enforced here, not just in the command layer — and it
+/// runs the SAME financial computation as a self-close. The only differences
+/// are who may invoke it and how it is recorded (`closed_by` + a distinct
+/// audit action). `user_id` (owner) is never rewritten.
+pub fn preview_managed_shift_close(
+    conn: &Db,
+    actor: &User,
+    shift_id: i64,
+) -> AppResult<ShiftClosingPreview> {
+    require_manager(actor)?;
+    let mut shift =
+        shifts::get_shift(conn, shift_id)?.ok_or_else(|| AppError::not_found("shift.not_found"))?;
+    if shift.status != "ACTIVE" {
+        return Err(AppError::business("shift.not_closable"));
+    }
+    shifts::hydrate_active_totals(conn, &mut shift)?;
+    Ok(ShiftClosingPreview {
+        expected_cash: shift.expected_cash,
+        cash_sales: shift.cash_sales,
+        card_sales: shift.card_sales,
+        credit_sales: shift.credit_sales,
+        invoices_count: shift.invoices_count,
+        cash_expenses: shift.cash_expenses,
+        expenses: shift.expenses,
+        closing_at: shifts::sqlite_now(conn)?,
+        tables: pos_repo::shift_lifecycle_counts(conn, shift.id)?,
+        report: reconciliation::shift_report(conn, shift.id)?,
+        shift,
+    })
+}
+
+/// Managerial close of ANOTHER cashier's open shift. See
+/// [`preview_managed_shift_close`] for the authorization contract.
+pub fn close_managed_shift(
+    conn: &Db,
+    actor: &User,
+    shift_id: i64,
+    actual_cash: Money,
+) -> AppResult<ShiftClosing> {
+    let closed_at = shifts::sqlite_now(conn)?;
+    close_managed_shift_at(conn, actor, shift_id, actual_cash, &closed_at)
+}
+
+/// Shared lifecycle implementation. The timestamp is computed by SQLite in
+/// production; an exact value may be supplied only by in-crate tests (the same
+/// seam `close_shift_at` exposes), so Cairo business-day boundary behaviour is
+/// testable without touching the machine clock.
+pub fn close_managed_shift_at(
+    conn: &Db,
+    actor: &User,
+    shift_id: i64,
+    actual_cash: Money,
+    closed_at: &str,
+) -> AppResult<ShiftClosing> {
+    require_manager(actor)?;
+    close_shift_row(
+        conn,
+        actor,
+        shift_id,
+        actual_cash,
+        closed_at,
+        "shift.closed_by_manager",
+    )
+}
+
+/// The ONE shift-closing writer. Both the self-close and the managerial close
+/// funnel through here, so there is exactly one financial implementation and
+/// one concurrency rule: the guarded `UPDATE ... WHERE status = 'ACTIVE'`
+/// admits a single winner, and the loser observes `shift.not_closable`.
+fn close_shift_row(
+    conn: &Db,
+    actor: &User,
+    shift_id: i64,
+    actual_cash: Money,
+    closed_at: &str,
+    audit_action: &str,
+) -> AppResult<ShiftClosing> {
     if actual_cash < 0 {
         return Err(AppError::validation("shift.invalid_actual_cash"));
     }
     let tx = conn.unchecked_transaction()?;
-    // Only the caller's own ACTIVE shift may be closed, so a second close finds
-    // no active shift and is rejected — double-closing is impossible.
-    let shift = shifts::active_shift_for(&tx, actor.id)?
-        .ok_or_else(|| AppError::business("shift.not_open"))?;
+    let shift =
+        shifts::get_shift(&tx, shift_id)?.ok_or_else(|| AppError::not_found("shift.not_found"))?;
     if shift.status != "ACTIVE" {
         return Err(AppError::business("shift.not_closable"));
     }
@@ -217,8 +319,8 @@ pub fn close_shift_at(
     let totals = shifts::compute_shift_totals(&tx, shift.id)?;
     let (expenses, cash_expenses) = expenses::shift_totals(&tx, shift.id)?;
     // The category breakdown is resolved NOW and stored with the rest of the
-    // closing snapshot, so the document a cashier signs keeps these exact lines —
-    // and these exact Arabic labels — forever.
+    // closing snapshot, so the document keeps these exact lines — and these
+    // exact Arabic labels — forever.
     let breakdown = expenses::breakdown_for_shift(&tx, shift.id)?;
     // THE drawer formula, from the shared reconciliation module, so the figure
     // the manager is shown, the figure persisted and the figure printed are one.
@@ -228,7 +330,7 @@ pub fn close_shift_at(
         cash_expenses,
         actual_cash,
     );
-    shifts::save_shift_closing(
+    if !shifts::save_shift_closing(
         &tx,
         shift.id,
         &totals,
@@ -238,16 +340,22 @@ pub fn close_shift_at(
         actual_cash,
         closed_at,
         &expenses::encode_breakdown(&breakdown),
-    )?;
+        actor.id,
+    )? {
+        return Err(AppError::business("shift.not_closable"));
+    }
     crate::services::audit::record(
         &tx,
         Some(actor.id),
         Some(&actor.role),
-        "shift.closed",
+        audit_action,
         "shift",
         Some(&shift.id.to_string()),
         None,
         Some(&serde_json::json!({
+            "shift_owner": shift.user_id,
+            "closed_by": actor.id,
+            "closed_by_role": actor.role,
             "expected_cash": cash.expected_cash, "actual_cash": actual_cash,
             "difference": cash.difference, "status": cash.status,
             "cash_expenses": cash_expenses, "expenses": expenses,

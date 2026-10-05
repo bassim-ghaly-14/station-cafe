@@ -187,6 +187,18 @@ const OPERATION_FIELDS: Record<string, readonly string[]> = {
     'invoices_count',
     'status',
   ],
+  // The managerial close records the SAME financial payload as a self-close;
+  // only WHO closed it distinguishes the row, and the actor is already the
+  // audit row's own `actor_id` — never a payload field.
+  'shift.closed_by_manager': [
+    'expected_cash',
+    'actual_cash',
+    'difference',
+    'expenses',
+    'cash_expenses',
+    'invoices_count',
+    'status',
+  ],
   'day.settled': ['total_sales', 'cash', 'card', 'credit', 'expenses'],
   'day.opened': [],
   'day.closed': [

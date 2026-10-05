@@ -42,13 +42,19 @@ pub struct ShiftRow {
     pub expenses: i64,
     /// The part of those expenses physically paid from the drawer.
     pub cash_expenses: i64,
+    /// The authenticated user who closed the shift (`users.id`).
+    /// `user_id` stays the owner (cashier); this is the actor.
+    /// `None` for shifts closed before migration 36.
+    pub closed_by: Option<i64>,
+    /// Display name of the closer, if known.
+    pub closed_by_name: Option<String>,
 }
 
 const SHIFT_COLS: &str = "s.id, s.business_day_id, s.user_id, u.name, u.role, s.status, s.opened_at,
     s.opening_cash, s.closed_at, s.cash_sales, s.card_sales, s.credit_sales,
     s.service_charges, s.discounts, s.invoices_count, s.expected_cash, s.actual_cash, s.cash_difference,
     s.cafe_invoices, s.wash_invoices, s.hybrid_invoices, s.subtotal, s.total_sales,
-    s.cafe_sales, s.wash_sales, s.expenses, s.cash_expenses";
+    s.cafe_sales, s.wash_sales, s.expenses, s.cash_expenses, s.closed_by, cb.name";
 
 fn shift_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ShiftRow> {
     Ok(ShiftRow {
@@ -79,6 +85,8 @@ fn shift_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ShiftRow> {
         wash_sales: r.get(24)?,
         expenses: r.get(25)?,
         cash_expenses: r.get(26)?,
+        closed_by: r.get(27)?,
+        closed_by_name: r.get(28)?,
     })
 }
 
@@ -236,7 +244,7 @@ pub fn open_shift(
 /// The caller's own ACTIVE shift, if any.
 pub fn active_shift_for(conn: &Db, user_id: i64) -> AppResult<Option<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by
          WHERE s.user_id = ?1 AND s.status = 'ACTIVE' ORDER BY s.id DESC LIMIT 1"
     ))?;
     let mut rows = stmt.query([user_id])?;
@@ -249,7 +257,7 @@ pub fn active_shift_for(conn: &Db, user_id: i64) -> AppResult<Option<ShiftRow>> 
 /// Any ACTIVE shift (used for shift-gating rules).
 pub fn any_active_shift(conn: &Db) -> AppResult<Option<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by
          WHERE s.status = 'ACTIVE' ORDER BY s.id DESC LIMIT 1"
     ))?;
     let mut rows = stmt.query([])?;
@@ -263,7 +271,7 @@ pub fn any_active_shift(conn: &Db) -> AppResult<Option<ShiftRow>> {
 /// closed-shift snapshot once no ACTIVE shift remains).
 pub fn latest_shift_for(conn: &Db, user_id: i64) -> AppResult<Option<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by
          WHERE s.user_id = ?1 ORDER BY s.id DESC LIMIT 1"
     ))?;
     let mut rows = stmt.query([user_id])?;
@@ -275,7 +283,7 @@ pub fn latest_shift_for(conn: &Db, user_id: i64) -> AppResult<Option<ShiftRow>> 
 
 pub fn get_shift(conn: &Db, shift_id: i64) -> AppResult<Option<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id WHERE s.id = ?1"
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by WHERE s.id = ?1"
     ))?;
     let mut rows = stmt.query([shift_id])?;
     match rows.next()? {
@@ -435,6 +443,11 @@ pub fn hydrate_active_totals(conn: &Db, shift: &mut ShiftRow) -> AppResult<()> {
 /// Persist the closing snapshot. This is the ONLY writer of a shift's
 /// aggregates, and it is called once, inside the closing transaction, so the
 /// figures a closed shift reports are fixed for good.
+///
+/// `closed_by` is the authenticated actor performing the close — the owner
+/// for a self-close, the ADMIN/MANAGER for a managerial close. The UPDATE is
+/// guarded on `status = 'ACTIVE'` and returns whether it won the race, so a
+/// concurrent close of the same shift yields exactly one winner.
 #[allow(clippy::too_many_arguments)]
 pub fn save_shift_closing(
     conn: &Db,
@@ -446,16 +459,18 @@ pub fn save_shift_closing(
     actual_cash: i64,
     closed_at: &str,
     expense_breakdown: &str,
-) -> AppResult<()> {
-    conn.execute(
+    closed_by: i64,
+) -> AppResult<bool> {
+    let n = conn.execute(
         "UPDATE shifts SET status = 'CLOSED', closed_at = ?10,
             cash_sales = ?2, card_sales = ?3, credit_sales = ?4, service_charges = ?5,
             discounts = ?6, invoices_count = ?7, expected_cash = ?8,
             actual_cash = ?9, cash_difference = ?9 - ?8,
             cafe_invoices = ?11, wash_invoices = ?12, hybrid_invoices = ?13,
             subtotal = ?14, total_sales = ?15, cafe_sales = ?18, wash_sales = ?19,
-            expenses = ?16, cash_expenses = ?17, expense_breakdown = ?20
-         WHERE id = ?1",
+            expenses = ?16, cash_expenses = ?17, expense_breakdown = ?20,
+            closed_by = ?21
+         WHERE id = ?1 AND status = 'ACTIVE'",
         params![
             shift_id,
             totals.cash,
@@ -476,10 +491,11 @@ pub fn save_shift_closing(
             cash_expenses,
             totals.cafe_sales,
             totals.wash_sales,
-            expense_breakdown
+            expense_breakdown,
+            closed_by
         ],
     )?;
-    Ok(())
+    Ok(n == 1)
 }
 
 /// The CLOSING SNAPSHOT of one shift's per-category expense lines.
@@ -501,7 +517,7 @@ pub fn shift_breakdown(
 
 pub fn shifts_of_day(conn: &Db, day_id: i64) -> AppResult<Vec<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by
          WHERE s.business_day_id = ?1 ORDER BY s.id"
     ))?;
     let rows = stmt.query_map([day_id], shift_row)?;
@@ -570,7 +586,7 @@ pub struct SettlementPreview {
 /// settlement. Ordering is the authoritative operational sequence.
 pub fn pending_shifts(conn: &Db, day_id: i64) -> AppResult<Vec<ShiftRow>> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id
+        "SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by
          WHERE s.business_day_id = ?1 AND s.status = 'CLOSED'
            AND NOT EXISTS (SELECT 1 FROM day_closing_shifts dcs WHERE dcs.shift_id = s.id)
          ORDER BY s.opened_at, s.id"
@@ -918,7 +934,7 @@ pub fn closed_shifts(conn: &Db, from: Option<&str>, to: Option<&str>) -> AppResu
     // date — against a Cairo business date, which misfiled any shift that
     // closed either side of midnight.
     let span = crate::time::business_date_span(from, to);
-    let mut sql = format!("SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id WHERE s.status = 'CLOSED'");
+    let mut sql = format!("SELECT {SHIFT_COLS} FROM shifts s JOIN users u ON u.id = s.user_id LEFT JOIN users cb ON cb.id = s.closed_by WHERE s.status = 'CLOSED'");
     let mut args: Vec<String> = Vec::new();
     if let Some(span) = span.as_ref() {
         if !span.start_inclusive.is_empty() {

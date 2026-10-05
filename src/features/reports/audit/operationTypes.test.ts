@@ -134,6 +134,7 @@ describe('operation type registry', () => {
       'expense.created',
       'shift.opened',
       'shift.closed',
+      'shift.closed_by_manager',
       'day.opened',
       'day.settled',
       'day.closed',

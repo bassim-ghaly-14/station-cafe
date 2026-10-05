@@ -18,13 +18,22 @@
  * logged-in session.
  */
 import { useTranslation } from 'react-i18next'
-import { Badge, EmployeeAvatar } from '@/components/ui'
+import { Badge, Button, EmployeeAvatar } from '@/components/ui'
 import { DisplayDateTime } from '@/components/ui/display-datetime'
 import { Clock, Lock } from '@/components/ui/icon'
 import type { ShiftRow } from '@/services/shiftApi'
 import { ClosingCardShell } from './ClosingCard'
 
-export function OpenShiftCard({ shift }: Readonly<{ readonly shift: ShiftRow }>) {
+export function OpenShiftCard({
+  shift,
+  /**
+   * Present ONLY when the signed-in user is MANAGER+ (decided by `ShiftGate`
+   * from the session). When provided, the card offers the explicit managerial
+   * close action instead of the blocked state — the backend re-checks the role
+   * on every command, so this is presentation, never the security boundary.
+   */
+  onManageClose,
+}: Readonly<{ readonly shift: ShiftRow; readonly onManageClose?: () => void }>) {
   const { t } = useTranslation()
   const cashier = shift.user_name ?? t('pos.unknownCashier')
   return (
@@ -58,10 +67,23 @@ export function OpenShiftCard({ shift }: Readonly<{ readonly shift: ShiftRow }>)
       }
       footerNote={<p className="max-w-sm text-caption">{t('shift.alreadyOpenHint')}</p>}
       action={
-        <span className="flex items-center gap-1.5 text-sm font-medium text-closing-shift-foreground">
-          <Lock size={16} aria-hidden />
-          {t('shift.alreadyOpenBlocked')}
-        </span>
+        onManageClose ? (
+          <Button
+            size="sm"
+            className="border border-closing-shift-border text-closing-shift-foreground hover:bg-closing-shift-soft"
+            variant="outline"
+            onClick={onManageClose}
+            data-testid="manager-close-shift"
+          >
+            <Lock size={16} aria-hidden />
+            {t('shift.managerCloseAction')}
+          </Button>
+        ) : (
+          <span className="flex items-center gap-1.5 text-sm font-medium text-closing-shift-foreground">
+            <Lock size={16} aria-hidden />
+            {t('shift.alreadyOpenBlocked')}
+          </span>
+        )
       }
     >
       {/* The cashier is the one fact that matters here, so it is stated as the

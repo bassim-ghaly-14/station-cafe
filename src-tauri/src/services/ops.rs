@@ -456,6 +456,17 @@ pub fn shift_expenses(conn: &Db, actor: &User) -> AppResult<Vec<Expense>> {
     expenses::list_for_shift(conn, shift.id)
 }
 
+/// The expenses booked to ANY shift — a MANAGER reviewing another cashier's
+/// open shift before a managerial close sees the same list the cashier's own
+/// dialog shows. The caller-scoped read above is untouched, and this one is
+/// MANAGER+ both here and in its command.
+pub fn expenses_of_shift(conn: &Db, actor: &User, shift_id: i64) -> AppResult<Vec<Expense>> {
+    crate::services::auth::require_role(actor, "MANAGER")?;
+    crate::repositories::shifts::get_shift(conn, shift_id)?
+        .ok_or_else(|| AppError::not_found("shift.not_found"))?;
+    expenses::list_for_shift(conn, shift_id)
+}
+
 /// The expenses workspace payload: KPIs, the daily trend and the category
 /// ranking for ONE period.
 ///

@@ -56,6 +56,42 @@ pub fn close_shift(
     })
 }
 
+/// The single open shift (whoever owns it), for the managerial recovery flow.
+/// MANAGER-gated: STAFF continue to see only their own shift via `state()`.
+#[tauri::command(rename_all = "snake_case")]
+pub fn open_shift_detail(state: State<'_, AppState>, token: String) -> AppResult<Option<ShiftRow>> {
+    authorized(&state, &token, "MANAGER", |conn, actor| {
+        shift_svc::open_shift_detail(conn, actor)
+    })
+}
+
+/// Managerial preview of another cashier's open shift. MANAGER-gated.
+#[tauri::command(rename_all = "snake_case")]
+pub fn preview_managed_shift_close(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: i64,
+) -> AppResult<ShiftClosingPreview> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        shift_svc::preview_managed_shift_close(conn, actor, shift_id)
+    })
+}
+
+/// Managerial close of another cashier's open shift. MANAGER-gated in the
+/// command AND in the service, so a STAFF caller invoking this command
+/// directly is rejected by the backend.
+#[tauri::command(rename_all = "snake_case")]
+pub fn close_managed_shift(
+    state: State<'_, AppState>,
+    token: String,
+    shift_id: i64,
+    actual_cash: i64,
+) -> AppResult<ShiftClosing> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        shift_svc::close_managed_shift(conn, actor, shift_id, actual_cash)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn preview_day_settlement(
     state: State<'_, AppState>,

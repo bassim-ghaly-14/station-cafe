@@ -336,6 +336,11 @@ export const opsApi = {
   /** The caller's own open-shift expenses, for the POS panel. */
   shiftExpenses: () => call<Expense[]>('list_shift_expenses'),
   /**
+   * MANAGER+ only: the expenses booked to ANY shift — the review list behind
+   * a managerial close of another cashier's shift.
+   */
+  expensesOfShift: (shift_id: number) => call<Expense[]>('list_expenses_of_shift', { shift_id }),
+  /**
    * Record an expense. The ONE creation path: the Manager page, the cashier shift
    * panel and the LAN bridge all call this same command, so every rule below holds
    * identically for every role.

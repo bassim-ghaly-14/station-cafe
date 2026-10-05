@@ -61,6 +61,8 @@ mod services;
 #[cfg(test)]
 mod table_lifecycle_test;
 #[cfg(test)]
+mod manager_close_test;
+#[cfg(test)]
 mod workflow_test;
 
 pub mod time;
@@ -281,6 +283,9 @@ pub fn run() {
             commands::shifts::open_shift,
             commands::shifts::preview_shift_close,
             commands::shifts::close_shift,
+            commands::shifts::open_shift_detail,
+            commands::shifts::preview_managed_shift_close,
+            commands::shifts::close_managed_shift,
             commands::shifts::preview_day_settlement,
             commands::shifts::settle_day,
             commands::shifts::day_settlement_history,
@@ -304,6 +309,7 @@ pub fn run() {
             commands::ops::rename_expense_category,
             commands::ops::delete_expense_category,
             commands::ops::list_shift_expenses,
+            commands::ops::list_expenses_of_shift,
             commands::ops::today_summary,
             commands::ops::analytics_charts,
             commands::ops::monthly_executive_report,

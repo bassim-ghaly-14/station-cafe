@@ -37,26 +37,63 @@ import { useTranslation } from 'react-i18next'
 import { Button, Card, useToast } from '@/components/ui'
 import { Power } from '@/components/ui/icon'
 import { Field, Input } from '@/components/ui/input'
+import { atLeast, useSession } from '@/features/auth/useSession'
 import { shiftApi, type DayShiftState } from '@/services/shiftApi'
 import { parseMajor } from '@/lib/utils'
+import { ManagedCloseShiftDialog } from './ManagedCloseShiftDialog'
 import { OpenShiftCard } from './OpenShiftCard'
 
 export function ShiftGate({
   state,
   onReady,
-}: Readonly<{ readonly state: DayShiftState; onReady: () => void }>) {
+  onShiftClosed,
+}: Readonly<{
+  readonly state: DayShiftState
+  onReady: () => void
+  /**
+   * Called after a MANAGER's on-behalf close commits, so the page re-reads the
+   * shift/day state. Optional because the gate is also rendered standalone.
+   */
+  onShiftClosed?: () => void | Promise<void>
+}>) {
   const { t } = useTranslation()
+  const { user } = useSession()
   const toast = useToast()
   const [opening, setOpening] = useState(false)
   const [cash, setCash] = useState('')
   const [cashError, setCashError] = useState<string | null>(null)
+  const [managing, setManaging] = useState(false)
+
+  /**
+   * Whether the managerial close action is OFFERED. Presentation only — every
+   * command behind the dialog re-checks the role in the backend, so a STAFF
+   * session that forced this flag would still be refused server-side.
+   */
+  const canManageClose = atLeast(user?.role, 'MANAGER')
 
   // A shift is open and it is not the caller's: the one-open-shift rule blocks
   // opening another, so the gate explains the state instead of offering an
   // action the backend would refuse. `open_shift` is the same read the service
   // enforces the rule from, so the card cannot disagree with the database.
   if (state.open_shift && !state.my_shift) {
-    return <OpenShiftCard shift={state.open_shift} />
+    return (
+      <>
+        <OpenShiftCard
+          shift={state.open_shift}
+          onManageClose={canManageClose ? () => setManaging(true) : undefined}
+        />
+        {managing ? (
+          <ManagedCloseShiftDialog
+            shift={state.open_shift}
+            onClose={() => setManaging(false)}
+            onClosed={async () => {
+              setManaging(false)
+              await onShiftClosed?.()
+            }}
+          />
+        ) : null}
+      </>
+    )
   }
 
   async function start() {

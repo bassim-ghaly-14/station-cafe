@@ -1274,6 +1274,13 @@ fn close_shift(conn: &Db, shift_id: i64, date: &str, rng: &mut Rng) -> AppResult
     };
     let actual = (expected + difference).max(0);
 
+    // Demo history predates the closure-actor column: record the owner as the
+    // closer so old rows read as ordinary self-closes.
+    let owner: i64 = conn.query_row(
+        "SELECT user_id FROM shifts WHERE id = ?1",
+        params![shift_id],
+        |r| r.get(0),
+    )?;
     shifts::save_shift_closing(
         conn,
         shift_id,
@@ -1284,6 +1291,7 @@ fn close_shift(conn: &Db, shift_id: i64, date: &str, rng: &mut Rng) -> AppResult
         actual,
         &local_instant(date, 21, 0)?,
         &expenses::encode_breakdown(&breakdown),
+        owner,
     )?;
     conn.execute(
         "UPDATE shifts SET opened_at = ?2 WHERE id = ?1",
