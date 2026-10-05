@@ -19,6 +19,7 @@ import {
   HandoverSection,
   SalesSection,
   ServicesSection,
+  TablesSection,
 } from './ReconciliationSections'
 import { ShiftExpenseDialog, ShiftExpenseList } from './ShiftExpenses'
 import type { Expense } from '@/services/opsApi'
@@ -228,6 +229,10 @@ describe('reconciliation presentation has no missing Arabic text', () => {
     'shift.expensesCashPart',
     'shift.expenseCount',
     'shift.expenseEmpty',
+    'shift.tablesSection',
+    'shift.tablesOpened',
+    'shift.tablesClosedEmpty',
+    'shift.tablesSectionHint',
     'shift.handoverSection',
     'shift.custodySection',
     'shift.openingCash',
@@ -327,6 +332,65 @@ describe('reconciliation sections render the backend report', () => {
     const row = screen.getByText('عدد الفواتير').parentElement!
     expect(row.textContent).toContain('0')
     expect(row.textContent).not.toContain('ج.م')
+  })
+
+  /**
+   * The shift closing states the SHIFT's own table lifecycle: how many table
+   * sessions this shift opened, and how many of them it closed without an order.
+   *
+   * Both figures arrive from the backend, already scoped to `shift_id`, and this
+   * screen only presents them. The component therefore must never derive them —
+   * and above all never route them through `AmountRow`, which would render six
+   * closes as `0.06 ج.م`.
+   */
+  it('renders the shift table statistics as counts, verbatim from the backend', () => {
+    render(
+      <SessionProvider>
+        <RouterProvider>
+          <TablesSection tables={{ opens: 3, closed_empty: 2 }} />
+        </RouterProvider>
+      </SessionProvider>,
+    )
+
+    // The shift's own block, not the day's: two separate labelled lines.
+    expect(screen.getByText('الطاولات خلال الوردية')).toBeInTheDocument()
+    const opens = screen.getByText('طاولات تم فتحها').parentElement!
+    const empty = screen.getByText('طاولات أُغلقت فارغة').parentElement!
+
+    // The backend's exact integers — 3 opens and 2 empty closes.
+    expect(opens.textContent).toContain('3')
+    expect(empty.textContent).toContain('2')
+    // Counts, never amounts: no piaster division, no currency symbol.
+    expect(opens.textContent).not.toContain('ج.م')
+    expect(empty.textContent).not.toContain('ج.م')
+    expect(opens.textContent).not.toContain('0.03')
+    expect(empty.textContent).not.toContain('0.02')
+
+    // And the hint states the reset rule the cashier relies on, so the screen
+    // never implies a figure that carries over into the next shift.
+    expect(screen.getByText(/تبدأ من جديد مع الوردية التالية/)).toBeInTheDocument()
+  })
+
+  /**
+   * A shift that has done nothing yet must state zero, not hide the lines. A
+   * missing line would read as "not applicable" rather than "nothing happened",
+   * which is exactly the ambiguity the shift boundary must not have.
+   */
+  it('states zero for both table statistics rather than omitting them', () => {
+    render(
+      <SessionProvider>
+        <RouterProvider>
+          <TablesSection tables={{ opens: 0, closed_empty: 0 }} />
+        </RouterProvider>
+      </SessionProvider>,
+    )
+
+    const opens = screen.getByText('طاولات تم فتحها').parentElement!
+    const empty = screen.getByText('طاولات أُغلقت فارغة').parentElement!
+    expect(opens.textContent).toContain('0')
+    expect(empty.textContent).toContain('0')
+    expect(opens.textContent).not.toContain('ج.م')
+    expect(empty.textContent).not.toContain('ج.م')
   })
 
   /**
