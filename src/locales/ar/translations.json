@@ -17,6 +17,8 @@
     "search": "بحث",
     "add": "إضافة",
     "actions": "إجراءات",
+    "copy": "نسخ",
+    "copied": "تم النسخ",
     "moreActions": "المزيد من الإجراءات",
     "status": "الحالة",
     "date": "التاريخ",
@@ -924,6 +926,7 @@
     "actions": {
       "details": "تفاصيل {{name}}",
       "edit": "تعديل {{name}}",
+      "copyPhone": "نسخ تليفون {{name}}",
       "delete": "حذف {{name}} نهائيًا"
     },
     "kpi": {
@@ -1853,6 +1856,7 @@
       "leaveFor": "تسجيل إجازة {{name}}",
       "details": "تفاصيل {{name}}",
       "edit": "تعديل {{name}}",
+      "copyPhone": "نسخ تليفون {{name}}",
       "deactivate": "إيقاف {{name}}",
       "activate": "تنشيط {{name}}",
       "delete": "حذف {{name}} نهائيًا"

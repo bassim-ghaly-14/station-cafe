@@ -28,6 +28,7 @@ export {
   Clock,
   Coffee,
   Coins,
+  Copy,
   DoorClosed,
   DoorOpen,
   Download,

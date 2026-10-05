@@ -35,6 +35,7 @@ export {
   DISCOUNT_PIN_LENGTH,
 } from './input'
 export { iconSize, type LucideIcon } from './icon'
+export { CopyButton, type CopyButtonProps } from './copy-button'
 export { Card, CardHeader } from './card'
 export { KpiGrid, KpiTile, KpiBreakdown, KpiBreakdownEntry, type KpiGridProps } from './kpi'
 export { Badge, type BadgeProps } from './badge'
