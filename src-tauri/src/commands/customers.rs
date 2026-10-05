@@ -3,7 +3,7 @@
 use super::common::authorized;
 use crate::error::{AppError, AppResult};
 use crate::repositories::customer_analytics::{CustomerDetails, CustomerList, CustomerOverview};
-use crate::repositories::customers::{self, Car, Customer, CustomerWithCars};
+use crate::repositories::customers::{self, Car, Customer, CustomerPhoneEntry, CustomerWithCars};
 use crate::services::customers::{self as customer_svc, CustomerPeriod};
 use crate::AppState;
 use serde::Deserialize;
@@ -46,6 +46,23 @@ pub fn list_customers(
     let query = query.unwrap_or_default();
     authorized(&state, &token, "STAFF", move |conn, actor| {
         customer_svc::list(conn, actor, query.trim(), from, to)
+    })
+}
+
+/// Phone export for customer communication workflows.
+///
+/// MANAGER-gated in the service: the page list itself is open to every role,
+/// so the boundary lives here rather than in what the UI renders.
+/// `customer_ids = None` exports every eligible customer (no 200-row page
+/// cap); `Some(ids)` exports exactly the selected rows.
+#[tauri::command(rename_all = "snake_case")]
+pub fn export_customer_phones(
+    state: State<'_, AppState>,
+    token: String,
+    customer_ids: Option<Vec<i64>>,
+) -> AppResult<Vec<CustomerPhoneEntry>> {
+    authorized(&state, &token, "STAFF", move |conn, actor| {
+        customer_svc::export_phones(conn, actor, customer_ids)
     })
 }
 

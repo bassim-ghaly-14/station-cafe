@@ -14,7 +14,7 @@ use crate::error::{AppError, AppResult};
 use crate::repositories::customer_analytics::{
     self, CustomerDetails, CustomerList, CustomerOverview,
 };
-use crate::repositories::customers;
+use crate::repositories::customers::{self, CustomerPhoneEntry};
 use crate::repositories::users::User;
 use crate::repositories::Db;
 use crate::services::auth;
@@ -123,6 +123,29 @@ pub fn delete(conn: &Db, actor: &User, customer_id: i64) -> AppResult<()> {
 
     tx.commit()?;
     Ok(())
+}
+
+/// Phone export rows for owner-controlled communication workflows.
+///
+/// MANAGER-gated: customer phone numbers are personal data, and the list
+/// command is open to every role, so this dedicated read is the boundary that
+/// keeps an "export all" out of a cashier's reach. `customer_ids = None`
+/// means every eligible customer (no page cap); `Some(ids)` exports exactly
+/// those rows. Rows arrive ordered by `name, id` from the repository and are
+/// deduplicated here by normalized `phone_key`, keeping the first (lowest
+/// name, then lowest id) occurrence so the output is deterministic.
+pub fn export_phones(
+    conn: &Db,
+    actor: &User,
+    customer_ids: Option<Vec<i64>>,
+) -> AppResult<Vec<CustomerPhoneEntry>> {
+    auth::require_role(actor, "MANAGER")?;
+    let rows = customers::export_phones(conn, customer_ids.as_deref())?;
+    let mut seen = std::collections::HashSet::new();
+    Ok(rows
+        .into_iter()
+        .filter(|row| seen.insert(row.phone_key.clone()))
+        .collect())
 }
 
 /// The activity band + the period a customer is being viewed for. Pure input

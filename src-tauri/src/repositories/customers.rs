@@ -29,6 +29,75 @@ pub struct CustomerWithCars {
     pub cars: Vec<Car>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerPhoneEntry {
+    pub id: i64,
+    pub name: String,
+    pub phone: String,
+    /// Normalized identity used for dedupe; never exported itself.
+    #[serde(skip_serializing, skip_deserializing, default)]
+    pub phone_key: String,
+}
+
+/// Phone export rows for customer communication workflows.
+///
+/// Identity columns only — no financial figures, no notes, no internal ids
+/// beyond the row id used for deterministic ordering. `customer_ids` selects
+/// an explicit subset (the UI's checked rows); `None` means every eligible
+/// customer. Rows are ordered by `name, id` so the export is deterministic
+/// and reuses the page's own ordering. Deduplication by normalized
+/// `phone_key` happens in the service so SQL stays a plain read.
+pub fn export_phones(conn: &Db, customer_ids: Option<&[i64]>) -> AppResult<Vec<CustomerPhoneEntry>> {
+    let mut sql = String::from(
+        "SELECT id, name, phone, phone_key FROM customers
+         WHERE phone IS NOT NULL AND TRIM(phone) <> ''",
+    );
+    let mut args: Vec<i64> = Vec::new();
+    if let Some(ids) = customer_ids {
+        // An explicit empty selection exports nothing — it must never fall
+        // through to "every customer".
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        sql.push_str(&format!(" AND id IN ({placeholders})"));
+        args.extend(ids.iter().copied());
+    }
+    sql.push_str(" ORDER BY name COLLATE NOCASE, id");
+    let mut stmt = conn.prepare(&sql)?;
+    let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+    let rows = stmt.query_map(refs.as_slice(), |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, name, phone, phone_key) = row?;
+        // Skip rows whose raw phone normalizes to nothing (whitespace-only,
+        // separators-only): they would otherwise produce empty export entries.
+        // Fall back to the trimmed raw value when the stored key predates the
+        // normalization backfill, so legacy rows are still exported.
+        let key = phone_key
+            .filter(|k| !k.trim().is_empty())
+            .or_else(|| crate::normalize::normalize_phone(&phone))
+            .unwrap_or_else(|| phone.trim().to_string());
+        if key.trim().is_empty() {
+            continue;
+        }
+        out.push(CustomerPhoneEntry {
+            id,
+            name,
+            phone,
+            phone_key: key,
+        });
+    }
+    Ok(out)
+}
+
 pub fn insert(conn: &Db, name: &str, phone: Option<&str>, notes: Option<&str>) -> AppResult<i64> {
     let phone_key = crate::normalize::normalize_phone(phone.unwrap_or(""));
     if let Some(key) = &phone_key {

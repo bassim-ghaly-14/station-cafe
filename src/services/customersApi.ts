@@ -96,6 +96,12 @@ export interface CustomerDetails {
   activity: CustomerActivity[]
 }
 
+export interface CustomerPhoneRow {
+  id: number
+  name: string
+  phone: string
+}
+
 function period(period?: CustomerPeriod) {
   return { from: period?.from ?? null, to: period?.to ?? null }
 }
@@ -113,6 +119,15 @@ export const customersApi = {
       customer_id: customerId,
       period: period(range),
     }),
+
+  /**
+   * Phone export rows. MANAGER-gated server-side: an unauthorized role is
+   * refused by the backend with `auth.forbidden`. `customerIds = undefined`
+   * exports every eligible customer (no page cap); an array exports exactly
+   * those rows, already ordered and deduplicated.
+   */
+  exportPhones: (customerIds?: number[]) =>
+    call<CustomerPhoneRow[]>('export_customer_phones', { customer_ids: customerIds ?? null }),
 
   create: (input: { name: string; phone?: string | null; notes?: string | null }) =>
     call<number>('create_customer', { input }),

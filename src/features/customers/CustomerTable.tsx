@@ -62,6 +62,10 @@ function CustomerRecordList({
   customers,
   financialVisible,
   canDelete,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectVisible,
   onOpenDetails,
   onEdit,
   onDelete,
@@ -70,6 +74,10 @@ function CustomerRecordList({
   readonly customers: readonly CustomerRow[]
   readonly financialVisible: boolean
   readonly canDelete: boolean
+  readonly selectable?: boolean
+  readonly selectedIds?: ReadonlySet<number>
+  readonly onToggleSelect?: (customer: CustomerRow) => void
+  readonly onToggleSelectVisible?: (checked: boolean) => void
   readonly onOpenDetails: (customer: CustomerRow) => void
   readonly onEdit: (customer: CustomerRow) => void
   readonly onDelete: (customer: CustomerRow) => void
@@ -79,6 +87,21 @@ function CustomerRecordList({
 
   return (
     <RecordList className={className} aria-label={t('customers.table.caption')}>
+      {selectable ? (
+        <RecordListItem>
+          <label className="flex cursor-pointer items-center gap-2 text-body">
+            <input
+              type="checkbox"
+              checked={
+                customers.length > 0 &&
+                customers.every((row) => selectedIds?.has(row.id) ?? false)
+              }
+              onChange={(e) => onToggleSelectVisible?.(e.target.checked)}
+            />
+            {t('customers.export.selectVisible')}
+          </label>
+        </RecordListItem>
+      ) : null}
       {customers.map((customer) => {
         const stats = financialVisible ? customer.stats : null
         const menuItems: ActionMenuItem[] = canDelete
@@ -96,6 +119,17 @@ function CustomerRecordList({
 
         return (
           <RecordListItem key={customer.id}>
+            {selectable ? (
+              <label className="mb-2 flex cursor-pointer items-center gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={selectedIds?.has(customer.id) ?? false}
+                  onChange={() => onToggleSelect?.(customer)}
+                  aria-label={t('customers.export.selectCustomer', { name: customer.name })}
+                />
+                {t('customers.export.select')}
+              </label>
+            ) : null}
             <CustomerRecordIdentity customer={customer} />
             <CustomerRecordVehicles customer={customer} />
             <p className="mt-2 text-caption text-foreground-subtle">
@@ -263,6 +297,10 @@ export function CustomerTable({
   customers,
   financialVisible,
   canDelete,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectVisible,
   onOpenDetails,
   onEdit,
   onDelete,
@@ -277,6 +315,12 @@ export function CustomerTable({
    * refuses a MANAGER or CASHIER regardless of what this button offers.
    */
   readonly canDelete?: boolean
+  /** When true, each row offers a checkbox for the phone export selection. */
+  readonly selectable?: boolean
+  readonly selectedIds?: ReadonlySet<number>
+  readonly onToggleSelect?: (customer: CustomerRow) => void
+  /** Check/uncheck every VISIBLE row. "All customers" export stays server-side. */
+  readonly onToggleSelectVisible?: (checked: boolean) => void
   readonly onOpenDetails: (customer: CustomerRow) => void
   readonly onEdit: (customer: CustomerRow) => void
   /** Record the delete INTENT only. The page confirms, requests and toasts. */
@@ -305,6 +349,18 @@ export function CustomerTable({
   ]
 
   const columns: DataTableColumn[] = [
+    // Selection is the FIRST column so the checkbox leads the row in both
+    // directions. Its header cell stays blank: the labeled "select visible"
+    // control sits directly above the table, so header text would repeat it.
+    ...(selectable
+      ? [
+          {
+            key: 'select',
+            label: '',
+            headerClassName: 'w-10',
+          } satisfies DataTableColumn,
+        ]
+      : []),
     {
       key: 'customer',
       label: t('customers.columns.customer'),
@@ -325,6 +381,10 @@ export function CustomerTable({
         customers={customers}
         financialVisible={financialVisible}
         canDelete={canDelete ?? false}
+        selectable={selectable}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        onToggleSelectVisible={onToggleSelectVisible}
         onOpenDetails={onOpenDetails}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -333,17 +393,46 @@ export function CustomerTable({
     )
   }
 
+  // Header checkbox state is derived from the VISIBLE rows only: "all" here
+  // means "all visible", never the whole database.
+  const visibleIds = customers.map((row) => row.id)
+  const visibleSelected = visibleIds.filter((id) => selectedIds?.has(id)).length
+  const allVisibleChecked = visibleIds.length > 0 && visibleSelected === visibleIds.length
+
   return (
-    <DataTable
-      caption={t('customers.table.caption')}
-      columns={columns}
-      busy={busy}
-      className={className}
-    >
+    <>
+      {selectable ? (
+        <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-3 py-2">
+          <label className="flex cursor-pointer items-center gap-2 text-body">
+            <input
+              type="checkbox"
+              checked={allVisibleChecked}
+              onChange={(e) => onToggleSelectVisible?.(e.target.checked)}
+            />
+            {t('customers.export.selectVisible')}
+          </label>
+        </div>
+      ) : null}
+      <DataTable
+        caption={t('customers.table.caption')}
+        columns={columns}
+        busy={busy}
+        className={className}
+      >
       {customers.map((customer) => {
         const stats = financialVisible ? customer.stats : null
         return (
           <DataTableRow key={customer.id}>
+            {selectable ? (
+              <DataTableCell>
+                <input
+                  type="checkbox"
+                  checked={selectedIds?.has(customer.id) ?? false}
+                  onChange={() => onToggleSelect?.(customer)}
+                  aria-label={t('customers.export.selectCustomer', { name: customer.name })}
+                />
+              </DataTableCell>
+            ) : null}
             <DataTableCell>
               {/* Avatar + name + quiet secondary metadata. The avatar repeats
                   the name, so it is decorative and the name stays the single
@@ -481,6 +570,7 @@ export function CustomerTable({
           </DataTableRow>
         )
       })}
-    </DataTable>
+      </DataTable>
+    </>
   )
 }

@@ -235,6 +235,7 @@ pub fn run() {
             commands::catalog::set_discount_authorization_pin,
             commands::customers::search_customers,
             commands::customers::list_customers,
+            commands::customers::export_customer_phones,
             commands::customers::customer_overview,
             commands::customers::customer_details,
             commands::customers::list_cars_of,

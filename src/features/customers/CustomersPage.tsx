@@ -19,13 +19,17 @@ import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
 import { Button, Card, ConfirmDialog, ProgressBar, TableSkeleton, useToast } from '@/components/ui'
-import { UserPlus, Users } from '@/components/ui/icon'
+import { FileDown, UserPlus, Users } from '@/components/ui/icon'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import { useErrText } from '@/lib/err'
 import { CustomerDetailsDrawer } from './CustomerDetailsDrawer'
 import { CustomerDialog, type CustomerDialogMode } from './CustomerDialog'
 import { CustomerFilters } from './CustomerFilters'
 import { CustomerKpiBand } from './CustomerKpiBand'
+import {
+  CustomerPhoneExportDialog,
+  type CustomerPhoneExportScope,
+} from './CustomerPhoneExportDialog'
 import { CustomerTable } from './CustomerTable'
 import { useCustomerList, useCustomerOverview, type CustomerOverviewState } from './useCustomerData'
 import { customersApi } from '@/services/customersApi'
@@ -79,6 +83,10 @@ function CustomerListSection({
   customers,
   financialVisible,
   canDelete,
+  selectable,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectVisible,
   searching,
   onRetry,
   onReset,
@@ -94,6 +102,10 @@ function CustomerListSection({
   readonly customers: CustomerRow[]
   readonly financialVisible: boolean
   readonly canDelete: boolean
+  readonly selectable: boolean
+  readonly selectedIds: ReadonlySet<number>
+  readonly onToggleSelect: (customer: CustomerRow) => void
+  readonly onToggleSelectVisible: (checked: boolean) => void
   readonly searching: boolean
   readonly onRetry: () => void
   readonly onReset: () => void
@@ -151,6 +163,10 @@ function CustomerListSection({
         customers={customers}
         financialVisible={financialVisible}
         canDelete={canDelete}
+        selectable={selectable}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        onToggleSelectVisible={onToggleSelectVisible}
         onOpenDetails={onOpenDetails}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -174,6 +190,12 @@ export default function CustomersPage() {
   // cannot be fired twice.
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null)
   const [deleting, setDeleting] = useState(false)
+  // Phone-export selection: the checked row ids, kept across searches so a
+  // selection survives typing. Export itself always re-reads from the backend
+  // (never from the visible page), so this is intent only, not data.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(new Set())
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportScope, setExportScope] = useState<CustomerPhoneExportScope>('selected')
 
   // The role decides which analytics are REQUESTED. The backend still refuses
   // anything unauthorized — this only avoids asking for what cannot be had.
@@ -194,6 +216,31 @@ export default function CustomersPage() {
   // The payload's own flag is the last word on what may be rendered.
   const financialVisible = list.list?.financial_visible ?? false
   const searching = query.trim() !== ''
+  // Phone export is MANAGER-gated server-side (personal data); the button is
+  // hidden for a cashier the same way the analytics band is.
+  const canExportPhones = atLeast(user?.role, 'MANAGER')
+
+  function toggleSelect(customer: CustomerRow) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(customer.id)) next.delete(customer.id)
+      else next.add(customer.id)
+      return next
+    })
+  }
+
+  function toggleSelectVisible(checked: boolean) {
+    // "Select all" here means the VISIBLE rows only — the server-side "all
+    // customers" export is a separate scope in the export dialog.
+    if (checked) {
+      setSelectedIds((prev) => new Set([...prev, ...customers.map((row) => row.id)]))
+    } else {
+      setSelectedIds((prev) => {
+        const visible = new Set(customers.map((row) => row.id))
+        return new Set([...prev].filter((id) => !visible.has(id)))
+      })
+    }
+  }
 
   function openDetails(customer: CustomerRow) {
     setDetailsName(customer.name)
@@ -263,10 +310,18 @@ export default function CustomersPage() {
         showPeriod={canSeeAnalytics}
         onReset={resetFilters}
         actions={
-          <Button onClick={() => setDialog({ kind: 'create' })}>
-            <UserPlus size={16} aria-hidden />
-            {t('customers.form.createTitle')}
-          </Button>
+          <>
+            {canExportPhones ? (
+              <Button variant="outline" onClick={() => setExportOpen(true)}>
+                <FileDown size={16} aria-hidden />
+                {t('customers.export.button')}
+              </Button>
+            ) : null}
+            <Button onClick={() => setDialog({ kind: 'create' })}>
+              <UserPlus size={16} aria-hidden />
+              {t('customers.form.createTitle')}
+            </Button>
+          </>
         }
       />
 
@@ -282,6 +337,10 @@ export default function CustomersPage() {
         customers={customers}
         financialVisible={financialVisible}
         canDelete={canDelete}
+        selectable={canExportPhones}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
+        onToggleSelectVisible={toggleSelectVisible}
         searching={searching}
         onRetry={list.reload}
         onReset={resetFilters}
@@ -290,6 +349,18 @@ export default function CustomersPage() {
         onEdit={(customer) => setDialog({ kind: 'edit', customer })}
         onDelete={deleteCustomer}
       />
+
+      {canExportPhones ? (
+        <CustomerPhoneExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          scope={exportScope}
+          onScopeChange={setExportScope}
+          selectedIds={[...selectedIds]}
+          selectedCount={selectedIds.size}
+          canExport={canExportPhones}
+        />
+      ) : null}
 
       <CustomerDialog
         mode={dialog}

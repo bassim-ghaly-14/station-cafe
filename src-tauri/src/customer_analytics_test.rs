@@ -69,6 +69,71 @@ fn add_customer(conn: &Connection, name: &str, phone: Option<&str>) -> i64 {
     customers::insert(conn, name, phone, None).unwrap()
 }
 
+#[test]
+fn export_phones_dedupes_skips_unusable_and_orders_deterministically() {
+    let conn = fresh();
+    let manager = actor(&conn, "manager");
+    // The unique `phone_key` index already prevents two spellings of one
+    // identity from coexisting, so dedupe is proved at the NORMALIZATION
+    // level: "٠١٠٠ ١٢٣ ٤٥٦٧"-style variants normalize to one key and only the
+    // first is kept. Raw duplicates can only exist pre-backfill (NULL key),
+    // which the service resolves through the same normalizer.
+    let zebra = add_customer(&conn, "كريم", Some("01111111111"));
+    let keep = add_customer(&conn, "أحمد سيد", Some("01001234567"));
+    add_customer(&conn, "بدون هاتف", None);
+    conn.execute(
+        "INSERT INTO customers (name, phone) VALUES ('فراغات', '   ')",
+        [],
+    )
+    .unwrap();
+
+    // All: skips null/blank, dedupes the shared number, orders by name.
+    let all = customer_svc::export_phones(&conn, &manager, None).unwrap();
+    let phones: Vec<&str> = all.iter().map(|r| r.phone.as_str()).collect();
+    assert_eq!(phones, vec!["01001234567", "01111111111"]);
+    assert_eq!(all[0].name, "أحمد سيد");
+    assert!(all.iter().all(|r| !r.phone.trim().is_empty()));
+
+    // Selected: exactly those rows.
+    let sel = customer_svc::export_phones(&conn, &manager, Some(vec![keep, zebra])).unwrap();
+    assert_eq!(sel.len(), 2);
+
+    // A legacy row whose stored key is NULL still resolves through the
+    // normalizer and dedupes against the live row.
+    conn.execute(
+        "INSERT INTO customers (name, phone, phone_key) VALUES ('نسخة قديمة', '0100-123-4567', NULL)",
+        [],
+    )
+    .unwrap();
+    let legacy_id: i64 = conn
+        .query_row(
+            "SELECT id FROM customers WHERE name = 'نسخة قديمة'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let with_legacy =
+        customer_svc::export_phones(&conn, &manager, Some(vec![keep, legacy_id])).unwrap();
+    assert_eq!(with_legacy.len(), 1);
+    assert_eq!(with_legacy[0].name, "أحمد سيد");
+
+    // Empty selection exports nothing — never falls through to "all".
+    let empty = customer_svc::export_phones(&conn, &manager, Some(vec![])).unwrap();
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn export_phones_is_manager_gated() {
+    let conn = fresh();
+    let cashier = actor(&conn, "cashier");
+    add_customer(&conn, "أحمد سيد", Some("01001234567"));
+    let err = customer_svc::export_phones(&conn, &cashier, None).unwrap_err();
+    assert_eq!(err.to_string(), "unauthorized: auth.forbidden");
+    // Manager and admin both pass the gate.
+    assert!(customer_svc::export_phones(&conn, &actor(&conn, "manager"), None).is_ok());
+    assert!(customer_svc::export_phones(&conn, &actor(&conn, "admin"), None).is_ok());
+}
+
 /// A real cafe table — a TABLE order is only valid with one (schema CHECK).
 fn add_table(conn: &Connection, label: &str) -> i64 {
     conn.execute("INSERT INTO cafe_tables (label) VALUES (?1)", [label])
