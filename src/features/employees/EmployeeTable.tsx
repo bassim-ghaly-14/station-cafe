@@ -52,6 +52,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ActionMenu,
   Badge,
+  CopyButton,
   DataTable,
   DataTableCell,
   DataTableRow,
@@ -250,6 +251,30 @@ function EmployeeRecordList({
   )
 }
 
+/**
+ * Copy the phone number of one employee.
+ *
+ * Deliberately the SAME shape as the Customers table's helper — two translated
+ * strings wrapped around the one shared `CopyButton`. There is no
+ * employee-specific copy implementation: the clipboard write, the success
+ * state, the icon swap, the toast and the accessible naming all come from the
+ * shared primitive, so the two screens cannot drift apart.
+ *
+ * Rendered only when a phone exists, for the same reason as everywhere else: a
+ * control with nothing to copy can only fail.
+ */
+function PhoneCopyButton({ name, phone }: { readonly name: string; readonly phone: string }) {
+  const { t } = useTranslation()
+  return (
+    <CopyButton
+      value={phone}
+      label={t('employees.actions.copyPhone', { name })}
+      copiedLabel={t('app.copied')}
+      data-testid="employee-copy-phone"
+    />
+  )
+}
+
 /** 1 — identity: the shared avatar in the real role, the name, the phone. */
 function EmployeeRecordIdentity({
   employee,
@@ -264,9 +289,16 @@ function EmployeeRecordIdentity({
       <div className="min-w-0 flex-1">
         <p className="truncate text-body font-bold text-foreground-strong">{employee.name}</p>
         {employee.phone ? (
-          <p dir="ltr" className="mt-0.5 truncate text-caption tabular-nums text-foreground-subtle">
-            {employee.phone}
-          </p>
+          /* The number and its copy control share one line, exactly as in the
+             Customers record presentation, so the phone looks and behaves the
+             same in both screens. `shrink-0` on the control stops a long number
+             from squeezing it out of the row. */
+          <span className="mt-0.5 flex items-center gap-1">
+            <span dir="ltr" className="truncate text-caption tabular-nums text-foreground-subtle">
+              {employee.phone}
+            </span>
+            <PhoneCopyButton name={employee.name} phone={employee.phone} />
+          </span>
         ) : null}
       </div>
     </div>
@@ -604,10 +636,15 @@ export function EmployeeTable({
 
             <DataTableCell className="hidden md:table-cell">
               {/* Phone comes from the canonical employee record, LTR because
-                  it is a number written left-to-right even in an RTL table. */}
+                  it is a number written left-to-right even in an RTL table.
+                  The copy control sits immediately beside it and only when a
+                  phone exists, matching the Customers table exactly. */}
               {employee.phone ? (
-                <span dir="ltr" className="tabular-nums text-foreground-subtle">
-                  {employee.phone}
+                <span className="flex items-center gap-1">
+                  <span dir="ltr" className="tabular-nums text-foreground-subtle">
+                    {employee.phone}
+                  </span>
+                  <PhoneCopyButton name={employee.name} phone={employee.phone} />
                 </span>
               ) : (
                 <span className="text-foreground-subtle">—</span>

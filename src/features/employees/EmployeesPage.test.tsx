@@ -23,6 +23,7 @@ import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import { ToastProvider } from '@/components/ui'
+import { resetViewportWidth, setViewportWidth } from '@/test/setup'
 import EmployeesPage from './EmployeesPage'
 import type { EmployeeList, EmployeeOverview, MyAttendance } from '@/services/employeesApi'
 
@@ -381,6 +382,74 @@ describe('EmployeesPage — manager', () => {
     expect(await screen.findByText('حضوري اليوم')).toBeInTheDocument()
     // "Not recorded" must never be phrased as an absence.
     expect(screen.getByText('لم يتم تسجيل حضورك اليوم')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The copy control on an employee row.
+ *
+ * The mirror of the Customers integration, and it asserts the SAME things, which
+ * is the point: one shared component, one behaviour, one visual treatment. There
+ * is no employee-specific copy code to test because there is no employee-specific
+ * copy code — only the two translated strings differ between the two screens.
+ */
+describe('EmployeesPage — copying an employee phone number', () => {
+  beforeEach(() => {
+    mocks.list.mockResolvedValue(MANAGER_LIST)
+  })
+
+  it('copies the number beside which it is displayed', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPage()
+
+    await screen.findAllByText('أحمد سيد')
+    fireEvent.click(screen.getByRole('button', { name: 'نسخ تليفون أحمد سيد' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('01001234567'))
+  })
+
+  it('leaves the number itself visible and untouched', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    })
+    renderPage()
+
+    expect(await screen.findByText('01001234567')).toBeInTheDocument()
+  })
+
+  it('offers no copy control for an employee with no phone', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    })
+    // A person the backend sends with no phone at all, exactly as it is stored.
+    mocks.list.mockResolvedValue({
+      management_visible: true,
+      employees: [employee({ name: 'محمود wash', phone: null }) as never],
+    })
+    renderPage()
+
+    await screen.findAllByText('محمود wash')
+    expect(screen.queryByRole('button', { name: /نسخ تليفون/ })).not.toBeInTheDocument()
+  })
+
+  it('reaches the phone presentation too, at the narrow breakpoint', async () => {
+    // Below `md` the roster becomes records, and that presentation carries its own
+    // copy control so the feature does not vanish on a phone.
+    setViewportWidth(360)
+    try {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      renderPage()
+
+      await screen.findAllByText('أحمد سيد')
+      fireEvent.click(screen.getByRole('button', { name: 'نسخ تليفون أحمد سيد' }))
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('01001234567'))
+    } finally {
+      resetViewportWidth()
+    }
   })
 })
 
