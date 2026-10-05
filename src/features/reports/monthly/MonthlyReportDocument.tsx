@@ -143,6 +143,12 @@ function DepartmentBlock({
 /**
  * One movement figure: a signed percentage, or the dash when the month before had
  * nothing to compare against. Never `NaN`, never `Infinity`.
+ *
+ * The tone is decided from the NUMERIC percent — never from the formatted string —
+ * and reuses the application's existing semantic tokens (`text-success` /
+ * `text-destructive`, as in `MonthlyComparisonBarChart` and the inventory movement
+ * log), so light/dark themes stay the theme's decision. Zero keeps the existing
+ * neutral/muted styling and is never treated as positive or negative.
  */
 function Movement({ label, movement }: Readonly<{ label: string; movement: MoneyMovement }>) {
   const { t } = useTranslation()
@@ -155,11 +161,20 @@ function Movement({ label, movement }: Readonly<{ label: string; movement: Money
     )
   }
   const arrow = movement.trend === 'up' ? '↑' : movement.trend === 'down' ? '↓' : '→'
+  const tone =
+    movement.percent > 0
+      ? 'text-success'
+      : movement.percent < 0
+        ? 'text-destructive'
+        : 'text-foreground-muted'
   return (
     <div className="flex flex-col">
       <span className="text-caption">{label}</span>
       {/* `dir="ltr"` keeps the arrow attached to its number inside the RTL line. */}
-      <span className="text-money" dir="ltr">
+      {/* A single tone on this span colours the number AND the arrow together. */}
+      {/* `print:text-black` keeps paper readable from either theme, as the sheet's
+          own print rules re-bind foregrounds to black ink. */}
+      <span className={cn('text-money print:text-black', tone)} dir="ltr">
         {arrow} {t('reports.monthly.percentValue', { value: movement.percent })}
       </span>
     </div>

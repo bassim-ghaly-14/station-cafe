@@ -101,6 +101,47 @@ describe('MonthlyReportDocument', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
   })
 
+  /**
+   * The movement tone contract: the sign comes from the NUMERIC percent and the
+   * number and its arrow share one semantic token — green for up, red for down,
+   * neutral for flat — so the meaning survives the theme but never hard-codes a
+   * colour. No new colour, no new helper: the same `text-success` /
+   * `text-destructive` the monthly comparison chart and the inventory movement
+   * log already use.
+   */
+  it('colours a rise green and a fall red, number and arrow together', () => {
+    renderSheet()
+    // Revenue rose 118,200 → 125,400 (+6.1%): number and arrow share the tone.
+    // The arrow is part of the query so the movement line — not a note — matches.
+    const rise = screen.getByText(/↑.*6\.1/)
+    expect(rise.className).toContain('text-success')
+    expect(rise.textContent).toContain('↑')
+  })
+
+  it('colours a fall red, number and arrow together', () => {
+    renderSheet({
+      ...REPORT,
+      money: { ...REPORT.money, revenue_minor: 10_000_000 },
+    })
+    // Revenue fell 118,200 → 100,000 (≈ −15.4%): same span, destructive tone.
+    const fall = screen.getByText(/↓.*15\.4/)
+    expect(fall.className).toContain('text-destructive')
+    expect(fall.textContent).toContain('↓')
+  })
+
+  it('keeps an unchanged figure neutral rather than green or red', () => {
+    renderSheet({
+      ...REPORT,
+      money: { ...REPORT.money, revenue_minor: REPORT.previous.revenue_minor },
+    })
+    // 0% — flat is neither success nor destructive, and keeps its own arrow.
+    const flat = screen.getByText(/→.*0%/)
+    expect(flat.className).toContain('text-foreground-muted')
+    expect(flat.className).not.toContain('text-success')
+    expect(flat.className).not.toContain('text-destructive')
+    expect(flat.textContent).toContain('→')
+  })
+
   it('prints at most three notes', () => {
     renderSheet()
     expect(screen.getAllByRole('listitem').length).toBeLessThanOrEqual(3)
