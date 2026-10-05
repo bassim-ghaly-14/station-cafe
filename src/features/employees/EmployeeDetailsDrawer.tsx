@@ -11,9 +11,12 @@
  *
  * Information architecture
  * ------------------------
- * The panel reads top to bottom as an employee profile: header (identity), the
- * period summary, the attendance timeline, the advances, the payroll periods and
- * finally the performance. Sections are separated by LABELS, spacing and
+ * The panel reads top to bottom in three clearly separated zones: the employee's
+ * fixed configuration (identity + monthly base salary — never date-filtered),
+ * the SELECTED PERIOD (one parent section: period summary, salary figures,
+ * attendance timeline, advances, deductions and performance — every figure the
+ * page's date filter moves) and the payroll HISTORY (frozen monthly runs,
+ * never date-filtered). Sections are separated by LABELS, spacing and
  * hairlines rather than by a bordered card around each one — no card inside
  * card inside card.
  *
@@ -63,13 +66,20 @@ import type {
 function StatBlock({
   label,
   children,
-}: Readonly<{ readonly label: string; children: React.ReactNode }>) {
+  hint,
+}: Readonly<{
+  readonly label: string
+  children: React.ReactNode
+  /** A one-line clarification under the figure, for labels whose scope needs it. */
+  readonly hint?: string
+}>) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md bg-surface-muted px-3 py-2.5">
       <span className="truncate text-caption">{label}</span>
       <span className="truncate text-body font-bold tabular-nums text-foreground-strong">
         {children}
       </span>
+      {hint ? <span className="text-caption text-foreground-subtle">{hint}</span> : null}
     </div>
   )
 }
@@ -150,7 +160,15 @@ function PeriodSummary({ row }: Readonly<{ row: EmployeeRow | null }>) {
   )
 }
 
-/** The payroll runs recorded for the employee. */
+/**
+ * The payroll runs recorded for the employee — HISTORICAL snapshots.
+ *
+ * Every run renders frozen figures for its OWN `run.period` month, and the list
+ * deliberately ignores the page's date filter: payroll history is what it is,
+ * regardless of which period the roster is showing. The labels here therefore
+ * name the MONTH, never the drawer's selected period, so a snapshot figure can
+ * never be read as a live selected-period one.
+ */
 function PayrollList({ runs }: Readonly<{ runs: readonly PayrollRun[] }>) {
   const { t } = useTranslation()
   if (runs.length === 0) {
@@ -170,7 +188,7 @@ function PayrollList({ runs }: Readonly<{ runs: readonly PayrollRun[] }>) {
             </Badge>
           </div>
           <dl>
-            <LedgerRow label={t('employees.drawer.baseSalary')}>
+            <LedgerRow label={t('employees.drawer.payrollBaseSalary')}>
               <MoneyDisplay amount={run.base_salary} variant="auto" />
             </LedgerRow>
             <LedgerRow label={t('employees.drawer.advances')}>
@@ -179,7 +197,7 @@ function PayrollList({ runs }: Readonly<{ runs: readonly PayrollRun[] }>) {
             <LedgerRow label={t('employees.drawer.deductions')}>
               <MoneyDisplay amount={run.deductions} variant="auto" />
             </LedgerRow>
-            <LedgerRow label={t('employees.drawer.netSalary')}>
+            <LedgerRow label={t('employees.drawer.payrollNetSalary')}>
               <MoneyDisplay amount={run.net_salary} variant="auto" />
             </LedgerRow>
           </dl>
@@ -229,11 +247,12 @@ function PerformanceSection({
 /**
  * The whole record, once it has resolved.
  *
- * The panel reads top to bottom as an employee profile: header (identity), the
- * period summary, the attendance timeline, the advances, the payroll periods and
- * finally the performance. Sections are separated by LABELS, spacing and
- * hairlines rather than by a bordered card around each one — no card inside
- * card inside card.
+ * The panel reads top to bottom in three clearly separated zones: the employee's
+ * own configuration (fixed — never moved by the date filter), the SELECTED
+ * PERIOD (one parent section holding every figure the page's date filter moves)
+ * and the payroll history (frozen monthly runs — never date-filtered).
+ * Sections are separated by LABELS, spacing and hairlines rather than by a
+ * bordered card around each one — no card inside card inside card.
  *
  * A RELOAD behind an override dims the record and shows a progress bar rather
  * than replacing it: the figures are still true while they are being refreshed,
@@ -262,39 +281,57 @@ function EmployeeRecord({
     <div className={loading ? 'opacity-70' : undefined}>
       <EmployeeHeader employee={employee} role={roleOf(employee)} />
 
-      <PeriodSummary row={row} />
+      {/* ZONE A — the employee's own monthly configuration. It is deliberately
+          `employee.base_salary` and NEVER `financials.base_salary`: this figure
+          does not move with the date filter and is never multiplied by the
+          salary month count. It is the canonical "what this person earns per
+          month", shown once so it can be told apart from the period total
+          below. */}
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <StatBlock label={t('employees.drawer.monthlyBaseSalary')}>
+          <MoneyDisplay amount={employee.base_salary} variant="auto" />
+        </StatBlock>
+      </div>
 
-      {/* The salary figures for the page's selected period, and the deduction
-          action that belongs with them. */}
-      <SalarySection
+      {/* ZONE B — every figure inside this section follows the page's selected
+          date range, stated once at its top rather than repeated per
+          subsection. The child sections keep their own concise headings. */}
+      <SelectedPeriodSection
         financials={details.financials}
+        row={row}
         canDeduct={canDeduct}
         onAddDeduction={onAddDeduction}
-      />
+      >
+        <Section title={t('employees.drawer.attendanceTimeline')}>
+          <AttendanceTimeline
+            days={details.attendance}
+            employeeName={employee.name}
+            canOverride={canOverride}
+            onOverride={onOverride}
+          />
+        </Section>
 
-      <Section title={t('employees.drawer.attendanceTimeline')}>
-        <AttendanceTimeline
-          days={details.attendance}
-          employeeName={employee.name}
-          canOverride={canOverride}
-          onOverride={onOverride}
-        />
-      </Section>
+        <Section title={t('employees.drawer.advances')}>
+          <AdvanceList advances={details.advances} />
+        </Section>
 
-      <Section title={t('employees.drawer.advances')}>
-        <AdvanceList advances={details.advances} />
-      </Section>
+        <Section title={t('employees.drawer.deductions')}>
+          <DeductionList deductions={details.deductions} />
+        </Section>
 
-      <Section title={t('employees.drawer.deductions')}>
-        <DeductionList deductions={details.deductions} />
-      </Section>
+        <Section title={t('employees.drawer.performance')}>
+          <PerformanceSection employee={employee} row={row} />
+        </Section>
+      </SelectedPeriodSection>
 
-      <Section title={t('employees.drawer.payroll')}>
+      {/* PAYROLL HISTORY — a separate semantic world: all runs, all months,
+          never narrowed by the page's date filter, each labelled as the frozen
+          monthly snapshot it is. */}
+      <Section title={t('employees.drawer.payrollHistory')}>
+        <p className="mt-0.5 text-caption text-foreground-subtle">
+          {t('employees.drawer.payrollHistoryHint')}
+        </p>
         <PayrollList runs={details.payroll} />
-      </Section>
-
-      <Section title={t('employees.drawer.performance')}>
-        <PerformanceSection employee={employee} row={row} />
       </Section>
 
       {loading ? <ProgressBar label={t('app.loading')} className="mt-4 w-24" /> : null}
@@ -622,33 +659,41 @@ function DeductionList({ deductions }: Readonly<{ readonly deductions: readonly 
 }
 
 /**
- * The salary block for the SELECTED PERIOD.
+ * The SELECTED PERIOD zone — one parent section for every figure the page's
+ * date filter moves.
  *
- * Everything here arrives aggregated from `details.financials`: the four figures
- * are rendered verbatim, with no arithmetic in the browser. That is the whole point
- * of the block — the backend owns the period, the month count and the net formula,
+ * The financial figures arrive aggregated from `details.financials` and the
+ * operational counters from `details.period_row`: all of them are rendered
+ * verbatim, with no arithmetic in the browser. That is the whole point of the
+ * block — the backend owns the period, the month count and the net formula,
  * so the drawer cannot disagree with a payslip or with the expenses page.
  *
- * The period is stated in two places on purpose. The heading says these numbers
- * follow the page filter, and the line under it prints the ACTUAL range that was
- * applied. A manager who changes the date filter above the page must be able to see
- * why these four numbers moved, without guessing.
+ * The period is stated ONCE, at the top: the heading names the zone, the hint
+ * says these figures follow the page filter, and the line under it prints the
+ * ACTUAL range that was applied. A manager who changes the date filter above
+ * the page must be able to see why every number below moved, without guessing —
+ * and the child sections (timeline, advances, deductions, performance) repeat
+ * neither the dates nor the hint.
  */
-function SalarySection({
+function SelectedPeriodSection({
   financials,
+  row,
   canDeduct,
   onAddDeduction,
+  children,
 }: Readonly<{
   financials: EmployeeFinancials
+  row: EmployeeRow | null
   canDeduct: boolean
   onAddDeduction: () => void
+  children: React.ReactNode
 }>) {
   const { t } = useTranslation()
   const bounded = financials.from !== null || financials.to !== null
   return (
     <section className="mt-5 border-t border-border-subtle pt-4">
       <h3 className="text-caption font-bold text-foreground-muted">
-        {t('employees.drawer.salaryPeriod')}
+        {t('employees.drawer.selectedPeriod')}
       </h3>
       <p className="mt-0.5 text-caption text-foreground-subtle">
         {t('employees.drawer.salaryPeriodHint')}
@@ -665,15 +710,22 @@ function SalarySection({
         {t('employees.drawer.salaryMonths', { count: financials.months })}
       </p>
 
+      <PeriodSummary row={row} />
+
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <StatBlock label={t('employees.drawer.baseSalary')}>
+        {/* The period's TOTAL salary (`monthly × months`, never prorated) —
+            explicitly NOT the fixed monthly figure shown above this section. */}
+        <StatBlock label={t('employees.drawer.periodBaseSalary')}>
           <MoneyDisplay amount={financials.base_salary} variant="auto" />
         </StatBlock>
         {/* Salary PAID, advances TAKEN BACK and deductions WITHHELD are three
             different money sides. The salary figure is reported here beside the
             other two — never folded into them, and never subtracted by the net
             formula below, which is the backend's and unchanged. */}
-        <StatBlock label={t('employees.drawer.salaryPaid')}>
+        <StatBlock
+          label={t('employees.drawer.salaryPaid')}
+          hint={t('employees.drawer.salaryPaidHint')}
+        >
           <MoneyDisplay amount={financials.salary_paid} variant="auto" />
         </StatBlock>
         <StatBlock label={t('employees.drawer.totalAdvances')}>
@@ -682,7 +734,10 @@ function SalarySection({
         <StatBlock label={t('employees.drawer.totalDeductions')}>
           <MoneyDisplay amount={financials.deductions} variant="auto" />
         </StatBlock>
-        <StatBlock label={t('employees.drawer.netSalary')}>
+        {/* The period's net — the same shared backend formula, applied to the
+            period totals. Its label names the PERIOD so it can never be read
+            as one month's payroll net in the history below. */}
+        <StatBlock label={t('employees.drawer.periodNetSalary')}>
           <MoneyDisplay amount={financials.net_salary} variant="auto" />
         </StatBlock>
       </div>
@@ -698,6 +753,8 @@ function SalarySection({
           </p>
         </div>
       ) : null}
+
+      {children}
     </section>
   )
 }
