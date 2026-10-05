@@ -35,6 +35,15 @@
 //! - 24 months of business days, shifts, orders, invoice lines, payments
 //!   (cash / card / credit / part-paid), discounts, service charges, wash
 //!   tickets, credit ledger, expenses, stock movements, attendance and payroll;
+//! - real employee money: salaries actually PAID through the `SALARY`
+//!   category, advances taken both as direct ledger entries and through the
+//!   linked `ADVANCE` expense, deductions withheld in the open month, and
+//!   payroll runs whose net figure follows `compute_net` exactly;
+//! - SEPARATE monthly CAFE and WASH revenue targets with per-month overrides,
+//!   so a beaten target, a missed one and an inherited default are all
+//!   reachable in the UI;
+//! - credit customers who actually settle their accounts, leaving one unpaid
+//!   receivable outstanding;
 //! - a final VALID live state: today's business day open, one ACTIVE shift and
 //!   a few open table orders, so the POS and table grid can be inspected.
 //!
@@ -82,7 +91,7 @@ use crate::services::auth::{self, User};
 use crate::services::checkout::NO_CUSTOMER_LABEL;
 use crate::services::pos as pos_svc;
 use crate::services::reconciliation;
-use crate::services::settings::{self, CreditConfig};
+use crate::services::settings::{self, CreditConfig, RevenueDepartment, RevenueTargetDefaults};
 use crate::time;
 use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
 use rusqlite::params;
@@ -117,6 +126,36 @@ pub const DEMO_USERS: &[(&str, &str, &str)] = &[
     // A second MANAGER, for the same reason one level down.
     ("nadia", "6789", "MANAGER"),
 ];
+
+/// Monthly base salary, in piastres, for the CASHIER employee behind each demo
+/// login.
+///
+/// Every login is a CASHIER employee (the database CHECK requires it), but a
+/// till operator with no salary makes most of the payroll data meaningless: the
+/// net figure, the advance/deduction arithmetic and the salary-paid total would
+/// all read zero for the people who actually work the till. These are realistic
+/// Egyptian café wages — a manager earns more than a cashier, and the wash side
+/// is paid on its own scale (see [`DEMO_WASH_WORKERS`]).
+///
+/// `(login name, base salary)`
+pub const DEMO_CASHIER_SALARIES: &[(&str, i64)] = &[
+    ("admin", 320_000),
+    ("manager", 260_000),
+    ("cashier", 180_000),
+    ("sara", 175_000),
+    ("karim", 300_000),
+    ("nadia", 250_000),
+    ("طارق ياسر", 170_000),
+];
+
+/// The base salary a demo login's CASHIER employee carries.
+fn demo_salary_of(name: &str) -> i64 {
+    DEMO_CASHIER_SALARIES
+        .iter()
+        .find(|(login, _)| *login == name)
+        .map(|(_, salary)| *salary)
+        .unwrap_or(0)
+}
 
 /// Wash workers: `(name, base salary in piastres)`.
 ///
@@ -225,7 +264,8 @@ fn seed_accounts(conn: &Db) -> AppResult<Accounts> {
                     name,
                     phone: None,
                     employee_type: "CASHIER",
-                    base_salary: 0,
+                    // A real wage, not a zero: see `DEMO_CASHIER_SALARIES`.
+                    base_salary: demo_salary_of(name),
                     notes: None,
                     user_id: Some(user.id),
                 },
@@ -330,7 +370,8 @@ fn seed_accounts(conn: &Db) -> AppResult<Accounts> {
                     name,
                     phone: None,
                     employee_type: "CASHIER",
-                    base_salary: 0,
+                    // A real wage, not a zero: see `DEMO_CASHIER_SALARIES`.
+                    base_salary: demo_salary_of(name),
                     notes: None,
                     user_id: Some(user.id),
                 },
@@ -487,7 +528,13 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                         // `catalog::insert` records the opening movement through
                         // the ledger, so quantity and history agree from the start.
                         stock_quantity: stock.unwrap_or(0),
-                        is_new: false,
+                        // A couple of the café additions are flagged as RECENT, so
+                        // the catalog's "new" marker — which is persisted
+                        // independently of `is_active` — has something to show.
+                        is_new: matches!(
+                            *name,
+                            "موكا كراميل" | "سبانيش لاتيه" | "نسكافيه جولد"
+                        ),
                         user_id: actor_id,
                     },
                 )?,
@@ -1335,26 +1382,99 @@ fn record_attendance(
     Ok(())
 }
 
-/// A handful of advances, so the employee drawer and payroll show real
-/// deductions from money.
+/// A business date inside a month `months_ago` months back, on `day`.
 ///
-/// These are DIRECT ledger entries: `expense_id` is NULL, exactly like a
-/// historical advance, so the demo data does not retroactively invent expenses for
-/// advances that were never recorded as one. New advances recorded through the
-/// Expenses screen are linked, and the salary queries read both identically.
-fn seed_advances(conn: &Db, recorder: &User, employees: &[i64], rng: &mut Rng) -> AppResult<()> {
-    const REASONS: &[&str] = &["سلفة شخصية", "سلفة علاج", "سلفة سفر"];
-    for employee in employees.iter().take(3) {
-        for _ in 0..rng.below(3) {
-            let date = time::business_date_months_ago(rng.between(1, HISTORY_MONTHS - 1));
+/// Advances and deductions used to be dated with `business_date_months_ago`,
+/// which always returns the FIRST day of a month — so every advance in the
+/// dataset fell on the 1st. Real advances are taken mid-month, and a date that
+/// varies also keeps the two records from sharing a sort key.
+fn date_in_month(today: NaiveDate, months_ago: i64, day: u32) -> String {
+    let (first, last) = month_bounds(&month_first(today, months_ago).format("%Y-%m").to_string());
+    // Clamped to the month's real length, so a 31st never lands in February.
+    let last_day: u32 = last[8..10].parse().unwrap_or(28);
+    let day = day.clamp(1, last_day);
+    NaiveDate::parse_from_str(&format!("{first}-{day:02}"), "%Y-%m-%d")
+        .unwrap_or_else(|_| NaiveDate::parse_from_str(&first, "%Y-%m-%d").unwrap_or_default())
+        .to_string()
+}
+
+/// Advances and deductions, so the employee drawer and payroll show real
+/// withheld money.
+///
+/// Two halves, deliberately, because the application itself has two:
+///
+/// * **direct ledger entries** (`expense_id` NULL), exactly like a historical
+///   advance entered before the expense workflow existed. The demo does not
+///   retroactively invent expenses for advances that were never recorded as one;
+/// * **expense-linked advances**, written through the `ADVANCE` category — the
+///   `records_advance` half of `services::ops::create_expense` — so the linked
+///   `expense_id`, the category's `requires_employee` requirement and the salary
+///   queries that read both shapes are all represented.
+///
+/// Deductions are dated inside the CURRENT month only. A deduction dated inside a
+/// FINALIZED payroll month is refused by `services::employees::create_deduction`,
+/// and the demo must not fabricate a state the service would reject — so the
+/// current month, whose run stays a DRAFT, is the only honest place for them.
+fn seed_advances_and_deductions(
+    conn: &Db,
+    recorder: &User,
+    employees: &[i64],
+    today: NaiveDate,
+    rng: &mut Rng,
+) -> AppResult<()> {
+    const ADVANCE_REASONS: &[&str] = &["سلفة شخصية", "سلفة علاج", "سلفة سفر"];
+    const DEDUCTION_REASONS: &[&str] = &["خصم تأخير", "خصم مخالفة", "سلفة مسترجعة"];
+
+    // Restricted to employees who are actually ON PAY, ordered by id so the
+    // choice is deterministic: the official seed's cashiers legitimately earn
+    // zero, so slicing the raw roster would spend the whole budget on them and
+    // leave the demo roster with no advances and no deductions at all.
+    let mut paid: Vec<i64> = Vec::new();
+    for employee in employees {
+        let base: i64 = match conn.query_row(
+            "SELECT base_salary FROM employees WHERE id = ?1 AND status = 'ACTIVE'",
+            params![employee],
+            |r| r.get(0),
+        ) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if base > 0 {
+            paid.push(*employee);
+        }
+    }
+
+    for employee in paid.iter().take(4) {
+        for _ in 0..rng.between(1, 3) {
+            let date = date_in_month(
+                today,
+                rng.between(1, HISTORY_MONTHS - 1),
+                rng.between(2, 27) as u32,
+            );
             employee_analytics::insert_advance(
                 conn,
                 *employee,
                 rng.between(20_000, 90_000),
                 &date,
-                *rng.pick(REASONS),
+                *rng.pick(ADVANCE_REASONS),
                 recorder.id,
                 None,
+            )?;
+        }
+    }
+
+    // Deductions: money withheld, never an expense, and never inside a month
+    // whose payroll has already been finalized.
+    for employee in paid.iter().take(3) {
+        if rng.chance(70) {
+            let date = date_in_month(today, 0, rng.between(1, 27) as u32);
+            employee_analytics::insert_deduction(
+                conn,
+                *employee,
+                rng.between(10_000, 45_000),
+                &date,
+                Some(*rng.pick(DEDUCTION_REASONS)),
+                recorder.id,
             )?;
         }
     }
@@ -1379,9 +1499,12 @@ fn seed_payroll(conn: &Db, recorder: &User, employees: &[i64], period: &str) -> 
         let (days, absences, leaves, minutes) =
             employee_analytics::month_attendance(conn, *employee, &first, &last)?;
         let advances = employee_analytics::advances_total_for_month(conn, *employee, &first, &last)?;
-        // Station documents no attendance-based deduction, so the derived
-        // deduction is zero — a manager figure only, exactly as the service.
-        let net = base - advances;
+        // The deduction side of the same period, read from the ledger rather than
+        // typed in: `services::employees::compute_net` is `base − advances −
+        // deductions`, so a run that reported only the advances would disagree
+        // with the salary figure the Employees page shows for the same month.
+        let deductions = employee_analytics::deductions_total(conn, *employee, Some(&first), Some(&last))?;
+        let net = base - advances - deductions;
         let id = employee_analytics::insert_run(
             conn,
             *employee,
@@ -1392,12 +1515,280 @@ fn seed_payroll(conn: &Db, recorder: &User, employees: &[i64], period: &str) -> 
             absences,
             leaves,
             advances,
-            0,
+            deductions,
             net,
             recorder.id,
         )?;
         if period != current_period() {
             employee_analytics::finalize_run(conn, id, recorder.id)?;
+        }
+    }
+    Ok(())
+}
+
+/// Configure the SEPARATE monthly CAFE and WASH revenue targets.
+///
+/// Station deliberately has no combined target: a target exists for the two
+/// REVENUE DEPARTMENTS the invoice itself splits into, so a hybrid invoice
+/// contributes its café part to one and its wash part to the other, and neither
+/// `TAKEAWAY` nor `HYBRID` ever gets a target of its own. The demo therefore
+/// configures exactly two numbers through the real service, which also refuses
+/// anything that is not a whole multiple of 100 piastres.
+///
+/// Then it sets PER-MONTH OVERRIDES, because the override/default split is the
+/// feature the Dev Settings card exists to demonstrate:
+///
+/// * the previous month carries a WASH override set low, so a beaten target is
+///   visible;
+/// * the month before carries a CAFE override set high, so a MISSED target —
+///   and the "partially achieved" percentage it produces — is visible too;
+/// * the current month carries a CAFE-only override, the "override one
+///   department" case where WASH keeps following the default.
+///
+/// `RevenueDepartment` is a CLOSED set, so this cannot name an order kind.
+fn seed_revenue_targets(conn: &Db, actor: &User, today: NaiveDate) -> AppResult<()> {
+    // Whole pounds only: the service refuses any target that is not an exact
+    // multiple of 100 piastres.
+    settings::set_revenue_target_defaults(
+        conn,
+        actor,
+        &RevenueTargetDefaults {
+            cafe_minor: 4_500_000,
+            wash_minor: 2_000_000,
+        },
+    )?;
+
+    let month = |back: i64| month_first(today, back).format("%Y-%m").to_string();
+
+    settings::set_revenue_target_override(
+        conn,
+        actor,
+        &month(1),
+        RevenueDepartment::Wash,
+        Some(1_000_000),
+    )?;
+    settings::set_revenue_target_override(
+        conn,
+        actor,
+        &month(2),
+        RevenueDepartment::Cafe,
+        Some(9_000_000),
+    )?;
+    settings::set_revenue_target_override(
+        conn,
+        actor,
+        &month(0),
+        RevenueDepartment::Cafe,
+        Some(5_000_000),
+    )?;
+    Ok(())
+}
+
+/// Salaries actually PAID, and advances taken THROUGH the expense workflow.
+///
+/// These are the two categories whose `requires_employee` flag is set, and they
+/// are the reason that flag exists:
+///
+/// * `SALARY` names its employee but is NOT an advance (`records_advance = 0`),
+///   so it produces a salary figure and must never fabricate an advance row;
+/// * `ADVANCE` is both employee-linked AND an advance, so each carries a linked
+///   `employee_advances` row through the very same expense id — the linkage
+///   `salary_paid_total` and `advances_total` read.
+///
+/// Written through the repositories rather than `services::ops::create_expense`,
+/// because that service resolves the CURRENT open day and shift, while a
+/// historical salary was paid on a day that closed weeks ago. The PAIRING is
+/// exactly the service's: expense first, then the advance claiming its id.
+///
+/// Both are dated inside the CURRENT month, whose payroll run is a DRAFT — the
+/// service refuses employee money dated inside a finalized month.
+fn seed_linked_money_expenses(
+    conn: &Db,
+    recorder: &User,
+    employees: &[i64],
+    today: NaiveDate,
+) -> AppResult<()> {
+    // Take the employees who are actually ON PAY — ordered by id, so the choice
+    // is deterministic. Slicing the roster instead would spend the whole budget
+    // on the official seed's cashiers, whose base salary is legitimately zero,
+    // and would leave the demo roster unpaid.
+    let mut paid: Vec<(i64, i64)> = Vec::new();
+    for employee in employees {
+        let base: i64 = match conn.query_row(
+            "SELECT base_salary FROM employees WHERE id = ?1 AND status = 'ACTIVE'",
+            params![employee],
+            |r| r.get(0),
+        ) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if base > 0 {
+            paid.push((*employee, base));
+            if paid.len() == 6 {
+                break;
+            }
+        }
+    }
+
+    for (employee, base) in paid {
+        // Paid near the end of the month it is for, and by TRANSFER rather than
+        // till cash: a real expense that never touched the drawer.
+        let date = date_in_month(today, 0, 28);
+        expenses::insert(
+            conn,
+            "SALARY",
+            base,
+            Some("مرتب الشهر"),
+            &date,
+            false,
+            None,
+            None,
+            None,
+            false,
+            recorder.id,
+            Some(employee),
+        )?;
+
+        // An advance is money that comes back OUT of the month's pay and DOES
+        // leave the drawer, so `paid_from_cash` is true here — the opposite of
+        // the salary above, which is exactly the distinction that makes the
+        // drawer arithmetic on the Expenses page meaningful.
+        let amount = (base / 4).max(20_000);
+        let expense_id = expenses::insert(
+            conn,
+            "ADVANCE",
+            amount,
+            Some("سلفة موظف"),
+            &date,
+            false,
+            None,
+            None,
+            None,
+            true,
+            recorder.id,
+            Some(employee),
+        )?;
+        employee_analytics::insert_advance(
+            conn,
+            employee,
+            amount,
+            &date,
+            "سلفة موظف",
+            recorder.id,
+            Some(expense_id),
+        )?;
+    }
+    Ok(())
+}
+
+/// Settle part of what the credit customers owe.
+///
+/// Without this every credit account stays `UNPAID` forever and the
+/// `PARTIALLY_PAID` state the schema supports is never demonstrated. Settlements
+/// go through `invoices::pay_credit`, which REFUSES an overpayment, so no
+/// account can be credited more than it owes and `paid_total <= original_total`
+/// holds by construction.
+///
+/// Every settlement is a PARTIAL one, and one account is left entirely
+/// outstanding. That is not a shortcut — it is what the current credit rules
+/// allow. `open_or_extend_credit` reopens an account only while
+/// `status <> 'PAID'`, and `credit_accounts.customer_id` is UNIQUE, so a fully
+/// settled account could never take another credit sale: the next one would try
+/// to INSERT a second account for the same customer and the database would
+/// refuse it. Marking an account `PAID` here would therefore make the demo
+/// loader NON-RE-RUNNABLE. `PARTIALLY_PAID` plus `UNPAID` are the states a
+/// credit customer actually cycles through, so those are the ones represented.
+fn seed_credit_settlements(conn: &Db, actor: &User) -> AppResult<()> {
+    let accounts = invoices::list_credit_accounts(conn)?;
+    // The first account is left fully outstanding on purpose: an unpaid
+    // receivable is the state the receivables view most needs to show.
+    for account in accounts.iter().skip(1) {
+        if account.original_total <= 0 {
+            continue;
+        }
+        // Never the whole balance — see the note above on why `PAID` is not
+        // reachable while the loader must stay re-runnable.
+        let amount = account.original_total / 2;
+        if amount <= 0 {
+            continue;
+        }
+        invoices::pay_credit(conn, account.id, amount, actor.id)?;
+    }
+    Ok(())
+}
+
+/// Restocking purchases and a little waste, so the stock ledger explains every
+/// quantity it reports AND no item is left holding stock it never had.
+///
+/// The opening balance and every sale are already written by the catalog and the
+/// checkout path. Without a `PURCHASE` the Inventory page could never show a
+/// restock, and without a `WASTE` it could never show breakage — the two
+/// movements that explain why a quantity is what it is.
+///
+/// This also REPAIRS a real defect in the generated history. The demo sells 24
+/// months of café consumption while the opening stock is a fixed quantity, so a
+/// fast-moving line is legitimately drawn below zero before the books close. The
+/// application allows it (nothing decrements past zero), but no real stock ledger
+/// ever holds a negative balance, so the delivery here is sized to clear the
+/// deficit first. Every quantity is therefore both non-negative and exactly the
+/// sum of the movements that produced it.
+///
+/// Both go through `ops::adjust`, the same repository the live
+/// `services::ops::adjust_stock` writes through, so the running quantity and its
+/// movement history stay in step. Waste is applied only where stock is actually
+/// on hand afterwards, so it can never push a balance negative — which matters
+/// because the demo loader is re-runnable and its writes are additive.
+fn seed_stock_movements(conn: &Db, actor: &User) -> AppResult<()> {
+    let tracked: Vec<(i64, String, i64)> = {
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.name, COALESCE(i.quantity, 0)
+             FROM products p
+             JOIN inventory_items i ON i.product_id = p.id
+             WHERE p.track_inventory = 1 AND p.is_active = 1
+             ORDER BY p.id",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    for (index, (product_id, name, quantity)) in tracked.iter().enumerate() {
+        // A deterministic delivery size: the stock ledger is written OUTSIDE the
+        // day generator, and deriving the quantity from the item's position in the
+        // list keeps repeated loading reproducible without a second RNG stream.
+        //
+        // The delivery is sized to CLEAR any deficit first. A café sells against
+        // its stock all day and the demo sells 24 months of consumption, so an
+        // item can be drawn below zero by the time the books close — a state no
+        // real stock ledger ever holds. An item at or below zero therefore gets a
+        // delivery that covers the shortfall and leaves a margin above its reorder
+        // point; everything else gets an ordinary one.
+        let restock = if *quantity <= 0 {
+            -quantity + 24
+        } else {
+            12 + (index as i64 % 6) * 6
+        };
+        ops::adjust(
+            conn,
+            *product_id,
+            restock,
+            "PURCHASE",
+            Some(&format!("توريد {name}")),
+            None,
+            actor.id,
+        )?;
+
+        // Breakage on a few items only, and never more than are on hand AFTER
+        // the delivery above — so waste can never push a balance negative.
+        if index % 3 == 0 && *quantity + restock > 5 {
+            ops::adjust(
+                conn,
+                *product_id,
+                -((index as i64 % 3) + 1),
+                "WASTE",
+                Some("تالف أثناء العرض"),
+                None,
+                actor.id,
+            )?;
         }
     }
     Ok(())
@@ -1411,15 +1802,31 @@ fn current_period() -> String {
 }
 
 /// The first and last business date of a `YYYY-MM` period.
+/// The first and last business date of a `YYYY-MM` period.
+///
+/// `first` is the 1st and `last` is the LAST DAY OF THAT SAME MONTH. The
+/// arithmetic has to start from the month AFTER: taking the 1st's successor and
+/// walking back one day lands on the previous month's final day
+/// (`2026-10-01 → 2026-10-02 → 2026-10-01 → 2026-09-30`), which silently gave
+/// every payroll run an empty window — hence a run that reported no advances and
+/// no deductions while the ledgers beside it held both. March is the case that
+/// hides it best, since February is shorter than the 28-day assumption.
 fn month_bounds(period: &str) -> (String, String) {
     let (year, month) = period.split_once('-').unwrap_or((period, "01"));
     let year: i32 = year.parse().unwrap_or(1970);
     let month: u32 = month.parse().unwrap_or(1);
     let first = NaiveDate::from_ymd_opt(year, month, 1).unwrap_or_default();
+    // The first of the NEXT month, minus one day, is this month's last day.
     let last = first
-        .succ_opt()
-        .and_then(|d| d.with_day(1))
-        .and_then(|d| d.pred_opt())
+        .with_day(1)
+        .and_then(|d| {
+            if d.month0() == 11 {
+                NaiveDate::from_ymd_opt(d.year() + 1, 1, 1)
+            } else {
+                NaiveDate::from_ymd_opt(d.year(), d.month0() + 2, 1)
+            }
+        })
+        .and_then(|next| next.pred_opt())
         .unwrap_or(first);
     (first.to_string(), last.to_string())
 }
@@ -1887,14 +2294,33 @@ pub fn load(conn: &Db) -> AppResult<()> {
         }
     }
 
-    // ---- advances and payroll ----------------------------------------------
-    seed_advances(conn, &accounts.manager, &employees, &mut ctx.rng)?;
-    for month in (1..4).rev() {
-        let period = (today_date - Duration::days(30 * month))
+    // ---- advances, deductions and payroll ----------------------------------
+    // The linked half FIRST: salaries and advance EXPENSES dated inside the
+    // current month, which the current month's payroll run must already see.
+    // Writing them afterwards would leave the DRAFT run reporting zero advances
+    // while the ledger beside it held them — the two screens would disagree.
+    seed_linked_money_expenses(conn, &accounts.manager, &employees, today_date)?;
+    seed_advances_and_deductions(conn, &accounts.manager, &employees, today_date, &mut ctx.rng)?;
+
+    // The window includes the CURRENT month, whose run stays a DRAFT. That is
+    // what gives the salary screen both states to show, and it is the only month
+    // a deduction may legally be dated in — a deduction inside a FINALIZED
+    // month is refused by `services::employees::create_deduction`.
+    for month in (0..4).rev() {
+        let period = month_first(today_date, month)
             .format("%Y-%m")
             .to_string();
         seed_payroll(conn, &accounts.manager, &employees, &period)?;
     }
+
+    // ---- revenue targets ---------------------------------------------------
+    seed_revenue_targets(conn, &accounts.manager, today_date)?;
+
+    // ---- credit settlements ------------------------------------------------
+    seed_credit_settlements(conn, &accounts.manager)?;
+
+    // ---- restocking and waste ---------------------------------------------
+    seed_stock_movements(conn, &accounts.admin)?;
 
     Ok(())
 }
@@ -2252,6 +2678,395 @@ mod tests {
             count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason = 'SALE' AND ref_invoice_id IS NULL"),
             0,
             "a sale movement must reference its invoice"
+        );
+
+        // Restocking and breakage are represented, not just opening stock and
+        // sales: those are the movements that explain a running quantity.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason = 'PURCHASE'") > 0,
+            "a restock scenario must exist"
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason = 'WASTE'") > 0,
+            "a breakage scenario must exist"
+        );
+        // No quantity is ever negative, and the running balance still equals the
+        // sum of the ledger that produced it.
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM inventory_items WHERE quantity < 0"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM inventory_items i
+                 WHERE i.quantity <> COALESCE((SELECT SUM(m.change) FROM stock_movements m
+                                               WHERE m.product_id = i.product_id), 0)"
+            ),
+            0,
+            "every quantity must equal the sum of its own movements"
+        );
+    }
+
+    /// The revenue targets are configured as SEPARATE monthly CAFE and WASH
+    /// figures, with per-month overrides — and no combined target is invented.
+    #[test]
+    fn revenue_targets_are_separate_per_department_with_overrides() {
+        let conn = demo_db();
+
+        // Both departments carry a legal default (whole pounds, positive), which
+        // is exactly what `validate_revenue_target` insists on.
+        for department in [RevenueDepartment::Cafe, RevenueDepartment::Wash] {
+            let target = settings::resolve_monthly_target(&conn, "2020-01", department)
+                .unwrap()
+                .target_minor;
+            assert!(
+                target > 0 && target % 100 == 0,
+                "{} needs a legal default target, found {target}",
+                department.as_str()
+            );
+        }
+
+        // Overrides exist for real months, stored under the canonical key.
+        let months = count(
+            &conn,
+            "SELECT COUNT(*) FROM json_each(
+                (SELECT value FROM app_settings WHERE key = 'revenue_target_months'))",
+        );
+        assert!(months >= 2, "at least two months must carry an override");
+
+        // A month with an override SAYS SO, so the UI can state where the number
+        // came from instead of inferring it.
+        let current = time::current_business_month();
+        let cafe = settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Cafe).unwrap();
+        assert!(cafe.overridden, "the current month should carry a CAFE override");
+        // …while its WASH side, deliberately not overridden, follows the default.
+        let wash = settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Wash).unwrap();
+        assert!(
+            !wash.overridden,
+            "a cafe-only override must leave WASH on the default"
+        );
+
+        // A month beaten, a month missed: the two percentages the Sales target
+        // ring and the monthly executive sheet both have to be able to show.
+        let previous = time::previous_business_month(&current).unwrap();
+        let wash_previous =
+            settings::resolve_monthly_target(&conn, &previous, RevenueDepartment::Wash).unwrap();
+        assert!(wash_previous.overridden, "the previous month overrides WASH");
+
+        // The closed set is real: a target exists for the two REVENUE
+        // departments only, so no order kind was ever given a target of its own.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM json_each((SELECT value FROM app_settings WHERE key = 'revenue_target_defaults'))
+                 WHERE key NOT IN ('cafe_minor', 'wash_minor')"
+            ),
+            0,
+            "the defaults must hold exactly the two revenue departments"
+        );
+    }
+
+    /// Advances and deductions both exist, they reference real employees, and
+    /// neither is ever mistaken for the other.
+    #[test]
+    fn advances_and_deductions_are_employee_linked_and_consistent() {
+        let conn = demo_db();
+
+        assert!(count(&conn, "SELECT COUNT(*) FROM employee_advances") > 0);
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM employee_deductions") > 0,
+            "a deduction scenario must exist"
+        );
+
+        // Every deduction names a real employee and a real recorder, and money
+        // withheld is always positive.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employee_deductions d
+                 LEFT JOIN employees e ON e.id = d.employee_id
+                 LEFT JOIN users u ON u.id = d.created_by
+                 WHERE e.id IS NULL OR u.id IS NULL"
+            ),
+            0,
+            "a deduction must reference a real employee and recorder"
+        );
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM employee_deductions WHERE amount <= 0"),
+            0
+        );
+
+        // BOTH advance shapes are represented, because the salary queries read
+        // them through one expression: a direct ledger entry and an
+        // expense-linked one.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NULL") > 0,
+            "a direct advance must exist"
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NOT NULL") > 0,
+            "an expense-linked advance must exist"
+        );
+        // A linked advance claims a REAL expense, and one expense backs at most
+        // one advance.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employee_advances a
+                 LEFT JOIN expenses e ON e.id = a.expense_id
+                 WHERE a.expense_id IS NOT NULL AND e.id IS NULL"
+            ),
+            0
+        );
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NOT NULL"),
+            count(
+                &conn,
+                "SELECT COUNT(DISTINCT expense_id) FROM employee_advances WHERE expense_id IS NOT NULL"
+            ),
+            "one expense may back at most one advance"
+        );
+
+        // Every employee-linked category names its employee, and a SALARY never
+        // fabricates an advance — the exact split `records_advance` exists for.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM expenses e
+                 JOIN expense_categories c ON c.code = e.category
+                 WHERE c.requires_employee = 1 AND e.employee_id IS NULL"
+            ),
+            0,
+            "an employee-linked category must name its employee"
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM expenses e
+                 WHERE e.category = 'SALARY'
+                   AND EXISTS (SELECT 1 FROM employee_advances a WHERE a.expense_id = e.id)"
+            ),
+            0,
+            "a salary payment must never fabricate an advance"
+        );
+    }
+
+    /// `month_bounds` must describe ONE month, and the demo's whole payroll and
+    /// salary story depends on it.
+    ///
+    /// It used to return the PREVIOUS month's last day as `last`
+    /// (`2026-10` → `2026-10-01`/`2026-09-30`), which made every payroll window
+    /// empty: runs reported no advances and no deductions while the ledgers
+    /// beside them held both. Asserted directly, because the symptom is easy to
+    /// misread as "the data is missing" rather than "the window is wrong".
+    #[test]
+    fn a_month_period_bounds_the_month_it_names() {
+        for (period, expected_last) in [
+            ("2026-01", "2026-01-31"),
+            ("2026-02", "2026-02-28"),
+            // A leap February, the case a naive "28 days" would get wrong.
+            ("2028-02", "2028-02-29"),
+            ("2026-04", "2026-04-30"),
+            ("2026-10", "2026-10-31"),
+            ("2026-12", "2026-12-31"),
+            // The year boundary: December must not roll into the next January.
+            ("2027-01", "2027-01-31"),
+        ] {
+            let (first, last) = month_bounds(period);
+            assert_eq!(first, format!("{period}-01"), "{period} must start on the 1st");
+            assert_eq!(last, expected_last, "{period} must end on its own last day");
+            // The window is never inverted, and always contains its own start.
+            assert!(first <= last, "{period} produced an inverted window");
+        }
+    }
+
+    /// The salary figures agree with the ledgers they are derived from.
+    #[test]
+    fn payroll_runs_match_the_shared_net_salary_formula() {
+        let conn = demo_db();
+        assert!(count(&conn, "SELECT COUNT(*) FROM payroll_runs") > 0);
+
+        // net = base - advances - deductions: the ONE formula
+        // `services::employees::compute_net` documents, on every run.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs
+                 WHERE net_salary <> base_salary - advances - deductions"
+            ),
+            0,
+            "every payroll run must satisfy the shared net formula"
+        );
+
+        // A payslip carries real money. A roster of zero-salary cashiers used to
+        // freeze most runs at zero, which made the whole screen meaningless.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE base_salary > 0")
+                > count(&conn, "SELECT COUNT(*) FROM payroll_runs") / 2,
+            "most employees must be paid a real salary"
+        );
+
+        // Both run states are visible: older months are FINALIZED, the current
+        // month is still a DRAFT.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE status = 'DRAFT'") > 0,
+            "the current month's run must remain a DRAFT"
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE status = 'FINALIZED'") > 0,
+            "older months must be finalized"
+        );
+
+        // The run is a SNAPSHOT of the ledgers, so it must actually carry their
+        // figures: a payroll row reading zero advances while the advance ledger
+        // beside it holds them is the ordering bug this assertion exists for.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE advances > 0") > 0,
+            "a run must reflect the advances taken in its own month"
+        );
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE deductions > 0") > 0,
+            "a run must reflect the deductions withheld in its own month"
+        );
+        // The current DRAFT month agrees with the LIVE ledgers for that month,
+        // employee by employee — not merely with its own stored columns.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs p
+                 WHERE p.status = 'DRAFT'
+                   AND p.advances <> COALESCE((SELECT SUM(COALESCE(e.amount, a.amount))
+                                               FROM employee_advances a
+                                               LEFT JOIN expenses e ON e.id = a.expense_id
+                                               WHERE a.employee_id = p.employee_id
+                                                 AND a.status = 'RECORDED'
+                                                 AND substr(COALESCE(e.expense_date, a.advance_date), 1, 7)
+                                                     = p.period), 0)",
+            ),
+            0,
+            "a draft run must carry the advances the ledger holds for its month"
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs p
+                 WHERE p.status = 'DRAFT'
+                   AND p.deductions <> COALESCE((SELECT SUM(d.amount)
+                                                 FROM employee_deductions d
+                                                 WHERE d.employee_id = p.employee_id
+                                                   AND substr(d.deduction_date, 1, 7) = p.period), 0)",
+            ),
+            0,
+            "a draft run must carry the deductions the ledger holds for its month"
+        );
+
+        // A finalized month is immutable, so no deduction may be dated inside
+        // one — the guard `create_deduction` and `reverse_advance` share.
+        let finalized: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT period FROM payroll_runs WHERE status = 'FINALIZED'")
+                .unwrap();
+            stmt.query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        for period in finalized {
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!(
+                        "SELECT COUNT(*) FROM employee_deductions
+                         WHERE substr(deduction_date, 1, 7) = '{period}'"
+                    )
+                ),
+                0,
+                "no deduction may be dated inside the finalized month {period}"
+            );
+        }
+
+        // Salaries were actually PAID, read from the expense side, and a salary
+        // paid by transfer never moved a drawer.
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM expenses WHERE category = 'SALARY'") > 0,
+            "a paid salary must exist as an expense"
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM expenses WHERE category = 'SALARY' AND paid_from_cash = 1"
+            ),
+            0,
+            "a salary paid by transfer must not reduce the drawer"
+        );
+    }
+
+    /// Credit customers actually settle their accounts, and no account is ever
+    /// credited more than it owes.
+    #[test]
+    fn credit_accounts_include_settled_and_outstanding_states() {
+        let conn = demo_db();
+        assert!(count(&conn, "SELECT COUNT(*) FROM credit_accounts") > 0);
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM credit_payments") > 0,
+            "a settled credit account must exist"
+        );
+
+        // The states a credit account actually cycles through are represented.
+        // `PAID` is deliberately absent: `open_or_extend_credit` only reopens an
+        // account while `status <> 'PAID'`, so a fully settled account could never
+        // take another credit sale and would make this loader non-re-runnable.
+        for status in ["UNPAID", "PARTIALLY_PAID"] {
+            assert!(
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM credit_accounts WHERE status = '{status}'")
+                ) > 0,
+                "the {status} credit state must be represented"
+            );
+        }
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM credit_accounts WHERE status = 'PAID'"),
+            0,
+            "a fully settled account would break re-opening credit for that customer"
+        );
+
+        // The arithmetic: never overpaid, and the status follows the money.
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM credit_accounts WHERE paid_total > original_total"),
+            0,
+            "an account must never be settled beyond what it owes"
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM credit_accounts
+                 WHERE status <> CASE
+                     WHEN paid_total = 0 THEN 'UNPAID'
+                     WHEN paid_total = original_total THEN 'PAID'
+                     ELSE 'PARTIALLY_PAID' END"
+            ),
+            0,
+            "a credit account's status must follow its own arithmetic"
+        );
+        // Every payment names a real account and a real recorder.
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM credit_payments p
+                 LEFT JOIN credit_accounts c ON c.id = p.credit_account_id
+                 LEFT JOIN users u ON u.id = p.user_id
+                 WHERE c.id IS NULL OR u.id IS NULL"
+            ),
+            0
+        );
+    }
+
+    /// Recent catalog additions are flagged, independently of being active.
+    #[test]
+    fn the_catalog_flags_recent_additions() {
+        let conn = demo_db();
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM products WHERE is_new = 1") > 0,
+            "a recent-addition product must exist"
         );
     }
 

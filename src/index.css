@@ -446,29 +446,21 @@ body.printing-monthly {
     padding: 0;
     border: 0;
     box-shadow: none;
-  }
 
-  /* A section may not straddle a page boundary. */
-  body.printing-monthly .print-page section,
-  body.printing-monthly .print-page header {
-    break-inside: avoid;
-  }
-
-  /*
-   * PAPER IS PAPER.
-   *
-   * The sheet on screen is a themed surface, so its ink comes from the active
-   * theme's tokens — correct in light, correct in dark. On paper there is no
-   * theme: the ground is white, so every ink has to be re-bound to the black
-   * end of the same tokens. Without this, a manager printing from dark mode
-   * gets a white page with pale text on it, because `--foreground-strong` is a
-   * LIGHT colour there and every shared type utility reads it.
-   *
-   * They are re-declared on the sheet itself rather than on `:root` so that
-   * nothing outside the printed page is affected, and so the application comes
-   * back exactly as it was the moment the class is removed.
-   */
-  body.printing-monthly .print-page {
+    /*
+     * PAPER IS PAPER.
+     *
+     * The sheet on screen is a themed surface, so its ink comes from the active
+     * theme's tokens — correct in light, correct in dark. On paper there is no
+     * theme: the ground is white, so every ink has to be re-bound to the black
+     * end of the same tokens. Without this, a manager printing from dark mode
+     * gets a white page with pale text on it, because `--foreground-strong` is a
+     * LIGHT colour there and every shared type utility reads it.
+     *
+     * They are re-declared on the sheet itself rather than on `:root` so that
+     * nothing outside the printed page is affected, and so the application comes
+     * back exactly as it was the moment the class is removed.
+     */
     --foreground: #000000;
     --foreground-strong: #000000;
     --foreground-muted: #1a1a1a;
@@ -479,13 +471,21 @@ body.printing-monthly {
     --surface-card: #ffffff;
     --surface-muted: #00000014;
     --primary: #000000b3;
+
     /* The brand fallback mark behind the logo is painted with these two, and
        `--accent` is a DARK brown in dark mode, so it is re-bound here as well. */
     --accent: #f3ead9;
+
     /* An explicit white GROUND, not only an explicit white surface token: the
        paper itself must be opaque white even where no element paints it, or the
        application's dark page background shows through the sheet. */
     background: #ffffff;
     color: #000000;
+  }
+
+  /* A section may not straddle a page boundary. */
+  body.printing-monthly .print-page section,
+  body.printing-monthly .print-page header {
+    break-inside: avoid;
   }
 }
