@@ -250,6 +250,7 @@ pub fn run() {
             commands::sales::sales_monthly,
             commands::pos::list_tables,
             commands::pos::table_lifecycle_counters,
+            commands::pos::shift_lifecycle_counters,
             commands::pos::set_table_count,
             commands::pos::open_table,
             commands::pos::close_empty_table,

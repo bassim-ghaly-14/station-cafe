@@ -33,6 +33,22 @@ pub fn table_lifecycle_counters(
     })
 }
 
+/// The same lifecycle counters scoped to the caller's OWN ACTIVE shift.
+///
+/// This is the read the tables KPI band uses: the close-shift dialog already
+/// reports `shift_id`-scoped figures, and the band must agree with it. A new
+/// shift owns no sessions yet, so it naturally reports zero without deleting
+/// any historical `table_sessions` rows.
+#[tauri::command(rename_all = "snake_case")]
+pub fn shift_lifecycle_counters(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<TableCounters> {
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        pos_svc::shift_lifecycle_counts(conn, actor)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn set_table_count(state: State<'_, AppState>, token: String, count: i64) -> AppResult<()> {
     authorized(&state, &token, "ADMIN", |conn, actor| {

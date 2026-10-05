@@ -70,12 +70,15 @@ export default function PosPage() {
   const [shiftState, setShiftState] = useState<DayShiftState | null>(null)
   const [tables, setTables] = useState<TableView[] | null>(null)
   /**
-   * The business day's lifecycle counters, straight from the backend.
+   * The CURRENT SHIFT's lifecycle counters, straight from the backend.
    *
-   * This is held only to render: it is re-read on every `refresh()`, so the
-   * empty-close figure always comes from the database rather than from anything
-   * this screen tallies. Opening a table never writes to it — only a completed
-   * operation followed by a refresh can change what it shows.
+   * This is the SAME shift-scoped `table_sessions` read the close-shift dialog
+   * reports (`shift_id`), so the band and the dialog can never disagree. It is
+   * held only to render: it is re-read on every `refresh()`, so the empty-close
+   * figure always comes from the database rather than from anything this screen
+   * tallies. Opening a table never writes to it — only a completed operation
+   * followed by a refresh can change what it shows. A newly opened shift owns
+   * no sessions yet, so it naturally reports zero without deleting history.
    */
   const [counters, setCounters] = useState<TableCounters | null>(null)
   const [takeaways, setTakeaways] = useState<TakeawayView[] | null>(null)
@@ -120,7 +123,7 @@ export default function PosPage() {
         api.tables(),
         api.openTakeaways(),
         shiftApi.state(),
-        api.tableCounters(),
+        api.shiftCounters(),
       ])
 
       setTables(tv)
@@ -503,8 +506,8 @@ function dayClosingDay(
  *  - `occupied`  — OCCUPIED + READY_TO_PAY: the table has an order on it. The
  *                  two order states are ONE state here, exactly as they were
  *                  before, because "بها طلب" is what a cashier needs to know.
- *  - `closed`    — the empty closes of the current business day. It comes from
- *                  the backend's own `table_lifecycle_counters` command, which
+ *  - `closed`    — the empty closes of the CURRENT SHIFT. It comes from
+ *                  the backend's own `shift_lifecycle_counters` command — the SAME `shift_id`-scoped read the close-shift dialog reports —
  *                  reads the persisted `table_sessions` rows. It is deliberately
  *                  NOT a sum of the cards below: summing over the active grid
  *                  would drop every close belonging to a table that has since

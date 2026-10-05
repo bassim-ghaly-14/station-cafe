@@ -599,7 +599,7 @@ export function DailyBarChart({
               ))}
             </BarChart>
           </ChartContainer>
-          <span className="sr-only" role="img" aria-label={summary} />
+          <span className="sr-only">{summary}</span>
         </div>
       </div>
 

@@ -254,10 +254,8 @@ export function MonthlyComparisonBarChart({
             ))}
           </BarChart>
         </ChartContainer>
-        <span
-          className="sr-only"
-          role="img"
-          aria-label={[
+        <span className="sr-only">
+          {[
             title,
             period,
             latest
@@ -266,7 +264,7 @@ export function MonthlyComparisonBarChart({
           ]
             .filter(Boolean)
             .join(' — ')}
-        />
+        </span>
       </div>
 
       {/* The legend doubles as the per-series value of the latest month, so a

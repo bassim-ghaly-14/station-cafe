@@ -48,12 +48,16 @@ export interface PosOrder {
 }
 
 /**
- * The authoritative lifecycle counters of the current business day.
+ * The lifecycle counters of the caller's OWN ACTIVE shift.
  *
  * `closed_empty` is the empty-close count, read from persisted `table_sessions`
- * by the backend. It is deliberately NOT summed from the per-table cards here:
+ * by the backend scoped through `shift_id` — the SAME read the close-shift
+ * dialog reports. It is deliberately NOT summed from the per-table cards here:
  * a sum over the active grid loses any close belonging to a table that has
  * since been retired, and it is a second, competing definition of one number.
+ *
+ * A newly opened shift owns no sessions yet, so this naturally reports zero
+ * without deleting any historical rows.
  */
 export interface TableCounters {
   opens: number
@@ -316,6 +320,12 @@ export function isPrintPreview(value: unknown): value is PrintPreview {
 export const api = {
   tables: () => call<TableView[]>('list_tables'),
   tableCounters: () => call<TableCounters>('table_lifecycle_counters'),
+  /**
+   * The tables KPI read: the SAME shift-scoped `table_sessions` counters the
+   * close-shift dialog reports. The day-scoped `tableCounters` above stays for
+   * any day-level consumer; the band must never use it.
+   */
+  shiftCounters: () => call<TableCounters>('shift_lifecycle_counters'),
   setTableCount: (count: number) => call<void>('set_table_count', { count }),
   openTakeaways: () => call<TakeawayView[]>('list_open_takeaway_orders'),
   openTable: (table_id: number) => call<number>('open_table', { table_id }),

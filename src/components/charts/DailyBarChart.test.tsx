@@ -449,7 +449,7 @@ describe('the daily chart on the page', () => {
     expect(screen.getByRole('heading', { name: 'المصروفات عبر الأيام' })).toBeInTheDocument()
     // The summary names the PEAK DAY, read from the data, in the app's Arabic
     // date form. A raw `YYYY-MM-DD` is never what a reader is shown.
-    const summary = screen.getByRole('img').getAttribute('aria-label') ?? ''
+    const summary = document.querySelector('.sr-only')?.textContent ?? ''
     expect(summary).toContain('٢٤ سبتمبر ٢٠٢٦')
     expect(summary).not.toMatch(/\d{4}-\d{2}-\d{2}/)
   })
@@ -471,7 +471,7 @@ describe('the daily chart on the page', () => {
 
     // 8,500.00 + 1,200.00 + 3,000.00 + 900.00 — read from the data, not a stated
     // constant, and printed by the shared money formatter.
-    expect(screen.getByRole('img').getAttribute('aria-label')).toContain('13,600.00')
+    expect(document.querySelector('.sr-only')?.textContent).toContain('13,600.00')
   })
 
   it('renders an empty period without fabricating a zero bar', () => {

@@ -164,9 +164,8 @@ describe('MonthlyComparisonBarChart in the stacked layout', () => {
   it('states the latest month total for assistive technology, not a single series', () => {
     renderChart({ layout: 'stacked', stackId: 'expenses' })
 
-    const image = screen.getByRole('img')
     // February's total is 150 + 100 = 250 — the bar, not either segment alone.
-    expect(image.getAttribute('aria-label')).toContain('250')
+    expect(document.querySelector('.sr-only')?.textContent).toContain('250')
   })
 
   it('re-renders the same stacked chart inside the shared fullscreen dialog', async () => {
