@@ -707,6 +707,65 @@ fn a_settled_table_order_is_never_a_shift_empty_close() {
     // And the shift figure agrees with the day's, because this is one day.
     assert_eq!(empty_closes(&conn), 1, "one business rule, two scopes");
 }
+/// Case 2b — reopening the SAME table is a SECOND OPEN, never a repeat of the
+/// first one.
+///
+/// This is the distinction the whole figure rests on: `opens` counts SESSIONS,
+/// not distinct table numbers. One table seated twice is two business events and
+/// must be reported as two — a counter keyed on `table_id` would quietly report
+/// 1 and lose a real session. It is asserted against the persisted rows too.
+#[test]
+fn reopening_the_same_table_is_a_second_open_not_a_repeat() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let shift = active_shift_id(&conn, &actor);
+    let table = table_ids(&conn)[0];
+
+    empty_close(&conn, &actor, table);
+    assert_eq!(shift_closes(&conn, &actor), (1, 1), "the first sitting");
+
+    // The very same table, seated again inside the SAME shift.
+    empty_close(&conn, &actor, table);
+    assert_eq!(
+        shift_closes(&conn, &actor),
+        (2, 2),
+        "two sittings of one table are two opens and two closes"
+    );
+    assert_eq!(
+        persisted_shift_rows(&conn, shift),
+        (2, 2),
+        "and the persisted rows hold TWO session rows for that one table"
+    );
+
+    // The reason it is two is that there are genuinely two session rows — the
+    // count is derived from the lifecycle, not from the table it sat at.
+    let sessions: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM table_sessions WHERE shift_id = ?1 AND table_id = ?2",
+            rusqlite::params![shift, table],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(sessions, 2, "one row per sitting, not one row per table");
+    let distinct_tables: i64 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT table_id) FROM table_sessions WHERE shift_id = ?1",
+            [shift],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(distinct_tables, 1, "but only one table was ever seated");
+
+    // The closing states the same per-session figures the preview did.
+    let closing = shift_svc::close_shift_at(&conn, &actor, 0, "2026-09-25 12:00:00").unwrap();
+    assert_eq!(
+        (closing.tables.opens, closing.tables.closed_empty),
+        (2, 2),
+        "the closing reports sittings, not distinct tables"
+    );
+}
+
 /// Case 3 — a NEW shift starts from clean shift-scoped statistics, while the day
 /// keeps accumulating. This is the regression an endless lifetime counter could
 /// never pass.
