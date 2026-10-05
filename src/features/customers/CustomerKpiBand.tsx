@@ -131,15 +131,17 @@ function Count({ value }: Readonly<{ readonly value: number }>) {
  *
  * The hero sits at `1.75rem` against the breakdown's `1.125rem` — a clear
  * primary/supporting relationship without enlarging the card. No nested card is
- * introduced, so the band keeps its one-row rhythm on a desktop and its
+ * introduced, so the band keeps one uniform tile rhythm on a desktop and its
  * one-tile-per-row phone rule.
  */
 function CustomerOrderKindsCard({
   overview,
   className,
+  'aria-busy': ariaBusy,
 }: {
   readonly overview: CustomerOverview
   readonly className?: string
+  readonly 'aria-busy'?: true | undefined
 }) {
   const { t } = useTranslation()
   // The hero is the SUM of the two backend figures, which is also exactly the
@@ -147,7 +149,7 @@ function CustomerOrderKindsCard({
   // the reader can verify the total rather than trust it.
   const total = overview.table_orders + overview.takeaway_orders
   return (
-    <Card className={cn('flex flex-col gap-3 p-4', className)}>
+    <Card className={cn('flex flex-col gap-3 p-4', className)} aria-busy={ariaBusy}>
       <div className="flex flex-col gap-1">
         <p className="flex items-center gap-2 text-caption">
           <ShoppingBag size={15} aria-hidden className="text-primary" />
@@ -212,6 +214,9 @@ export function CustomerKpiBand({
             </div>
           </Card>
         ))}
+        {/* The tenth tile is a grid ITEM like the nine above it, so the skeleton
+            row is never one tile short of the loaded row. */}
+        <CustomerOrderKinds overview={null} loading />
         <span className="sr-only">{t('customers.kpi.loading')}</span>
       </KpiGrid>
     )
@@ -292,17 +297,24 @@ export function CustomerKpiBand({
       <KpiTile icon={Droplets} label={t('customers.kpi.washOrders')}>
         <Count value={overview.wash_orders} />
       </KpiTile>
+
+      {/* The tenth tile. It is a plain child of this grid — no col-span, no
+          second row of its own — so at every breakpoint it is sized by the same
+          `grid-template-columns` as tiles 1–9: five across on a desktop, the
+          shared 2 → 3 progression below it, one per row on a phone. */}
+      <CustomerOrderKinds overview={overview} loading={loading} />
     </KpiGrid>
   )
 }
 
 /**
- * The order-kind card, rendered as its own full-width row beneath the band.
+ * The order-kind card: the TENTH tile of the band's grid.
  *
- * It carries a hero and a breakdown, so it does not belong in the one-row KPI
- * grid: a tile with a sub-structure inside it would be the "excessive nested
- * card" the design system avoids. Giving it its own row keeps its hierarchy
- * intact and lets it span the width its two labelled rows need.
+ * It carries a hero and a breakdown rather than a bare figure, but it is a
+ * NORMAL grid item — no `col-span`, no row of its own — so it is sized by the
+ * same `grid-template-columns` as tiles 1–9 at every breakpoint. It renders as
+ * a child of {@link CustomerKpiBand}, and the grid's own `gap-3` is the
+ * spacing, so this component contributes no margin and no extra container.
  */
 export function CustomerOrderKinds({
   overview,
@@ -330,9 +342,13 @@ export function CustomerOrderKinds({
 
   if (!overview) return null
 
+  // No wrapper element: the card IS the grid item, so the grid's own gap and
+  // column sizing apply to it exactly as they do to the nine `KpiTile`s.
   return (
-    <div className={cn('mt-3', className)} aria-busy={loading || undefined}>
-      <CustomerOrderKindsCard overview={overview} />
-    </div>
+    <CustomerOrderKindsCard
+      overview={overview}
+      className={className}
+      aria-busy={loading ? true : undefined}
+    />
   )
 }

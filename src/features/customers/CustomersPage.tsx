@@ -25,7 +25,7 @@ import { useErrText } from '@/lib/err'
 import { CustomerDetailsDrawer } from './CustomerDetailsDrawer'
 import { CustomerDialog, type CustomerDialogMode } from './CustomerDialog'
 import { CustomerFilters } from './CustomerFilters'
-import { CustomerKpiBand, CustomerOrderKinds } from './CustomerKpiBand'
+import { CustomerKpiBand } from './CustomerKpiBand'
 import { CustomerTable } from './CustomerTable'
 import { useCustomerList, useCustomerOverview, type CustomerOverviewState } from './useCustomerData'
 import { customersApi } from '@/services/customersApi'
@@ -60,13 +60,9 @@ function CustomerOverviewBand({
     )
   }
   return (
-    <>
-      <CustomerKpiBand overview={overview.overview} loading={overview.loading} />
-      {/* The order-kind card states the period's TOTAL split by the two kinds
-          Station actually stores, so "takeaway" can never be read as also
-          including table orders. */}
-      <CustomerOrderKinds overview={overview.overview} loading={overview.loading} />
-    </>
+    // The order-kind card is the tenth tile INSIDE the band's grid, so it is
+    // sized like the other nine rather than taking a row of its own.
+    <CustomerKpiBand overview={overview.overview} loading={overview.loading} />
   )
 }
 
