@@ -597,3 +597,33 @@ describe('CustomersPage — permanent delete (ADMIN only)', () => {
     expect(screen.queryByText(/تم حذف العميل/)).not.toBeInTheDocument()
   })
 })
+
+describe('CustomersPage — bounded list window', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.role.current = 'MANAGER'
+    mocks.overview.mockResolvedValue(OVERVIEW)
+    mocks.details.mockResolvedValue(DETAILS)
+  })
+
+  it('states the 200-row bound only when the window is full', async () => {
+    mocks.list.mockResolvedValue({
+      financial_visible: true,
+      customers: Array.from({ length: 200 }, (_, i) =>
+        customer({ id: i + 1, name: `عميل ${i + 1}`, stats: stats() }),
+      ),
+    })
+    renderPage()
+
+    expect(await screen.findByText('عرض أول 200 عميل مطابق')).toBeInTheDocument()
+  }, 20_000)
+
+  it('never claims an exact total — the count line alone when under the cap', async () => {
+    mocks.list.mockResolvedValue(MANAGER_LIST)
+    renderPage()
+    await screen.findByRole('button', { name: /تفاصيل/ })
+
+    expect(screen.getByText('1 عميل')).toBeInTheDocument()
+    expect(screen.queryByText(/عرض أول 200 عميل/)).not.toBeInTheDocument()
+  })
+})

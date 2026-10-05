@@ -6,13 +6,16 @@
  * and "بدون عميل" is a first-class, intentional choice rather than missing
  * data: it is exactly what the invoice will be recorded as.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Dialog, useToast } from '@/components/ui'
 import { Car, Plus, UserX } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { api, type CustomerWithCars, type PosOrder } from '@/services/posApi'
 import { NewCustomerForm } from './NewCustomerForm'
+
+/** How long typing settles before the backend is queried again. */
+const SEARCH_DEBOUNCE_MS = 250
 
 export function CustomerPicker({
   orderId,
@@ -26,9 +29,15 @@ export function CustomerPicker({
   const { t } = useTranslation()
   const toast = useToast()
   const [query, setQuery] = useState('')
-  const [all, setAll] = useState<CustomerWithCars[] | null>(null)
+  const [browse, setBrowse] = useState<CustomerWithCars[] | null>(null)
+  // The answer is tagged with the term it answered, so an answer for an older
+  // term can never be displayed as the answer to the current one.
+  const [search, setSearch] = useState<{ term: string; rows: CustomerWithCars[] } | null>(null)
   const [busy, setBusy] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
+  // Latest issued search request; older responses are discarded so rapid
+  // typing can never let a stale answer overwrite the newest one.
+  const searchSeq = useRef(0)
 
   // Stable identity, so the load-once effect below can depend on it honestly
   // instead of closing over a fresh closure every render.
@@ -38,12 +47,12 @@ export function CustomerPicker({
     [t, toast],
   )
 
-  // The full registered list is loaded once when the picker opens, so browsing
-  // is instant and typing never waits for a round trip.
+  // The bounded browse list (first 60) is loaded once when the picker opens,
+  // so browsing is instant and typing never waits for a round trip.
   useEffect(() => {
     let active = true
     api.customers('').then((rows) => {
-      if (active) setAll(rows)
+      if (active) setBrowse(rows)
     }, report)
     // Loaded once per opening: this dialog remounts on every open.
     return () => {
@@ -51,18 +60,41 @@ export function CustomerPicker({
     }
   }, [report])
 
-  const searching = query.trim().length > 0
-  const results = useMemo(() => {
-    if (!all) return []
-    const term = query.trim().toLowerCase()
-    if (!term) return all
-    return all.filter((c) => {
-      const haystack = [c.name, c.phone ?? '', ...c.cars.map((car) => car.plate_no)]
-        .join(' ')
-        .toLowerCase()
-      return haystack.includes(term)
-    })
-  }, [all, query])
+  // Non-empty query → debounced server search through the existing
+  // `search_customers` endpoint (name / normalized phone / normalized plate).
+  // Clearing the query returns to the browse list; the sequence bump drops any
+  // in-flight answer that lands after the clear.
+  useEffect(() => {
+    const term = query.trim()
+    if (term === '') {
+      searchSeq.current += 1
+      return
+    }
+    const timer = setTimeout(() => {
+      const seq = (searchSeq.current += 1)
+      api
+        .customers(term)
+        .then((rows) => {
+          if (searchSeq.current !== seq) return
+          setSearch({ term, rows })
+        })
+        .catch((cause: unknown) => {
+          if (searchSeq.current !== seq) return
+          setSearch({ term, rows: [] })
+          report(cause)
+        })
+    }, SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [query, report])
+
+  // Derived, not stored: the current term is answered only when the stored
+  // answer carries that exact term — no setState is needed to flip it as the
+  // user types, and an answer for an older term can never show.
+  const term = query.trim()
+  const hasQuery = term !== ''
+  const answered = search !== null && search.term === term ? search.rows : null
+  const loaded = hasQuery ? answered !== null : browse !== null
+  const results = hasQuery ? (answered ?? []) : (browse ?? [])
 
   const attach = async (customerId: number | null, plate: string | null = null) => {
     setBusy(true)
@@ -122,9 +154,9 @@ export function CustomerPicker({
       </div>
 
       <CustomerResults
-        loaded={all !== null}
+        loaded={loaded}
         results={results}
-        searching={searching}
+        searching={hasQuery}
         busy={busy}
         onAttach={attach}
       />
@@ -137,7 +169,17 @@ export function CustomerPicker({
             setNewOpen(false)
             // Refresh the browsable list so the new customer is selectable at
             // once, then attach it to this order.
-            void api.customers(query.trim()).then(setAll).catch(report)
+            void api.customers('').then(setBrowse).catch(report)
+            if (query.trim() !== '') {
+              const next = query.trim()
+              const seq = (searchSeq.current += 1)
+              void api
+                .customers(next)
+                .then((rows) => {
+                  if (searchSeq.current === seq) setSearch({ term: next, rows })
+                })
+                .catch(report)
+            }
             void attach(id)
           }}
         />

@@ -140,6 +140,13 @@ function CustomerListSection({
             typing in the search field never blanks the page. */}
         {refreshing ? <ProgressBar label={t('app.loading')} className="w-24" /> : null}
       </div>
+      {/* The backend caps this list at 200; say so when the window is full so
+          the count is never mistaken for an exact total. */}
+      {customers.length >= 200 ? (
+        <p className="border-b border-border-subtle px-3 py-2 text-caption text-foreground-subtle">
+          {t('customers.states.boundedWindow', { count: 200 })}
+        </p>
+      ) : null}
       <CustomerTable
         customers={customers}
         financialVisible={financialVisible}

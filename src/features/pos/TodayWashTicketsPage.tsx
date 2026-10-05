@@ -202,6 +202,11 @@ function WashTicketResults({
       {dayId === null ? (
         <p className="border-t border-border-subtle px-3 py-2 text-caption">{t('pos.noDayHint')}</p>
       ) : null}
+      {rows.length >= 200 ? (
+        <p className="border-t border-border-subtle px-3 py-2 text-caption text-foreground-subtle">
+          {t('washTicketsPage.boundedHistory', { count: 200 })}
+        </p>
+      ) : null}
     </Card>
   )
 }

@@ -449,3 +449,34 @@ fn an_empty_business_day_returns_a_valid_empty_result() {
     );
 }
 
+#[test]
+fn the_historical_fallback_is_bounded_to_the_newest_200() {
+    let conn = fresh();
+    let manager = login(&conn, "manager", "2345");
+    // 205 wash tickets across the whole history: direct rows keep the test
+    // focused on the read bound instead of the order lifecycle. Each day-date
+    // carries one waiting number so the per-day uniqueness holds.
+    for i in 0..205 {
+        let day = format!("2026-01-{:02}", (i % 28) + 1);
+        conn.execute(
+            "INSERT INTO orders (order_type, table_id, user_id, status, opened_at) VALUES ('TABLE', 1, ?1, 'CLOSED', station_now())",
+            rusqlite::params![manager.id],
+        )
+        .unwrap();
+        let order_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO wash_tickets (order_id, waiting_no, day_date, issued_at) VALUES (?1, ?2, ?3, station_now())",
+            rusqlite::params![order_id, i as i64, day],
+        )
+        .unwrap();
+    }
+
+    // No business day open → the whole history, but bounded.
+    let rows = pos_svc::daily_wash_tickets(&conn, None, None, None).unwrap();
+    assert_eq!(rows.len(), 200, "history must be capped at 200 rows");
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    let mut sorted = ids.clone();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+    assert_eq!(ids, sorted, "newest tickets stay first");
+}
+

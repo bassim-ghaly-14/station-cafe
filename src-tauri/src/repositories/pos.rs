@@ -804,7 +804,9 @@ pub fn daily_wash_tickets(
         sql.push_str(&format!(" AND o.status = ?{}", args.len()));
     }
     // The same newest-first ordering as فواتير اليوم, so the twins read alike.
-    sql.push_str(" ORDER BY t.id DESC");
+    // Bounded to the latest 200 rows: when no business day is open this query
+    // is the whole history, and history must never be unbounded.
+    sql.push_str(" ORDER BY t.id DESC LIMIT 200");
     let mut stmt = conn.prepare(&sql)?;
     let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|a| a as &dyn rusqlite::ToSql).collect();
     let rows = stmt.query_map(refs.as_slice(), |r| {

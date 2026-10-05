@@ -401,6 +401,7 @@
     "totalSales": "إجمالي مبيعات تذاكر المغسلة",
     "backToPos": "العودة لنقطة البيع",
     "resultsCount": "عرض {{count}} تذكرة",
+    "boundedHistory": "عرض أحدث {{count}} سجل",
     "loadingRecords": "جارٍ تحميل تذاكر المغسلة…",
     "waitingNumber": "رقم الانتظار",
     "noInvoice": "لم تُصدر فاتورة بعد",
@@ -1003,7 +1004,8 @@
     "states": {
       "noData": "لا يوجد عملاء مسجلون بعد",
       "noResults": "لا يوجد عملاء مطابقون للبحث",
-      "count": "{{count}} عميل"
+      "count": "{{count}} عميل",
+      "boundedWindow": "عرض أول {{count}} عميل مطابق"
     },
     "form": {
       "createTitle": "عميل جديد",

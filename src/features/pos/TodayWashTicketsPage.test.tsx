@@ -109,6 +109,23 @@ describe('Today wash tickets page', () => {
     expect(screen.getByText('غسيل كامل سيدان')).toBeInTheDocument()
   })
 
+  it('says the list is bounded when the 200-row window is full', async () => {
+    // The backend caps the read at 200; the page must not pretend it's complete.
+    mocks.washTickets.mockResolvedValue(
+      Array.from({ length: 200 }, (_, i) => ticket({ id: 200 - i, order_id: 100 + i })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('عرض أحدث 200 سجل')).toBeInTheDocument()
+  }, 20_000)
+
+  it('does not claim a bound when fewer rows are shown', async () => {
+    renderPage()
+    await screen.findByText('#3')
+
+    expect(screen.queryByText('عرض أحدث 200 سجل')).not.toBeInTheDocument()
+  })
+
   it('returns every ticket of the day, not just one', async () => {
     // Distinct order ids so each row's order reference is unambiguous.
     mocks.washTickets.mockResolvedValue([
