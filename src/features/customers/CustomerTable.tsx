@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ActionMenu,
   Badge,
+  CopyButton,
   DataTable,
   DataTableCell,
   DataTableRow,
@@ -139,8 +140,17 @@ function CustomerRecordIdentity({ customer }: { readonly customer: CustomerRow }
         <CustomerAvatar id={customer.id} name={customer.name} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-body font-bold text-foreground-strong">{customer.name}</p>
-          <span dir="ltr" className="mt-0.5 block truncate text-caption tabular-nums">
-            {customer.phone ?? '—'}
+          {/* The phone and its copy control travel together. The number keeps
+              its own line as the primary readable text and the control sits
+              beside it in a `shrink-0` inline row, so a long number truncates
+              on its own and never pushes the button out of the record. */}
+          <span className="mt-0.5 flex items-center gap-1">
+            <span dir="ltr" className="truncate text-caption tabular-nums">
+              {customer.phone ?? '—'}
+            </span>
+            {customer.phone ? (
+              <PhoneCopyButton name={customer.name} phone={customer.phone} />
+            ) : null}
           </span>
         </div>
       </div>
@@ -148,6 +158,33 @@ function CustomerRecordIdentity({ customer }: { readonly customer: CustomerRow }
         <p className="mt-1.5 line-clamp-2 text-caption text-foreground-faint">{customer.notes}</p>
       ) : null}
     </>
+  )
+}
+
+/**
+ * Copy the phone number of one person.
+ *
+ * This is the WHOLE Customers-side copy behaviour, and it is a two-line wrapper
+ * rather than a component of its own: the actual copy interaction — the
+ * clipboard write, the success state, the icon swap, the toast and the
+ * accessible naming — belongs entirely to the shared `CopyButton`. What this
+ * adds is only the two translated strings, so the Customers table and its phone
+ * record presentation cannot spell the action differently.
+ *
+ * It is rendered ONLY when a phone exists. A row with no number has nothing to
+ * copy, and a control that could only ever produce an empty clipboard is worse
+ * than no control — the same rule the shared button follows for an origin with
+ * no clipboard at all.
+ */
+function PhoneCopyButton({ name, phone }: { readonly name: string; readonly phone: string }) {
+  const { t } = useTranslation()
+  return (
+    <CopyButton
+      value={phone}
+      label={t('customers.actions.copyPhone', { name })}
+      copiedLabel={t('app.copied')}
+      data-testid="customer-copy-phone"
+    />
   )
 }
 
@@ -324,6 +361,14 @@ export function CustomerTable({
                     <span dir="ltr" className="truncate text-caption tabular-nums">
                       {customer.phone ?? '—'}
                     </span>
+                    {/* The copy control belongs to the PHONE, not to the cell:
+                        it is rendered only when there is a phone to copy, and
+                        it sits immediately beside the number so the association
+                        is unambiguous. `shrink-0` keeps it from being squeezed
+                        by a long number. */}
+                    {customer.phone ? (
+                      <PhoneCopyButton name={customer.name} phone={customer.phone} />
+                    ) : null}
                     {customer.notes ? (
                       <span className="truncate text-caption text-foreground-faint">
                         {customer.notes}

@@ -14,6 +14,7 @@ import { act } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n, { DEFAULT_LOCALE } from '@/lib/i18n'
 import { ToastProvider } from '@/components/ui'
+import { resetViewportWidth, setViewportWidth } from '@/test/setup'
 import CustomersPage from './CustomersPage'
 import { customerAvatarTone } from '@/lib/customer-visual'
 import type {
@@ -211,6 +212,87 @@ describe('CustomersPage — cashier (no financial analytics)', () => {
         notes: null,
       }),
     )
+  })
+})
+
+/**
+ * The copy control on a customer row.
+ *
+ * These assert the INTEGRATION only: that the shared component is present beside
+ * the displayed number, that it copies that person's own number, that the
+ * number itself stays visible and readable, and that no control appears at all
+ * for a customer with no phone. The copy interaction itself is covered by
+ * `copy-button.test.tsx` and is deliberately NOT re-tested here.
+ */
+describe('CustomersPage — copying a customer phone number', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.role.current = 'MANAGER'
+    mocks.overview.mockResolvedValue(OVERVIEW)
+    mocks.details.mockResolvedValue(DETAILS)
+  })
+
+  it('copies the number beside which it is displayed', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mocks.list.mockResolvedValue(MANAGER_LIST)
+    renderPage()
+
+    await screen.findAllByText('أحمد سيد')
+    // The control is named after WHOM it belongs to, so a screen reader moving
+    // down the table never hears a bare, repeated "copy".
+    fireEvent.click(screen.getByRole('button', { name: 'نسخ تليفون أحمد سيد' }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('01001234567'))
+  })
+
+  it('leaves the number itself visible and untouched', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    })
+    mocks.list.mockResolvedValue(MANAGER_LIST)
+    renderPage()
+
+    // The number stays the readable primary text; adding the control must never
+    // replace it, truncate it into an icon, or require a tap to see it.
+    expect(await screen.findByText('01001234567')).toBeInTheDocument()
+  })
+
+  it('offers no copy control for a customer with no phone', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    })
+    mocks.list.mockResolvedValue({
+      financial_visible: true,
+      customers: [{ ...MANAGER_LIST.customers[0], phone: null }],
+    })
+    renderPage()
+
+    await screen.findAllByText('أحمد سيد')
+    // Nothing to copy means no control: a button that could only ever put an
+    // empty string on the clipboard would be worse than none.
+    expect(screen.queryByRole('button', { name: /نسخ تليفون/ })).not.toBeInTheDocument()
+  })
+
+  it('reaches the phone presentation too, at the narrow breakpoint', async () => {
+    // The roster switches to records below `md`, and that presentation carries
+    // its own copy control — otherwise the feature would simply vanish on a
+    // phone, which is the device this app is most often used on.
+    setViewportWidth(360)
+    try {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      mocks.list.mockResolvedValue(MANAGER_LIST)
+      renderPage()
+
+      await screen.findAllByText('أحمد سيد')
+      fireEvent.click(screen.getByRole('button', { name: 'نسخ تليفون أحمد سيد' }))
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('01001234567'))
+    } finally {
+      resetViewportWidth()
+    }
   })
 })
 
