@@ -65,7 +65,8 @@ function CustomerRecordList({
   selectable,
   selectedIds,
   onToggleSelect,
-  onToggleSelectVisible,
+  onSelectVisible,
+  onDeselectVisible,
   onOpenDetails,
   onEdit,
   onDelete,
@@ -77,7 +78,8 @@ function CustomerRecordList({
   readonly selectable?: boolean
   readonly selectedIds?: ReadonlySet<number>
   readonly onToggleSelect?: (customer: CustomerRow) => void
-  readonly onToggleSelectVisible?: (checked: boolean) => void
+  readonly onSelectVisible?: () => void
+  readonly onDeselectVisible?: () => void
   readonly onOpenDetails: (customer: CustomerRow) => void
   readonly onEdit: (customer: CustomerRow) => void
   readonly onDelete: (customer: CustomerRow) => void
@@ -93,10 +95,15 @@ function CustomerRecordList({
             <input
               type="checkbox"
               checked={
-                customers.length > 0 &&
-                customers.every((row) => selectedIds?.has(row.id) ?? false)
+                customers.length > 0 && customers.every((row) => selectedIds?.has(row.id) ?? false)
               }
-              onChange={(e) => onToggleSelectVisible?.(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  onSelectVisible?.()
+                } else {
+                  onDeselectVisible?.()
+                }
+              }}
             />
             {t('customers.export.selectVisible')}
           </label>
@@ -300,7 +307,8 @@ export function CustomerTable({
   selectable,
   selectedIds,
   onToggleSelect,
-  onToggleSelectVisible,
+  onSelectVisible,
+  onDeselectVisible,
   onOpenDetails,
   onEdit,
   onDelete,
@@ -320,7 +328,8 @@ export function CustomerTable({
   readonly selectedIds?: ReadonlySet<number>
   readonly onToggleSelect?: (customer: CustomerRow) => void
   /** Check/uncheck every VISIBLE row. "All customers" export stays server-side. */
-  readonly onToggleSelectVisible?: (checked: boolean) => void
+  readonly onSelectVisible?: () => void
+  readonly onDeselectVisible?: () => void
   readonly onOpenDetails: (customer: CustomerRow) => void
   readonly onEdit: (customer: CustomerRow) => void
   /** Record the delete INTENT only. The page confirms, requests and toasts. */
@@ -384,7 +393,8 @@ export function CustomerTable({
         selectable={selectable}
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
-        onToggleSelectVisible={onToggleSelectVisible}
+        onSelectVisible={onSelectVisible}
+        onDeselectVisible={onDeselectVisible}
         onOpenDetails={onOpenDetails}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -407,7 +417,13 @@ export function CustomerTable({
             <input
               type="checkbox"
               checked={allVisibleChecked}
-              onChange={(e) => onToggleSelectVisible?.(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  onSelectVisible?.()
+                } else {
+                  onDeselectVisible?.()
+                }
+              }}
             />
             {t('customers.export.selectVisible')}
           </label>
@@ -419,157 +435,157 @@ export function CustomerTable({
         busy={busy}
         className={className}
       >
-      {customers.map((customer) => {
-        const stats = financialVisible ? customer.stats : null
-        return (
-          <DataTableRow key={customer.id}>
-            {selectable ? (
+        {customers.map((customer) => {
+          const stats = financialVisible ? customer.stats : null
+          return (
+            <DataTableRow key={customer.id}>
+              {selectable ? (
+                <DataTableCell>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds?.has(customer.id) ?? false}
+                    onChange={() => onToggleSelect?.(customer)}
+                    aria-label={t('customers.export.selectCustomer', { name: customer.name })}
+                  />
+                </DataTableCell>
+              ) : null}
               <DataTableCell>
-                <input
-                  type="checkbox"
-                  checked={selectedIds?.has(customer.id) ?? false}
-                  onChange={() => onToggleSelect?.(customer)}
-                  aria-label={t('customers.export.selectCustomer', { name: customer.name })}
-                />
-              </DataTableCell>
-            ) : null}
-            <DataTableCell>
-              {/* Avatar + name + quiet secondary metadata. The avatar repeats
+                {/* Avatar + name + quiet secondary metadata. The avatar repeats
                   the name, so it is decorative and the name stays the single
                   source of identity. */}
-              <div className="flex min-w-0 items-center gap-3">
-                <CustomerAvatar id={customer.id} name={customer.name} size="sm" />
-                <div className="min-w-0">
-                  {/* Same weight as the employee name in the Employees roster:
+                <div className="flex min-w-0 items-center gap-3">
+                  <CustomerAvatar id={customer.id} name={customer.name} size="sm" />
+                  <div className="min-w-0">
+                    {/* Same weight as the employee name in the Employees roster:
                       the row's lead text is emphasised by colour and size, not
                       by a heavier weight the Employees table does not use. */}
-                  <span className="block max-w-48 truncate font-medium text-foreground-strong">
-                    {customer.name}
-                  </span>
-                  <span className="mt-0.5 flex items-center gap-2">
-                    <span dir="ltr" className="truncate text-caption tabular-nums">
-                      {customer.phone ?? '—'}
+                    <span className="block max-w-48 truncate font-medium text-foreground-strong">
+                      {customer.name}
                     </span>
-                    {/* The copy control belongs to the PHONE, not to the cell:
+                    <span className="mt-0.5 flex items-center gap-2">
+                      <span dir="ltr" className="truncate text-caption tabular-nums">
+                        {customer.phone ?? '—'}
+                      </span>
+                      {/* The copy control belongs to the PHONE, not to the cell:
                         it is rendered only when there is a phone to copy, and
                         it sits immediately beside the number so the association
                         is unambiguous. `shrink-0` keeps it from being squeezed
                         by a long number. */}
-                    {customer.phone ? (
-                      <PhoneCopyButton name={customer.name} phone={customer.phone} />
-                    ) : null}
-                    {customer.notes ? (
-                      <span className="truncate text-caption text-foreground-faint">
-                        {customer.notes}
-                      </span>
-                    ) : null}
-                  </span>
+                      {customer.phone ? (
+                        <PhoneCopyButton name={customer.name} phone={customer.phone} />
+                      ) : null}
+                      {customer.notes ? (
+                        <span className="truncate text-caption text-foreground-faint">
+                          {customer.notes}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </DataTableCell>
+              </DataTableCell>
 
-            <DataTableCell className="hidden md:table-cell">
-              {/* One compact badge states the whole vehicle situation; the
+              <DataTableCell className="hidden md:table-cell">
+                {/* One compact badge states the whole vehicle situation; the
                   plates stay as the detail underneath it, never as a count. */}
-              <div className="flex flex-col items-start gap-1">
-                <CustomerVehicleBadge carsCount={customer.cars_count} />
-                {customer.plates.length > 0 ? (
-                  <span className="flex flex-wrap items-center gap-1">
-                    {customer.plates.map((plate) => (
-                      <span
-                        key={plate}
-                        className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-caption"
-                      >
-                        <Car size={12} aria-hidden />
-                        <span dir="ltr">{plate}</span>
-                      </span>
-                    ))}
-                  </span>
-                ) : null}
-              </div>
-            </DataTableCell>
+                <div className="flex flex-col items-start gap-1">
+                  <CustomerVehicleBadge carsCount={customer.cars_count} />
+                  {customer.plates.length > 0 ? (
+                    <span className="flex flex-wrap items-center gap-1">
+                      {customer.plates.map((plate) => (
+                        <span
+                          key={plate}
+                          className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-caption"
+                        >
+                          <Car size={12} aria-hidden />
+                          <span dir="ltr">{plate}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                </div>
+              </DataTableCell>
 
-            <DataTableCell className="hidden xl:table-cell">
-              <DisplayDate value={customer.created_at} />
-            </DataTableCell>
+              <DataTableCell className="hidden xl:table-cell">
+                <DisplayDate value={customer.created_at} />
+              </DataTableCell>
 
-            {financialVisible ? (
-              <>
+              {financialVisible ? (
+                <>
+                  <DataTableCell>
+                    <span className="tabular-nums">{stats?.invoices_count ?? 0}</span>
+                  </DataTableCell>
+
+                  <DataTableCell>
+                    <MoneyDisplay amount={stats?.paid ?? 0} variant="auto" />
+                  </DataTableCell>
+
+                  <DataTableCell className="hidden lg:table-cell">
+                    {stats && stats.credit_outstanding > 0 ? (
+                      <Badge variant="warning" size="sm" dot>
+                        <MoneyDisplay amount={stats.credit_outstanding} variant="auto" />
+                      </Badge>
+                    ) : (
+                      <span className="text-foreground-faint">—</span>
+                    )}
+                  </DataTableCell>
+
+                  <DataTableCell className="hidden lg:table-cell">
+                    {stats?.last_at ? (
+                      <DisplayDateTime value={stats.last_at} />
+                    ) : (
+                      <span className="text-foreground-faint">—</span>
+                    )}
+                  </DataTableCell>
+                </>
+              ) : null}
+
+              {financialVisible ? (
                 <DataTableCell>
-                  <span className="tabular-nums">{stats?.invoices_count ?? 0}</span>
-                </DataTableCell>
-
-                <DataTableCell>
-                  <MoneyDisplay amount={stats?.paid ?? 0} variant="auto" />
-                </DataTableCell>
-
-                <DataTableCell className="hidden lg:table-cell">
-                  {stats && stats.credit_outstanding > 0 ? (
-                    <Badge variant="warning" size="sm" dot>
-                      <MoneyDisplay amount={stats.credit_outstanding} variant="auto" />
-                    </Badge>
-                  ) : (
-                    <span className="text-foreground-faint">—</span>
-                  )}
-                </DataTableCell>
-
-                <DataTableCell className="hidden lg:table-cell">
-                  {stats?.last_at ? (
-                    <DisplayDateTime value={stats.last_at} />
-                  ) : (
-                    <span className="text-foreground-faint">—</span>
-                  )}
-                </DataTableCell>
-              </>
-            ) : null}
-
-            {financialVisible ? (
-              <DataTableCell>
-                {/* The SAME action column the Employees roster uses — the shared
+                  {/* The SAME action column the Employees roster uses — the shared
                     `TableAction*` primitives — so switching between the two
                     screens shows one control in one size with one spacing rule,
                     not two hand-rolled versions of the same idea. Read is
                     `info`, change is `warning`, and the one irreversible action
                     is `destructive` and sits last, behind a hairline. */}
-                <TableActionGroup>
-                  <TableActionButton
-                    tone="info"
-                    onClick={() => onOpenDetails(customer)}
-                    aria-label={t('customers.actions.details', { name: customer.name })}
-                    title={t('customers.actions.details', { name: customer.name })}
-                  >
-                    <Eye size={24} aria-hidden />
-                  </TableActionButton>
-                  <TableActionButton
-                    tone="warning"
-                    onClick={() => onEdit(customer)}
-                    aria-label={t('customers.actions.edit', { name: customer.name })}
-                    title={t('customers.actions.edit', { name: customer.name })}
-                  >
-                    <Pencil size={24} aria-hidden />
-                  </TableActionButton>
-                  {/* Permanent delete. ADMIN only, and last in the group: it is
+                  <TableActionGroup>
+                    <TableActionButton
+                      tone="info"
+                      onClick={() => onOpenDetails(customer)}
+                      aria-label={t('customers.actions.details', { name: customer.name })}
+                      title={t('customers.actions.details', { name: customer.name })}
+                    >
+                      <Eye size={24} aria-hidden />
+                    </TableActionButton>
+                    <TableActionButton
+                      tone="warning"
+                      onClick={() => onEdit(customer)}
+                      aria-label={t('customers.actions.edit', { name: customer.name })}
+                      title={t('customers.actions.edit', { name: customer.name })}
+                    >
+                      <Pencil size={24} aria-hidden />
+                    </TableActionButton>
+                    {/* Permanent delete. ADMIN only, and last in the group: it is
                       the one customer action that cannot be undone. */}
-                  {canDelete ? (
-                    <>
-                      <TableActionDivider />
-                      <TableActionButton
-                        tone="danger"
-                        onClick={() => onDelete(customer)}
-                        aria-label={t('customers.actions.delete', { name: customer.name })}
-                        title={t('customers.actions.delete', { name: customer.name })}
-                        data-testid="customer-row-delete"
-                      >
-                        <Trash2 size={24} aria-hidden />
-                      </TableActionButton>
-                    </>
-                  ) : null}
-                </TableActionGroup>
-              </DataTableCell>
-            ) : null}
-          </DataTableRow>
-        )
-      })}
+                    {canDelete ? (
+                      <>
+                        <TableActionDivider />
+                        <TableActionButton
+                          tone="danger"
+                          onClick={() => onDelete(customer)}
+                          aria-label={t('customers.actions.delete', { name: customer.name })}
+                          title={t('customers.actions.delete', { name: customer.name })}
+                          data-testid="customer-row-delete"
+                        >
+                          <Trash2 size={24} aria-hidden />
+                        </TableActionButton>
+                      </>
+                    ) : null}
+                  </TableActionGroup>
+                </DataTableCell>
+              ) : null}
+            </DataTableRow>
+          )
+        })}
       </DataTable>
     </>
   )

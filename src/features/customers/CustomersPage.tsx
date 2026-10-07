@@ -86,7 +86,8 @@ function CustomerListSection({
   selectable,
   selectedIds,
   onToggleSelect,
-  onToggleSelectVisible,
+  onSelectVisible,
+  onDeselectVisible,
   searching,
   onRetry,
   onReset,
@@ -105,7 +106,8 @@ function CustomerListSection({
   readonly selectable: boolean
   readonly selectedIds: ReadonlySet<number>
   readonly onToggleSelect: (customer: CustomerRow) => void
-  readonly onToggleSelectVisible: (checked: boolean) => void
+  readonly onSelectVisible: () => void
+  readonly onDeselectVisible: () => void
   readonly searching: boolean
   readonly onRetry: () => void
   readonly onReset: () => void
@@ -166,7 +168,8 @@ function CustomerListSection({
         selectable={selectable}
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
-        onToggleSelectVisible={onToggleSelectVisible}
+        onSelectVisible={onSelectVisible}
+        onDeselectVisible={onDeselectVisible}
         onOpenDetails={onOpenDetails}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -229,17 +232,17 @@ export default function CustomersPage() {
     })
   }
 
-  function toggleSelectVisible(checked: boolean) {
-    // "Select all" here means the VISIBLE rows only — the server-side "all
-    // customers" export is a separate scope in the export dialog.
-    if (checked) {
-      setSelectedIds((prev) => new Set([...prev, ...customers.map((row) => row.id)]))
-    } else {
-      setSelectedIds((prev) => {
-        const visible = new Set(customers.map((row) => row.id))
-        return new Set([...prev].filter((id) => !visible.has(id)))
-      })
-    }
+  // "Select all" here means the VISIBLE rows only — the server-side "all
+  // customers" export is a separate scope in the export dialog.
+  function selectVisibleCustomers() {
+    setSelectedIds((prev) => new Set([...prev, ...customers.map((row) => row.id)]))
+  }
+
+  function deselectVisibleCustomers() {
+    setSelectedIds((prev) => {
+      const visible = new Set(customers.map((row) => row.id))
+      return new Set([...prev].filter((id) => !visible.has(id)))
+    })
   }
 
   function openDetails(customer: CustomerRow) {
@@ -340,7 +343,8 @@ export default function CustomersPage() {
         selectable={canExportPhones}
         selectedIds={selectedIds}
         onToggleSelect={toggleSelect}
-        onToggleSelectVisible={toggleSelectVisible}
+        onSelectVisible={selectVisibleCustomers}
+        onDeselectVisible={deselectVisibleCustomers}
         searching={searching}
         onRetry={list.reload}
         onReset={resetFilters}
