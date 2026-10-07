@@ -791,16 +791,43 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
     expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
   })
 
-  it('shows a MANAGER both records with no open business day either', async () => {
+  it('hides both records when no business day is open, even for a MANAGER', async () => {
+    // The Required Action State correction: without an ACTIVE day there is no
+    // "today" for the buttons to mean (historical existence ≠ active day), so
+    // the cold-till screen stays a clean start/open-business composition.
     mocks.state.mockResolvedValue({ day: null, my_shift: null, open_shift: null })
     signInAs('MANAGER')
 
     renderPage()
 
-    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'فتح وردية جديدة' })
+    expect(screen.queryByRole('button', { name: 'فواتير اليوم' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'تذاكر المغسلة اليوم' })).not.toBeInTheDocument()
   })
 
+  it('shows a STAFF both records when the day is open but their shift is closed', async () => {
+    // STATE 3: closing the personal shift must NOT hide the day's records while
+    // the business day stays open — additional shifts may still be opened.
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, open_shift: null })
+    signInAs('STAFF')
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'فواتير اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'تذاكر المغسلة اليوم' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'فتح وردية جديدة' })).toBeInTheDocument()
+  })
+
+  it('refuses both records to an unresolved session even on an open day', async () => {
+    // Role floor still applies on top of the day lifecycle: no session, no entry.
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, open_shift: null })
+
+    renderPage()
+
+    await screen.findByRole('button', { name: 'فتح وردية جديدة' })
+    expect(screen.queryByRole('button', { name: 'فواتير اليوم' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'تذاكر المغسلة اليوم' })).not.toBeInTheDocument()
+  })
   it('keeps showing both records to a CASHIER with an active shift', async () => {
     mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: { id: 4 }, open_shift: { id: 4 } })
     signInAs('STAFF')
@@ -835,6 +862,58 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
     // The router is the single source of truth for the current view, so the URL
     // is what proves the entry point really leads to the page.
     await waitFor(() => expect(window.location.pathname).toBe('/pos/invoices'))
+  })
+
+  it('states the required action once and keeps a single h1 → h2 outline', async () => {
+    // No duplicate "لا توجد وردية مفتوحة": the page h1 carries the POS identity,
+    // the card h2 carries the state — exactly once.
+    mocks.state.mockResolvedValue({ day: null, my_shift: null, open_shift: null })
+    signInAs('STAFF')
+
+    renderPage()
+
+    await screen.findByRole('button', { name: 'فتح وردية جديدة' })
+    expect(screen.getAllByText('لا توجد وردية مفتوحة')).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1, name: 'نقطة البيع' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'لا توجد وردية مفتوحة' })).toBeInTheDocument()
+  })
+
+  it('distinguishes the shift from the business day in words', async () => {
+    // The old "(ويوم العمل)" merge is gone: the hint names the shift action and
+    // states the day consequence as a fact, not an identity.
+    mocks.state.mockResolvedValue({ day: null, my_shift: null, open_shift: null })
+    signInAs('STAFF')
+
+    renderPage()
+
+    const hint = await screen.findByText(/وسيُفتح يوم العمل تلقائياً مع أول وردية/)
+    expect(hint).toBeInTheDocument()
+    expect(screen.queryByText('افتح الوردية (ويوم العمل) من هنا')).not.toBeInTheDocument()
+  })
+
+  it('explains the opening balance as the physical drawer count', async () => {
+    mocks.state.mockResolvedValue({ day: null, my_shift: null, open_shift: null })
+    signInAs('STAFF')
+
+    renderPage()
+
+    expect(await screen.findByText(/الموجود فعلاً في الدرج/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('0.00')).toBeInTheDocument()
+  })
+
+  it('keeps the open-shift CTA dominant over the secondary day records', async () => {
+    mocks.state.mockResolvedValue({ day: { id: 1 }, my_shift: null, open_shift: null })
+    signInAs('STAFF')
+
+    renderPage()
+
+    const cta = await screen.findByRole('button', { name: 'فتح وردية جديدة' })
+    const invoices = screen.getByRole('button', { name: 'فواتير اليوم' })
+    // Primary action precedes secondary context in DOM/focus order...
+    expect(cta.compareDocumentPosition(invoices) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // ...and the secondary records sit inside a labelled nav landmark, not loose buttons.
+    expect(invoices.closest('nav')).not.toBeNull()
+    expect(screen.getByRole('navigation', { name: 'سجلات اليوم' })).toBeInTheDocument()
   })
 })
 

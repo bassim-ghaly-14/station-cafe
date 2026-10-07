@@ -1,25 +1,29 @@
 /**
  * The POS starting state: no shift is open, so this is the FIRST thing a
- * cashier sees on a cold till. It is a starting state, not a form that happens
- * to be on the page — so it is presented like one.
+ * cashier sees on a cold till. It is a Required Action State, not a form that
+ * happens to be on the page — so it is presented like one.
  *
  * Hierarchy, top to bottom, and why it is this order:
  *
- *  1. the POS context and the shift status — the page header's own words;
- *  2. the empty-shift state, as the card's heading and identity mark, so the
- *     state is announced by the card rather than only by a caption above it;
- *  3. the instruction — what to do about it, in the card's own header;
- *  4. the opening balance — the one value the cashier must supply;
- *  5. the single primary action.
+ *  1. the empty-shift state, as the card's heading and identity mark — the page
+ *     `h1` above already carries the POS identity, so nothing is repeated;
+ *  2. one supporting line that distinguishes SHIFT (what the cashier opens)
+ *     from BUSINESS DAY (what the backend auto-opens with the first shift);
+ *  3. the opening balance with its drawer-count helper — the one value the
+ *     cashier must supply;
+ *  4. the single primary action;
+ *  5. optionally, the day's two records as a quiet footer (injected by the
+ *     parent, which already folded day-lifecycle + role into one boolean) —
+ *     never beside the action, never when no day is active.
  *
  * Layout
  * ------
  * The block is `mx-auto w-full max-w-md` and is vertically settled by its PARENT
- * (`PosShiftGateView`). Previously the form was `max-w-sm` with no `mx-auto`, so
- * at 1280px it hugged the inline-start edge of the workspace and read as a form
- * floating in a corner rather than as a deliberate starting state. Centring it
- * with the same `max-w-*` idiom the login screen already uses keeps the two
- * entry screens of the application consistent.
+ * (`PosShiftGateView`). The composition is deliberately narrow: one focal
+ * column, centred, with the whitespace doing the premium work — not a wider
+ * card. The secondary daily records live INSIDE the card under a hairline, so
+ * they read as context of the same operational object rather than as stray
+ * navigation floating below it.
  *
  * Every card in this family — shift closing, day closing, the already-open-shift
  * card — is built on `ClosingCardShell`'s rhythm: a coloured identity rail, a
@@ -29,10 +33,10 @@
  *
  * Nothing here changes what the gate DOES. `parseMajor`, `shift.invalidCash`,
  * `shiftApi.openShift`, the one-open-shift branch to `OpenShiftCard`, and
- * `onReady` are all exactly as they were; this file's only edit is presentation.
+ * `onReady` are all exactly as they were.
  */
 /** Shift/day gate: guide staff to open them instead of blocking silently. */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, useToast } from '@/components/ui'
 import { Power } from '@/components/ui/icon'
@@ -47,6 +51,7 @@ export function ShiftGate({
   state,
   onReady,
   onShiftClosed,
+  dailyRecords,
 }: Readonly<{
   readonly state: DayShiftState
   onReady: () => void
@@ -55,6 +60,13 @@ export function ShiftGate({
    * shift/day state. Optional because the gate is also rendered standalone.
    */
   onShiftClosed?: () => void | Promise<void>
+  /**
+   * Secondary day-record navigation (invoices + wash tickets), rendered as the
+   * card's quiet footer. The PARENT decides visibility from the canonical
+   * day-lifecycle + role rule (`canShowDailyRecords`), so this slot is either a
+   * node or `null` — never a second visibility decision here.
+   */
+  readonly dailyRecords?: ReactNode
 }>) {
   const { t } = useTranslation()
   const { user } = useSession()
@@ -75,13 +87,17 @@ export function ShiftGate({
   // opening another, so the gate explains the state instead of offering an
   // action the backend would refuse. `open_shift` is the same read the service
   // enforces the rule from, so the card cannot disagree with the database.
+  // The day's records stay available as secondary context while the day is
+  // active — the parent already decided visibility, so the same footer slot is
+  // honoured here rather than dropped by the early return.
   if (state.open_shift && !state.my_shift) {
     return (
-      <>
+      <div className="mx-auto flex w-full max-w-md flex-col gap-5">
         <OpenShiftCard
           shift={state.open_shift}
           onManageClose={canManageClose ? () => setManaging(true) : undefined}
         />
+        {dailyRecords}
         {managing ? (
           <ManagedCloseShiftDialog
             shift={state.open_shift}
@@ -92,7 +108,7 @@ export function ShiftGate({
             }}
           />
         ) : null}
-      </>
+      </div>
     )
   }
 
@@ -135,11 +151,11 @@ export function ShiftGate({
 
         {/* The header row. `text-section` is the heading step this app already uses
           for a card title (the closing cards), so the empty state reads as the
-          card's SUBJECT rather than as one more caption — while keeping the page
-          `h1` → card `h2` order that `CardHeader` already produced. */}
-        <div className="flex items-center gap-2.5 border-b border-border-subtle px-5 py-4">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-closing-shift-soft text-closing-shift">
-            <Power size={18} aria-hidden />
+          card's SUBJECT — the single place "لا توجد وردية مفتوحة" is stated,
+          while the page `h1` above keeps the POS identity. */}
+        <div className="flex items-center gap-3 border-b border-border-subtle px-5 py-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-closing-shift-soft text-closing-shift">
+            <Power size={20} aria-hidden />
           </span>
           <div className="min-w-0">
             <h2 className="text-section">{t('pos.shiftRequired')}</h2>
@@ -149,15 +165,20 @@ export function ShiftGate({
           </div>
         </div>
 
-        {/* The body. Centred because every line in it is short and the reader's eye
-          should land on the one action, not scan a column. */}
-        <div className="flex flex-col items-center gap-5 px-5 py-6 text-center sm:px-6">
+        {/* The body. One scan axis: label start-aligned, control start-aligned,
+          CTA full width — so the eye travels straight down to the single action. */}
+        <div className="flex flex-col items-stretch gap-4 px-5 py-6 sm:px-6">
           {/* The opening balance is the ONLY thing a cashier has to supply, so it is
             the one control on the card. `Field` keeps its generated
             `id`/`<label for>` association, so the accessible name is unchanged;
-            `h-12` raises the target from 40px to 48px for a phone in one hand. */}
+            `hint` names the drawer count explicitly; `h-12` raises the target
+            from 40px to 48px for a phone in one hand. */}
           <div className="w-full">
-            <Field label={t('shift.openingCash')} error={cashError}>
+            <Field
+              label={t('shift.openingCash')}
+              hint={t('shift.openingCashHint')}
+              error={cashError}
+            >
               <Input
                 dir="ltr"
                 inputMode="decimal"
@@ -165,7 +186,7 @@ export function ShiftGate({
                 onChange={(e) => setCash(e.target.value)}
                 placeholder="0.00"
                 disabled={opening}
-                className="h-12 text-center text-lg"
+                className="h-12 text-end text-lg"
               />
             </Field>
           </div>
@@ -185,6 +206,8 @@ export function ShiftGate({
             {!opening ? <Power size={20} aria-hidden /> : null}
             {t('shift.openShift')}
           </Button>
+
+          {dailyRecords}
         </div>
       </Card>
     </div>

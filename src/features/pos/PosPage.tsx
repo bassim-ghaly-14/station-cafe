@@ -51,7 +51,7 @@ import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
 import { PaymentDialog } from './PaymentDialog'
 import { ShiftGate } from './ShiftGate'
-import { canOpenDailyRecords } from './posAccess'
+import { canShowDailyRecords } from './posAccess'
 
 /**
  * Shared visual treatment for explicit "start/open" actions.
@@ -187,7 +187,7 @@ export default function PosPage() {
     return (
       <PosShiftGateView
         canCloseDay={dayClosingDay(user?.role, shiftState.day) !== null}
-        showDailyRecords={canOpenDailyRecords(user?.role)}
+        showDailyRecords={canShowDailyRecords(user?.role, shiftState.day)}
         state={shiftState}
         revision={revision}
         onDone={refresh}
@@ -729,9 +729,41 @@ function PosHeader({
  * never sees the workspace at all, had no way into either page. Rendering the
  * same component on the gate screen is what makes a manager's access depend on
  * their ROLE rather than on their SHIFT; see `canOpenDailyRecords`.
+ *
+ * On the gate screen the caller decides the visual weight through `variant`:
+ * the selling workspace keeps the compact `header` row, while the Required
+ * Action State renders the `secondary` footer — quiet outline buttons under a
+ * hairline, so history can never compete with the open-shift CTA.
  */
-function DailyRecordsActions({ onNavigate }: { readonly onNavigate: (view: View) => void }) {
+function DailyRecordsActions({
+  onNavigate,
+  variant = 'header',
+}: {
+  readonly onNavigate: (view: View) => void
+  readonly variant?: 'header' | 'secondary'
+}) {
   const { t } = useTranslation()
+
+  if (variant === 'secondary') {
+    return (
+      <nav
+        aria-label={t('pos.dailyRecordsNav')}
+        className="flex w-full flex-col gap-2 border-t border-border-subtle pt-4"
+      >
+        <p className="text-center text-caption text-foreground-subtle">{t('pos.dailyRecordsHint')}</p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => onNavigate('today-invoices')}>
+            <Receipt size={16} aria-hidden />
+            {t('pos.todayInvoices')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => onNavigate('today-wash-tickets')}>
+            <Ticket size={16} aria-hidden />
+            {t('pos.todayWashTickets')}
+          </Button>
+        </div>
+      </nav>
+    )
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -748,16 +780,21 @@ function DailyRecordsActions({ onNavigate }: { readonly onNavigate: (view: View)
 }
 
 /**
- * Everything the POS shows before a day and a shift are both open.
+ * Everything the POS shows before a day and a shift are both open: the
+ * Required Action State.
  *
  * A manager who has to open the day also gets the closing card — closing is the
  * other half of that decision, and hiding it would mean a manager opening the
  * day in one place and closing it somewhere else.
  *
- * The day's two records belong here too, and are gated by ROLE only: reading
- * the day's invoices or wash tickets is not selling, so it must not disappear
- * for a manager who has no open till. The shift gate below is about opening a
- * till, and stays exactly as strict as it was.
+ * The day's two records are secondary context, visible only while a business
+ * day is ACTIVE (`showDailyRecords` already folds day + role together): reading
+ * the day's invoices or wash tickets is not selling, so they must not disappear
+ * for a manager who has no open till — but with no active day (cold till) or
+ * after the day is closed there is no "today" for them to mean, so the screen
+ * stays a clean start/open-business composition with no placeholder gap. The
+ * shift gate below is about opening a till, and stays exactly as strict as it
+ * was.
  */
 function PosShiftGateView({
   canCloseDay,
@@ -792,23 +829,26 @@ function PosShiftGateView({
    * `justify-center` is directional-agnostic, so it behaves identically in RTL.
    */
   return (
-    <div className="flex min-h-[60vh] flex-col gap-4 sm:justify-center">
-      {showDailyRecords ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-heading">{t('nav.pos')}</h1>
-            <p className="mt-1 text-caption text-foreground-muted">{t('pos.noShiftOpen')}</p>
-          </div>
-
-          <DailyRecordsActions onNavigate={onNavigate} />
-        </div>
-      ) : null}
+    <div className="mx-auto flex min-h-[60vh] w-full max-w-xl flex-col gap-5 sm:justify-center">
+      <div className="min-w-0 text-center">
+        <h1 className="text-heading">{t('nav.pos')}</h1>
+        <p className="mt-1 text-caption text-foreground-muted">{t('pos.gateIdentityHint')}</p>
+      </div>
 
       {canCloseDay && state.day ? (
         <DayClosingPanel dayId={state.day.id} revision={revision} onDone={onDone} />
       ) : null}
 
-      <ShiftGate state={state} onReady={onReady} onShiftClosed={onDone} />
+      <ShiftGate
+        state={state}
+        onReady={onReady}
+        onShiftClosed={onDone}
+        dailyRecords={
+          showDailyRecords ? (
+            <DailyRecordsActions onNavigate={onNavigate} variant="secondary" />
+          ) : null
+        }
+      />
     </div>
   )
 }
