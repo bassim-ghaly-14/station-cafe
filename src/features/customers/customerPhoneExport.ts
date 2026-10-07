@@ -44,7 +44,7 @@ export function guardCsvField(value: string): string {
 /** RFC-4180 field escaping: quote when needed, double inner quotes. */
 export function escapeCsvField(value: string): string {
   const guarded = guardCsvField(value)
-  if (/[",\n\r]/.test(guarded)) return `"${guarded.replace(/"/g, '""')}"`
+  if (/[",\n\r]/.test(guarded)) return `"${guarded.replaceAll('"', '""')}"`
   return guarded
 }
 
@@ -62,10 +62,10 @@ export function buildCustomerPhonesCsv(entries: readonly CustomerPhoneEntry[]): 
 /** Escape vCard 3.0 TEXT special characters (`\\`, `;`, `,`, newlines). */
 export function escapeVCardText(value: string): string {
   return value
-    .replace(/\\/g, '\\\\')
+    .replaceAll('\\', '\\\\')
     .replace(/\r\n|\r|\n/g, '\\n')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
+    .replaceAll(';', '\\;')
+    .replaceAll(',', '\\,')
 }
 
 /**
