@@ -945,8 +945,8 @@ describe('tables KPI header and the one-table-per-row phone grid', () => {
     // with no frontend reset and no history deletion.
     mocks.shiftCounters.mockResolvedValue({ opens: 5, closed_empty: 2 })
     mocks.tables.mockResolvedValue([
-      table({ id: 1, status: 'EMPTY' }),
-      table({ id: 2, status: 'EMPTY' }),
+      table({ id: 1, status: 'EMPTY', opens_today: 4, closed_empty_today: 2 }),
+      table({ id: 2, status: 'EMPTY', opens_today: 1, closed_empty_today: 0 }),
     ])
 
     const { unmount } = renderPage()
@@ -958,12 +958,17 @@ describe('tables KPI header and the one-table-per-row phone grid', () => {
         .map((node) => node.textContent),
     ).toEqual(['2', '0', '0', '2'])
 
+    // The cards render the same shift's per-table figures.
+    const firstCard = await screen.findByTestId('table-card-1')
+    expect(within(firstCard).getByText('عدد الفتح').parentElement).toHaveTextContent('4')
+    expect(within(firstCard).getByText('عدد إغلاق فارغ').parentElement).toHaveTextContent('2')
+
     // The shift rolls: the backend now answers for the NEW shift id, which
     // owns no sessions yet. The page re-reads rather than resetting locally.
     mocks.shiftCounters.mockResolvedValue({ opens: 0, closed_empty: 0 })
     mocks.tables.mockResolvedValue([
-      table({ id: 1, status: 'EMPTY' }),
-      table({ id: 2, status: 'EMPTY' }),
+      table({ id: 1, status: 'EMPTY', opens_today: 0, closed_empty_today: 0 }),
+      table({ id: 2, status: 'EMPTY', opens_today: 0, closed_empty_today: 0 }),
     ])
     unmount()
     renderPage()
@@ -976,6 +981,11 @@ describe('tables KPI header and the one-table-per-row phone grid', () => {
     ).toEqual(['2', '0', '0', '0'])
     // The band reached the new shift through the shift-scoped command only.
     expect(mocks.shiftCounters).toHaveBeenCalled()
+
+    // And the new shift's cards render the backend's 0/0, not residue.
+    const nextFirstCard = await screen.findByTestId('table-card-1')
+    expect(within(nextFirstCard).getByText('عدد الفتح').parentElement).toHaveTextContent('0')
+    expect(within(nextFirstCard).getByText('عدد إغلاق فارغ').parentElement).toHaveTextContent('0')
   })
 
   it('follows the shared KPI rule: one tile per row on a phone, four across on a desktop', async () => {

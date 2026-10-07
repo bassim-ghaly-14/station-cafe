@@ -12,8 +12,8 @@ use tauri::State;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn list_tables(state: State<'_, AppState>, token: String) -> AppResult<Vec<TableView>> {
-    authorized(&state, &token, "STAFF", |conn, _| {
-        pos_svc::list_tables(conn)
+    authorized(&state, &token, "STAFF", |conn, actor| {
+        pos_svc::list_tables(conn, actor)
     })
 }
 

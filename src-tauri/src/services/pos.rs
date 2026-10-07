@@ -22,10 +22,12 @@ use crate::services::settings;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-pub fn list_tables(conn: &Db) -> AppResult<Vec<TableView>> {
-    // Lifecycle counters are scoped to the current business day (none → zeros).
-    let day = shifts::current_day(conn)?;
-    pos::list_tables(conn, day.map(|d| d.id))
+pub fn list_tables(conn: &Db, actor: &User) -> AppResult<Vec<TableView>> {
+    // Lifecycle counters are scoped to the caller's ACTIVE shift (none → zeros),
+    // the same `shift_id` scope the shift KPI band reports. Day totals stay in
+    // `day_lifecycle_counts`; this read must never fall back to the business day.
+    let shift = shifts::active_shift_for(conn, actor.id)?;
+    pos::list_tables(conn, shift.map(|s| s.id))
 }
 
 /// The authoritative lifecycle counters of the current business day.

@@ -86,15 +86,26 @@ fn persisted_empty_closes(conn: &Connection) -> i64 {
     .unwrap()
 }
 
-/// The sum the table CARDS print. It may only ever be a presentation of the day
-/// total, so while every contributing table is still active the two must match
-/// exactly — a card can never be the place a close goes missing.
-fn card_sum(conn: &Connection) -> i64 {
-    pos_svc::list_tables(conn)
+/// The sum the table CARDS print. Cards are shift-scoped, like the band: while
+/// every contributing table is still active and a single shift is running, the
+/// card sum matches that shift's total exactly — a card can never be the place
+/// a close goes missing.
+fn card_sum(conn: &Connection, actor: &auth::User) -> i64 {
+    pos_svc::list_tables(conn, actor)
         .unwrap()
         .iter()
         .map(|t| t.closed_empty_today)
         .sum()
+}
+
+/// Per-table card counters for one table in the caller's ACTIVE SHIFT.
+fn card_counts(conn: &Connection, actor: &auth::User, table_id: i64) -> (i64, i64) {
+    let tv = pos_svc::list_tables(conn, actor)
+        .unwrap()
+        .into_iter()
+        .find(|t| t.id == table_id)
+        .expect("the table must be in the grid");
+    (tv.opens_today, tv.closed_empty_today)
 }
 
 fn table_ids(conn: &Connection) -> Vec<i64> {
@@ -174,7 +185,7 @@ fn the_first_empty_close_on_a_fresh_database_is_counted() {
 
     assert_eq!(persisted_empty_closes(&conn), 1, "the close is persisted");
     assert_eq!(empty_closes(&conn), 1, "and the count reports it");
-    assert_eq!(card_sum(&conn), 1, "the table card reports it too");
+    assert_eq!(card_sum(&conn, &actor), 1, "the table card reports it too");
 }
 
 /// Case C — a second empty close makes it 2, and so does a third.
@@ -195,7 +206,7 @@ fn successive_empty_closes_each_add_exactly_one() {
     assert_eq!(empty_closes(&conn), 3);
 
     assert_eq!(persisted_empty_closes(&conn), 3);
-    assert_eq!(card_sum(&conn), 3);
+    assert_eq!(card_sum(&conn, &actor), 3);
 }
 
 /// Case D — a table that was actually used is never an empty close.
@@ -217,7 +228,7 @@ fn a_settled_table_is_not_an_empty_close() {
         "paying an invoice is not an empty close"
     );
     assert_eq!(persisted_empty_closes(&conn), 1);
-    assert_eq!(card_sum(&conn), 1);
+    assert_eq!(card_sum(&conn, &actor), 1);
 }
 
 /// Case G — many empty closes in one day keep counting.
@@ -236,7 +247,7 @@ fn many_empty_closes_keep_counting() {
             "close #{expected} must count"
         );
     }
-    assert_eq!(card_sum(&conn), 5);
+    assert_eq!(card_sum(&conn, &actor), 5);
 }
 
 /// Open a table, sell one cafe item on it, and settle it.
@@ -326,7 +337,7 @@ fn two_open_tables_are_counted_independently() {
     assert_eq!(persisted_empty_closes(&conn), 1);
 
     // Both tables really are free again.
-    for tv in pos_svc::list_tables(&conn).unwrap() {
+    for tv in pos_svc::list_tables(&conn, &actor).unwrap() {
         assert_eq!(tv.status, "EMPTY", "{} should be free", tv.label);
     }
 }
@@ -489,7 +500,7 @@ fn retiring_a_table_never_erases_the_closes_it_recorded() {
 
     pos_svc::set_table_count(&conn, &admin(&conn), (tables.len() - 1) as i64).unwrap();
     assert!(
-        !pos_svc::list_tables(&conn)
+        !pos_svc::list_tables(&conn, &actor)
             .unwrap()
             .iter()
             .any(|t| t.id == last),
@@ -806,6 +817,82 @@ fn a_new_shift_starts_clean_while_the_day_accumulates() {
     assert_eq!(persisted_shift_rows(&conn, second), (1, 1));
     assert_eq!(persisted_shift_rows(&conn, first), (2, 2));
     assert_eq!(empty_closes(&conn), 3, "the day aggregates its shifts");
+}
+
+/// Table cards are shift-scoped: after a shift rolls on the SAME business day,
+/// the new shift's cards start at 0/0 while the day aggregate keeps history.
+/// This is the user-visible form of the shift-isolation invariant.
+#[test]
+fn table_cards_start_clean_in_a_new_shift_while_the_day_keeps_history() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let tables = table_ids(&conn);
+    let table = tables[0];
+
+    // Shift A: two opens, two empty closes on one card.
+    empty_close(&conn, &actor, table);
+    empty_close(&conn, &actor, table);
+    assert_eq!(card_counts(&conn, &actor, table), (2, 2));
+    assert_eq!(shift_closes(&conn, &actor), (2, 2));
+
+    // Same business day, next till period.
+    roll_shift(&conn, &actor);
+
+    // The new shift's card starts clean; history is untouched.
+    assert_eq!(
+        card_counts(&conn, &actor, table),
+        (0, 0),
+        "the new shift's table card starts at zero"
+    );
+    assert_eq!(shift_closes(&conn, &actor), (0, 0));
+    assert_eq!(card_sum(&conn, &actor), 0);
+    assert_eq!(empty_closes(&conn), 2, "the day keeps Shift A's closes");
+    assert_eq!(persisted_empty_closes(&conn), 2);
+
+    // Current-shift activity then increments normally, not cumulatively.
+    empty_close(&conn, &actor, table);
+    assert_eq!(card_counts(&conn, &actor, table), (1, 1));
+    assert_eq!(shift_closes(&conn, &actor), (1, 1));
+    assert_eq!(empty_closes(&conn), 3);
+}
+
+/// Two shifts on one business day never leak per-table counters into each
+/// other, while the day aggregate is the sum of both shifts.
+#[test]
+fn table_cards_isolate_two_shifts_on_the_same_business_day() {
+    let conn = fresh();
+    let actor = manager(&conn);
+    open_day_and_shift(&conn, &actor);
+    let tables = table_ids(&conn);
+    let first_table = tables[0];
+    let second_table = tables[1];
+
+    // Shift A works the first table: three opens, three empty closes.
+    empty_close(&conn, &actor, first_table);
+    empty_close(&conn, &actor, first_table);
+    empty_close(&conn, &actor, first_table);
+    assert_eq!(card_counts(&conn, &actor, first_table), (3, 3));
+
+    roll_shift(&conn, &actor);
+
+    // Shift B starts clean on BOTH cards.
+    assert_eq!(card_counts(&conn, &actor, first_table), (0, 0));
+    assert_eq!(card_counts(&conn, &actor, second_table), (0, 0));
+
+    // Shift B works only the second table.
+    empty_close(&conn, &actor, second_table);
+    empty_close(&conn, &actor, second_table);
+    pos_svc::open_table(&conn, &actor, second_table).unwrap();
+    pos_svc::close_empty_table(&conn, &actor, second_table).unwrap();
+    assert_eq!(card_counts(&conn, &actor, second_table), (3, 3));
+    assert_eq!(card_counts(&conn, &actor, first_table), (0, 0));
+
+    // Shift KPI states Shift B only; the day aggregates both shifts.
+    assert_eq!(shift_closes(&conn, &actor), (3, 3));
+    assert_eq!(card_sum(&conn, &actor), 3);
+    assert_eq!(empty_closes(&conn), 6);
+    assert_eq!(persisted_empty_closes(&conn), 6);
 }
 
 /// Case 4 — several shifts inside ONE Cairo business day aggregate correctly.

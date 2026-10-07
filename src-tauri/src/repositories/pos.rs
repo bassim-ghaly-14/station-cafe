@@ -19,7 +19,10 @@ pub struct TableView {
     pub items_count: i64,
     pub total_minor: i64,
     pub opened_at: Option<String>,
-    /// Lifecycle counters for the current business day (audit foundation).
+    /// Lifecycle counters for the caller's ACTIVE SHIFT. The historical
+    /// `*_today` names are kept for API stability; the values count only the
+    /// `table_sessions` rows owned by the active `shift_id` (shift KPI band
+    /// scope), and read zero with no active shift.
     pub opens_today: i64,
     pub closed_empty_today: i64,
 }
@@ -155,12 +158,22 @@ pub struct TableCounters {
 /// Lifecycle counters come from `table_sessions`, never from orders, so an
 /// opened table that never ordered can never look like a sale.
 ///
-/// The per-table counters are a PRESENTATION of the day's lifecycle, scoped to
-/// the business day the event happened on (see `closed_on_business_day`).
+/// The per-table counters are a PRESENTATION of the caller's ACTIVE SHIFT,
+/// scoped through `shift_id` — the same scope the shift KPI band and the
+/// close-shift dialog report. A new shift owns no sessions yet, so its cards
+/// naturally read zero without deleting any historical rows. Field names keep
+/// the historical `*_today` suffix for API stability; their semantics are the
+/// active shift, not the business day.
 /// They are deliberately not the source of truth for the day total: a table
 /// deactivated later leaves the grid and would take its history with it. The
 /// day's authoritative figures come from `day_lifecycle_counts`.
-pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<TableView>> {
+pub fn list_tables(conn: &Db, shift_id: Option<i64>) -> AppResult<Vec<TableView>> {
+    // With no active shift there is no period to describe: every counter reads
+    // zero. The `1 = 0` guard matches no row without touching `shift_id`.
+    let (scope_os, scope_cs) = match shift_id {
+        Some(_) => ("os.shift_id = ?1", "cs.shift_id = ?1"),
+        None => ("1 = 0", "1 = 0"),
+    };
     let sql = format!(
         "SELECT t.id, t.label,
                 CASE
@@ -172,10 +185,10 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
                 o.id, s.id, COUNT(l.id), COALESCE(SUM(l.line_total), 0),
                 COALESCE(o.opened_at, s.opened_at),
                 (SELECT COUNT(*) FROM table_sessions os
-                  WHERE os.table_id = t.id AND {opened}),
+                  WHERE os.table_id = t.id AND {scope_os}),
                 (SELECT COUNT(*) FROM table_sessions cs
                   WHERE cs.table_id = t.id
-                    AND cs.status = 'CLOSED' AND cs.order_id IS NULL AND {closed})
+                    AND cs.status = 'CLOSED' AND cs.order_id IS NULL AND {scope_cs})
          FROM cafe_tables t
          LEFT JOIN orders o ON o.table_id = t.id AND o.status IN ('OPEN','READY_TO_PAY')
          LEFT JOIN table_sessions s ON s.table_id = t.id AND s.status = 'OPEN'
@@ -183,11 +196,9 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
          WHERE t.is_active = 1
          GROUP BY t.id, o.id, s.id
          ORDER BY t.label",
-        opened = opened_on_business_day("os"),
-        closed = closed_on_business_day("cs"),
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([business_day_id], |r| {
+    let map_row = |r: &rusqlite::Row<'_>| {
         Ok(TableView {
             id: r.get(0)?,
             label: r.get(1)?,
@@ -200,7 +211,13 @@ pub fn list_tables(conn: &Db, business_day_id: Option<i64>) -> AppResult<Vec<Tab
             opens_today: r.get(8)?,
             closed_empty_today: r.get(9)?,
         })
-    })?;
+    };
+    // The no-shift SQL carries no placeholder, so it must be executed without a
+    // bound parameter; the shift branch binds the single `shift_id`.
+    let rows = match shift_id {
+        Some(id) => stmt.query_map([id], map_row)?,
+        None => stmt.query_map([], map_row)?,
+    };
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 

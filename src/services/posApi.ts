@@ -73,6 +73,11 @@ export interface TableView {
   items_count: number
   total_minor: number
   opened_at: string | null
+  /**
+   * Per-table lifecycle counters for the caller's ACTIVE SHIFT (`shift_id`
+   * scope, like the band). Historical `*_today` names are kept for API
+   * stability; a new shift naturally reads 0/0 with history intact.
+   */
   opens_today: number
   closed_empty_today: number
 }
