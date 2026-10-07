@@ -692,6 +692,154 @@ fn a_multi_month_period_multiplies_the_monthly_salary_without_prorating() {
 }
 
 // ===========================================================================
+// CARD A — الراتب المحتسب للفترة: period-aware entitlement (monthly × months)
+// ===========================================================================
+//
+// Card A is `employee.base_salary × months_in_window`, never prorated by days:
+// a window touching one calendar month counts 1, two months counts 2, and so on.
+// Card B (`salary_paid`) is actual recorded payments and stays independent.
+
+/// Set the monthly salary in piasters for the 1,800 EGP Card-A examples.
+fn set_monthly_salary(conn: &Connection, employee_id: i64, salary: i64) {
+    conn.execute(
+        "UPDATE employees SET base_salary = ?2 WHERE id = ?1",
+        rusqlite::params![employee_id, salary],
+    )
+    .unwrap();
+}
+
+/// 1,800 EGP = 180,000 piasters.
+const EIGHTEEN_HUNDRED: i64 = 180_000;
+
+#[test]
+fn card_a_one_full_month_is_one_monthly_salary() {
+    let conn = fresh();
+    let (_, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.months, 1);
+    assert_eq!(figures.base_salary, 180_000);
+}
+
+#[test]
+fn card_a_two_full_months_is_twice_the_monthly_salary() {
+    let conn = fresh();
+    let (_, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-11-30");
+    assert_eq!(figures.months, 2);
+    assert_eq!(figures.base_salary, 360_000);
+}
+
+#[test]
+fn card_a_three_full_months_is_three_times_the_monthly_salary() {
+    let conn = fresh();
+    let (_, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-12-31");
+    assert_eq!(figures.months, 3);
+    assert_eq!(figures.base_salary, 540_000);
+}
+
+#[test]
+fn card_a_longer_periods_scale_linearly() {
+    let conn = fresh();
+    let (_, id) = salaried_employee(&conn, "2026-01-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    let six = salary(&conn, id, "2026-01-01", "2026-06-30");
+    assert_eq!(six.months, 6);
+    assert_eq!(six.base_salary, 1_080_000);
+
+    let twelve = salary(&conn, id, "2026-01-01", "2026-12-31");
+    assert_eq!(twelve.months, 12);
+    assert_eq!(twelve.base_salary, 2_160_000);
+}
+
+#[test]
+fn card_a_changing_the_period_changes_the_entitlement() {
+    let conn = fresh();
+    let (_, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    assert_eq!(salary(&conn, id, "2026-10-01", "2026-10-31").base_salary, 180_000);
+    assert_eq!(salary(&conn, id, "2026-10-01", "2026-11-30").base_salary, 360_000);
+    assert_eq!(salary(&conn, id, "2026-10-01", "2026-12-31").base_salary, 540_000);
+}
+
+#[test]
+fn card_a_never_pays_for_months_before_the_employee_joined() {
+    let conn = fresh();
+    // Joined in March; the January→March window must count March only.
+    let (_, id) = salaried_employee(&conn, "2026-03-10 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+
+    let figures = salary(&conn, id, "2026-01-01", "2026-03-31");
+    assert_eq!(figures.months, 1, "January and February predate the join");
+    assert_eq!(figures.base_salary, 180_000);
+}
+
+#[test]
+fn card_a_stays_independent_of_recorded_salary_payments() {
+    let conn = fresh();
+    let (manager, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+    let salary_code = salary_category(&conn);
+
+    // Two-month entitlement with only one month actually paid.
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&salary_code, 180_000, "2026-10-05", Some(id)),
+    )
+    .unwrap();
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-11-30");
+    assert_eq!(figures.base_salary, 360_000, "Card A: entitlement");
+    assert_eq!(figures.salary_paid, 180_000, "Card B: what was paid");
+}
+
+#[test]
+fn card_a_stays_whole_when_only_part_of_it_is_paid() {
+    let conn = fresh();
+    let (manager, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+    let salary_code = salary_category(&conn);
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&salary_code, 100_000, "2026-10-05", Some(id)),
+    )
+    .unwrap();
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.base_salary, 180_000, "a partial payment never shrinks Card A");
+    assert_eq!(figures.salary_paid, 100_000);
+}
+
+#[test]
+fn card_a_is_not_reduced_by_advances_or_deductions() {
+    let conn = fresh();
+    let (manager, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
+    set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
+    let advance_code = advance_category(&conn);
+    ops_svc::create_expense(
+        &conn,
+        &manager,
+        &spend(&advance_code, 50_000, "2026-10-10", Some(id)),
+    )
+    .unwrap();
+    deduct(&conn, &manager, id, 20_000, "2026-10-15");
+
+    let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
+    assert_eq!(figures.base_salary, 180_000, "advances/deductions feed net, never Card A");
+    assert_eq!(figures.net_salary, 110_000);
+}
+
+// ===========================================================================
 // THE DATE FILTER
 // ===========================================================================
 

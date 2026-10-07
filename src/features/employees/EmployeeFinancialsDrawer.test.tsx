@@ -142,6 +142,65 @@ describe('Employee Drawer — the selected period zone', () => {
     expect(await screen.findByText('عدد شهور الراتب المحتسبة: 1')).toBeInTheDocument()
   })
 
+  it('labels Card A as the period-computed salary with its formula, and keeps Card B separate', async () => {
+    renderDrawer(
+      detailsWith({
+        months: 2,
+        base_salary: 360_000,
+        salary_paid: 180_000,
+        advances: 0,
+        deductions: 0,
+        net_salary: 360_000,
+      }),
+    )
+    await screen.findByText('الفترة المحددة')
+    // Card A — the entitlement: backend value plus the calendar-month formula.
+    expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(360_000))
+    expect(screen.getByText('الراتب الشهري × عدد الشهور المحتسبة')).toBeInTheDocument()
+    expect(screen.queryByText('إجمالي رواتب الفترة')).not.toBeInTheDocument()
+    // Card B — actual recorded payments, unchanged label and hint.
+    expect(figureAfter('الرواتب المدفوعة للفترة')).toBe(money(180_000))
+    expect(screen.getByText('المبالغ المسجلة كمدفوعات خلال الفترة')).toBeInTheDocument()
+  })
+
+  it('keeps Card A whole when only part of it was paid, and ignores advances/deductions', async () => {
+    renderDrawer(
+      detailsWith({
+        months: 1,
+        base_salary: 180_000,
+        salary_paid: 100_000,
+        advances: 50_000,
+        deductions: 20_000,
+        net_salary: 110_000,
+      }),
+    )
+    await screen.findByText('الفترة المحددة')
+    // Card A stays the full monthly entitlement even though Card B, advances
+    // and deductions all moved.
+    expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(180_000))
+    expect(figureAfter('الرواتب المدفوعة للفترة')).toBe(money(100_000))
+    expect(figureAfter('إجمالي السلف')).toBe(money(50_000))
+    expect(figureAfter('إجمالي الخصومات')).toBe(money(20_000))
+    expect(figureAfter('صافي راتب الفترة')).toBe(money(110_000))
+  })
+
+  it('renders the backend period value when the window grows from 1 to 3 months', async () => {
+    // The regression at the heart of this task: 1,800 → 3,600 → 5,400 EGP as
+    // the selected window grows. The frontend renders whatever the backend
+    // computed — it never multiplies a monthly figure itself.
+    for (const [months, base] of [
+      [1, 180_000],
+      [2, 360_000],
+      [3, 540_000],
+    ] as const) {
+      const { unmount } = renderDrawer(detailsWith({ months, base_salary: base }))
+      expect(await screen.findByText(`عدد شهور الراتب المحتسبة: ${months}`)).toBeInTheDocument()
+      expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(base))
+      unmount()
+      mocks.details.mockClear()
+    }
+  })
+
   it('renders every salary card from the backend figures, without recomputing them', async () => {
     renderDrawer(
       detailsWith({
@@ -156,7 +215,8 @@ describe('Employee Drawer — the selected period zone', () => {
     // The FIXED monthly configuration — its own label, verbatim, un-multiplied.
     expect(figureAfter('الراتب الأساسي الشهري')).toBe(money(1_000_000))
     // The selected period's own figures — also verbatim, also un-recomputed.
-    expect(figureAfter('إجمالي رواتب الفترة')).toBe(money(1_000_000))
+    expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(1_000_000))
+    expect(screen.getByText('الراتب الشهري × عدد الشهور المحتسبة')).toBeInTheDocument()
     expect(figureAfter('إجمالي السلف')).toBe(money(300_000))
     expect(figureAfter('إجمالي الخصومات')).toBe(money(50_000))
     expect(figureAfter('صافي راتب الفترة')).toBe(money(650_000))
@@ -180,7 +240,8 @@ describe('Employee Drawer — the selected period zone', () => {
     // The FIXED monthly salary is untouched by the two-month window…
     expect(figureAfter('الراتب الأساسي الشهري')).toBe(money(1_000_000))
     // …while the period total IS the backend's ×2, no-proration figure.
-    expect(figureAfter('إجمالي رواتب الفترة')).toBe(money(2_000_000))
+    expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(2_000_000))
+    expect(screen.getByText('الراتب الشهري × عدد الشهور المحتسبة')).toBeInTheDocument()
     expect(figureAfter('صافي راتب الفترة')).toBe(money(1_620_000))
   })
 
@@ -189,7 +250,8 @@ describe('Employee Drawer — the selected period zone', () => {
     await screen.findByText('عدد شهور الراتب المحتسبة: 1')
     // Same figure, two scopes — and the old ambiguous label is gone for good.
     expect(figureAfter('الراتب الأساسي الشهري')).toBe(money(1_000_000))
-    expect(figureAfter('إجمالي رواتب الفترة')).toBe(money(1_000_000))
+    expect(figureAfter('الراتب المحتسب للفترة')).toBe(money(1_000_000))
+    expect(screen.queryByText('إجمالي رواتب الفترة')).not.toBeInTheDocument()
     expect(screen.queryByText('الراتب الأساسي')).not.toBeInTheDocument()
   })
 

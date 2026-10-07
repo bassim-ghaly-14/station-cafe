@@ -715,7 +715,10 @@ function SelectedPeriodSection({
       <div className="mt-3 grid grid-cols-2 gap-2">
         {/* The period's TOTAL salary (`monthly × months`, never prorated) —
             explicitly NOT the fixed monthly figure shown above this section. */}
-        <StatBlock label={t('employees.drawer.periodBaseSalary')}>
+        <StatBlock
+          label={t('employees.drawer.periodBaseSalary')}
+          hint={t('employees.drawer.periodBaseSalaryHint')}
+        >
           <MoneyDisplay amount={financials.base_salary} variant="auto" />
         </StatBlock>
         {/* Salary PAID, advances TAKEN BACK and deductions WITHHELD are three
