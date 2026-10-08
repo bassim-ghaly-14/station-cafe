@@ -42,6 +42,9 @@ pub struct ProductInput {
     pub track_inventory: bool,
     /// Opening/current stock quantity. Ignored when `track_inventory` is false.
     pub stock_quantity: Option<i64>,
+    /// Minimum-stock threshold. Ignored when `track_inventory` is false.
+    /// `None` means 0 (the legacy default); persisted atomically in `insert`.
+    pub min_quantity: Option<i64>,
     /// Marks the item as a recent addition. Independent of availability.
     #[serde(default)]
     pub is_new: bool,
@@ -106,6 +109,9 @@ pub fn create_product(
     if input.stock_quantity.is_some_and(|quantity| quantity < 0) {
         return Err(AppError::validation("catalog.invalid_stock"));
     }
+    if input.min_quantity.is_some_and(|min| min < 0) {
+        return Err(AppError::validation("inventory.invalid_min"));
+    }
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         if !catalog::category_exists(conn, input.category_id)? {
             return Err(AppError::validation("catalog.category_not_found"));
@@ -120,6 +126,7 @@ pub fn create_product(
                 price_minor: input.price_minor,
                 track_inventory: input.track_inventory,
                 stock_quantity: input.stock_quantity.unwrap_or(0),
+                min_quantity: input.min_quantity.unwrap_or(0),
                 is_new: input.is_new,
                 user_id: actor.id,
             },
@@ -231,6 +238,9 @@ pub fn update_product(
     if input.stock_quantity.is_some_and(|quantity| quantity < 0) {
         return Err(AppError::validation("catalog.invalid_stock"));
     }
+    if input.min_quantity.is_some_and(|min| min < 0) {
+        return Err(AppError::validation("inventory.invalid_min"));
+    }
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         if !catalog::category_exists(conn, input.category_id)? {
             return Err(AppError::validation("catalog.category_not_found"));
@@ -243,6 +253,7 @@ pub fn update_product(
             input.price_minor,
             input.track_inventory,
             input.stock_quantity,
+            input.min_quantity,
             input.is_new,
             actor.id,
         )? {
@@ -257,7 +268,7 @@ pub fn update_product(
             Some(&product_id.to_string()),
             None,
             Some(
-                &serde_json::json!({ "name": name, "category_id": input.category_id, "price_minor": input.price_minor, "track_inventory": input.track_inventory, "stock_quantity": input.stock_quantity, "is_new": input.is_new }),
+                &serde_json::json!({ "name": name, "category_id": input.category_id, "price_minor": input.price_minor, "track_inventory": input.track_inventory, "stock_quantity": input.stock_quantity, "min_quantity": input.min_quantity, "is_new": input.is_new }),
             ),
         )
     })

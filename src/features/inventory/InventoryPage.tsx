@@ -40,9 +40,15 @@ import { EmptyState, ErrorState } from '@/components/states'
 import { ListRowsSkeleton } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
-import { opsApi, type MovementRow, type StockRow } from '@/services/opsApi'
+import {
+  opsApi,
+  type InventoryNotification,
+  type MovementRow,
+  type StockRow,
+} from '@/services/opsApi'
 import { AdjustStockDialog } from './AdjustStockDialog'
 import { InventoryHeader, InventorySummary } from './InventoryHeader'
+import { InventoryNotifications } from './InventoryNotifications'
 import { MovementList } from './MovementList'
 import { StockAttention } from './StockAttention'
 import { StockList } from './StockList'
@@ -122,12 +128,22 @@ function StockSection({
   refreshing,
   onRetry,
   onAdjust,
+  notifications,
+  unread,
+  marking,
+  onMarkRead,
+  onMarkAllRead,
 }: Readonly<{
   readonly stock: StockRow[] | null
   readonly error: string | null
   readonly refreshing: boolean
   readonly onRetry: () => void
   readonly onAdjust: (row: StockRow) => void
+  readonly notifications: readonly InventoryNotification[]
+  readonly unread: number
+  readonly marking: boolean
+  readonly onMarkRead: (id: number) => void
+  readonly onMarkAllRead: () => void
 }>) {
   const { t } = useTranslation()
   const [query, setQuery] = useState<StockQuery>(NO_STOCK_QUERY)
@@ -144,6 +160,18 @@ function StockSection({
       {summary !== null || error === null ? (
         <InventorySummary summary={summary} loading={refreshing} />
       ) : null}
+
+      {/* The manager alert queue is independent of whether the stock list has
+          rows yet — a fresh install with no tracked items can still hold a
+          resolved/re-armed alert history the manager must see — so it sits
+          OUTSIDE the LoadedList empty-state branch, exactly like the summary. */}
+      <InventoryNotifications
+        notifications={notifications}
+        unread={unread}
+        onMarkRead={onMarkRead}
+        onMarkAllRead={onMarkAllRead}
+        marking={marking}
+      />
 
       <LoadedList
         rows={stock}
@@ -181,12 +209,13 @@ export default function InventoryPage() {
   const [stockErr, setStockErr] = useState<string | null>(null)
   const [movErr, setMovErr] = useState<string | null>(null)
   const [adjusting, setAdjusting] = useState<StockRow | null>(null)
+  const [notifications, setNotifications] = useState<InventoryNotification[]>([])
+  const [marking, setMarking] = useState(false)
 
   /**
-   * Both reads, exactly as before: one stock read and one bounded movement read,
-   * each with its own error state so a failure in one list never blanks the
-   * other. `null` means "not resolved yet", which is what lets the sections
-   * below tell a first load from an empty result.
+   * Reads only: stock + bounded movements + the persisted alert queue.
+   * The notification read NEVER creates or mutates alerts — sync happens
+   * solely on backend inventory writes — so refetch is idempotent by design.
    */
   const load = useCallback(() => {
     setStockErr(null)
@@ -205,6 +234,12 @@ export default function InventoryPage() {
         setMovErr(errText(e))
         toast(errText(e), 'error')
       })
+    opsApi
+      .notifications()
+      .then(setNotifications)
+      .catch((e) => {
+        toast(errText(e), 'error')
+      })
   }, [toast, errText])
 
   useEffect(() => {
@@ -213,6 +248,29 @@ export default function InventoryPage() {
     // oxlint-disable-next-line react/set-state-in-effect -- external async init.
     load()
   }, [load])
+
+  const unread = notifications.filter((n) => n.read_at === null).length
+
+  const markRead = useCallback(
+    (id: number) => {
+      setMarking(true)
+      opsApi
+        .markNotificationRead(id)
+        .then(() => opsApi.notifications().then(setNotifications))
+        .catch((e) => toast(errText(e), 'error'))
+        .finally(() => setMarking(false))
+    },
+    [toast, errText],
+  )
+
+  const markAllRead = useCallback(() => {
+    setMarking(true)
+    opsApi
+      .markAllNotificationsRead()
+      .then(() => opsApi.notifications().then(setNotifications))
+      .catch((e) => toast(errText(e), 'error'))
+      .finally(() => setMarking(false))
+  }, [toast, errText])
 
   return (
     <div className="flex flex-col gap-4">
@@ -224,6 +282,11 @@ export default function InventoryPage() {
         refreshing={false}
         onRetry={load}
         onAdjust={setAdjusting}
+        notifications={notifications}
+        unread={unread}
+        marking={marking}
+        onMarkRead={markRead}
+        onMarkAllRead={markAllRead}
       />
 
       <LoadedList

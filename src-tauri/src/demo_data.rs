@@ -515,7 +515,14 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                 .ok();
 
             let product_id = match existing {
-                Some(id) => id,
+                Some(id) => {
+                    // An official row reused here never went through the atomic
+                    // insert above, so its threshold still needs one write.
+                    if stock.is_some() {
+                        ops::set_min_quantity(conn, id, *min_qty)?;
+                    }
+                    id
+                }
                 None => catalog::insert(
                     conn,
                     &NewProduct {
@@ -528,6 +535,7 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                         // `catalog::insert` records the opening movement through
                         // the ledger, so quantity and history agree from the start.
                         stock_quantity: stock.unwrap_or(0),
+                        min_quantity: *min_qty,
                         // A couple of the café additions are flagged as RECENT, so
                         // the catalog's "new" marker — which is persisted
                         // independently of `is_active` — has something to show.
@@ -539,12 +547,6 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                     },
                 )?,
             };
-
-            // The minimum-quantity threshold is what turns the Inventory page
-            // into a real screen: without it every item reads "fine" forever.
-            if stock.is_some() {
-                ops::set_min_quantity(conn, product_id, *min_qty)?;
-            }
 
             if !*active {
                 // The POS filters on `is_active`, so this is what proves an

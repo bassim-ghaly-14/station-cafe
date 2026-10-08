@@ -199,6 +199,8 @@ export function CreateProductDialog({
   const [tracked, setTracked] = useState(false)
   const [stockQuantity, setStockQuantity] = useState('0')
   const [stockError, setStockError] = useState<string | null>(null)
+  const [minQuantity, setMinQuantity] = useState('0')
+  const [minStockError, setMinStockError] = useState<string | null>(null)
   // A brand-new catalog entry is the "new" case by default: the manager is
   // creating it right now, so badging it is what they almost always want.
   const [isNew, setIsNew] = useState(true)
@@ -231,6 +233,12 @@ export function CreateProductDialog({
       return
     }
 
+    const min = type === 'PRODUCT' && tracked ? parseStockQuantity(minQuantity) : null
+    if (type === 'PRODUCT' && tracked && min === null) {
+      setMinStockError(t('errors.inventory.invalid_min'))
+      return
+    }
+
     setBusy(true)
 
     try {
@@ -242,6 +250,10 @@ export function CreateProductDialog({
         price_minor: minor,
         track_inventory: type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
+        // Atomic: minimum travels INSIDE the create payload, so a failed
+        // create leaves no orphan product and a failed minimum leaves no
+        // product without its threshold.
+        min_quantity: min,
         is_new: isNew,
       }
 
@@ -387,19 +399,45 @@ export function CreateProductDialog({
         <NewItemSwitch checked={isNew} onChange={setIsNew} />
 
         {type === 'PRODUCT' && tracked ? (
-          <Field label={t('inventory.quantity')} error={stockError}>
-            <Input
-              dir="ltr"
-              inputMode="numeric"
-              value={stockQuantity}
-              onChange={(event) => {
-                setStockQuantity(event.target.value)
-                setStockError(null)
-              }}
-              placeholder="0"
-            />
-            <p className="text-caption">{t('inventory.initialStockHint')}</p>
-          </Field>
+          <>
+            <Field
+              label={t('inventory.currentQuantity')}
+              error={stockError}
+              hint={t('inventory.initialStockHint')}
+              htmlFor="catalog-stock-quantity"
+            >
+              <Input
+                id="catalog-stock-quantity"
+                dir="ltr"
+                inputMode="numeric"
+                value={stockQuantity}
+                onChange={(event) => {
+                  setStockQuantity(event.target.value)
+                  setStockError(null)
+                }}
+                placeholder="0"
+              />
+            </Field>
+
+            <Field
+              label={t('inventory.minimumStock')}
+              error={minStockError}
+              hint={t('inventory.minimumStockHint')}
+              htmlFor="catalog-min-quantity"
+            >
+              <Input
+                id="catalog-min-quantity"
+                dir="ltr"
+                inputMode="numeric"
+                value={minQuantity}
+                onChange={(event) => {
+                  setMinQuantity(event.target.value)
+                  setMinStockError(null)
+                }}
+                placeholder="0"
+              />
+            </Field>
+          </>
         ) : null}
 
         <DialogActions className="border-t border-border pt-4">
@@ -443,6 +481,8 @@ export function EditProductDialog({
   const [categoryId, setCategoryId] = useState(String(product.category_id))
   const [tracked, setTracked] = useState(product.track_inventory)
   const [stockQuantity, setStockQuantity] = useState(String(product.stock_quantity))
+  const [minQuantity, setMinQuantity] = useState(String(product.min_quantity ?? 0))
+  const [minStockError, setMinStockError] = useState<string | null>(null)
   // Seeded from the PERSISTED value, so editing never silently flips the flag.
   const [isNew, setIsNew] = useState(product.is_new)
 
@@ -477,6 +517,12 @@ export function EditProductDialog({
       return
     }
 
+    const min = product.item_type === 'PRODUCT' && tracked ? parseStockQuantity(minQuantity) : null
+    if (product.item_type === 'PRODUCT' && tracked && min === null) {
+      setMinStockError(t('errors.inventory.invalid_min'))
+      return
+    }
+
     setBusy(true)
 
     try {
@@ -488,6 +534,10 @@ export function EditProductDialog({
         price_minor: minor,
         track_inventory: product.item_type === 'PRODUCT' && tracked,
         stock_quantity: quantity,
+        // Atomic like create: quantity and minimum are independent fields of
+        // ONE payload, so one cannot silently rewrite the other and the
+        // backend persists both in ONE transaction.
+        min_quantity: min,
         is_new: isNew,
       })
 
@@ -567,6 +617,7 @@ export function EditProductDialog({
               onChange={(event) => {
                 setTracked(event.target.checked)
                 setStockError(null)
+                setMinStockError(null)
               }}
               className="h-4 w-4 accent-primary"
             />
@@ -577,19 +628,45 @@ export function EditProductDialog({
         <NewItemSwitch checked={isNew} onChange={setIsNew} />
 
         {product.item_type === 'PRODUCT' && tracked ? (
-          <Field label={t('inventory.quantity')} error={stockError}>
-            <Input
-              dir="ltr"
-              inputMode="numeric"
-              value={stockQuantity}
-              onChange={(event) => {
-                setStockQuantity(event.target.value)
-                setStockError(null)
-              }}
-              placeholder="0"
-            />
-            <p className="text-caption">{t('inventory.stockEditHint')}</p>
-          </Field>
+          <>
+            <Field
+              label={t('inventory.currentQuantity')}
+              error={stockError}
+              hint={t('inventory.stockEditHint')}
+              htmlFor="catalog-edit-stock-quantity"
+            >
+              <Input
+                id="catalog-edit-stock-quantity"
+                dir="ltr"
+                inputMode="numeric"
+                value={stockQuantity}
+                onChange={(event) => {
+                  setStockQuantity(event.target.value)
+                  setStockError(null)
+                }}
+                placeholder="0"
+              />
+            </Field>
+
+            <Field
+              label={t('inventory.minimumStock')}
+              error={minStockError}
+              hint={t('inventory.minimumStockHint')}
+              htmlFor="catalog-edit-min-quantity"
+            >
+              <Input
+                id="catalog-edit-min-quantity"
+                dir="ltr"
+                inputMode="numeric"
+                value={minQuantity}
+                onChange={(event) => {
+                  setMinQuantity(event.target.value)
+                  setMinStockError(null)
+                }}
+                placeholder="0"
+              />
+            </Field>
+          </>
         ) : null}
 
         <Field label={t('catalog.price')} error={priceError}>

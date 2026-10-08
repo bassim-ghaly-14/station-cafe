@@ -15,6 +15,7 @@ import {
   isLowStock,
   movementTone,
   NO_STOCK_QUERY,
+  stockStateOf,
   stockStatusOf,
   summarizeStock,
 } from './inventoryModel'
@@ -72,7 +73,7 @@ describe('isLowStock — the backend rule, restated exactly', () => {
 
 describe('summarizeStock — three counts over the complete loaded set', () => {
   it('reports zero of everything for an empty set rather than throwing', () => {
-    expect(summarizeStock([])).toEqual({ total: 0, low: 0, ok: 0 })
+    expect(summarizeStock([])).toEqual({ total: 0, low: 0, ok: 0, below: 0, atMin: 0 })
   })
 
   it('splits the rows into low and OK with no third bucket', () => {
@@ -83,9 +84,24 @@ describe('summarizeStock — three counts over the complete loaded set', () => {
       stock({ product_id: 4, quantity: 1, min_quantity: 1 }),
     ]
     const summary = summarizeStock(rows)
-    expect(summary).toEqual({ total: 4, low: 3, ok: 1 })
+    expect(summary).toEqual({ total: 4, low: 3, ok: 1, below: 1, atMin: 2 })
     // The invariant the band relies on: nothing is unaccounted for.
     expect(summary.low + summary.ok).toBe(summary.total)
+    expect(summary.below + summary.atMin).toBe(summary.low)
+  })
+})
+
+describe('stockStateOf — the three explicit states', () => {
+  it('distinguishes below, at, and above minimum', () => {
+    expect(stockStateOf(stock({ quantity: 4, min_quantity: 5 }))).toBe('BELOW_MINIMUM')
+    expect(stockStateOf(stock({ quantity: 5, min_quantity: 5 }))).toBe('AT_MINIMUM')
+    expect(stockStateOf(stock({ quantity: 12, min_quantity: 5 }))).toBe('ABOVE_MINIMUM')
+  })
+
+  it('treats the 20/5 → 5/5 → 4/5 walk as above → at → below', () => {
+    expect(stockStateOf(stock({ quantity: 20, min_quantity: 5 }))).toBe('ABOVE_MINIMUM')
+    expect(stockStateOf(stock({ quantity: 5, min_quantity: 5 }))).toBe('AT_MINIMUM')
+    expect(stockStateOf(stock({ quantity: 4, min_quantity: 5 }))).toBe('BELOW_MINIMUM')
   })
 })
 

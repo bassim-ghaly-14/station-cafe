@@ -66,6 +66,7 @@ import { useIsWide } from '@/lib/use-media-query'
 import type { StockRow } from '@/services/opsApi'
 import {
   hasStockQuery,
+  stockStateOf,
   stockStatusOf,
   type StockQuery,
   type StockStatusFilter,
@@ -74,18 +75,27 @@ import {
 /**
  * The status badge a row carries.
  *
- * The Arabic word is the signal and the dot is the non-colour reinforcement, so
- * the state never rests on hue alone — the same contract `CatalogStatusBadge`
- * and the roster's badges keep. `warning` for LOW and `success` for OK are the
- * existing Station semantic tones; nothing here invents a third state, because
- * the model has only two.
+ * Three explicit states from the ONE `stockStateOf` rule: BELOW_MINIMUM is the
+ * `danger` warning, AT_MINIMUM is its own `warning` informational state (never
+ * collapsed into below), ABOVE_MINIMUM is `success`. The Arabic word is the
+ * signal and the dot is the non-colour reinforcement, so the state never rests
+ * on hue alone.
  */
 function StockStatusBadge({ row }: Readonly<{ readonly row: StockRow }>) {
   const { t } = useTranslation()
-  const low = stockStatusOf(row) === 'LOW'
+  const state = stockStateOf(row)
+  const variant =
+    state === 'BELOW_MINIMUM' ? 'danger' : state === 'AT_MINIMUM' ? 'warning' : 'success'
+  const labelKey =
+    state === 'BELOW_MINIMUM'
+      ? 'inventory.state.below'
+      : state === 'AT_MINIMUM'
+        ? 'inventory.state.atMin'
+        : 'inventory.state.above'
+  const figure = `${row.quantity} / ${row.min_quantity}`
   return (
-    <Badge variant={low ? 'warning' : 'success'} size="sm" dot>
-      {low ? t('inventory.status.low') : t('inventory.status.ok')}
+    <Badge variant={variant} size="sm" dot>
+      {t(labelKey)} · <span className="tabular-nums">{figure}</span>
     </Badge>
   )
 }

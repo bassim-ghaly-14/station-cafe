@@ -34,6 +34,26 @@ export interface StockRow {
   min_quantity: number
 }
 
+/**
+ * One row of the shared manager-only inventory alert queue.
+ *
+ * `kind` is the three-state vocabulary minus the healthy state: healthy rows
+ * have NO notification (their recovery RESOLVED it). `read_at` null means
+ * unread — opening the Inventory page never writes it.
+ */
+export interface InventoryNotification {
+  id: number
+  product_id: number
+  product_name: string
+  kind: 'BELOW_MINIMUM' | 'AT_MINIMUM'
+  quantity: number
+  min_quantity: number
+  status: 'ACTIVE' | 'RESOLVED'
+  created_at: string
+  resolved_at: string | null
+  read_at: string | null
+}
+
 export interface MovementRow {
   id: number
   product_name: string
@@ -285,6 +305,15 @@ export const opsApi = {
     call<void>('adjust_stock', { product_id, change, reason, note: note ?? null }),
   setStockMinimum: (product_id: number, min_quantity: number) =>
     call<void>('set_stock_minimum', { product_id, min_quantity }),
+  /**
+   * Shared MANAGER-only alert queue (SQLite-persisted, survives restarts).
+   * Reads NEVER create or mutate alerts — sync happens only on backend
+   * inventory writes — and STAFF is refused server-side.
+   */
+  notifications: () => call<InventoryNotification[]>('list_inventory_notifications'),
+  unreadNotificationCount: () => call<number>('unread_inventory_notification_count'),
+  markNotificationRead: (id: number) => call<boolean>('mark_inventory_notification_read', { id }),
+  markAllNotificationsRead: () => call<number>('mark_all_inventory_notifications_read'),
 
   expenses: (from?: string, to?: string) =>
     call<Expense[]>('list_expenses', { from: from ?? null, to: to ?? null, recurring_only: false }),

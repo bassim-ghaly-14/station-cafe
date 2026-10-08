@@ -567,7 +567,7 @@ mod tests {
         assert!(deleted_at.is_some());
 
         assert!(
-            !catalog::update(&conn, id, "Revived", 1, 100, false, None, false, manager.id).unwrap()
+            !catalog::update(&conn, id, "Revived", 1, 100, false, None, None, false, manager.id).unwrap()
         );
 
         let name: String = conn
@@ -790,6 +790,7 @@ mod tests {
             id,
             3000,
             false,
+            None,
             None,
             false,
             admin.id,

@@ -28,6 +28,10 @@ pub const APPLICATION_DATA_TABLES: &[&str] = &[
     "day_closing_shifts",
     "day_closing_expenses",
     "stock_movements",
+    // `inventory_notifications` references `products(id)`, so it is emptied
+    // alongside the other product-child tables, well before `products` below —
+    // otherwise a reload that re-seeds a fresh catalog trips the FK on DELETE.
+    "inventory_notifications",
     "order_lines",
     "invoice_lines",
     "invoice_customers",

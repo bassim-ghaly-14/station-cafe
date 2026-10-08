@@ -4,12 +4,14 @@ use crate::error::{AppError, AppResult};
 use crate::repositories::expenses::{
     self, Expense, ExpenseCategory, ExpenseMonthlyWindow, ExpenseOverview,
 };
-use crate::repositories::ops::{self, MovementRow, StockRow};
+use crate::repositories::ops::{self, InventoryNotification, MovementRow, StockRow};
 use crate::repositories::{catalog, Db};
 use crate::services::auth::{require_role, User};
 use serde::Deserialize;
 
 /// Manager adjusts stock with an explicit reason; the movement is auditable.
+/// The notification sync runs inside the same transaction (through
+/// `ops::adjust`), so a failed adjustment never leaves a stale alert behind.
 pub fn adjust_stock(
     conn: &Db,
     actor: &User,
@@ -46,6 +48,33 @@ pub fn list_stock(conn: &Db) -> AppResult<Vec<StockRow>> {
     ops::list_stock(conn)
 }
 
+/// Shared MANAGER-only alert queue. There is no per-user ownership: every
+/// manager sees the same rows, and STAFF is refused by the command gate
+/// before reaching here.
+pub fn list_notifications(conn: &Db, actor: &User) -> AppResult<Vec<InventoryNotification>> {
+    crate::services::auth::require_role(actor, "MANAGER")?;
+    ops::list_notifications(conn)
+}
+
+/// Unread ACTIVE count for the manager badge. Reading the Inventory page
+/// never changes it — only the explicit mark-read calls below do.
+pub fn unread_notification_count(conn: &Db, actor: &User) -> AppResult<i64> {
+    crate::services::auth::require_role(actor, "MANAGER")?;
+    ops::unread_notification_count(conn)
+}
+
+/// Mark one alert read. Idempotent: re-reading returns `false`, never an error.
+pub fn mark_notification_read(conn: &Db, actor: &User, id: i64) -> AppResult<bool> {
+    crate::services::auth::require_role(actor, "MANAGER")?;
+    ops::mark_notification_read(conn, id)
+}
+
+/// Mark every active alert read. Returns how many flipped to read.
+pub fn mark_all_notifications_read(conn: &Db, actor: &User) -> AppResult<i64> {
+    crate::services::auth::require_role(actor, "MANAGER")?;
+    ops::mark_all_notifications_read(conn)
+}
+
 pub fn list_movements(conn: &Db, limit: i64) -> AppResult<Vec<MovementRow>> {
     ops::list_movements(conn, limit.clamp(1, 500))
 }
@@ -77,6 +106,9 @@ pub fn set_min_quantity(
     if !p.track_inventory {
         return Err(AppError::business("inventory.not_tracked"));
     }
+    // Kept as the explicit threshold-only write (used by seed backfill and
+    // any direct minimum edit): quantity is untouched, the sync below decides
+    // the alert from the CURRENT quantity vs the new minimum.
     ops::set_min_quantity(conn, product_id, min_quantity)?;
     crate::services::audit::record(
         conn,

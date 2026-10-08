@@ -1,35 +1,21 @@
 /**
  * المخزون — the inventory feature's PURE presentation logic.
  *
- * # What belongs here and what does not
+ * # The ONE stock rule (three explicit states)
  *
- * Everything in this file is a DISPLAY decision taken over the rows the backend
- * already returned by `list_stock`. None of it is a stock rule:
+ * `stockStateOf` is the single source of truth; every badge, summary,
+ * attention area and notification label reads it and computes nothing of its
+ * own:
  *
- *  - the stock rule itself is `quantity <= min_quantity`, and it was ALREADY the
- *    comparison the old inline row badge used. It is restated here exactly, so
- *    the two can be diffed against each other;
- *  - `list_stock` already returns every tracked item with no limit and no
- *    paging, so the counts, the summary and the filters are arithmetic over the
- *    complete set the backend sent. No figure here is a partial total;
- *  - nothing here invents a field, a threshold, a movement type or a status the
- *    schema does not have. There is deliberately no "out of stock" state: the
- *    model reports LOW or OK, which is the whole vocabulary Station stores.
+ * - BELOW_MINIMUM (`quantity < min_quantity`) — real warning, action needed;
+ * - AT_MINIMUM (`quantity === min_quantity`) — distinct informational state,
+ *   NEVER collapsed into below-minimum;
+ * - ABOVE_MINIMUM (`quantity > min_quantity`) — healthy, no alert.
  *
- * # Why it is a separate module
- *
- * The logic is small but it is the part a reader must be able to verify against
- * the old behaviour without opening JSX, so it is pure, typed and unit-tested on
- * its own. Every component in this feature reads these functions and computes
- * nothing of its own.
- *
- * # Catalog is not involved
- *
- * `StockRow` carries `department`, `category_name` and `item_type` because the
- * backend join produces them, not because this page needs them. They are
- * Catalog's authoritative fields and are deliberately not rendered, searched or
- * filtered here: this page answers "what is in stock and what needs attention",
- * not "what does the business sell".
+ * `isLowStock` is kept as the legacy two-state alias (`<=`) for the existing
+ * summary/filter/attention paths and the backend's own
+ * `ORDER BY (quantity <= min_quantity)` + `stock_alerts` count, so reports and
+ * ordering cannot disagree with this page.
  */
 import type { MovementRow, StockRow } from '@/services/opsApi'
 
@@ -44,6 +30,12 @@ import type { MovementRow, StockRow } from '@/services/opsApi'
 export type StockStatus = 'LOW' | 'OK'
 
 /**
+ * The three explicit stock states. `stockStateOf` is the ONLY place the
+ * `<` / `===` / `>` split is written.
+ */
+export type StockState = 'BELOW_MINIMUM' | 'AT_MINIMUM' | 'ABOVE_MINIMUM'
+
+/**
  * Whether a stock row needs the manager's attention.
  *
  * The comparison is `<=`, not `<`: an item sitting exactly ON its minimum has
@@ -56,7 +48,17 @@ export function isLowStock(row: StockRow): boolean {
   return row.quantity <= row.min_quantity
 }
 
-/** The status badge a row shows, and the only status any row can show. */
+/**
+ * The three-state determination. BELOW_MINIMUM is the warning, AT_MINIMUM is
+ * its own informational state, ABOVE_MINIMUM is healthy.
+ */
+export function stockStateOf(row: StockRow): StockState {
+  if (row.quantity < row.min_quantity) return 'BELOW_MINIMUM'
+  if (row.quantity === row.min_quantity) return 'AT_MINIMUM'
+  return 'ABOVE_MINIMUM'
+}
+
+/** The status badge a row shows, derived from the three-state model. */
 export function stockStatusOf(row: StockRow): StockStatus {
   return isLowStock(row) ? 'LOW' : 'OK'
 }
@@ -64,10 +66,14 @@ export function stockStatusOf(row: StockRow): StockStatus {
 export interface StockSummary {
   /** Every tracked item the backend returned. */
   readonly total: number
-  /** Items at or below their minimum. */
+  /** Items at or below their minimum (legacy `<=` aggregate). */
   readonly low: number
   /** Items above their minimum. */
   readonly ok: number
+  /** Items strictly below their minimum — the real warning slice. */
+  readonly below: number
+  /** Items exactly at their minimum — the distinct informational slice. */
+  readonly atMin: number
 }
 
 /**
@@ -81,10 +87,15 @@ export interface StockSummary {
  */
 export function summarizeStock(rows: readonly StockRow[]): StockSummary {
   let low = 0
+  let below = 0
+  let atMin = 0
   for (const row of rows) {
-    if (isLowStock(row)) low += 1
+    const state = stockStateOf(row)
+    if (state !== 'ABOVE_MINIMUM') low += 1
+    if (state === 'BELOW_MINIMUM') below += 1
+    if (state === 'AT_MINIMUM') atMin += 1
   }
-  return { total: rows.length, low, ok: rows.length - low }
+  return { total: rows.length, low, ok: rows.length - low, below, atMin }
 }
 
 /** Which stock states the list is showing. `ALL` is the unfiltered set. */

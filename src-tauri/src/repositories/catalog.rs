@@ -17,13 +17,14 @@ pub struct Product {
     pub is_active: bool,
     pub track_inventory: bool,
     pub stock_quantity: i64,
+    pub min_quantity: i64,
     pub is_seed: bool,
     /// Presentation flag: this is a recent addition, independent of `is_active`.
     pub is_new: bool,
 }
 
 const COLS: &str =
-    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), p.is_seed, p.is_new";
+    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), COALESCE(i.min_quantity, 0), p.is_seed, p.is_new";
 
 /// An archived item is excluded from EVERY catalog read: POS, product
 /// management, selectors, category counts and by-id lookups. Its row is kept
@@ -43,8 +44,9 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
         is_active: row.get::<_, i64>(7)? != 0,
         track_inventory: row.get::<_, i64>(8)? != 0,
         stock_quantity: row.get(9)?,
-        is_seed: row.get::<_, i64>(10)? != 0,
-        is_new: row.get::<_, i64>(11)? != 0,
+        min_quantity: row.get(10)?,
+        is_seed: row.get::<_, i64>(11)? != 0,
+        is_new: row.get::<_, i64>(12)? != 0,
     })
 }
 
@@ -197,6 +199,9 @@ pub struct NewProduct<'a> {
     pub track_inventory: bool,
     /// Opening stock quantity; only applied when `track_inventory` is true.
     pub stock_quantity: i64,
+    /// Minimum-stock threshold; only applied when `track_inventory` is true.
+    /// Inserted atomically with the product row — never a second call.
+    pub min_quantity: i64,
     /// Whether the item is flagged as a recent addition.
     pub is_new: bool,
     /// Actor recorded on the opening stock movement.
@@ -221,9 +226,10 @@ pub fn insert(conn: &Db, p: &NewProduct<'_>) -> AppResult<i64> {
     let id = tx.last_insert_rowid();
     if p.track_inventory {
         tx.execute(
-            "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, ?2)",
-            params![id, p.stock_quantity],
+            "INSERT INTO inventory_items (product_id, quantity, min_quantity) VALUES (?1, ?2, ?3)",
+            params![id, p.stock_quantity, p.min_quantity.max(0)],
         )?;
+        crate::repositories::ops::sync_notification_for_product(&tx, id)?;
         if p.stock_quantity != 0 {
             tx.execute(
                 "INSERT INTO stock_movements
@@ -260,6 +266,7 @@ pub fn update(
     price_minor: i64,
     track_inventory: bool,
     stock_quantity: Option<i64>,
+    min_quantity: Option<i64>,
     is_new: bool,
     user_id: i64,
 ) -> AppResult<bool> {
@@ -284,18 +291,20 @@ pub fn update(
 
     // Stock is optional: disabling tracking hides the item from inventory
     // flows but deliberately keeps its last quantity for re-enabling.
+    // Re-enabling a row that already exists preserves its stored quantity —
+    // the row is NOT zeroed — and any supplied quantity/minimum apply on top.
     if track_inventory {
-        let existing: Option<i64> = tx
+        let existing: Option<(i64, i64)> = tx
             .query_row(
-                "SELECT quantity FROM inventory_items WHERE product_id = ?1",
+                "SELECT quantity, min_quantity FROM inventory_items WHERE product_id = ?1",
                 [id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let old_quantity = existing.unwrap_or(0);
+        let (old_quantity, old_min) = existing.unwrap_or((0, 0));
         if existing.is_none() {
             tx.execute(
-                "INSERT INTO inventory_items (product_id, quantity) VALUES (?1, 0)",
+                "INSERT INTO inventory_items (product_id, quantity, min_quantity) VALUES (?1, 0, 0)",
                 [id],
             )?;
         }
@@ -316,6 +325,17 @@ pub fn update(
                 )?;
             }
         }
+        if let Some(min) = min_quantity {
+            if min != old_min {
+                tx.execute(
+                    "UPDATE inventory_items
+                     SET min_quantity = ?2, updated_at = station_now()
+                     WHERE product_id = ?1",
+                    params![id, min.max(0)],
+                )?;
+            }
+        }
+        crate::repositories::ops::sync_notification_for_product(&tx, id)?;
     }
     tx.commit()?;
     Ok(true)
@@ -440,6 +460,7 @@ mod tests {
             price_minor: 1000,
             track_inventory,
             stock_quantity,
+            min_quantity: 0,
             is_new: false,
             user_id,
         }
@@ -509,6 +530,7 @@ mod tests {
             1000,
             true,
             Some(9),
+            None,
             false,
             admin
         )
@@ -530,6 +552,7 @@ mod tests {
             category,
             1000,
             false,
+            None,
             None,
             false,
             admin,
@@ -577,6 +600,7 @@ mod tests {
             category,
             1000,
             false,
+            None,
             None,
             false,
             admin,

@@ -12,6 +12,11 @@ export interface Product {
   is_active: boolean
   track_inventory: boolean
   stock_quantity: number
+  /**
+   * Persisted minimum-stock threshold. Older payloads omit it; the catalog
+   * edit dialog falls back to `0` rather than inventing a value.
+   */
+  min_quantity?: number
   is_seed: boolean
   /** Recent addition — a catalog presentation flag, independent of `is_active`. */
   is_new: boolean

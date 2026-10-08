@@ -31,6 +31,9 @@ const mocks = vi.hoisted(() => ({
   stock: vi.fn(),
   movements: vi.fn(),
   adjustStock: vi.fn(),
+  notifications: vi.fn(),
+  markRead: vi.fn(),
+  markAllRead: vi.fn(),
 }))
 
 vi.mock('@/services/opsApi', () => ({
@@ -38,6 +41,9 @@ vi.mock('@/services/opsApi', () => ({
     stock: mocks.stock,
     movements: mocks.movements,
     adjustStock: mocks.adjustStock,
+    notifications: mocks.notifications,
+    markNotificationRead: mocks.markRead,
+    markAllNotificationsRead: mocks.markAllRead,
   },
   // The dialog reads the fixed reason vocabulary from this module, so the mock
   // declares it exactly as `opsApi.ts` does rather than letting the dialog build
@@ -111,6 +117,12 @@ beforeEach(() => {
   mocks.stock.mockResolvedValue(STOCK)
   mocks.movements.mockResolvedValue(MOVEMENTS)
   mocks.adjustStock.mockResolvedValue(undefined)
+  // The manager alert queue is a separate persisted read; default it empty so
+  // the pre-existing assertions about the stock/movement data flow are not
+  // perturbed by the notifications section.
+  mocks.notifications.mockResolvedValue([])
+  mocks.markRead.mockResolvedValue(true)
+  mocks.markAllRead.mockResolvedValue(0)
 })
 
 afterEach(() => {
@@ -173,8 +185,12 @@ describe('InventoryPage — the current stock list', () => {
     const table = screen.getByRole('table', {
       name: 'المخزون الحالي — الكمية والحد الأدنى والحالة لكل صنف متتبع',
     })
-    expect(within(table).getAllByText('منخفض')).toHaveLength(2)
-    expect(within(table).getAllByText('متوفّر')).toHaveLength(2)
+    // Three explicit states, each with its own word (never colour alone):
+    // two strictly-below rows, two above-minimum rows. No row is exactly at
+    // minimum in this fixture. The badge also appends "qty / min", so the
+    // state word is matched as a substring rather than an exact node.
+    expect(within(table).getAllByText(/^مخزون منخفض/)).toHaveLength(2)
+    expect(within(table).getAllByText(/^أعلى من الحد الأدنى/)).toHaveLength(2)
   })
 
   it('states how much of the set is being shown', async () => {

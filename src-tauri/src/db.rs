@@ -1864,6 +1864,45 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_shifts_closed_by ON shifts(closed_by);
         "#,
     },
+    Migration {
+        version: 37,
+        name: "inventory notifications outbox",
+        needs_fk_off: false,
+        sql: r#"
+            -- ============================================================
+            -- INVENTORY NOTIFICATIONS — manager-only low/at-minimum outbox
+            -- ============================================================
+            -- One ACTIVE row per product at most: the partial unique index
+            -- below is the DEDUPLICATION guarantee, not application code.
+            -- A row morphs AT_MINIMUM <-> BELOW_MINIMUM in place when the
+            -- severity changes, so 6 -> 5 -> 4 yields ONE active alert, not
+            -- two. Recovery (quantity > min_quantity) RESOLVEs the row so a
+            -- later fall re-arms with a fresh ACTIVE row.
+            --
+            -- Shared MANAGER queue: no per-user recipient column. Station is
+            -- a single-cafe offline till; the backend MANAGER gate on every
+            -- notification command is the visibility rule, so STAFF can never
+            -- read or mutate these rows. `read_at` NULL means unread; opening
+            -- the Inventory page never writes it — only the explicit
+            -- mark-read commands do.
+            CREATE TABLE IF NOT EXISTS inventory_notifications (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id   INTEGER NOT NULL REFERENCES products(id),
+                kind         TEXT NOT NULL CHECK (kind IN ('BELOW_MINIMUM','AT_MINIMUM')),
+                quantity     INTEGER NOT NULL,
+                min_quantity INTEGER NOT NULL CHECK (min_quantity >= 0),
+                status       TEXT NOT NULL DEFAULT 'ACTIVE'
+                             CHECK (status IN ('ACTIVE','RESOLVED')),
+                created_at   TEXT NOT NULL DEFAULT (station_now()),
+                resolved_at  TEXT,
+                read_at      TEXT
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_notifications_active
+                ON inventory_notifications(product_id) WHERE status = 'ACTIVE';
+            CREATE INDEX IF NOT EXISTS idx_inventory_notifications_status
+                ON inventory_notifications(status, created_at);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

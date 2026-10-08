@@ -84,6 +84,8 @@ export {
   Users,
   Wallet,
   X,
+  Bell,
+  CircleAlert,
   CircleSlash,
   TriangleAlert,
 } from 'lucide-react'

@@ -7,7 +7,7 @@ use crate::repositories::analytics::AnalyticsCharts;
 use crate::repositories::expenses::{
     Expense, ExpenseCategory, ExpenseMonthlyWindow, ExpenseOverview,
 };
-use crate::repositories::ops::{MovementRow, StockRow};
+use crate::repositories::ops::{InventoryNotification, MovementRow, StockRow};
 use crate::services::ops::{self as ops_svc, NewExpense};
 use crate::services::reports::{self, AuditEntry, TodaySummary};
 use crate::AppState;
@@ -54,6 +54,52 @@ pub fn set_stock_minimum(
 ) -> AppResult<()> {
     authorized(&state, &token, "MANAGER", move |conn, actor| {
         ops_svc::set_min_quantity(conn, actor, product_id, min_quantity)
+    })
+}
+
+/// MANAGER-only active inventory alert queue (shared: no per-user owner).
+/// STAFF is refused by the gate; ADMIN passes as MANAGER+.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_inventory_notifications(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<InventoryNotification>> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::list_notifications(conn, actor)
+    })
+}
+
+/// MANAGER-only unread ACTIVE alert count. Never mutated by reads.
+#[tauri::command(rename_all = "snake_case")]
+pub fn unread_inventory_notification_count(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<i64> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::unread_notification_count(conn, actor)
+    })
+}
+
+/// MANAGER-only mark-one-read. Idempotent: already-read returns false.
+#[tauri::command(rename_all = "snake_case")]
+pub fn mark_inventory_notification_read(
+    state: State<'_, AppState>,
+    token: String,
+    id: i64,
+) -> AppResult<bool> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::mark_notification_read(conn, actor, id)
+    })
+}
+
+/// MANAGER-only mark-all-read. Returns how many flipped.
+#[tauri::command(rename_all = "snake_case")]
+pub fn mark_all_inventory_notifications_read(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<i64> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        ops_svc::mark_all_notifications_read(conn, actor)
     })
 }
 
