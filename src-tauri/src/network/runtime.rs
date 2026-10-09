@@ -50,11 +50,11 @@ pub const ERR_NO_APP_HANDLE: &str = "no_app_handle";
 
 /// Current observed state, without changing anything.
 pub fn status(state: &AppState) -> RuntimeStatus {
-    let running_addr = state
-        .api
-        .lock()
-        .ok()
-        .and_then(|g| g.as_ref().filter(|h| h.is_running()).map(|h| h.local_addr()));
+    let running_addr = state.api.lock().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|h| h.is_running())
+            .map(|h| h.local_addr())
+    });
     let enabled = state
         .conn
         .lock()
@@ -160,17 +160,14 @@ pub fn apply(state: &AppState, cfg: &NetworkConfig) -> RuntimeStatus {
     // bridge — both of which say so per request — but it does NOT stop the
     // socket from opening. Refusing to bind here is what made an enabled
     // service report itself unavailable while its own setting said enabled.
-    let handle = match crate::network::server::start(
-        addr,
-        Arc::clone(&state.conn),
-        state.app().cloned(),
-    ) {
-        Ok(handle) => handle,
-        Err(e) => {
-            log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
-            return unavailable(true, ERR_BIND_FAILED);
-        }
-    };
+    let handle =
+        match crate::network::server::start(addr, Arc::clone(&state.conn), state.app().cloned()) {
+            Ok(handle) => handle,
+            Err(e) => {
+                log::error!("local api: cannot bind {addr} ({e}); the POS is unaffected");
+                return unavailable(true, ERR_BIND_FAILED);
+            }
+        };
     log::info!("local api: listening on http://{}", handle.local_addr());
 
     if let Ok(mut slot) = state.api.lock() {

@@ -7,10 +7,10 @@
 //! I/O is the in-memory database.
 
 use crate::db::migrate;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::error::AppError;
 use crate::repositories::employee_analytics::{self, Period};
 use crate::repositories::employees;
-use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::attendance::{self, AttendanceAction};
 use crate::services::auth::{self, User};
 use crate::services::employees::{self as emp, EmployeeInput, EmployeePeriod};
@@ -1286,7 +1286,10 @@ fn the_kpi_band_never_mixes_incompatible_employee_types() {
     // from these two leaderboards by employee type, not by luck.
     let wash_row = row_for(&conn, mahmoud);
     assert_eq!(wash_row.employee_type, emp::WASH_WORKER);
-    assert!(wash_row.login_role.is_none(), "a wash worker holds no login");
+    assert!(
+        wash_row.login_role.is_none(),
+        "a wash worker holds no login"
+    );
     // A wash worker is still a headcount, even without a leaderboard of their own.
     let (employees, expected_cashiers, wash_workers) = fixture_headcount(&conn);
     assert_eq!(overview.total_wash_workers, wash_workers);
@@ -1320,9 +1323,12 @@ fn the_cashier_headcount_names_the_staff_role_not_the_employee_type() {
 
     assert_eq!(overview.total_cashiers, cashiers);
     assert_eq!(overview.total_cashiers, expected_cashiers);
-    assert!(expected_cashiers > 0, "the fixture must contain STAFF logins");
-                                            // The type still counts everybody who holds a login, so the two figures are
-                                            // genuinely different facts and neither is derived from the other.
+    assert!(
+        expected_cashiers > 0,
+        "the fixture must contain STAFF logins"
+    );
+    // The type still counts everybody who holds a login, so the two figures are
+    // genuinely different facts and neither is derived from the other.
     assert_eq!(overview.total_employees, employees);
     assert_eq!(overview.total_wash_workers, wash_workers);
     // The two figures differ whenever a non-STAFF login exists, which is what
@@ -1446,7 +1452,8 @@ fn a_reversed_advance_keeps_its_row_and_leaves_the_totals() {
     assert!(stored.reversed_at.is_some());
     // And the money is out of the totals.
     assert_eq!(
-        employee_analytics::advances_total(&conn, id, Some("2026-09-01"), Some("2026-09-30")).unwrap(),
+        employee_analytics::advances_total(&conn, id, Some("2026-09-01"), Some("2026-09-30"))
+            .unwrap(),
         0
     );
     // A second reversal is refused.
@@ -2072,14 +2079,11 @@ fn the_edit_modal_flow_preserves_then_replaces_an_existing_credential() {
     };
 
     // 1. OPEN. The dialog's only credential source is the employee payload.
-    let opened = serde_json::to_string(&emp::details(
-        &conn,
-        &admin,
-        employee_id,
-        &EmployeePeriod::default(),
+    let opened = serde_json::to_string(
+        &emp::details(&conn, &admin, employee_id, &EmployeePeriod::default())
+            .unwrap()
+            .employee,
     )
-    .unwrap()
-    .employee)
     .unwrap();
     assert!(
         !opened.contains("password") && !opened.contains("$argon2"),

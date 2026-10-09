@@ -129,7 +129,6 @@ pub fn select_lan_address() -> Option<IpAddr> {
         .or_else(|| local_ip_address::local_ip().ok().filter(is_usable))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,7 +150,13 @@ mod tests {
 
     #[test]
     fn unspecified_and_multicast_are_rejected() {
-        for bad in ["0.0.0.0", "224.0.0.1", "239.255.255.250", "255.255.255.255", "ff02::1"] {
+        for bad in [
+            "0.0.0.0",
+            "224.0.0.1",
+            "239.255.255.250",
+            "255.255.255.255",
+            "ff02::1",
+        ] {
             assert!(!is_usable(&v4(bad)), "IPv4 {bad} must be rejected");
         }
         assert!(!is_usable(&v6("::")));
@@ -174,8 +179,12 @@ mod tests {
             assert_eq!(classify(&ip), Suitability::PrivateIpv4);
         }
         // The boundaries matter: 172.15/172.32 are NOT private.
-        assert!(!is_private_v4(&v4("172.15.0.1").to_string().parse().unwrap()));
-        assert!(!is_private_v4(&v4("172.32.0.1").to_string().parse().unwrap()));
+        assert!(!is_private_v4(
+            &v4("172.15.0.1").to_string().parse().unwrap()
+        ));
+        assert!(!is_private_v4(
+            &v4("172.32.0.1").to_string().parse().unwrap()
+        ));
     }
 
     #[test]
@@ -197,7 +206,9 @@ mod tests {
     #[test]
     fn virtual_and_tunnel_interfaces_are_identified() {
         // The real cafe PC had utun0-4, awdl0, llw0, ap1 and bridge0.
-        for name in ["utun0", "utun4", "awdl0", "llw0", "bridge0", "ap1", "lo0", "gif0"] {
+        for name in [
+            "utun0", "utun4", "awdl0", "llw0", "bridge0", "ap1", "lo0", "gif0",
+        ] {
             assert!(is_virtual_interface(name), "{name} is virtual");
         }
         for name in ["en0", "en1", "eth0", "wlan0", "Wi-Fi"] {

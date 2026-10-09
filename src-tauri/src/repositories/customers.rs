@@ -47,7 +47,10 @@ pub struct CustomerPhoneEntry {
 /// customer. Rows are ordered by `name, id` so the export is deterministic
 /// and reuses the page's own ordering. Deduplication by normalized
 /// `phone_key` happens in the service so SQL stays a plain read.
-pub fn export_phones(conn: &Db, customer_ids: Option<&[i64]>) -> AppResult<Vec<CustomerPhoneEntry>> {
+pub fn export_phones(
+    conn: &Db,
+    customer_ids: Option<&[i64]>,
+) -> AppResult<Vec<CustomerPhoneEntry>> {
     let mut sql = String::from(
         "SELECT id, name, phone, phone_key FROM customers
          WHERE phone IS NOT NULL AND TRIM(phone) <> ''",

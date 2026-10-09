@@ -6,8 +6,8 @@
 //! this file, by construction: the only I/O is the in-memory database.
 
 use crate::db::migrate;
-use crate::repositories::expenses::{self, ExpenseMonthRow, ExpenseOverview};
 use crate::demo_data::seed_for_development as run_if_empty;
+use crate::repositories::expenses::{self, ExpenseMonthRow, ExpenseOverview};
 use rusqlite::Connection;
 
 /// Migrated + seeded in-memory database.

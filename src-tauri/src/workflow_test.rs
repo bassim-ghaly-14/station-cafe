@@ -7,8 +7,8 @@
 //! Financial integrity is asserted at each step.
 
 use crate::db::migrate;
-use crate::repositories::{catalog, customers, invoices, pos, shifts};
 use crate::demo_data::seed_for_development as run_if_empty;
+use crate::repositories::{catalog, customers, invoices, pos, shifts};
 use crate::services::{auth, checkout, pos as pos_svc, settings, shifts as shift_svc};
 use rusqlite::Connection;
 

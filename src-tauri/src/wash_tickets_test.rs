@@ -14,8 +14,8 @@
 //!     `invoices.order_id` relation — never through resemblance.
 
 use crate::db::migrate;
-use crate::repositories::{catalog, customers, pos};
 use crate::demo_data::seed_for_development as run_if_empty;
+use crate::repositories::{catalog, customers, pos};
 use crate::services::{auth, checkout, pos as pos_svc, shifts as shift_svc};
 use rusqlite::Connection;
 
@@ -56,7 +56,11 @@ fn customer_with_car(conn: &Connection, name: &str, phone: &str, plate: &str) ->
 }
 
 /// A business day, a cashier shift and one open table order.
-fn open_day_shift_and_order(conn: &Connection, manager: &auth::User, staff: &auth::User) -> (i64, i64) {
+fn open_day_shift_and_order(
+    conn: &Connection,
+    manager: &auth::User,
+    staff: &auth::User,
+) -> (i64, i64) {
     let day_id = shift_svc::open_day(conn, manager).unwrap();
     shift_svc::open_shift(conn, staff, 0).unwrap();
     let table = pos::list_tables(conn, None).unwrap().remove(0);
@@ -75,7 +79,14 @@ fn ticketed_wash_order(
     plate: &str,
 ) -> (i64, i64) {
     let (day_id, order_id) = open_day_shift_and_order(conn, manager, staff);
-    pos_svc::add_line(conn, staff, order_id, wash_service(conn, "غسيل كامل سيدان"), 1).unwrap();
+    pos_svc::add_line(
+        conn,
+        staff,
+        order_id,
+        wash_service(conn, "غسيل كامل سيدان"),
+        1,
+    )
+    .unwrap();
     let customer_id = customer_with_car(conn, name, phone, plate);
     pos_svc::attach_customer(conn, order_id, customer_id, Some(plate)).unwrap();
     pos_svc::issue_wash_ticket(conn, order_id).unwrap();
@@ -99,7 +110,6 @@ fn pay_cash(conn: &Connection, staff: &auth::User, order_id: i64) -> checkout::C
     .unwrap()
 }
 
-
 // ---- CANCELLATION AFTER TICKET ISSUANCE ------------------------------------
 
 #[test]
@@ -122,8 +132,14 @@ fn a_cashier_cannot_cancel_an_order_after_the_wash_ticket_is_issued() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (_, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (_, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
 
     let err = pos_svc::discard_order(&conn, &staff, order_id).unwrap_err();
 
@@ -139,8 +155,14 @@ fn the_rule_cannot_be_side_stepped_by_removing_the_wash_lines_first() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (_, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (_, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
 
     // The bypass this rule exists to close: empty the order first so the
     // incidental "an order with items cannot be discarded" guard no longer
@@ -148,7 +170,10 @@ fn the_rule_cannot_be_side_stepped_by_removing_the_wash_lines_first() {
     for line in pos_svc::get_order(&conn, order_id).unwrap().lines {
         pos_svc::remove_line(&conn, &staff, line.id).unwrap();
     }
-    assert!(pos_svc::get_order(&conn, order_id).unwrap().lines.is_empty());
+    assert!(pos_svc::get_order(&conn, order_id)
+        .unwrap()
+        .lines
+        .is_empty());
 
     let err = pos_svc::discard_order(&conn, &staff, order_id).unwrap_err();
 
@@ -164,8 +189,14 @@ fn a_refused_cancellation_never_mutates_the_historical_ticket_or_the_order() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (_, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (_, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
     let read_ticket = |conn: &Connection| -> (i64, i64, String) {
         conn.query_row(
             "SELECT id, waiting_no, day_date FROM wash_tickets WHERE order_id = ?1",
@@ -214,8 +245,14 @@ fn todays_issued_wash_ticket_is_returned_for_the_open_business_day() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (day_id, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (day_id, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
 
     let rows = pos_svc::daily_wash_tickets(&conn, Some(day_id), None, None).unwrap();
 
@@ -238,8 +275,7 @@ fn every_ticket_of_the_day_is_returned_not_just_the_last_one() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (day_id, _) =
-        ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
+    let (day_id, _) = ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
 
     for (index, (name, phone, plate)) in [
         ("خالد", "01000000003", "CCC333"),
@@ -277,8 +313,14 @@ fn a_ticket_carries_the_persisted_reference_to_its_own_invoice() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (day_id, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (day_id, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
     let paid = pay_cash(&conn, &staff, order_id);
 
     let rows = pos_svc::daily_wash_tickets(&conn, Some(day_id), None, None).unwrap();
@@ -300,8 +342,7 @@ fn a_ticket_without_an_invoice_still_appears() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (day_id, _) =
-        ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
+    let (day_id, _) = ticketed_wash_order(&conn, &manager, &staff, "سارة", "01000000002", "BBB222");
 
     // The wash job is still in the bay: ticketed, NOT invoiced. This is exactly
     // the row an INNER JOIN would silently disappear.
@@ -398,8 +439,14 @@ fn the_daily_read_is_narrowed_by_the_backend_only() {
     let conn = fresh();
     let manager = login(&conn, "manager", "2345");
     let staff = login(&conn, "cashier", "3456");
-    let (day_id, order_id) =
-        ticketed_wash_order(&conn, &manager, &staff, "أحمد محمود", "01000000001", "AAA111");
+    let (day_id, order_id) = ticketed_wash_order(
+        &conn,
+        &manager,
+        &staff,
+        "أحمد محمود",
+        "01000000001",
+        "AAA111",
+    );
 
     assert_eq!(
         pos_svc::daily_wash_tickets(&conn, Some(day_id), Some("AAA111"), None)
@@ -479,4 +526,3 @@ fn the_historical_fallback_is_bounded_to_the_newest_200() {
     sorted.sort_unstable_by(|a, b| b.cmp(a));
     assert_eq!(ids, sorted, "newest tickets stay first");
 }
-

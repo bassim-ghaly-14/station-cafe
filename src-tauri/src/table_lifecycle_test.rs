@@ -809,7 +809,11 @@ fn a_new_shift_starts_clean_while_the_day_accumulates() {
         (2, 2),
         "the closed shift keeps its own history"
     );
-    assert_eq!(empty_closes(&conn), 2, "the business day keeps accumulating");
+    assert_eq!(
+        empty_closes(&conn),
+        2,
+        "the business day keeps accumulating"
+    );
 
     // The second shift's own closes are counted once, against the second shift.
     empty_close(&conn, &actor, tables[2]);
@@ -914,7 +918,11 @@ fn several_shifts_in_one_cairo_day_aggregate_into_that_day() {
         roll_shift(&conn, &actor);
     }
 
-    assert_eq!(per_shift, vec![1, 1, 1], "each shift counted exactly its own");
+    assert_eq!(
+        per_shift,
+        vec![1, 1, 1],
+        "each shift counted exactly its own"
+    );
     assert_eq!(empty_closes(&conn), 3, "the day is the aggregate of shifts");
     assert_eq!(persisted_empty_closes(&conn), 3);
 }

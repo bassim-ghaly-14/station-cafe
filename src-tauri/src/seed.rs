@@ -1310,14 +1310,22 @@ mod tests {
 
         for name in FORMER_DEMO_USERNAMES {
             assert!(
-                !exists(&conn, "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)", name),
+                !exists(
+                    &conn,
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
+                    name
+                ),
                 "{name} is a DEMO account and must never be created by the official seed"
             );
         }
         // And the real business accounts ARE created.
         for (name, ..) in DEFAULT_USERS {
             assert!(
-                exists(&conn, "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)", name),
+                exists(
+                    &conn,
+                    "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
+                    name
+                ),
                 "{name} is a real starter account and must be seeded"
             );
         }
@@ -1336,10 +1344,17 @@ mod tests {
         run_if_empty(&conn).unwrap();
 
         for table in BUSINESS_DATA_TABLES {
-            assert_eq!(count(&conn, table), 0, "{table} must be empty after the official seed");
+            assert_eq!(
+                count(&conn, table),
+                0,
+                "{table} must be empty after the official seed"
+            );
         }
         // The baseline that legitimately DOES exist.
-        assert!(count(&conn, "products") > 0, "the official catalog is official data");
+        assert!(
+            count(&conn, "products") > 0,
+            "the official catalog is official data"
+        );
         assert_eq!(count(&conn, "cafe_tables"), 12);
         assert_eq!(count(&conn, "users"), DEFAULT_USERS.len() as i64);
     }
@@ -1590,7 +1605,6 @@ mod tests {
         );
     }
 
-
     /// An existing employee is never promoted by re-running the seed.
     ///
     /// The seed inserts by name and is a no-op on a conflict, so a person the
@@ -1606,7 +1620,9 @@ mod tests {
 
         // The café demotes a starter manager to an ordinary cashier.
         let user_id: i64 = conn
-            .query_row("SELECT id FROM users WHERE name = 'amira'", [], |r| r.get(0))
+            .query_row("SELECT id FROM users WHERE name = 'amira'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         conn.execute("UPDATE users SET role = 'STAFF' WHERE id = ?1", [user_id])
             .unwrap();
@@ -1617,7 +1633,9 @@ mod tests {
         run_if_empty(&conn).unwrap();
 
         let role: String = conn
-            .query_row("SELECT role FROM users WHERE id = ?1", [user_id], |r| r.get(0))
+            .query_row("SELECT role FROM users WHERE id = ?1", [user_id], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(
             role, "STAFF",
@@ -1655,15 +1673,21 @@ mod tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(admins, 0, "this test is only meaningful with no admin at all");
+        assert_eq!(
+            admins, 0,
+            "this test is only meaningful with no admin at all"
+        );
 
         // Clear the seeded catalog, then re-run the synchronization an existing
         // installation performs.
         conn.execute("DELETE FROM stock_movements", []).unwrap();
         conn.execute("DELETE FROM inventory_items", []).unwrap();
         conn.execute("DELETE FROM products", []).unwrap();
-        conn.execute("DELETE FROM app_settings WHERE key = ?1", [CATALOG_SEED_MARKER])
-            .unwrap();
+        conn.execute(
+            "DELETE FROM app_settings WHERE key = ?1",
+            [CATALOG_SEED_MARKER],
+        )
+        .unwrap();
 
         run_if_empty(&conn).unwrap();
 

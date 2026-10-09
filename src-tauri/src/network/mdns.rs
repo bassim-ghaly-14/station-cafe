@@ -349,7 +349,12 @@ mod tests {
     fn it_advertises_the_runtime_address_not_a_hardcoded_one() {
         let a = service_info(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)), 47821, "0.1.0").unwrap();
         let b = service_info(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9)), 47821, "0.1.0").unwrap();
-        let one = |i: ServiceInfo| i.get_addresses_v4().into_iter().copied().collect::<Vec<_>>();
+        let one = |i: ServiceInfo| {
+            i.get_addresses_v4()
+                .into_iter()
+                .copied()
+                .collect::<Vec<_>>()
+        };
         assert_eq!(one(a), vec![Ipv4Addr::new(192, 168, 1, 50)]);
         assert_eq!(one(b), vec![Ipv4Addr::new(10, 0, 0, 9)]);
     }
@@ -444,8 +449,22 @@ mod tests {
             info.get_property_val_str("version").unwrap_or_default()
         );
         for forbidden in [
-            "password", "passwd", "token", "secret", "pin", "authorization", "bearer", "user",
-            "customer", "employee", "phone", ".db", "station_cafe", "/Users", "C:\\", "api_key",
+            "password",
+            "passwd",
+            "token",
+            "secret",
+            "pin",
+            "authorization",
+            "bearer",
+            "user",
+            "customer",
+            "employee",
+            "phone",
+            ".db",
+            "station_cafe",
+            "/Users",
+            "C:\\",
+            "api_key",
         ] {
             assert!(
                 !advertised.to_lowercase().contains(forbidden),
@@ -459,7 +478,11 @@ mod tests {
         // A client may see what it is talking to BEFORE it authenticates, so
         // the property set is closed on purpose and asserted as a set.
         let info = info();
-        let keys: Vec<String> = info.get_properties().iter().map(|p| p.key().to_string()).collect();
+        let keys: Vec<String> = info
+            .get_properties()
+            .iter()
+            .map(|p| p.key().to_string())
+            .collect();
         assert_eq!(keys, vec!["version".to_string()]);
         assert_eq!(info.get_property_val_str("version"), Some("0.1.0"));
     }
@@ -654,4 +677,3 @@ mod tests {
         assert_eq!(info().get_hostname(), "station.local.");
     }
 }
-

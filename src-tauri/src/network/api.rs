@@ -366,7 +366,10 @@ pub fn handle(req: &ApiRequest, conn: &crate::repositories::Db) -> Handled {
 /// Known routes, expressed relative to `API_PREFIX` — the same strings the
 /// match above uses, so the 405 arm cannot drift from the 404 arm.
 fn is_known_path(route: &str) -> bool {
-    matches!(route, "/health" | "/auth/login" | "/me" | "/manager/summary")
+    matches!(
+        route,
+        "/health" | "/auth/login" | "/me" | "/manager/summary"
+    )
 }
 
 /// Resolve the session behind a request. Shared by every protected route.

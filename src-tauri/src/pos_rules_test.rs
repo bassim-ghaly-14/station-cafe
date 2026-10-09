@@ -802,8 +802,17 @@ fn service_charge_fixture(conn: &Connection) -> (auth::User, auth::User, i64, i6
     let manager = login(conn, "manager", "2345");
     let staff = login(conn, "cashier", "3456");
     let order_id = open_order(conn, &manager, &staff);
-    pos_svc::add_line(conn, &staff, order_id, cafe_product(conn, "قهوة تركي دبل"), 1).unwrap();
-    let subtotal = pos_svc::preview(conn, order_id, None, None, None).unwrap().subtotal;
+    pos_svc::add_line(
+        conn,
+        &staff,
+        order_id,
+        cafe_product(conn, "قهوة تركي دبل"),
+        1,
+    )
+    .unwrap();
+    let subtotal = pos_svc::preview(conn, order_id, None, None, None)
+        .unwrap()
+        .subtotal;
     (manager, staff, order_id, subtotal)
 }
 
@@ -882,7 +891,11 @@ fn a_custom_service_charge_outside_the_quick_amounts_is_accepted_without_authori
     // NO discount PIN is configured at all in this database, and NO credential
     // is ever sent: the custom service charge must still succeed. The discount
     // path, under exactly these conditions, is refused.
-    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
+    assert!(
+        !settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
 
     let preview = pos_svc::preview(&conn, order_id, None, None, Some(3_700)).unwrap();
     assert_eq!(preview.service_charge_minor, 3_700);

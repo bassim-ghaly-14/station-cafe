@@ -22,9 +22,9 @@
 //! would otherwise enforce, and these tests are what prove the two agree.
 
 use crate::db::migrate;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::error::AppError;
 use crate::repositories::expenses;
-use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::auth::{self, User};
 use crate::services::ops as ops_svc;
 use rusqlite::Connection;

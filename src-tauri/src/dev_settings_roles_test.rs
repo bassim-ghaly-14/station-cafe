@@ -105,8 +105,15 @@ fn a_manager_may_configure_their_allowlisted_settings() {
         settings::get_service_charge(&conn).unwrap().amounts,
         vec![1_000, 2_000]
     );
-    assert_eq!(settings::get_discount_options(&conn).unwrap().amounts, vec![500]);
-    assert!(settings::get_discount_authorization(&conn).unwrap().configured);
+    assert_eq!(
+        settings::get_discount_options(&conn).unwrap().amounts,
+        vec![500]
+    );
+    assert!(
+        settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
     assert_eq!(settings::get_credit_config(&conn).unwrap().mode, "ALL");
     assert_eq!(
         settings::resolve_monthly_target(&conn, "2026-10", settings::RevenueDepartment::Cafe)
@@ -196,9 +203,19 @@ fn a_cashier_may_change_no_dev_setting() {
         settings::get_discount_options(&conn).unwrap().amounts,
         discount_before
     );
-    assert!(!settings::get_discount_authorization(&conn).unwrap().configured);
-    assert_eq!(settings::get_credit_config(&conn).unwrap().enabled, credit_enabled);
-    assert_eq!(settings::get_credit_config(&conn).unwrap().mode, credit_mode);
+    assert!(
+        !settings::get_discount_authorization(&conn)
+            .unwrap()
+            .configured
+    );
+    assert_eq!(
+        settings::get_credit_config(&conn).unwrap().enabled,
+        credit_enabled
+    );
+    assert_eq!(
+        settings::get_credit_config(&conn).unwrap().mode,
+        credit_mode
+    );
     assert_eq!(
         settings::get_monthly_sales_period(&conn).unwrap().months,
         period_before
@@ -247,7 +264,10 @@ fn a_manager_may_not_touch_admin_only_settings() {
     );
 
     // And none of those refusals had a side effect.
-    assert_eq!(settings::get_monthly_sales_period(&conn).unwrap().months, 12);
+    assert_eq!(
+        settings::get_monthly_sales_period(&conn).unwrap().months,
+        12
+    );
     let tables_after: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM cafe_tables WHERE is_active = 1",

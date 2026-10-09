@@ -45,7 +45,10 @@ fn require_manager(
 }
 
 /// Resolve the caller only, without reading configuration.
-fn require_manager_user(state: &State<'_, AppState>, token: &str) -> AppResult<crate::services::auth::User> {
+fn require_manager_user(
+    state: &State<'_, AppState>,
+    token: &str,
+) -> AppResult<crate::services::auth::User> {
     let conn = state
         .conn
         .lock()
@@ -86,11 +89,11 @@ pub fn local_access_qr(
     };
     // Read the LIVE listener address. A `url` is only produced when a listener
     // actually exists, so a stopped service can never be shown as reachable.
-    let running = state
-        .api
-        .lock()
-        .ok()
-        .and_then(|g| g.as_ref().filter(|h| h.is_running()).map(|h| h.local_addr()));
+    let running = state.api.lock().ok().and_then(|g| {
+        g.as_ref()
+            .filter(|h| h.is_running())
+            .map(|h| h.local_addr())
+    });
     let discovery = state.discovery.lock().map(|g| g.is_some()).unwrap_or(false);
 
     crate::network::qr::local_access(&cfg, running, discovery).map_err(AppError::internal)

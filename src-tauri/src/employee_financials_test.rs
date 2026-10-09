@@ -765,9 +765,18 @@ fn card_a_changing_the_period_changes_the_entitlement() {
     let (_, id) = salaried_employee(&conn, "2026-09-01 08:00:00Z");
     set_monthly_salary(&conn, id, EIGHTEEN_HUNDRED);
 
-    assert_eq!(salary(&conn, id, "2026-10-01", "2026-10-31").base_salary, 180_000);
-    assert_eq!(salary(&conn, id, "2026-10-01", "2026-11-30").base_salary, 360_000);
-    assert_eq!(salary(&conn, id, "2026-10-01", "2026-12-31").base_salary, 540_000);
+    assert_eq!(
+        salary(&conn, id, "2026-10-01", "2026-10-31").base_salary,
+        180_000
+    );
+    assert_eq!(
+        salary(&conn, id, "2026-10-01", "2026-11-30").base_salary,
+        360_000
+    );
+    assert_eq!(
+        salary(&conn, id, "2026-10-01", "2026-12-31").base_salary,
+        540_000
+    );
 }
 
 #[test]
@@ -816,7 +825,10 @@ fn card_a_stays_whole_when_only_part_of_it_is_paid() {
     .unwrap();
 
     let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
-    assert_eq!(figures.base_salary, 180_000, "a partial payment never shrinks Card A");
+    assert_eq!(
+        figures.base_salary, 180_000,
+        "a partial payment never shrinks Card A"
+    );
     assert_eq!(figures.salary_paid, 100_000);
 }
 
@@ -835,7 +847,10 @@ fn card_a_is_not_reduced_by_advances_or_deductions() {
     deduct(&conn, &manager, id, 20_000, "2026-10-15");
 
     let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
-    assert_eq!(figures.base_salary, 180_000, "advances/deductions feed net, never Card A");
+    assert_eq!(
+        figures.base_salary, 180_000,
+        "advances/deductions feed net, never Card A"
+    );
     assert_eq!(figures.net_salary, 110_000);
 }
 
@@ -1824,7 +1839,10 @@ fn a_salary_never_records_an_advance() {
 
     // The employee's monthly pay is untouched by the payment they received.
     let figures = salary(&conn, id, "2026-10-01", "2026-10-31");
-    assert_eq!(figures.advances, 0, "net pay must not be charged for a salary");
+    assert_eq!(
+        figures.advances, 0,
+        "net pay must not be charged for a salary"
+    );
     assert_eq!(
         figures.net_salary, figures.base_salary,
         "a salary payment leaves the net formula exactly as it was"
@@ -1851,9 +1869,7 @@ fn an_advance_is_unchanged_by_the_salary_rule() {
     // Both halves exist and are linked 1:1, exactly as before.
     assert_eq!(advance_count(&conn), 1);
     let linked: Option<i64> = conn
-        .query_row("SELECT expense_id FROM employee_advances", [], |r| {
-            r.get(0)
-        })
+        .query_row("SELECT expense_id FROM employee_advances", [], |r| r.get(0))
         .unwrap();
     assert_eq!(linked, Some(expense_id));
 
@@ -1887,7 +1903,10 @@ fn a_salary_for_one_employee_never_appears_under_another() {
 
     let a = salary(&conn, first, "2026-10-01", "2026-10-31");
     let b = salary(&conn, second, "2026-10-01", "2026-10-31");
-    assert_eq!(a.salary_paid, 700_000, "the payment is the first employee's");
+    assert_eq!(
+        a.salary_paid, 700_000,
+        "the payment is the first employee's"
+    );
     assert_eq!(b.salary_paid, 0, "and never leaks onto the second employee");
 
     // Two salaries for the same person in the window sum; a month without one
@@ -1950,10 +1969,7 @@ fn salary_advances_and_deductions_stay_three_separate_figures() {
     assert_eq!(figures.deductions, 50_000, "what was withheld");
     // The net formula is untouched by the salary — still base − advances −
     // deductions, the one shared with the monthly payroll snapshot.
-    assert_eq!(
-        figures.net_salary,
-        figures.base_salary - 100_000 - 50_000
-    );
+    assert_eq!(figures.net_salary, figures.base_salary - 100_000 - 50_000);
 
     // The salary and the advance are real expenses, inside the Expenses totals.
     assert_eq!(expense_total(&conn, "2026-10-01", "2026-10-31"), 800_000);
@@ -2132,7 +2148,10 @@ fn the_upgrade_to_salary_linking_preserves_every_existing_row() {
         .iter()
         .find(|c| c.requires_employee && !c.records_advance)
         .expect("the salary is now employee-linked and is not an advance");
-    assert!(!salary.name_ar.trim().is_empty(), "and still carries its label");
+    assert!(
+        !salary.name_ar.trim().is_empty(),
+        "and still carries its label"
+    );
     assert!(
         categories.iter().filter(|c| c.records_advance).count() == 1,
         "only the advance records a ledger row"

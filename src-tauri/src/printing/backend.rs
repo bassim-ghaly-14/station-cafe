@@ -180,12 +180,14 @@ impl PrinterBackend for WindowsRawBackend {
 
     fn send(&self, bytes: &[u8]) -> AppResult<()> {
         use windows_sys::Win32::Graphics::Printing::{
-            DOC_INFO_1W, EndDocPrinter, EndPagePrinter, OpenPrinterW, PRINTER_HANDLE,
-            StartDocPrinterW, StartPagePrinter, WritePrinter,
+            EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW, StartPagePrinter,
+            WritePrinter, DOC_INFO_1W, PRINTER_HANDLE,
         };
 
         if bytes.len() > u32::MAX as usize {
-            return Err(AppError::printer("printer.write_failed: document too large"));
+            return Err(AppError::printer(
+                "printer.write_failed: document too large",
+            ));
         }
         let queue = wide(&self.queue);
         // A stable job name so a manager can find the job in the Windows print
@@ -649,4 +651,3 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 }
-

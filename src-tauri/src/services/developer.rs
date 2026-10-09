@@ -19,9 +19,7 @@ fn developer_account() -> AppResult<(&'static str, &'static str)> {
         .iter()
         .find(|(name, ..)| *name == DEVELOPER_USERNAME)
         .map(|(name, _, _, password)| (*name, *password))
-        .ok_or_else(|| {
-            crate::error::AppError::internal("the official seed has no Belly account")
-        })
+        .ok_or_else(|| crate::error::AppError::internal("the official seed has no Belly account"))
 }
 
 pub fn clear_database(conn: &Db, actor: &User) -> AppResult<()> {
@@ -262,7 +260,10 @@ mod tests {
         // exactly the sort of off-by-one that makes a reset look like it
         // duplicated somebody. Derived from the seed list so adding a starter
         // account cannot make this assertion lie.
-        assert_eq!(count(&conn, "users"), crate::seed::DEFAULT_USERS.len() as i64);
+        assert_eq!(
+            count(&conn, "users"),
+            crate::seed::DEFAULT_USERS.len() as i64
+        );
         for name in ["Belly", "amira", "momo", "foly", "Bassam"] {
             let exists: i64 = conn
                 .query_row(
@@ -283,7 +284,10 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            assert_eq!(exists, 0, "{name} is a demo account and must not be re-seeded");
+            assert_eq!(
+                exists, 0,
+                "{name} is a demo account and must not be re-seeded"
+            );
         }
         assert!(count(&conn, "products") > 0);
         assert_eq!(count(&conn, "cafe_tables"), 12);
@@ -540,7 +544,10 @@ mod tests {
                     |row| row.get(0),
                 )
                 .unwrap();
-            assert_eq!(exists, 0, "{name} must never be restored by the official seed");
+            assert_eq!(
+                exists, 0,
+                "{name} must never be restored by the official seed"
+            );
         }
         for table in ["customers", "invoices", "expenses", "attendance_days"] {
             assert_eq!(count(&conn, table), 0, "{table} must stay empty");
@@ -672,12 +679,19 @@ mod tests {
         // OFFICIAL mode: the real starter dataset, with no demo record in it.
         load_official_data(&conn, &owner).unwrap();
         assert_eq!(count(&conn, "cafe_tables"), 12);
-        assert_eq!(count(&conn, "invoices"), 0, "official data has no trading history");
+        assert_eq!(
+            count(&conn, "invoices"),
+            0,
+            "official data has no trading history"
+        );
 
         // DEMO mode: a full dataset on top, and the same session is still an
         // ADMIN afterwards — the reset destroys the session TABLE, not the role.
         load_demo_data(&conn, &owner).unwrap();
-        assert!(count(&conn, "invoices") > 0, "demo data must exercise the reports");
+        assert!(
+            count(&conn, "invoices") > 0,
+            "demo data must exercise the reports"
+        );
 
         // …and the owner account survived the demo reset, still as an ADMIN, so
         // the person can sign straight back in and drive both modes again.

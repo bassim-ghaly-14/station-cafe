@@ -449,46 +449,370 @@ type DemoProduct = (
 /// Café demo items: extra drinks, an inactive discontinued item, and the
 /// consumables the Inventory page needs in order to mean anything.
 const DEMO_CAFE_PRODUCTS: &[DemoProduct] = &[
-    ("موكا كراميل", "PRODUCT", "CAFE", "مشروبات ساخنة", 98, None, 0, true),
-    ("سبانيش لاتيه", "PRODUCT", "CAFE", "مشروبات ساخنة", 88, None, 0, true),
-    ("شاي أخضر", "PRODUCT", "CAFE", "مشروبات ساخنة", 35, None, 0, true),
-    ("نسكافيه جولد", "PRODUCT", "CAFE", "مشروبات ساخنة", 105, None, 0, true),
-    ("كركديه", "PRODUCT", "CAFE", "مشروبات ساخنة", 30, None, 0, true),
-    ("سحلب بالفستق", "PRODUCT", "CAFE", "مشروبات ساخنة", 82, None, 0, true),
-    ("قهوة سادة صغيرة", "PRODUCT", "CAFE", "مشروبات ساخنة", 45, None, 0, true),
-    ("قهوة سادة كبيرة", "PRODUCT", "CAFE", "مشروبات ساخنة", 65, None, 0, true),
-    ("لاتيه كبير", "PRODUCT", "CAFE", "مشروبات ساخنة", 92, None, 0, true),
-    ("كابتشينو كراميل", "PRODUCT", "CAFE", "مشروبات ساخنة", 95, None, 0, true),
-    ("عصير مانجو طازج", "PRODUCT", "CAFE", "عصائر فريشات", 95, None, 0, true),
-    ("ليمون بالنعناع كبير", "PRODUCT", "CAFE", "عصائر فريشات", 90, None, 0, true),
-    ("حليب جهينة 1 لتر", "PRODUCT", "CAFE", "مخزون الكافيه", 65, Some(48), 12, true),
-    ("سكر 1 كجم", "PRODUCT", "CAFE", "مخزون الكافيه", 45, Some(6), 10, true),
-    ("أكواب ورقية", "PRODUCT", "CAFE", "مخزون الكافيه", 55, Some(4), 8, true),
-    ("بسكويت شوكولاتة", "PRODUCT", "CAFE", "ثلاجة", 20, Some(24), 10, true),
-    ("مياه 1.5 لتر", "PRODUCT", "CAFE", "ثلاجة", 15, Some(60), 24, true),
-    ("ريد بول 250 مل", "PRODUCT", "CAFE", "ثلاجة", 90, Some(18), 12, true),
-    ("عصير برتقال معلب", "PRODUCT", "CAFE", "ثلاجة", 25, Some(0), 6, true),
-    ("قهوة ساخنة منتهية", "PRODUCT", "CAFE", "مشروبات ساخنة", 60, None, 0, false),
+    (
+        "موكا كراميل",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        98,
+        None,
+        0,
+        true,
+    ),
+    (
+        "سبانيش لاتيه",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        88,
+        None,
+        0,
+        true,
+    ),
+    (
+        "شاي أخضر",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        35,
+        None,
+        0,
+        true,
+    ),
+    (
+        "نسكافيه جولد",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        105,
+        None,
+        0,
+        true,
+    ),
+    (
+        "كركديه",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        30,
+        None,
+        0,
+        true,
+    ),
+    (
+        "سحلب بالفستق",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        82,
+        None,
+        0,
+        true,
+    ),
+    (
+        "قهوة سادة صغيرة",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        45,
+        None,
+        0,
+        true,
+    ),
+    (
+        "قهوة سادة كبيرة",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        65,
+        None,
+        0,
+        true,
+    ),
+    (
+        "لاتيه كبير",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        92,
+        None,
+        0,
+        true,
+    ),
+    (
+        "كابتشينو كراميل",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        95,
+        None,
+        0,
+        true,
+    ),
+    (
+        "عصير مانجو طازج",
+        "PRODUCT",
+        "CAFE",
+        "عصائر فريشات",
+        95,
+        None,
+        0,
+        true,
+    ),
+    (
+        "ليمون بالنعناع كبير",
+        "PRODUCT",
+        "CAFE",
+        "عصائر فريشات",
+        90,
+        None,
+        0,
+        true,
+    ),
+    (
+        "حليب جهينة 1 لتر",
+        "PRODUCT",
+        "CAFE",
+        "مخزون الكافيه",
+        65,
+        Some(48),
+        12,
+        true,
+    ),
+    (
+        "سكر 1 كجم",
+        "PRODUCT",
+        "CAFE",
+        "مخزون الكافيه",
+        45,
+        Some(6),
+        10,
+        true,
+    ),
+    (
+        "أكواب ورقية",
+        "PRODUCT",
+        "CAFE",
+        "مخزون الكافيه",
+        55,
+        Some(4),
+        8,
+        true,
+    ),
+    (
+        "بسكويت شوكولاتة",
+        "PRODUCT",
+        "CAFE",
+        "ثلاجة",
+        20,
+        Some(24),
+        10,
+        true,
+    ),
+    (
+        "مياه 1.5 لتر",
+        "PRODUCT",
+        "CAFE",
+        "ثلاجة",
+        15,
+        Some(60),
+        24,
+        true,
+    ),
+    (
+        "ريد بول 250 مل",
+        "PRODUCT",
+        "CAFE",
+        "ثلاجة",
+        90,
+        Some(18),
+        12,
+        true,
+    ),
+    (
+        "عصير برتقال معلب",
+        "PRODUCT",
+        "CAFE",
+        "ثلاجة",
+        25,
+        Some(0),
+        6,
+        true,
+    ),
+    (
+        "قهوة ساخنة منتهية",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        60,
+        None,
+        0,
+        false,
+    ),
 ];
 
 /// Wash demo items: more services, tracked consumables, and an inactive one.
 const DEMO_WASH_PRODUCTS: &[DemoProduct] = &[
-    ("غسيل خارجي سيدان", "SERVICE", "WASH", "غسيل السيارات", 95, None, 0, true),
-    ("غسيل خارجي سوزوكي", "SERVICE", "WASH", "غسيل السيارات", 110, None, 0, true),
-    ("تلميع داخلي", "SERVICE", "WASH", "غسيل السيارات", 250, None, 0, true),
-    ("تلميع خارجي", "SERVICE", "WASH", "غسيل السيارات", 300, None, 0, true),
-    ("شمع حماية طبقة واحدة", "SERVICE", "WASH", "غسيل السيارات", 180, None, 0, true),
-    ("شمع حماية طبقتان", "SERVICE", "WASH", "غسيل السيارات", 320, None, 0, true),
-    ("تعقيم الكابينة بالأوزون", "SERVICE", "WASH", "غسيل السيارات", 150, None, 0, true),
-    ("تنظيف المحرك", "SERVICE", "WASH", "غسيل السيارات", 180, None, 0, true),
-    ("مغسلة عجلات", "SERVICE", "WASH", "غسيل السيارات", 200, None, 0, true),
-    ("كوب غسيل", "PRODUCT", "WASH", "ماركت مغسلة", 25, Some(80), 20, true),
-    ("قطعة فوم", "PRODUCT", "WASH", "ماركت مغسلة", 35, Some(3), 10, true),
-    ("شامبو مغسلة 5 لتر", "PRODUCT", "WASH", "ماركت مغسلة", 320, Some(14), 6, true),
-    ("معطر إيري 1 لتر", "PRODUCT", "WASH", "ماركت مغسلة", 150, Some(0), 4, true),
-    ("ستاند إضاءة مغسلة", "PRODUCT", "WASH", "ماركت مغسلة", 900, Some(2), 1, true),
-    ("بريشة تلميع", "PRODUCT", "WASH", "ماركت مغسلة", 45, Some(22), 8, true),
-    ("غسيل بالبخار", "SERVICE", "WASH", "غسيل السيارات", 220, None, 0, false),
+    (
+        "غسيل خارجي سيدان",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        95,
+        None,
+        0,
+        true,
+    ),
+    (
+        "غسيل خارجي سوزوكي",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        110,
+        None,
+        0,
+        true,
+    ),
+    (
+        "تلميع داخلي",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        250,
+        None,
+        0,
+        true,
+    ),
+    (
+        "تلميع خارجي",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        300,
+        None,
+        0,
+        true,
+    ),
+    (
+        "شمع حماية طبقة واحدة",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        180,
+        None,
+        0,
+        true,
+    ),
+    (
+        "شمع حماية طبقتان",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        320,
+        None,
+        0,
+        true,
+    ),
+    (
+        "تعقيم الكابينة بالأوزون",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        150,
+        None,
+        0,
+        true,
+    ),
+    (
+        "تنظيف المحرك",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        180,
+        None,
+        0,
+        true,
+    ),
+    (
+        "مغسلة عجلات",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        200,
+        None,
+        0,
+        true,
+    ),
+    (
+        "كوب غسيل",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        25,
+        Some(80),
+        20,
+        true,
+    ),
+    (
+        "قطعة فوم",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        35,
+        Some(3),
+        10,
+        true,
+    ),
+    (
+        "شامبو مغسلة 5 لتر",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        320,
+        Some(14),
+        6,
+        true,
+    ),
+    (
+        "معطر إيري 1 لتر",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        150,
+        Some(0),
+        4,
+        true,
+    ),
+    (
+        "ستاند إضاءة مغسلة",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        900,
+        Some(2),
+        1,
+        true,
+    ),
+    (
+        "بريشة تلميع",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        45,
+        Some(22),
+        8,
+        true,
+    ),
+    (
+        "غسيل بالبخار",
+        "SERVICE",
+        "WASH",
+        "غسيل السيارات",
+        220,
+        None,
+        0,
+        false,
+    ),
 ];
 
 /// Insert the demo catalog on top of the official one.
@@ -539,10 +863,7 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                         // A couple of the café additions are flagged as RECENT, so
                         // the catalog's "new" marker — which is persisted
                         // independently of `is_active` — has something to show.
-                        is_new: matches!(
-                            *name,
-                            "موكا كراميل" | "سبانيش لاتيه" | "نسكافيه جولد"
-                        ),
+                        is_new: matches!(*name, "موكا كراميل" | "سبانيش لاتيه" | "نسكافيه جولد"),
                         user_id: actor_id,
                     },
                 )?,
@@ -591,7 +912,12 @@ const DEMO_CUSTOMERS: &[(&str, Option<&str>, Option<&str>, &[(&str, &str)])] = &
         Some("اشتراك شهري"),
         &[("م ن س 6677", "Fiat Fiore")],
     ),
-    ("سارة حسن", Some("01266778899"), None, &[("ص ق ر 7788", "Kia Cerato")]),
+    (
+        "سارة حسن",
+        Some("01266778899"),
+        None,
+        &[("ص ق ر 7788", "Kia Cerato")],
+    ),
     (
         "عمرو فتحي",
         Some("01077665544"),
@@ -599,7 +925,12 @@ const DEMO_CUSTOMERS: &[(&str, Option<&str>, Option<&str>, &[(&str, &str)])] = &
         &[("ت ث ج 5544", "MG5")],
     ),
     ("هدى جمال", None, Some("زبونة نقدية فقط"), &[]),
-    ("ياسر نبيل", Some("01188776655"), None, &[("خ ز ح 3322", "Peugeot 301")]),
+    (
+        "ياسر نبيل",
+        Some("01188776655"),
+        None,
+        &[("خ ز ح 3322", "Peugeot 301")],
+    ),
     ("عميل عابر", None, None, &[]),
 ];
 
@@ -727,12 +1058,16 @@ struct Line {
 
 /// How an order is settled.
 enum Settlement {
-    Cash { received: i64 },
+    Cash {
+        received: i64,
+    },
     Card,
     Credit,
     /// A part payment now and the remainder later: the real `PARTIALLY_PAID`
     /// lifecycle, not an invented one.
-    PartPaid { first: i64 },
+    PartPaid {
+        first: i64,
+    },
 }
 
 /// Insert an OPEN business day carrying a historical calendar label.
@@ -753,7 +1088,13 @@ fn historical_day(conn: &Db, date: &str, opened_by: i64) -> AppResult<i64> {
 /// Close a business day the way `services::shifts::close_day` does: the totals
 /// and the snapshot come from the shared reconciliation aggregation, so a demo
 /// day is indistinguishable from a real one to every report.
-fn close_day(conn: &Db, day_id: i64, date: &str, shift_ids: &[i64], closed_by: i64) -> AppResult<()> {
+fn close_day(
+    conn: &Db,
+    day_id: i64,
+    date: &str,
+    shift_ids: &[i64],
+    closed_by: i64,
+) -> AppResult<()> {
     let mut rows: Vec<ShiftRow> = Vec::new();
     for id in shift_ids {
         if let Some(row) = shifts::get_shift(conn, *id)? {
@@ -813,7 +1154,16 @@ fn close_day(conn: &Db, day_id: i64, date: &str, shift_ids: &[i64], closed_by: i
 /// The priced result of an order:
 /// `(subtotal, discount_mode, discount_value, discount_minor, service_charge,
 ///   cafe_total, wash_total, total)`
-type Priced = (i64, Option<&'static str>, Option<i64>, i64, i64, i64, i64, i64);
+type Priced = (
+    i64,
+    Option<&'static str>,
+    Option<i64>,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+);
 
 /// Compute the money of an order.
 ///
@@ -839,7 +1189,9 @@ fn price_order(conn: &Db, lines: &[Line], rng: &mut Rng) -> AppResult<Priced> {
     let options = settings::get_discount_options(conn)?.amounts;
     let discount_minor = if subtotal > 0 && rng.chance(12) {
         match options.iter().find(|amount| **amount < subtotal) {
-            Some(amount) => pos_svc::validate_discount(conn, subtotal, Some("FIXED"), Some(*amount))?,
+            Some(amount) => {
+                pos_svc::validate_discount(conn, subtotal, Some("FIXED"), Some(*amount))?
+            }
             None => 0,
         }
     } else {
@@ -970,8 +1322,16 @@ fn place_order(
         pos::set_waiting_no(conn, order_id, waiting_no)?;
     }
 
-    let (subtotal, discount_mode, discount_value, discount_minor, service_charge, cafe_total, wash_total, total) =
-        price_order(conn, &lines, rng)?;
+    let (
+        subtotal,
+        discount_mode,
+        discount_value,
+        discount_minor,
+        service_charge,
+        cafe_total,
+        wash_total,
+        total,
+    ) = price_order(conn, &lines, rng)?;
     if discount_minor > 0 {
         pos::set_order_discount(conn, order_id, discount_mode, discount_value)?;
     }
@@ -1055,9 +1415,14 @@ fn place_order(
                 model.as_deref(),
             )?;
         }
-        None => {
-            invoices::insert_invoice_customer(conn, invoice_id, NO_CUSTOMER_LABEL, None, None, None)?
-        }
+        None => invoices::insert_invoice_customer(
+            conn,
+            invoice_id,
+            NO_CUSTOMER_LABEL,
+            None,
+            None,
+            None,
+        )?,
     }
 
     // Settlement, through the real ledger writers so status, `paid_amount` and
@@ -1091,7 +1456,15 @@ fn place_order(
             )?;
         }
         Settlement::PartPaid { first } => {
-            invoices::insert_payment(conn, invoice_id, "CASH", first, Some(first), None, cashier.id)?;
+            invoices::insert_payment(
+                conn,
+                invoice_id,
+                "CASH",
+                first,
+                Some(first),
+                None,
+                cashier.id,
+            )?;
             invoices::apply_payment_to_invoice(conn, invoice_id, first)?;
         }
     }
@@ -1508,12 +1881,14 @@ fn seed_payroll(conn: &Db, recorder: &User, employees: &[i64], period: &str) -> 
         )?;
         let (days, absences, leaves, minutes) =
             employee_analytics::month_attendance(conn, *employee, &first, &last)?;
-        let advances = employee_analytics::advances_total_for_month(conn, *employee, &first, &last)?;
+        let advances =
+            employee_analytics::advances_total_for_month(conn, *employee, &first, &last)?;
         // The deduction side of the same period, read from the ledger rather than
         // typed in: `services::employees::compute_net` is `base − advances −
         // deductions`, so a run that reported only the advances would disagree
         // with the salary figure the Employees page shows for the same month.
-        let deductions = employee_analytics::deductions_total(conn, *employee, Some(&first), Some(&last))?;
+        let deductions =
+            employee_analytics::deductions_total(conn, *employee, Some(&first), Some(&last))?;
         let net = base - advances - deductions;
         let id = employee_analytics::insert_run(
             conn,
@@ -1868,8 +2243,16 @@ fn read_catalog(conn: &Db) -> AppResult<(Vec<CatalogItem>, Vec<CatalogItem>)> {
     })?;
     let all: Vec<CatalogItem> = rows.collect::<Result<Vec<_>, _>>()?;
 
-    let cafe: Vec<CatalogItem> = all.iter().filter(|p| p.department == "CAFE").cloned().collect();
-    let wash: Vec<CatalogItem> = all.iter().filter(|p| p.department == "WASH").cloned().collect();
+    let cafe: Vec<CatalogItem> = all
+        .iter()
+        .filter(|p| p.department == "CAFE")
+        .cloned()
+        .collect();
+    let wash: Vec<CatalogItem> = all
+        .iter()
+        .filter(|p| p.department == "WASH")
+        .cloned()
+        .collect();
     Ok((cafe, wash))
 }
 
@@ -1953,8 +2336,7 @@ fn trade_day(conn: &Db, ctx: &mut Context<'_>, tables: &[i64], date: String) -> 
     let shift_count = ctx.rng.between(1, 2);
     let mut shift_ids = Vec::new();
     for index in 0..shift_count {
-        let cashier =
-            ctx.accounts.cashiers[index as usize % ctx.accounts.cashiers.len()].clone();
+        let cashier = ctx.accounts.cashiers[index as usize % ctx.accounts.cashiers.len()].clone();
         conn.execute(
             "INSERT INTO shifts (business_day_id, user_id, status, opened_at, opening_cash)
              VALUES (?1, ?2, 'ACTIVE', ?3, ?4)",
@@ -2044,12 +2426,7 @@ fn trade_day(conn: &Db, ctx: &mut Context<'_>, tables: &[i64], date: String) -> 
 ///
 /// The open orders stay UNSETTLED. Nothing is broken by that: it is exactly the
 /// state a table is in while its customers are still sitting there.
-fn open_live_day(
-    conn: &Db,
-    ctx: &mut Context<'_>,
-    tables: &[i64],
-    date: &str,
-) -> AppResult<()> {
+fn open_live_day(conn: &Db, ctx: &mut Context<'_>, tables: &[i64], date: &str) -> AppResult<()> {
     let day_id = historical_day(conn, date, ctx.accounts.manager.id)?;
     ctx.day_id = day_id;
 
@@ -2310,16 +2687,20 @@ pub fn load(conn: &Db) -> AppResult<()> {
     // Writing them afterwards would leave the DRAFT run reporting zero advances
     // while the ledger beside it held them — the two screens would disagree.
     seed_linked_money_expenses(conn, &accounts.manager, &employees, today_date)?;
-    seed_advances_and_deductions(conn, &accounts.manager, &employees, today_date, &mut ctx.rng)?;
+    seed_advances_and_deductions(
+        conn,
+        &accounts.manager,
+        &employees,
+        today_date,
+        &mut ctx.rng,
+    )?;
 
     // The window includes the CURRENT month, whose run stays a DRAFT. That is
     // what gives the salary screen both states to show, and it is the only month
     // a deduction may legally be dated in — a deduction inside a FINALIZED
     // month is refused by `services::employees::create_deduction`.
     for month in (0..4).rev() {
-        let period = month_first(today_date, month)
-            .format("%Y-%m")
-            .to_string();
+        let period = month_first(today_date, month).format("%Y-%m").to_string();
         seed_payroll(conn, &accounts.manager, &employees, &period)?;
     }
 
@@ -2434,9 +2815,15 @@ mod tests {
     }
 
     fn login(conn: &Connection, name: &str, password: &str) -> User {
-        auth::login(conn, &LoginInput { name: name.into(), password: password.into() })
-            .unwrap()
-            .user
+        auth::login(
+            conn,
+            &LoginInput {
+                name: name.into(),
+                password: password.into(),
+            },
+        )
+        .unwrap()
+        .user
     }
 
     /// PART 5 — every supported role can actually sign in.
@@ -2516,7 +2903,10 @@ mod tests {
         // Some customers own a car and some do not — the section shows both.
         let with_car = count(&conn, "SELECT COUNT(DISTINCT customer_id) FROM cars");
         let without_car = count(&conn, "SELECT COUNT(*) FROM customers") - with_car;
-        assert!(with_car > 0 && without_car > 0, "both kinds of customer must exist");
+        assert!(
+            with_car > 0 && without_car > 0,
+            "both kinds of customer must exist"
+        );
 
         // Plates are unique (the index would have refused a duplicate anyway).
         assert_eq!(
@@ -2525,10 +2915,12 @@ mod tests {
         );
 
         // Several customers are linked to real invoices.
-        assert!(count(
-            &conn,
-            "SELECT COUNT(DISTINCT customer_id) FROM invoices WHERE customer_id IS NOT NULL"
-        ) > 1);
+        assert!(
+            count(
+                &conn,
+                "SELECT COUNT(DISTINCT customer_id) FROM invoices WHERE customer_id IS NOT NULL"
+            ) > 1
+        );
     }
 
     /// PART 8 — money is real: every invoice reconciles with its own lines,
@@ -2536,7 +2928,10 @@ mod tests {
     #[test]
     fn every_demo_invoice_is_internally_consistent() {
         let conn = demo_db();
-        assert!(count(&conn, "SELECT COUNT(*) FROM invoices") > 100, "a real history is required");
+        assert!(
+            count(&conn, "SELECT COUNT(*) FROM invoices") > 100,
+            "a real history is required"
+        );
 
         // total = subtotal - discount + service_charge, on EVERY invoice.
         assert_eq!(
@@ -2569,8 +2964,17 @@ mod tests {
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM invoices i WHERE NOT EXISTS (SELECT 1 FROM invoice_customers c WHERE c.invoice_id = i.id)"), 0);
 
         // A paid invoice is never over-paid, and no payment is non-positive.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM invoices WHERE paid_amount > total"), 0);
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM payments WHERE amount <= 0"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM invoices WHERE paid_amount > total"
+            ),
+            0
+        );
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM payments WHERE amount <= 0"),
+            0
+        );
     }
 
     /// PART 8 — NO cancelled invoice anywhere.
@@ -2582,7 +2986,10 @@ mod tests {
     fn the_demo_dataset_contains_no_cancelled_documents() {
         let conn = demo_db();
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM invoices WHERE status = 'CANCELLED'"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM invoices WHERE status = 'CANCELLED'"
+            ),
             0,
             "Station has no cancelled invoice; the demo must not invent one"
         );
@@ -2612,13 +3019,19 @@ mod tests {
 
         for method in ["CASH", "CARD", "CREDIT"] {
             assert!(
-                count(&conn, &format!("SELECT COUNT(*) FROM payments WHERE method = '{method}'")) > 0,
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM payments WHERE method = '{method}'")
+                ) > 0,
                 "no {method} payment was generated"
             );
         }
         for order_type in ["TABLE", "TAKEAWAY"] {
             assert!(
-                count(&conn, &format!("SELECT COUNT(*) FROM orders WHERE order_type = '{order_type}'")) > 0,
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM orders WHERE order_type = '{order_type}'")
+                ) > 0,
                 "no {order_type} order was generated"
             );
         }
@@ -2626,7 +3039,10 @@ mod tests {
         // Hybrid documents exist and are counted the way the reports count them:
         // an invoice carrying BOTH a café and a wash line.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM day_closings WHERE hybrid_invoices > 0") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM day_closings WHERE hybrid_invoices > 0"
+            ) > 0,
             "no hybrid (café + wash) document was generated"
         );
     }
@@ -2637,12 +3053,21 @@ mod tests {
         assert!(count(&conn, "SELECT COUNT(*) FROM expenses") > 20);
 
         let categories = count(&conn, "SELECT COUNT(DISTINCT category) FROM expenses");
-        assert!(categories >= 3, "expenses must cover several categories, found {categories}");
+        assert!(
+            categories >= 3,
+            "expenses must cover several categories, found {categories}"
+        );
 
         // Monthly variation: more than one distinct month carries spend, so the
         // monthly expense chart is not a single bar.
-        let months = count(&conn, "SELECT COUNT(DISTINCT strftime('%Y-%m', expense_date)) FROM expenses");
-        assert!(months > 3, "expenses must span several months, found {months}");
+        let months = count(
+            &conn,
+            "SELECT COUNT(DISTINCT strftime('%Y-%m', expense_date)) FROM expenses",
+        );
+        assert!(
+            months > 3,
+            "expenses must span several months, found {months}"
+        );
 
         // Every category still resolves to a real, readable label.
         assert_eq!(
@@ -2651,7 +3076,13 @@ mod tests {
             "every expense category must still be readable"
         );
         // A recurring flag is only legal with a recurrence.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM expenses WHERE is_recurring = 1 AND recurrence IS NULL"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM expenses WHERE is_recurring = 1 AND recurrence IS NULL"
+            ),
+            0
+        );
     }
 
     /// PART 11 — the Inventory page is immediately meaningful, and the stock
@@ -2660,7 +3091,10 @@ mod tests {
     fn inventory_is_populated_and_consistent_with_its_ledger() {
         let conn = demo_db();
 
-        let tracked = count(&conn, "SELECT COUNT(*) FROM products WHERE track_inventory = 1");
+        let tracked = count(
+            &conn,
+            "SELECT COUNT(*) FROM products WHERE track_inventory = 1",
+        );
         assert!(tracked > 5, "the inventory page needs tracked items");
         assert!(count(&conn, "SELECT COUNT(*) FROM inventory_items") > 5);
 
@@ -2678,7 +3112,13 @@ mod tests {
 
         // The ledger and the quantity can never disagree: every movement is
         // attributed, and the movements reason is one the schema allows.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE user_id IS NULL"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM stock_movements WHERE user_id IS NULL"
+            ),
+            0
+        );
         assert_eq!(
             count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason NOT IN ('SALE','PURCHASE','ADJUSTMENT','WASTE','SEED')"),
             0
@@ -2693,16 +3133,28 @@ mod tests {
         // Restocking and breakage are represented, not just opening stock and
         // sales: those are the movements that explain a running quantity.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason = 'PURCHASE'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM stock_movements WHERE reason = 'PURCHASE'"
+            ) > 0,
             "a restock scenario must exist"
         );
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM stock_movements WHERE reason = 'WASTE'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM stock_movements WHERE reason = 'WASTE'"
+            ) > 0,
             "a breakage scenario must exist"
         );
         // No quantity is ever negative, and the running balance still equals the
         // sum of the ledger that produced it.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM inventory_items WHERE quantity < 0"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM inventory_items WHERE quantity < 0"
+            ),
+            0
+        );
         assert_eq!(
             count(
                 &conn,
@@ -2745,10 +3197,15 @@ mod tests {
         // A month with an override SAYS SO, so the UI can state where the number
         // came from instead of inferring it.
         let current = time::current_business_month();
-        let cafe = settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Cafe).unwrap();
-        assert!(cafe.overridden, "the current month should carry a CAFE override");
+        let cafe =
+            settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Cafe).unwrap();
+        assert!(
+            cafe.overridden,
+            "the current month should carry a CAFE override"
+        );
         // …while its WASH side, deliberately not overridden, follows the default.
-        let wash = settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Wash).unwrap();
+        let wash =
+            settings::resolve_monthly_target(&conn, &current, RevenueDepartment::Wash).unwrap();
         assert!(
             !wash.overridden,
             "a cafe-only override must leave WASH on the default"
@@ -2759,7 +3216,10 @@ mod tests {
         let previous = time::previous_business_month(&current).unwrap();
         let wash_previous =
             settings::resolve_monthly_target(&conn, &previous, RevenueDepartment::Wash).unwrap();
-        assert!(wash_previous.overridden, "the previous month overrides WASH");
+        assert!(
+            wash_previous.overridden,
+            "the previous month overrides WASH"
+        );
 
         // The closed set is real: a target exists for the two REVENUE
         // departments only, so no order kind was ever given a target of its own.
@@ -2800,7 +3260,10 @@ mod tests {
             "a deduction must reference a real employee and recorder"
         );
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM employee_deductions WHERE amount <= 0"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employee_deductions WHERE amount <= 0"
+            ),
             0
         );
 
@@ -2808,11 +3271,17 @@ mod tests {
         // them through one expression: a direct ledger entry and an
         // expense-linked one.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NULL") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NULL"
+            ) > 0,
             "a direct advance must exist"
         );
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NOT NULL") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employee_advances WHERE expense_id IS NOT NULL"
+            ) > 0,
             "an expense-linked advance must exist"
         );
         // A linked advance claims a REAL expense, and one expense backs at most
@@ -2881,7 +3350,11 @@ mod tests {
             ("2027-01", "2027-01-31"),
         ] {
             let (first, last) = month_bounds(period);
-            assert_eq!(first, format!("{period}-01"), "{period} must start on the 1st");
+            assert_eq!(
+                first,
+                format!("{period}-01"),
+                "{period} must start on the 1st"
+            );
             assert_eq!(last, expected_last, "{period} must end on its own last day");
             // The window is never inverted, and always contains its own start.
             assert!(first <= last, "{period} produced an inverted window");
@@ -2909,19 +3382,27 @@ mod tests {
         // A payslip carries real money. A roster of zero-salary cashiers used to
         // freeze most runs at zero, which made the whole screen meaningless.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE base_salary > 0")
-                > count(&conn, "SELECT COUNT(*) FROM payroll_runs") / 2,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs WHERE base_salary > 0"
+            ) > count(&conn, "SELECT COUNT(*) FROM payroll_runs") / 2,
             "most employees must be paid a real salary"
         );
 
         // Both run states are visible: older months are FINALIZED, the current
         // month is still a DRAFT.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE status = 'DRAFT'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs WHERE status = 'DRAFT'"
+            ) > 0,
             "the current month's run must remain a DRAFT"
         );
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE status = 'FINALIZED'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs WHERE status = 'FINALIZED'"
+            ) > 0,
             "older months must be finalized"
         );
 
@@ -2929,11 +3410,17 @@ mod tests {
         // figures: a payroll row reading zero advances while the advance ledger
         // beside it holds them is the ordering bug this assertion exists for.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE advances > 0") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs WHERE advances > 0"
+            ) > 0,
             "a run must reflect the advances taken in its own month"
         );
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM payroll_runs WHERE deductions > 0") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM payroll_runs WHERE deductions > 0"
+            ) > 0,
             "a run must reflect the deductions withheld in its own month"
         );
         // The current DRAFT month agrees with the LIVE ledgers for that month,
@@ -2996,7 +3483,10 @@ mod tests {
         // Salaries were actually PAID, read from the expense side, and a salary
         // paid by transfer never moved a drawer.
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM expenses WHERE category = 'SALARY'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM expenses WHERE category = 'SALARY'"
+            ) > 0,
             "a paid salary must exist as an expense"
         );
         assert_eq!(
@@ -3034,14 +3524,20 @@ mod tests {
             );
         }
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM credit_accounts WHERE status = 'PAID'"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM credit_accounts WHERE status = 'PAID'"
+            ),
             0,
             "a fully settled account would break re-opening credit for that customer"
         );
 
         // The arithmetic: never overpaid, and the status follows the money.
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM credit_accounts WHERE paid_total > original_total"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM credit_accounts WHERE paid_total > original_total"
+            ),
             0,
             "an account must never be settled beyond what it owes"
         );
@@ -3085,7 +3581,12 @@ mod tests {
     #[test]
     fn the_demo_catalog_has_active_and_inactive_items() {
         let conn = demo_db();
-        assert!(count(&conn, "SELECT COUNT(*) FROM products WHERE is_active = 0 AND is_seed = 0") > 0);
+        assert!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM products WHERE is_active = 0 AND is_seed = 0"
+            ) > 0
+        );
 
         assert!(count(&conn, "SELECT COUNT(*) FROM products WHERE is_active = 1") > 50);
 
@@ -3117,7 +3618,10 @@ mod tests {
         // All three states are represented.
         for state in ["PRESENT", "ABSENT", "LEAVE"] {
             assert!(
-                count(&conn, &format!("SELECT COUNT(*) FROM attendance_days WHERE state = '{state}'")) > 0,
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM attendance_days WHERE state = '{state}'")
+                ) > 0,
                 "no {state} attendance day was generated"
             );
         }
@@ -3132,7 +3636,13 @@ mod tests {
 
         // Every day was recorded by a real login — necessary for a wash worker,
         // who has none of his own.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM attendance_days WHERE recorded_by_user_id IS NULL"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM attendance_days WHERE recorded_by_user_id IS NULL"
+            ),
+            0
+        );
 
         // At most one live record per employee per day.
         assert_eq!(
@@ -3192,7 +3702,10 @@ mod tests {
             ) > 0
         );
         assert!(
-            count(&conn, "SELECT COUNT(*) FROM employees WHERE status = 'INACTIVE'") > 0,
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM employees WHERE status = 'INACTIVE'"
+            ) > 0,
             "no inactive employee, so the inactive filter has nothing to reveal"
         );
 
@@ -3259,7 +3772,10 @@ mod tests {
         let conn = demo_db();
         assert!(count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'CLOSED'") > 50);
         // Exactly ONE shift is left ACTIVE — the live one the POS opens on.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE'"), 1);
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE'"),
+            1
+        );
 
         // expected = opening + cash in - cash out, on every settled shift.
         assert_eq!(
@@ -3278,7 +3794,13 @@ mod tests {
             0
         );
         // An ACTIVE shift never carries a persisted snapshot.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE' AND invoices_count <> 0"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE' AND invoices_count <> 0"
+            ),
+            0
+        );
     }
 
     /// PART 13 — the history spans enough months for the WIDEST monthly chart
@@ -3290,9 +3812,18 @@ mod tests {
         let conn = demo_db();
 
         // At most one open business day, and there is exactly one.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM business_days WHERE status = 'OPEN'"), 1);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM business_days WHERE status = 'OPEN'"
+            ),
+            1
+        );
         // At most one ACTIVE shift, and there is exactly one.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE'"), 1);
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM shifts WHERE status = 'ACTIVE'"),
+            1
+        );
         // The open orders are genuinely open, and each holds lines.
         assert!(count(&conn, "SELECT COUNT(*) FROM orders WHERE status = 'OPEN'") > 0);
         assert_eq!(
@@ -3340,7 +3871,10 @@ mod tests {
         ] {
             assert_eq!(
                 count(&conn, &format!("SELECT COUNT(*) FROM {table}")),
-                count(&conn, &format!("SELECT COUNT(DISTINCT {column}) FROM {table}")),
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(DISTINCT {column}) FROM {table}")
+                ),
                 "{table}.{column} must stay unique"
             );
         }
@@ -3360,8 +3894,14 @@ mod tests {
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .unwrap();
-            assert!(hash.starts_with("$argon2"), "{name} must be Argon2id hashed");
-            assert!(!hash.contains(password), "{name}'s password must not be stored in the clear");
+            assert!(
+                hash.starts_with("$argon2"),
+                "{name} must be Argon2id hashed"
+            );
+            assert!(
+                !hash.contains(password),
+                "{name}'s password must not be stored in the clear"
+            );
             assert_eq!(status, "ACTIVE");
             // The wrong password still fails.
             assert!(auth::login(
@@ -3407,22 +3947,40 @@ mod tests {
                 "customer {customer} settled on credit without being authorized"
             );
             assert!(
-                count(&conn, &format!("SELECT COUNT(*) FROM credit_accounts WHERE customer_id = {customer}")) > 0,
+                count(
+                    &conn,
+                    &format!("SELECT COUNT(*) FROM credit_accounts WHERE customer_id = {customer}")
+                ) > 0,
                 "a credit invoice must have a credit account"
             );
         }
 
         // A credit invoice is invoiced credit, never collected cash.
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM invoices WHERE status = 'CREDIT' AND paid_amount <> 0"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM invoices WHERE status = 'CREDIT' AND paid_amount <> 0"
+            ),
             0
         );
         // An account is never over-paid.
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM credit_accounts WHERE paid_total > original_total"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM credit_accounts WHERE paid_total > original_total"
+            ),
+            0
+        );
 
         // A takeaway order never holds a table, and a table order always does.
         assert_eq!(count(&conn, "SELECT COUNT(*) FROM orders WHERE order_type = 'TAKEAWAY' AND table_id IS NOT NULL"), 0);
-        assert_eq!(count(&conn, "SELECT COUNT(*) FROM orders WHERE order_type = 'TABLE' AND table_id IS NULL"), 0);
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM orders WHERE order_type = 'TABLE' AND table_id IS NULL"
+            ),
+            0
+        );
         // Takeaway numbers are unique per business day.
         assert_eq!(
             count(&conn, "SELECT COUNT(*) FROM orders WHERE takeaway_no IS NOT NULL"),
@@ -3434,7 +3992,6 @@ mod tests {
             0
         );
     }
-
 
     #[test]
     fn the_history_spans_the_widest_configured_monthly_chart_window() {
@@ -3472,25 +4029,41 @@ mod tests {
     #[test]
     fn every_historical_day_has_a_final_closing_snapshot() {
         let conn = demo_db();
-        let closed_days = count(&conn, "SELECT COUNT(*) FROM business_days WHERE status = 'CLOSED'");
-        let closings = count(&conn, "SELECT COUNT(*) FROM day_closings WHERE final_snapshot = 1");
-        assert_eq!(closings, closed_days, "each closed day needs its final snapshot");
+        let closed_days = count(
+            &conn,
+            "SELECT COUNT(*) FROM business_days WHERE status = 'CLOSED'",
+        );
+        let closings = count(
+            &conn,
+            "SELECT COUNT(*) FROM day_closings WHERE final_snapshot = 1",
+        );
+        assert_eq!(
+            closings, closed_days,
+            "each closed day needs its final snapshot"
+        );
 
         // At most one FINAL snapshot per day (the unique index guarantees it, so
         // the counts above already prove it is not exceeded).
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM day_closings WHERE final_snapshot = 1"),
-            count(&conn, "SELECT COUNT(DISTINCT business_day_id) FROM day_closings WHERE final_snapshot = 1")
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM day_closings WHERE final_snapshot = 1"
+            ),
+            count(
+                &conn,
+                "SELECT COUNT(DISTINCT business_day_id) FROM day_closings WHERE final_snapshot = 1"
+            )
         );
 
         // A settled shift belongs to exactly one closing.
         assert_eq!(
             count(&conn, "SELECT COUNT(*) FROM day_closing_shifts"),
-            count(&conn, "SELECT COUNT(DISTINCT shift_id) FROM day_closing_shifts")
+            count(
+                &conn,
+                "SELECT COUNT(DISTINCT shift_id) FROM day_closing_shifts"
+            )
         );
     }
-
-
 
     /// PART 9 — the Wash side is visibly populated and correctly attributed.
     #[test]
@@ -3508,7 +4081,10 @@ mod tests {
         // Waiting numbers are unique per day.
         assert_eq!(
             count(&conn, "SELECT COUNT(*) FROM wash_tickets"),
-            count(&conn, "SELECT COUNT(DISTINCT day_date || '-' || waiting_no) FROM wash_tickets")
+            count(
+                &conn,
+                "SELECT COUNT(DISTINCT day_date || '-' || waiting_no) FROM wash_tickets"
+            )
         );
     }
 }

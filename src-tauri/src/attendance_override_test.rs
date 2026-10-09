@@ -16,10 +16,10 @@
 //! mock. Cairo is UTC+3 in September, so 08:10 at the café is `05:10Z`, and
 //! every fixture is written in that zone.
 use crate::db::migrate;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::error::AppError;
 use crate::repositories::employee_analytics;
 use crate::repositories::employees;
-use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::attendance::{self, AttendanceAction};
 use crate::services::auth::{self, User};
 use crate::services::employees::{self as emp, EmployeeInput};

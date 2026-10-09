@@ -141,8 +141,7 @@ pub fn primary_host(cfg: &NetworkConfig) -> Option<String> {
         }
     }
     // Same classifier the bind uses, so both land on the same interface.
-    crate::network::address::select_lan_address()
-        .map(|ip| crate::network::address::url_host(&ip))
+    crate::network::address::select_lan_address().map(|ip| crate::network::address::url_host(&ip))
 }
 
 /// Render the QR as an SVG document.
@@ -175,13 +174,11 @@ pub fn local_access(
             url: None,
             svg: None,
             api_running: false,
-            error: Some(
-                if cfg.enabled {
-                    crate::network::runtime::ERR_BIND_FAILED.to_string()
-                } else {
-                    crate::network::runtime::ERR_DISABLED.to_string()
-                },
-            ),
+            error: Some(if cfg.enabled {
+                crate::network::runtime::ERR_BIND_FAILED.to_string()
+            } else {
+                crate::network::runtime::ERR_DISABLED.to_string()
+            }),
             port,
             host: None,
             other_hosts: Vec::new(),
@@ -241,14 +238,16 @@ pub fn local_access(
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn the_url_is_protocol_host_port_and_the_app_root() {
-        assert_eq!(access_url("192.168.1.50", 47821), "http://192.168.1.50:47821/");
+        assert_eq!(
+            access_url("192.168.1.50", 47821),
+            "http://192.168.1.50:47821/"
+        );
     }
 
     #[test]
@@ -256,8 +255,14 @@ mod tests {
         // THE change: the QR must land a manager on the login screen. Pointing
         // it at the health probe would show them raw JSON on their phone.
         let url = access_url("192.168.1.50", 47821);
-        assert!(url.ends_with('/'), "the QR must address the app root: {url}");
-        assert!(!url.contains("/api/v1/health"), "no longer a health probe: {url}");
+        assert!(
+            url.ends_with('/'),
+            "the QR must address the app root: {url}"
+        );
+        assert!(
+            !url.contains("/api/v1/health"),
+            "no longer a health probe: {url}"
+        );
         assert!(!url.contains("/api"), "the QR is not an API address: {url}");
     }
 
@@ -297,9 +302,15 @@ mod tests {
             !without_namespace.contains("http://"),
             "the SVG must reference nothing: {svg}"
         );
-        assert!(!without_namespace.contains("https://"), "the SVG must reference nothing: {svg}");
+        assert!(
+            !without_namespace.contains("https://"),
+            "the SVG must reference nothing: {svg}"
+        );
         assert!(!svg.contains("<script"), "no script in an image");
-        assert!(!svg.contains("xlink:href"), "no external reference in an image");
+        assert!(
+            !svg.contains("xlink:href"),
+            "no external reference in an image"
+        );
     }
 
     #[test]
@@ -315,7 +326,10 @@ mod tests {
 
     #[test]
     fn a_hostname_may_be_used_when_discovery_supports_it() {
-        assert_eq!(access_url("station.local", 47821), "http://station.local:47821/");
+        assert_eq!(
+            access_url("station.local", 47821),
+            "http://station.local:47821/"
+        );
     }
 
     #[test]

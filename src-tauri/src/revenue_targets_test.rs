@@ -136,7 +136,9 @@ fn current_progress(conn: &Connection) -> sales_svc::MonthlyTargetProgress {
 
 /// Days in a `YYYY-MM` key, from the rule the backend resolves bounds by.
 fn days_in_month(month: &str) -> u32 {
-    crate::time::business_month_bounds(month).unwrap().1[8..].parse().unwrap()
+    crate::time::business_month_bounds(month).unwrap().1[8..]
+        .parse()
+        .unwrap()
 }
 
 /// Up to `count` business dates ending TODAY, all still inside the current
@@ -543,7 +545,9 @@ fn a_refused_default_leaves_the_stored_one_untouched() {
     .is_err());
 
     assert_eq!(
-        settings::get_revenue_target_defaults(&conn).unwrap().cafe_minor,
+        settings::get_revenue_target_defaults(&conn)
+            .unwrap()
+            .cafe_minor,
         15_000_000
     );
 }
@@ -573,7 +577,14 @@ fn a_refused_override_leaves_the_month_untouched() {
 fn a_malformed_month_is_refused_rather_than_repaired() {
     let conn = fresh();
     // Guessing `2026-1` into `2026-01` would read a month nobody configured.
-    for bad in ["2026-1", "2026-13", "2026/10", "2026-10-01", "أكتوبر 2026", ""] {
+    for bad in [
+        "2026-1",
+        "2026-13",
+        "2026/10",
+        "2026-10-01",
+        "أكتوبر 2026",
+        "",
+    ] {
         assert!(
             settings::set_revenue_target_override(
                 &conn,
@@ -612,7 +623,10 @@ fn cafe_revenue_fills_the_cafe_target_only() {
 
     let progress = current_progress(&conn);
     assert_eq!(progress.cafe.actual_minor, 6_000_000);
-    assert_eq!(progress.wash.actual_minor, 0, "cafe money is not wash money");
+    assert_eq!(
+        progress.wash.actual_minor, 0,
+        "cafe money is not wash money"
+    );
 }
 
 #[test]
@@ -952,7 +966,10 @@ fn revenue_from_last_month_does_not_count_towards_this_month() {
     let progress = current_progress(&conn);
     assert_eq!(progress.cafe.actual_minor, 0, "last month is last month");
     assert!(
-        progress.daily.iter().all(|d| d.day_date.starts_with(&month)),
+        progress
+            .daily
+            .iter()
+            .all(|d| d.day_date.starts_with(&month)),
         "the series describes this month only"
     );
 }

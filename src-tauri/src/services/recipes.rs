@@ -353,7 +353,16 @@ pub fn adjust_material(
     }
     let material = get_material(conn, material_id)?;
     let tx = conn.unchecked_transaction()?;
-    recipes::apply_movement(&tx, material_id, change, "ADJUSTMENT", note, None, None, actor.id)?;
+    recipes::apply_movement(
+        &tx,
+        material_id,
+        change,
+        "ADJUSTMENT",
+        note,
+        None,
+        None,
+        actor.id,
+    )?;
     audit::record(
         &tx,
         Some(actor.id),
@@ -473,16 +482,17 @@ pub fn recipe_cost(conn: &Db, product_id: i64) -> AppResult<RecipeCostView> {
 /// on the product-stock model alone. Batched in two queries (items + balances),
 /// never one per product. Advisory only: checkout revalidates in its own
 /// transaction, so a green tile never guarantees the sale.
-pub fn recipe_availability(
-    conn: &Db,
-    product_ids: &[i64],
-) -> AppResult<Vec<RecipeAvailability>> {
+pub fn recipe_availability(conn: &Db, product_ids: &[i64]) -> AppResult<Vec<RecipeAvailability>> {
     let mut out = Vec::new();
     if product_ids.is_empty() {
         return Ok(out);
     }
     // One query for every recipe row of every requested product.
-    let placeholders = product_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let placeholders = product_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
     let sql = format!(
         "SELECT product_id, raw_material_id, quantity_base
          FROM product_recipe_items WHERE product_id IN ({placeholders})"

@@ -566,9 +566,10 @@ mod tests {
         assert_eq!(is_active, 0);
         assert!(deleted_at.is_some());
 
-        assert!(
-            !catalog::update(&conn, id, "Revived", 1, 100, false, None, None, false, manager.id).unwrap()
-        );
+        assert!(!catalog::update(
+            &conn, id, "Revived", 1, 100, false, None, None, false, manager.id
+        )
+        .unwrap());
 
         let name: String = conn
             .query_row("SELECT name FROM products WHERE id = ?1", [id], |r| {

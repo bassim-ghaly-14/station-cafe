@@ -8,9 +8,7 @@
 use crate::db::migrate;
 use crate::demo_data::seed_for_development as run_if_empty;
 use crate::repositories::{catalog, recipes};
-use crate::services::recipes::{
-    self as recipes_svc, PurchaseInput, RecipeLineInput,
-};
+use crate::services::recipes::{self as recipes_svc, PurchaseInput, RecipeLineInput};
 use crate::services::{auth, checkout, pos as pos_svc, shifts as shift_svc};
 use rusqlite::Connection;
 
@@ -144,7 +142,10 @@ fn base_unit_locked_after_stock_and_after_recipe() {
         },
     )
     .unwrap();
-    assert_eq!(recipes_svc::get_material(&conn, beans).unwrap().name, "حبوب مختصة");
+    assert_eq!(
+        recipes_svc::get_material(&conn, beans).unwrap().name,
+        "حبوب مختصة"
+    );
     assert_eq!(balance(&conn, beans), 500);
 
     let sugar = material(&conn, &m, "سكر", "GRAM");
@@ -276,7 +277,11 @@ fn scenario_c_shared_material_is_summed_across_lines() {
         .iter()
         .filter(|mv| mv.reason == "SALE_CONSUMPTION")
         .collect();
-    assert_eq!(consumption.len(), 1, "shared materials collapse to one movement");
+    assert_eq!(
+        consumption.len(),
+        1,
+        "shared materials collapse to one movement"
+    );
     assert_eq!(consumption[0].change, -54);
 }
 
@@ -314,16 +319,21 @@ fn scenario_d_insufficient_material_blocks_the_whole_sale() {
     // No successful invoice, no movement, and the balance is untouched.
     assert!(result.is_err());
     assert_eq!(balance(&conn, sugar), 5);
-    assert!(
-        recipes::list_movements(&conn, Some(sugar), 50)
-            .unwrap()
-            .iter()
-            .all(|mv| mv.reason != "SALE_CONSUMPTION")
-    );
+    assert!(recipes::list_movements(&conn, Some(sugar), 50)
+        .unwrap()
+        .iter()
+        .all(|mv| mv.reason != "SALE_CONSUMPTION"));
     let open_orders: i64 = conn
-        .query_row("SELECT COUNT(*) FROM orders WHERE status = 'CLOSED'", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM orders WHERE status = 'CLOSED'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert_eq!(open_orders, 0, "no order reaches CLOSED on a failed checkout");
+    assert_eq!(
+        open_orders, 0,
+        "no order reaches CLOSED on a failed checkout"
+    );
 }
 
 /// Scenario E — a tracked product with NO recipe sells on product stock alone.
@@ -402,13 +412,7 @@ fn scenario_f_untracked_product_has_no_recipe_surface() {
     .unwrap();
 
     // The gate: a recipe can never be attached to an untracked item.
-    assert!(recipes_svc::set_recipe(
-        &conn,
-        &m,
-        service_id,
-        &recipe_lines(&[(sugar, 10)])
-    )
-    .is_err());
+    assert!(recipes_svc::set_recipe(&conn, &m, service_id, &recipe_lines(&[(sugar, 10)])).is_err());
 
     // The payload is honest about it, so the UI shows no recipe affordance.
     let item = catalog::get(&conn, service_id).unwrap().unwrap();
@@ -490,7 +494,9 @@ fn a_purchase_unit_must_match_the_material_family() {
     );
     assert!(result.is_err());
     assert_eq!(balance(&conn, milk), 0);
-    assert!(recipes::list_movements(&conn, Some(milk), 10).unwrap().is_empty());
+    assert!(recipes::list_movements(&conn, Some(milk), 10)
+        .unwrap()
+        .is_empty());
     let expenses_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM expenses", [], |r| r.get(0))
         .unwrap();
@@ -567,14 +573,30 @@ fn scenario_j_one_material_serves_many_recipes_independently() {
     recipes_svc::set_recipe(&conn, &m, iced, &recipe_lines(&[(sugar, 15)])).unwrap();
 
     // Each recipe keeps its OWN quantity — independent rows, no coupling.
-    assert_eq!(recipes::get_recipe(&conn, coffee).unwrap()[0].quantity_base, 12);
-    assert_eq!(recipes::get_recipe(&conn, tea).unwrap()[0].quantity_base, 10);
-    assert_eq!(recipes::get_recipe(&conn, juice).unwrap()[0].quantity_base, 20);
-    assert_eq!(recipes::get_recipe(&conn, iced).unwrap()[0].quantity_base, 15);
+    assert_eq!(
+        recipes::get_recipe(&conn, coffee).unwrap()[0].quantity_base,
+        12
+    );
+    assert_eq!(
+        recipes::get_recipe(&conn, tea).unwrap()[0].quantity_base,
+        10
+    );
+    assert_eq!(
+        recipes::get_recipe(&conn, juice).unwrap()[0].quantity_base,
+        20
+    );
+    assert_eq!(
+        recipes::get_recipe(&conn, iced).unwrap()[0].quantity_base,
+        15
+    );
 
     // One sale mixing all four sums the shared material:
     // 1(12) + 2(10) + 1(20) + 3(15) = 12 + 20 + 20 + 45 = 97 g.
-    sale(&conn, &staff, &[(coffee, 1), (tea, 2), (juice, 1), (iced, 3)]);
+    sale(
+        &conn,
+        &staff,
+        &[(coffee, 1), (tea, 2), (juice, 1), (iced, 3)],
+    );
     assert_eq!(balance(&conn, sugar), 9_903);
 }
 
@@ -635,7 +657,10 @@ fn quantity_overflow_fails_closed_without_partial_writes() {
     );
     assert!(recipes::get_recipe(&conn, coffee).unwrap().is_empty());
     recipes_svc::set_recipe(&conn, &m, coffee, &recipe_lines(&[(sugar, 5)])).unwrap();
-    assert_eq!(recipes::get_recipe(&conn, coffee).unwrap()[0].quantity_base, 5);
+    assert_eq!(
+        recipes::get_recipe(&conn, coffee).unwrap()[0].quantity_base,
+        5
+    );
 }
 
 /// STAFF cannot invoke manager-only mutations: the service gate is
@@ -646,38 +671,32 @@ fn staff_is_forbidden_from_raw_material_mutations() {
     let m = manager(&conn);
     let staff = login(&conn, "momo", "11111");
     let beans = material(&conn, &m, "حبوب", "GRAM");
-    assert!(
-        recipes_svc::create_material(
-            &conn,
-            &staff,
-            &recipes::NewMaterial {
-                name: "x".into(),
-                department: "CAFE".into(),
-                base_unit: "GRAM".into()
-            }
-        )
-        .is_err()
-    );
-    assert!(
-        recipes_svc::purchase_material(
-            &conn,
-            &staff,
-            &PurchaseInput {
-                raw_material_id: beans,
-                quantity: 1,
-                purchase_unit: "GRAM".into(),
-                total_cost_minor: 100,
-                note: None,
-            }
-        )
-        .is_err()
-    );
+    assert!(recipes_svc::create_material(
+        &conn,
+        &staff,
+        &recipes::NewMaterial {
+            name: "x".into(),
+            department: "CAFE".into(),
+            base_unit: "GRAM".into()
+        }
+    )
+    .is_err());
+    assert!(recipes_svc::purchase_material(
+        &conn,
+        &staff,
+        &PurchaseInput {
+            raw_material_id: beans,
+            quantity: 1,
+            purchase_unit: "GRAM".into(),
+            total_cost_minor: 100,
+            note: None,
+        }
+    )
+    .is_err());
     assert!(recipes_svc::adjust_material(&conn, &staff, beans, 5, None).is_err());
     assert!(recipes_svc::waste_material(&conn, &staff, beans, 1, None).is_err());
     let coffee = tracked_product(&conn, "قهوة");
-    assert!(
-        recipes_svc::set_recipe(&conn, &staff, coffee, &recipe_lines(&[(beans, 1)])).is_err()
-    );
+    assert!(recipes_svc::set_recipe(&conn, &staff, coffee, &recipe_lines(&[(beans, 1)])).is_err());
     assert_eq!(balance(&conn, beans), 0);
 }
 
@@ -693,8 +712,7 @@ fn recipe_availability_batches_without_touching_stock() {
     let plain = tracked_product(&conn, "سادة");
     recipes_svc::set_recipe(&conn, &m, coffee, &recipe_lines(&[(sugar, 10)])).unwrap();
     recipes_svc::set_recipe(&conn, &m, tea, &recipe_lines(&[(sugar, 20)])).unwrap();
-    let rows =
-        recipes_svc::recipe_availability(&conn, &[coffee, tea, plain, 999_999]).unwrap();
+    let rows = recipes_svc::recipe_availability(&conn, &[coffee, tea, plain, 999_999]).unwrap();
     let by_id: std::collections::HashMap<i64, bool> =
         rows.iter().map(|r| (r.product_id, r.available)).collect();
     assert_eq!(by_id.get(&coffee), Some(&true));
@@ -708,11 +726,14 @@ fn recipe_availability_batches_without_touching_stock() {
 #[test]
 fn developer_reset_clears_recipe_tables_child_first() {
     use crate::repositories::developer::APPLICATION_DATA_TABLES;
-    let pos = |t: &str| APPLICATION_DATA_TABLES.iter().position(|x| *x == t).unwrap();
+    let pos = |t: &str| {
+        APPLICATION_DATA_TABLES
+            .iter()
+            .position(|x| *x == t)
+            .unwrap()
+    };
     assert!(pos("raw_material_movements") < pos("raw_materials"));
     assert!(pos("product_recipe_items") < pos("products"));
     assert!(pos("raw_material_movements") < pos("expenses"));
     assert!(pos("raw_material_movements") < pos("invoices"));
 }
-
-

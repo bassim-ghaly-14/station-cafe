@@ -244,7 +244,6 @@ fn serve_forever(
     }
 }
 
-
 /// Translate an HTTP request into a response.
 ///
 /// Three surfaces, in this order, and never overlapping:
@@ -308,7 +307,9 @@ fn respond(
 /// a traversal attempt, an empty name or an encoded separator can never be
 /// forwarded as a command to look up.
 pub fn command_name(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix(API_PREFIX)?.strip_prefix(super::bridge::CMD_PREFIX)?;
+    let rest = path
+        .strip_prefix(API_PREFIX)?
+        .strip_prefix(super::bridge::CMD_PREFIX)?;
     let name = rest.strip_prefix('/')?;
     if name.is_empty()
         || !name
@@ -650,7 +651,10 @@ fn parse(request: &mut tiny_http::Request) -> Result<ApiRequest, ApiError> {
 fn json_response(status: u16, body: &serde_json::Value) -> ResponseBox {
     let text = body.to_string();
     let mut response = Response::from_string(text).with_status_code(status);
-    if let Ok(h) = Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..]) {
+    if let Ok(h) = Header::from_bytes(
+        &b"Content-Type"[..],
+        &b"application/json; charset=utf-8"[..],
+    ) {
         response.add_header(h);
     }
     // Defence in depth: a POS must not be framed or content-sniffed by a

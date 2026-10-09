@@ -137,37 +137,25 @@ mod runtime_tests {
         let s = state(Arc::clone(&conn));
         let port = free_port();
 
-        let off = runtime::save_and_apply(
-            &s,
-            &manager_session(&conn),
-            &NetworkConfig::default(),
-        )
-        .unwrap();
+        let off = runtime::save_and_apply(&s, &manager_session(&conn), &NetworkConfig::default())
+            .unwrap();
         assert!(!off.running);
 
         let on =
-            runtime::save_and_apply(&s, &manager_session(&conn), &enabled_on_lan(port))
-                .unwrap();
+            runtime::save_and_apply(&s, &manager_session(&conn), &enabled_on_lan(port)).unwrap();
         assert!(on.running, "enabling must actually start it");
         let bound = on.address.expect("a bound address");
 
-        let off_again = runtime::save_and_apply(
-            &s,
-            &manager_session(&conn),
-            &NetworkConfig::default(),
-        )
-        .unwrap();
+        let off_again =
+            runtime::save_and_apply(&s, &manager_session(&conn), &NetworkConfig::default())
+                .unwrap();
         assert!(!off_again.running, "disabling must stop it");
 
         // The port is genuinely released, so the same port can be reused.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut rebound = None;
         while std::time::Instant::now() < deadline {
-            match runtime::save_and_apply(
-                &s,
-                &manager_session(&conn),
-                &enabled_on_lan(port),
-            ) {
+            match runtime::save_and_apply(&s, &manager_session(&conn), &enabled_on_lan(port)) {
                 Ok(status) if status.running => {
                     rebound = Some(status);
                     break;
@@ -262,7 +250,11 @@ mod runtime_tests {
             )?;
             let mut raw = String::new();
             stream.read_to_string(&mut raw)?;
-            let code = raw.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+            let code = raw
+                .split_whitespace()
+                .nth(1)
+                .and_then(|c| c.parse().ok())
+                .unwrap_or(0);
             Ok((code, raw))
         };
 
@@ -318,7 +310,6 @@ mod runtime_tests {
         assert_eq!(DEFAULT_PORT, 47821);
     }
 }
-
 
 use crate::network::api::{self, ApiRequest};
 use crate::services::auth;
@@ -383,8 +374,8 @@ fn login_token(conn: &rusqlite::Connection, name: &str) -> String {
         &auth::LoginInput {
             name: name.into(),
             password: crate::demo_data::demo_password_of(name)
-                    .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
-                    .into(),
+                .unwrap_or_else(|| panic!("{name} is not a seeded demo account"))
+                .into(),
         },
     )
     .unwrap()
@@ -413,7 +404,14 @@ fn health_leaks_no_path_no_data_and_no_counts() {
     let conn = fresh();
     let out = api::handle(&req("GET", "/health"), &conn).unwrap();
     let text = out.body.to_string();
-    for leak in [".db", "station_cafe", "password", "customer", "invoice", "SELECT"] {
+    for leak in [
+        ".db",
+        "station_cafe",
+        "password",
+        "customer",
+        "invoice",
+        "SELECT",
+    ] {
         assert!(!text.contains(leak), "health leaked {leak}: {text}");
     }
     let obj = out.body.as_object().unwrap();
@@ -461,7 +459,12 @@ fn an_admin_is_accepted_on_every_protected_route() {
     let conn = fresh();
     let token = login_token(&conn, "admin");
     for path in ["/me", "/manager/summary"] {
-        assert_eq!(api::handle(&with_token(req("GET", path), &token), &conn).unwrap().status, 200);
+        assert_eq!(
+            api::handle(&with_token(req("GET", path), &token), &conn)
+                .unwrap()
+                .status,
+            200
+        );
     }
 }
 
@@ -491,14 +494,21 @@ fn the_identity_response_carries_no_phone_and_no_hash() {
 
 // ---- token handling -----------------------------------------------------
 
-
 // ---- error boundary -----------------------------------------------------
 
 #[test]
 fn an_unknown_path_is_404_and_a_known_path_wrong_verb_is_405() {
     let conn = fresh();
-    assert_eq!(api::handle(&req("GET", "/nope"), &conn).unwrap_err().status, 404);
-    assert_eq!(api::handle(&req("POST", "/health"), &conn).unwrap_err().status, 405);
+    assert_eq!(
+        api::handle(&req("GET", "/nope"), &conn).unwrap_err().status,
+        404
+    );
+    assert_eq!(
+        api::handle(&req("POST", "/health"), &conn)
+            .unwrap_err()
+            .status,
+        405
+    );
 }
 
 #[test]
@@ -547,7 +557,12 @@ fn login_returns_a_usable_token_and_safe_identity() {
 
     // The token it hands out really works on a protected route.
     let token = out.body["token"].as_str().unwrap().to_string();
-    assert_eq!(api::handle(&with_token(req("GET", "/me"), &token), &conn).unwrap().status, 200);
+    assert_eq!(
+        api::handle(&with_token(req("GET", "/me"), &token), &conn)
+            .unwrap()
+            .status,
+        200
+    );
 }
 
 #[test]
@@ -572,7 +587,10 @@ fn a_network_login_uses_the_shared_session_table_and_is_audited() {
             |r| r.get(0),
         )
         .unwrap();
-    assert!(audited >= 1, "a network login must be audited like any other");
+    assert!(
+        audited >= 1,
+        "a network login must be audited like any other"
+    );
 }
 
 #[test]
@@ -588,7 +606,10 @@ fn repeated_failed_logins_are_throttled() {
         r
     };
     for _ in 0..10 {
-        assert_eq!(api::handle(&attempt("wrong"), &conn).unwrap_err().status, 401);
+        assert_eq!(
+            api::handle(&attempt("wrong"), &conn).unwrap_err().status,
+            401
+        );
     }
     // The next attempt in the window is refused before any password is checked.
     assert_eq!(
@@ -621,7 +642,12 @@ fn a_correct_login_is_never_locked_out_by_earlier_typos() {
 
 #[test]
 fn a_literal_bind_address_is_used_verbatim() {
-    assert_eq!(api::resolve_bind_address("192.168.1.50").unwrap().to_string(), "192.168.1.50");
+    assert_eq!(
+        api::resolve_bind_address("192.168.1.50")
+            .unwrap()
+            .to_string(),
+        "192.168.1.50"
+    );
 }
 
 #[test]
@@ -708,7 +734,11 @@ fn a_bearer_token_authorizes_a_real_socket_request() {
     let handle = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
 
     let token = login_token(&conn.lock().unwrap(), "manager");
-    let (status, raw) = http_get(handle.local_addr(), "/api/v1/me", Some(&format!("Bearer {token}")));
+    let (status, raw) = http_get(
+        handle.local_addr(),
+        "/api/v1/me",
+        Some(&format!("Bearer {token}")),
+    );
     assert_eq!(status, 200, "{raw}");
     assert!(raw.contains("MANAGER"), "{raw}");
 
@@ -723,7 +753,10 @@ fn stopping_the_server_releases_the_port() {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
     let handle = crate::network::server::start_api_only(addr, conn.clone()).expect("start");
     let bound = handle.local_addr();
-    assert!(std::net::TcpStream::connect(bound).is_ok(), "must be listening");
+    assert!(
+        std::net::TcpStream::connect(bound).is_ok(),
+        "must be listening"
+    );
 
     handle.stop();
     assert!(!handle.is_running());
@@ -804,7 +837,6 @@ fn an_error_response_never_echoes_the_token() {
     .to_string();
     assert!(!rendered.contains(secret), "token echoed: {rendered}");
 }
-
 
 #[test]
 fn a_revoked_token_is_401() {
@@ -997,7 +1029,13 @@ mod web_tests {
     #[test]
     fn the_api_namespace_is_decided_by_one_prefix_test() {
         use crate::network::server::command_name;
-        for path in ["/api/v10/health", "/api/v", "/apixyz", "/", "/assets/app.js"] {
+        for path in [
+            "/api/v10/health",
+            "/api/v",
+            "/apixyz",
+            "/",
+            "/assets/app.js",
+        ] {
             assert!(!web::is_api_path(path), "{path} must not be an API path");
             assert!(command_name(path).is_none(), "{path} must not be a command");
         }
@@ -1118,7 +1156,10 @@ mod web_tests {
         let token = login(&conn, "manager");
 
         let (status, raw) = get(addr, &format!("/api/v1/cmd/me?token={token}"), None);
-        assert_ne!(status, 200, "a token in the URL must never authorize: {raw}");
+        assert_ne!(
+            status, 200,
+            "a token in the URL must never authorize: {raw}"
+        );
 
         handle.stop();
     }
@@ -1137,7 +1178,10 @@ mod web_tests {
             r#"{"category_id":999999}"#,
         );
         assert_ne!(status, 200, "{raw}");
-        assert!(!raw.contains(&token), "the token leaked into the error: {raw}");
+        assert!(
+            !raw.contains(&token),
+            "the token leaked into the error: {raw}"
+        );
 
         handle.stop();
     }
@@ -1209,7 +1253,8 @@ mod web_tests {
 
     /// A GET over a real socket, returning the status and the whole response.
     fn get(addr: SocketAddr, path: &str, header: Option<&str>) -> (u16, String) {
-        let mut request = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n");
+        let mut request =
+            format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n");
         if let Some(h) = header {
             request.push_str(&format!("Authorization: {h}\r\n"));
         }
@@ -1348,13 +1393,16 @@ mod qr_access_tests {
         // demands MANAGER — the same `require_role` it always used.
         let conn = fresh();
         let staff = auth::require_user(&conn, &token_for(&conn, "cashier")).unwrap();
-        let err =
-            crate::network::config::set(&conn, &staff, &crate::network::config::NetworkConfig {
+        let err = crate::network::config::set(
+            &conn,
+            &staff,
+            &crate::network::config::NetworkConfig {
                 enabled: true,
                 bind: crate::network::config::LAN_INTERFACE.to_string(),
                 port: crate::network::config::DEFAULT_PORT,
-            })
-            .unwrap_err();
+            },
+        )
+        .unwrap_err();
         assert!(
             matches!(err, AppError::Unauthorized(_)),
             "STAFF must not activate the service, got {err:?}"

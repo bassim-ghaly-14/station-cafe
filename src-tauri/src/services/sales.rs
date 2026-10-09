@@ -224,10 +224,7 @@ pub(crate) fn percentage_hundredths(hundredths: Option<i64>) -> Option<String> {
 }
 
 /// One department's figures, from its resolved target and its achieved revenue.
-fn department_progress(
-    target: settings::MonthlyTarget,
-    actual: i64,
-) -> DepartmentTargetProgress {
+fn department_progress(target: settings::MonthlyTarget, actual: i64) -> DepartmentTargetProgress {
     let hundredths = achievement_hundredths(actual, target.target_minor);
     DepartmentTargetProgress {
         department: target.department,
@@ -293,8 +290,14 @@ pub fn target_progress(conn: &Db, actor: &User) -> AppResult<MonthlyTargetProgre
             wash_revenue: day.wash_sales,
             cafe_cumulative: cafe_running,
             wash_cumulative: wash_running,
-            cafe_achievement_hundredths: achievement_hundredths(cafe_running, cafe_target.target_minor),
-            wash_achievement_hundredths: achievement_hundredths(wash_running, wash_target.target_minor),
+            cafe_achievement_hundredths: achievement_hundredths(
+                cafe_running,
+                cafe_target.target_minor,
+            ),
+            wash_achievement_hundredths: achievement_hundredths(
+                wash_running,
+                wash_target.target_minor,
+            ),
         });
     }
 

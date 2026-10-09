@@ -170,9 +170,17 @@ mod tests {
         // Enabling a listening socket is a management action. Authorization is
         // enforced in the service, not by hiding a control in the UI.
         let conn = fresh();
-        let err = set(&conn, &login_as(&conn, "cashier"), &NetworkConfig::default()).unwrap_err();
+        let err = set(
+            &conn,
+            &login_as(&conn, "cashier"),
+            &NetworkConfig::default(),
+        )
+        .unwrap_err();
         assert!(matches!(err, AppError::Unauthorized(_)));
-        assert!(!get(&conn).unwrap().enabled, "the write must not have landed");
+        assert!(
+            !get(&conn).unwrap().enabled,
+            "the write must not have landed"
+        );
     }
 
     #[test]

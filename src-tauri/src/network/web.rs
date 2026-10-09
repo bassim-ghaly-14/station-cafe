@@ -267,7 +267,11 @@ pub fn route_with<'a, F: Fn(&str) -> bool>(path: &'a str, exists: F) -> Route<'a
     // A file-like path outside `/assets/` (anything with an extension) is a
     // missing file, not a route. Favouring a 404 keeps a mistyped `.js`/`.css`
     // reference from being answered with a whole HTML document.
-    if path.rsplit('/').next().is_some_and(|last| last.contains('.')) {
+    if path
+        .rsplit('/')
+        .next()
+        .is_some_and(|last| last.contains('.'))
+    {
         return Route::NotFound;
     }
     Route::Spa
@@ -305,7 +309,6 @@ pub fn asset_key(path: &str) -> Option<&str> {
 pub fn is_api_path(path: &str) -> bool {
     path == API_PREFIX || path.starts_with(&format!("{API_PREFIX}/"))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -383,7 +386,11 @@ mod tests {
         // it. They must reach the SAME embedded lookup as `/assets/`, not a
         // second one — hence `Route::Asset` with the request path as the key.
         for path in ROOT_ASSETS {
-            assert_eq!(route_with(path, |key| ROOT_ASSETS.contains(&key)), Route::Asset(path), "{path}");
+            assert_eq!(
+                route_with(path, |key| ROOT_ASSETS.contains(&key)),
+                Route::Asset(path),
+                "{path}"
+            );
             assert_eq!(root_asset_key(path), Some(path), "{path}");
         }
     }
@@ -547,13 +554,13 @@ mod tests {
             "/",
             "/pos",
             "/pos/invoices",
-            "/assets/index.js",        // no fingerprint at all
+            "/assets/index.js",         // no fingerprint at all
             "/assets/vendor-jquery.js", // a real word, not a hash
             "/assets/index.js.map",
             "/assets/.js",
             "/assets/x-.js",
             "/assets/-Buux1o88.js",
-            "/assets/foo-bar.js",       // hash-shaped tail, but not under /assets/
+            "/assets/foo-bar.js", // hash-shaped tail, but not under /assets/
             "/Buux1o88.js",
             "/station-cafe.png",
             "/site.webmanifest",

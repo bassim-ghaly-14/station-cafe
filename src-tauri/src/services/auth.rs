@@ -587,15 +587,12 @@ mod tests {
             "1",      // one digit
             "123",    // three digits: the length the old policy allowed
             "123456", // six digits: the length the old policy allowed
-            "1234567",
-            "1234a",  // letters
-            "abcd",
-            "12-34",  // a symbol
+            "1234567", "1234a", // letters
+            "abcd", "12-34",  // a symbol
             "12 34",  // whitespace
-            "١٢٣٤",        // Arabic-Indic digits are not ASCII digits
-            "1234a5",      // mixed
-            "a1234",
-            "12.45",
+            "١٢٣٤",   // Arabic-Indic digits are not ASCII digits
+            "1234a5", // mixed
+            "a1234", "12.45",
         ] {
             assert!(!is_valid_password(pin), "{pin} must not be a valid PIN");
             let err = validate_password(pin).unwrap_err();
@@ -669,7 +666,11 @@ mod tests {
         // Suspending the EMPLOYEE must remove the account even though the login
         // row still says ACTIVE. This is the case that proves the query consults
         // both tables rather than only `users`.
-        let manager = as_user(&conn, "manager", crate::demo_data::demo_password_of("manager").unwrap());
+        let manager = as_user(
+            &conn,
+            "manager",
+            crate::demo_data::demo_password_of("manager").unwrap(),
+        );
         set_employee_status(&conn, &manager, "cashier", "INACTIVE");
         assert!(
             !offered(&conn).contains(&"cashier".to_string()),

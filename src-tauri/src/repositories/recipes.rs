@@ -216,7 +216,15 @@ pub fn apply_movement(
         "INSERT INTO raw_material_movements
             (raw_material_id, change, reason, note, ref_invoice_id, expense_id, user_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![raw_material_id, change, reason, note, ref_invoice_id, expense_id, user_id],
+        params![
+            raw_material_id,
+            change,
+            reason,
+            note,
+            ref_invoice_id,
+            expense_id,
+            user_id
+        ],
     )?;
     Ok(new_quantity)
 }

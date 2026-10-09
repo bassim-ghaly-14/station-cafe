@@ -19,31 +19,33 @@ mod commands;
 #[cfg(test)]
 mod customer_analytics_test;
 mod db;
-mod demo_data;
 #[cfg(test)]
 mod deletion_test;
-#[cfg(test)]
-mod employees_test;
+mod demo_data;
 #[cfg(test)]
 mod employee_financials_test;
 #[cfg(test)]
-mod invoice_identity_test;
+mod employees_test;
 mod error;
+#[cfg(test)]
+mod invoice_identity_test;
 mod network;
 #[cfg(test)]
 mod network_test;
 // THE LAN HTTP CONTRACT, kept apart because it spans the socket, the response
 // writer, the bind address, the advertised name and the two QR URLs at once.
 #[cfg(test)]
-mod network_lan_http_test;
-#[cfg(test)]
 mod dev_settings_roles_test;
 #[cfg(test)]
 mod expense_categories_test;
 mod expenses_analytics_test;
+#[cfg(test)]
+mod manager_close_test;
 mod money;
 #[cfg(test)]
 mod monthly_executive_test;
+#[cfg(test)]
+mod network_lan_http_test;
 mod normalize;
 #[cfg(test)]
 mod offline_verify;
@@ -52,17 +54,15 @@ mod pos_rules_test;
 mod printing;
 #[cfg(test)]
 mod reconciliation_test;
+mod repositories;
 #[cfg(test)]
 mod revenue_targets_test;
-mod repositories;
 #[cfg(test)]
 mod sales_analytics_test;
 mod seed;
 mod services;
 #[cfg(test)]
 mod table_lifecycle_test;
-#[cfg(test)]
-mod manager_close_test;
 #[cfg(test)]
 mod workflow_test;
 
@@ -110,7 +110,6 @@ impl AppState {
         self.handle.get()
     }
 }
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -372,4 +371,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

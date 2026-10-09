@@ -18,11 +18,11 @@
 //! the two can never disagree.
 
 use crate::db::migrate;
+use crate::demo_data::seed_for_development as run_if_empty;
 use crate::error::AppError;
 use crate::repositories::employee_analytics;
 use crate::repositories::employees;
 use crate::repositories::{catalog, customers, pos};
-use crate::demo_data::seed_for_development as run_if_empty;
 use crate::services::attendance::AttendanceAction;
 use crate::services::auth::{self, User};
 use crate::services::customers as customer_svc;
