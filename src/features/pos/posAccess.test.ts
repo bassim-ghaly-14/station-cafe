@@ -7,7 +7,7 @@
  * is a real situation the buttons used to get wrong.
  */
 import { describe, expect, it } from 'vitest'
-import { canOpenDailyRecords, canShowDailyRecords } from './posAccess'
+import { canOpenDailyRecords, canShowDailyRecords, canUseCalculator } from './posAccess'
 
 describe('canOpenDailyRecords', () => {
   it('does not depend on the caller having an open shift', () => {
@@ -53,5 +53,20 @@ describe('canShowDailyRecords', () => {
     // An unresolved session offers nothing even on an open day.
     expect(canShowDailyRecords(undefined, day)).toBe(false)
     expect(canShowDailyRecords(undefined, null)).toBe(false)
+  })
+})
+
+describe('canUseCalculator', () => {
+  it('is available to every role that can work a till', () => {
+    // The calculator is a standalone arithmetic utility (plain math a cashier
+    // reaches for while selling — making change, tallying hand totals). It
+    // writes nothing, so the floor matches `canOpenDailyRecords`: STAFF and up.
+    expect(canUseCalculator('STAFF')).toBe(true)
+    expect(canUseCalculator('MANAGER')).toBe(true)
+    expect(canUseCalculator('ADMIN')).toBe(true)
+  })
+
+  it('refuses an unresolved session rather than guessing', () => {
+    expect(canUseCalculator(undefined)).toBe(false)
   })
 })

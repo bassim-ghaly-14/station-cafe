@@ -18,6 +18,7 @@ import {
   useToast,
 } from '@/components/ui'
 import {
+  Calculator,
   ClipboardList,
   CalendarDays,
   Clock,
@@ -46,6 +47,9 @@ import { tableBadgeVariant } from '@/lib/status-badge'
 import { atLeast, useSession } from '@/features/auth/useSession'
 import type { UserRole } from '@/lib/roles'
 import { useRouter, type View } from '@/app/router'
+import { usePinned } from './calculator/usePinned'
+import { PosCalculator } from './PosCalculator'
+import { canUseCalculator } from './posAccess'
 import { CurrentShiftPanel } from './CurrentShiftPanel'
 import { DayClosingPanel } from './DayClosingPanel'
 import { OrderPanel } from './OrderPanel'
@@ -116,6 +120,15 @@ export default function PosPage() {
    * copy of the shared data.
    */
   const [revision, setRevision] = useState(0)
+  /** Whether the POS calculator panel is open. Transient — never persisted. */
+  const [openCalculator, setOpenCalculator] = useState(false)
+  /**
+   * The calculator's pinned preference, read from the same module-level store the
+   * panel writes to. A pinned calculator is always-on, so the header toggle may
+   * only OPEN it — it must never unexpectedly hide a pinned panel.
+   */
+  const [calculatorPinned] = usePinned('pos-calculator')
+  const calculatorDisabled = !canUseCalculator(user?.role)
 
   const refresh = useCallback(async () => {
     try {
@@ -382,7 +395,13 @@ export default function PosPage() {
         and history ("فواتير اليوم") belongs with operations — never next to the
         new-order actions it would compete with.
       */}
-      <PosHeader state={shiftState} onNavigate={navigate} />
+      <PosHeader
+        state={shiftState}
+        onNavigate={navigate}
+        calculatorOpen={openCalculator}
+        calculatorDisabled={calculatorDisabled}
+        onToggleCalculator={() => setOpenCalculator((v) => (calculatorPinned ? true : !v))}
+      />
 
       {/* The selling workspace: ONE block, never a split. Tables mode is the
           full-width tables card; order mode is the full-screen Order
@@ -477,6 +496,9 @@ export default function PosPage() {
         onCloseEmptyCancel={() => setCloseTarget(null)}
         onCloseEmptyConfirm={() => void confirmCloseEmpty()}
       />
+      {openCalculator && (
+        <PosCalculator open={openCalculator} onRequestClose={() => setOpenCalculator(false)} />
+      )}
     </div>
   )
 }
@@ -683,9 +705,15 @@ function TablesCard({
 function PosHeader({
   state,
   onNavigate,
+  calculatorOpen,
+  calculatorDisabled,
+  onToggleCalculator,
 }: {
   readonly state: DayShiftState
   readonly onNavigate: (view: View) => void
+  readonly calculatorOpen: boolean
+  readonly calculatorDisabled: boolean
+  readonly onToggleCalculator: () => void
 }) {
   const { t } = useTranslation()
 
@@ -712,6 +740,18 @@ function PosHeader({
       </div>
 
       <DailyRecordsActions onNavigate={onNavigate} />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={onToggleCalculator}
+        aria-label={t('pos.calculator.toggle')}
+        aria-expanded={calculatorOpen}
+        data-testid="pos-calculator-toggle"
+        disabled={calculatorDisabled}
+      >
+        <Calculator size={16} aria-hidden />
+      </Button>
     </header>
   )
 }

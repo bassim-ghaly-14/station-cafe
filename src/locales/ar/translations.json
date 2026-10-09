@@ -1249,7 +1249,28 @@
     },
     "printPreview": "معاينة الطباعة",
     "ticketPreview": "معاينة تذكرة المغسلة",
-    "printPreviewBeforePrint": "معاينة قبل الطباعة"
+    "printPreviewBeforePrint": "معاينة قبل الطباعة",
+    "calculator": {
+      "toggle": "الآلة الحاسبة",
+      "title": "الآلة الحاسبة",
+      "history": "السجل",
+      "historyEmpty": "لا توجد عمليات محفوظة بعد",
+      "pin": "تثبيت الآلة الحاسبة",
+      "unpin": "إلغاء تثبيت الآلة الحاسبة",
+      "clear": "مسح الكل",
+      "sign": "تغيير الإشارة",
+      "percent": "نسبة مئوية",
+      "divide": "قسمة",
+      "multiply": "ضرب",
+      "subtract": "طرح",
+      "add": "جمع",
+      "decimal": "فاصلة عشرية",
+      "backspace": "حذف آخر رقم",
+      "equals": "يساوي",
+      "copyResult": "نسخ النتيجة",
+      "errorDivideByZero": "لا يمكن القسمة على صفر",
+      "errorOverflow": "الرقم أكبر من الحد المسموح"
+    }
   },
   "pay": {
     "methodLabel": "طريقة الدفع",

@@ -26,6 +26,21 @@ export function canOpenDailyRecords(role: UserRole | undefined): boolean {
 }
 
 /**
+ * Access to the POS floating calculator.
+ *
+ * The calculator is a STANDALONE arithmetic utility: it touches no order,
+ * invoice, product, balance, drawer, expense, shift or day-close record. It is
+ * the plain math a cashier reaches for while selling — making change, adding a
+ * few line totals by hand — so it is available to every role that can already
+ * work a till (STAFF and above). This is a UI convenience only, exactly like
+ * {@link canOpenDailyRecords}; the calculator writes nothing, so there is no
+ * backend authority to defer to.
+ */
+export function canUseCalculator(role: UserRole | undefined): boolean {
+  return roleRank(role) >= roleRank('STAFF')
+}
+
+/**
  * Gate-screen visibility for the two daily-record entry points.
  *
  * Visible only while a business day is active AND the role permits — i.e. the
