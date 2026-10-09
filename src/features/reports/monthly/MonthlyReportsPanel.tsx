@@ -19,7 +19,7 @@ import { ChevronLeft, ChevronRight, FileDown } from '@/components/ui/icon'
 import { useToast } from '@/components/ui/toast'
 import { formatMonthKey } from '@/lib/date'
 import { useErrText } from '@/lib/err'
-import { opsApi, type MonthlyExecutiveReport } from '@/services/opsApi'
+import { opsApi, type MonthlyComparisonMode, type MonthlyExecutiveReport } from '@/services/opsApi'
 import { useMonthlyRevenue } from '@/features/sales/useMonthlyRevenue'
 import { MonthlyReportDocument } from './MonthlyReportDocument'
 import { printMonthlyReport, releaseMonthlyPrint, watchPrintEnd } from './monthlyPrint'
@@ -33,13 +33,18 @@ type ReportState = {
 }
 
 /**
- * One read of the executive summary for `month`.
+ * One read of the executive summary for `month`, compared against `comparison`.
  *
  * `month` starts empty — the backend then answers for the current Cairo business
  * month — and is only sent once the manager has actually chosen one, so the
  * default can never be a month the browser guessed.
+ *
+ * The month and the comparison mode are asked for in ONE read, so a comparison
+ * period can never describe a different request than the figures beside it. The
+ * `active` flag discards an out-of-order answer, so switching either control
+ * while a read is in flight can never let the older one land last.
  */
-function useMonthlyExecutive(month: string): ReportState {
+function useMonthlyExecutive(month: string, comparison: MonthlyComparisonMode): ReportState {
   const { t } = useTranslation()
   const errText = useErrText(t)
   const [report, setReport] = useState<MonthlyExecutiveReport | null>(null)
@@ -49,11 +54,14 @@ function useMonthlyExecutive(month: string): ReportState {
 
   useEffect(() => {
     let active = true
+    // The previous month is the default, so it is omitted rather than sent:
+    // an absent value means exactly what it always meant, on both transports.
+    const mode = comparison === 'PREVIOUS_MONTH' ? undefined : comparison
     // oxlint-disable-next-line react/set-state-in-effect -- external async read.
     setLoading(true)
     setError(null)
     opsApi
-      .monthlyExecutive(month || undefined)
+      .monthlyExecutive(month || undefined, mode)
       .then((response) => {
         if (!active) return
         setReport(response)
@@ -61,13 +69,14 @@ function useMonthlyExecutive(month: string): ReportState {
       })
       .catch((cause: unknown) => {
         if (!active) return
+        setReport(null)
         setError(errText(cause))
         setLoading(false)
       })
     return () => {
       active = false
     }
-  }, [month, revision, errText])
+  }, [month, comparison, revision, errText])
 
   const reload = useCallback(() => setRevision((value) => value + 1), [])
   return { report, initialLoading: loading, error, reload }
@@ -167,7 +176,12 @@ export function MonthlyReportsPanel() {
   // no list of "selectable months" is maintained anywhere in this feature.
   const { report: monthsReport } = useMonthlyRevenue()
   const [month, setMonth] = useState('')
-  const { report, initialLoading, error, reload } = useMonthlyExecutive(month)
+  // Two modes, and the month before is the default: this report's original
+  // comparison, so nothing about it changes unless the manager asks for the
+  // year-over-year one. It is state of its OWN, entirely separate from `month`,
+  // so switching comparison never moves the reporting month and vice versa.
+  const [comparison, setComparison] = useState<MonthlyComparisonMode>('PREVIOUS_MONTH')
+  const { report, initialLoading, error, reload } = useMonthlyExecutive(month, comparison)
   const [printing, setPrinting] = useState(false)
   // A second click while the first job is still open would raise a second panel
   // behind the first; the ref is the guard, `printing` is what the reader sees.
@@ -245,6 +259,22 @@ export function MonthlyReportsPanel() {
           disabled={position <= 0}
           onClick={() => step(-1)}
         />
+        {/* The comparison period is its own control, not a second month picker:
+            it changes WHICH month the figures are measured against and leaves
+            the reporting month untouched. */}
+        <label className="flex min-w-48 flex-col gap-1">
+          <span className="text-caption">{t('reports.monthly.selectComparison')}</span>
+          <Select
+            value={comparison}
+            data-testid="monthly-report-comparison"
+            onChange={(event) => setComparison(event.target.value as MonthlyComparisonMode)}
+          >
+            <option value="PREVIOUS_MONTH">{t('reports.monthly.comparisonPreviousMonth')}</option>
+            <option value="SAME_MONTH_PREVIOUS_YEAR">
+              {t('reports.monthly.comparisonSameMonthPreviousYear')}
+            </option>
+          </Select>
+        </label>
         <Button
           onClick={exportPdf}
           loading={printing}

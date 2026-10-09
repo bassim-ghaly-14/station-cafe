@@ -191,8 +191,14 @@ const REQUIRED_ARGS: &[(&str, &[&str])] = &[
     ("employee_overview", &[]),
     ("my_attendance", &[]),
     ("record_attendance", &["employee_id", "action"]),
-    ("correct_attendance", &["employee_id", "business_date", "action"]),
-    ("override_employee_attendance", &["employee_id", "business_date"]),
+    (
+        "correct_attendance",
+        &["employee_id", "business_date", "action"],
+    ),
+    (
+        "override_employee_attendance",
+        &["employee_id", "business_date"],
+    ),
     ("employee_details", &["employee_id"]),
     ("create_employee", &["input"]),
     ("update_employee", &["employee_id", "input"]),
@@ -320,7 +326,10 @@ const REQUIRED_ARGS: &[(&str, &[&str])] = &[
 /// Absent and `null` are treated identically, which is exactly what [`req`]
 /// does, so this can never accept a body the command itself would reject.
 pub fn missing_required_argument(name: &str, body: &Value) -> Option<&'static str> {
-    let keys = REQUIRED_ARGS.iter().find(|(n, _)| *n == name).map(|(_, k)| *k)?;
+    let keys = REQUIRED_ARGS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, k)| *k)?;
     keys.iter()
         .copied()
         .find(|key| body.get(*key).is_none_or(|v| v.is_null()))
@@ -354,178 +363,872 @@ fn dispatch(
     body: &Value,
 ) -> Result<ApiResponse, ApiError> {
     match name {
-            "login" => out(crate::commands::auth::login(state.clone(), req::<_>(body, "input")?)),
-            "logout" => out(crate::commands::auth::logout(state.clone(), token.to_owned())),
-            "me" => out(crate::commands::auth::me(state.clone(), token.to_owned())),
-            "change_password" => out(crate::commands::auth::change_password(state.clone(), token.to_owned(), req::<_>(body, "target_id")?, req::<_>(body, "new_password")?)),
-            "list_login_accounts" => out(crate::commands::auth::list_login_accounts(state.clone())),
-            "list_products" => out(crate::commands::catalog::list_products(state.clone(), token.to_owned(), opt::<_>(body, "department")?, req::<_>(body, "active_only")?)),
-            "create_product" => out(crate::commands::catalog::create_product(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "create_category" => out(crate::commands::catalog::create_category(state.clone(), token.to_owned(), req::<_>(body, "name")?)),
-            "update_category" => out(crate::commands::catalog::update_category(state.clone(), token.to_owned(), req::<_>(body, "category_id")?, req::<_>(body, "name")?)),
-            "delete_category" => out(crate::commands::catalog::delete_category(state.clone(), token.to_owned(), req::<_>(body, "category_id")?)),
-            "list_categories" => out(crate::commands::catalog::list_categories(state.clone(), token.to_owned())),
-            "update_product" => out(crate::commands::catalog::update_product(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "input")?)),
-            "set_product_price" => out(crate::commands::catalog::set_product_price(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "price_minor")?)),
-            "set_product_active" => out(crate::commands::catalog::set_product_active(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "active")?)),
-            "delete_product" => out(crate::commands::catalog::delete_product(state.clone(), token.to_owned(), req::<_>(body, "product_id")?)),
-            "rename_product" => out(crate::commands::catalog::rename_product(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "name")?)),
-            "get_discount_options" => out(crate::commands::catalog::get_discount_options(state.clone(), token.to_owned())),
-            "set_discount_options" => out(crate::commands::catalog::set_discount_options(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "get_discount_authorization" => out(crate::commands::catalog::get_discount_authorization(state.clone(), token.to_owned())),
-            "set_discount_authorization_pin" => out(crate::commands::catalog::set_discount_authorization_pin(state.clone(), token.to_owned(), req::<_>(body, "pin")?)),
-            "get_service_charge" => out(crate::commands::catalog::get_service_charge(state.clone(), token.to_owned())),
-            "set_service_charge" => out(crate::commands::catalog::set_service_charge(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "get_monthly_sales_period" => out(crate::commands::catalog::get_monthly_sales_period(state.clone(), token.to_owned())),
-            "set_monthly_sales_period" => out(crate::commands::catalog::set_monthly_sales_period(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "get_revenue_targets" => out(crate::commands::catalog::get_revenue_targets(state.clone(), token.to_owned())),
-            "set_revenue_targets" => out(crate::commands::catalog::set_revenue_targets(state.clone(), token.to_owned(), req::<_>(body, "defaults")?)),
-            "set_revenue_target_override" => out(crate::commands::catalog::set_revenue_target_override(state.clone(), token.to_owned(), req::<_>(body, "department")?, opt::<_>(body, "amount_minor")?)),
-            "get_credit_config" => out(crate::commands::catalog::get_credit_config(state.clone(), token.to_owned())),
-            "set_credit_config" => out(crate::commands::catalog::set_credit_config(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "search_customers" => out(crate::commands::customers::search_customers(state.clone(), token.to_owned(), req::<_>(body, "query")?)),
-            "list_customers" => out(crate::commands::customers::list_customers(state.clone(), token.to_owned(), opt::<_>(body, "query")?, opt::<_>(body, "period")?)),
-            "export_customer_phones" => out(crate::commands::customers::export_customer_phones(state.clone(), token.to_owned(), opt::<_>(body, "customer_ids")?)),
-            "customer_overview" => out(crate::commands::customers::customer_overview(state.clone(), token.to_owned(), opt::<_>(body, "period")?)),
-            "customer_details" => out(crate::commands::customers::customer_details(state.clone(), token.to_owned(), req::<_>(body, "customer_id")?, opt::<_>(body, "period")?)),
-            "list_cars_of" => out(crate::commands::customers::list_cars_of(state.clone(), token.to_owned(), req::<_>(body, "customer_id")?)),
-            "find_cars_by_plate" => out(crate::commands::customers::find_cars_by_plate(state.clone(), token.to_owned(), req::<_>(body, "plate")?)),
-            "create_customer" => out(crate::commands::customers::create_customer(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "update_customer" => out(crate::commands::customers::update_customer(state.clone(), token.to_owned(), req::<_>(body, "customer_id")?, req::<_>(body, "input")?)),
-            "delete_customer" => out(crate::commands::customers::delete_customer(state.clone(), token.to_owned(), req::<_>(body, "customer_id")?)),
-            "create_car" => out(crate::commands::customers::create_car(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "clear_database" => out(crate::commands::developer::clear_database(state.clone(), token.to_owned())),
-            // This command's session token is OPTIONAL: it may instead carry a
-            // one-time reseed grant issued by a previous `clear_database`. The
-            // grant is still checked by the command itself, so passing `None`
-            // for an unauthenticated caller cannot grant anything.
-            "load_official_data" => out(crate::commands::developer::load_official_data(state.clone(), (!token.is_empty()).then(|| token.to_owned()), opt::<_>(body, "reseed_token")?)),
-            "list_employees" => out(crate::commands::employees::list_employees(state.clone(), token.to_owned(), opt::<_>(body, "query")?, opt::<_>(body, "period")?, opt::<_>(body, "include_inactive")?)),
-            "employee_overview" => out(crate::commands::employees::employee_overview(state.clone(), token.to_owned(), opt::<_>(body, "period")?)),
-            "my_attendance" => out(crate::commands::employees::my_attendance(state.clone(), token.to_owned())),
-            "record_attendance" => out(crate::commands::employees::record_attendance(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "action")?, opt::<_>(body, "note")?)),
-            "correct_attendance" => out(crate::commands::employees::correct_attendance(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "business_date")?, req::<_>(body, "action")?, opt::<_>(body, "note")?)),
-            "override_employee_attendance" => out(crate::commands::employees::override_employee_attendance(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "business_date")?, opt::<_>(body, "check_in")?, opt::<_>(body, "check_out")?, opt::<_>(body, "reason")?)),
-            "employee_details" => out(crate::commands::employees::employee_details(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, opt::<_>(body, "period")?)),
-            "create_employee" => out(crate::commands::employees::create_employee(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "update_employee" => out(crate::commands::employees::update_employee(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "input")?)),
-            "set_employee_status" => out(crate::commands::employees::set_employee_status(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "status")?)),
-            "delete_employee" => out(crate::commands::employees::delete_employee(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?)),
-            "set_employee_base_salary" => out(crate::commands::employees::set_employee_base_salary(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "base_salary")?)),
-            "create_employee_advance" => out(crate::commands::employees::create_employee_advance(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "input")?)),
-            "create_employee_deduction" => out(crate::commands::employees::create_employee_deduction(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "input")?)),
-            "reverse_employee_advance" => out(crate::commands::employees::reverse_employee_advance(state.clone(), token.to_owned(), req::<_>(body, "advance_id")?)),
-            "payroll_preview" => out(crate::commands::employees::payroll_preview(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "period")?)),
-            "create_payroll_run" => out(crate::commands::employees::create_payroll_run(state.clone(), token.to_owned(), req::<_>(body, "employee_id")?, req::<_>(body, "period")?, opt::<_>(body, "deductions")?)),
-            "finalize_payroll_run" => out(crate::commands::employees::finalize_payroll_run(state.clone(), token.to_owned(), req::<_>(body, "run_id")?)),
-            "list_wash_workers" => out(crate::commands::employees::list_wash_workers(state.clone(), token.to_owned())),
-            "set_order_wash_employee" => out(crate::commands::employees::set_order_wash_employee(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, opt::<_>(body, "wash_employee_id")?)),
-            "list_stock" => out(crate::commands::ops::list_stock(state.clone(), token.to_owned())),
-            "list_stock_movements" => out(crate::commands::ops::list_stock_movements(state.clone(), token.to_owned(), req::<_>(body, "limit")?)),
-            "adjust_stock" => out(crate::commands::ops::adjust_stock(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "change")?, req::<_>(body, "reason")?, opt::<_>(body, "note")?)),
-            "set_stock_minimum" => out(crate::commands::ops::set_stock_minimum(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "min_quantity")?)),
-            "list_raw_materials" => out(crate::commands::recipes::list_raw_materials(state.clone(), token.to_owned(), req::<_>(body, "active_only")?)),
-            "create_raw_material" => out(crate::commands::recipes::create_raw_material(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "update_raw_material" => out(crate::commands::recipes::update_raw_material(state.clone(), token.to_owned(), req::<_>(body, "material_id")?, req::<_>(body, "input")?)),
-            "archive_raw_material" => out(crate::commands::recipes::archive_raw_material(state.clone(), token.to_owned(), req::<_>(body, "material_id")?)),
-            "purchase_raw_material" => out(crate::commands::recipes::purchase_raw_material(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "adjust_raw_material" => out(crate::commands::recipes::adjust_raw_material(state.clone(), token.to_owned(), req::<_>(body, "material_id")?, req::<_>(body, "change")?, opt::<_>(body, "note")?)),
-            "waste_raw_material" => out(crate::commands::recipes::waste_raw_material(state.clone(), token.to_owned(), req::<_>(body, "material_id")?, req::<_>(body, "quantity")?, opt::<_>(body, "note")?)),
-            "list_raw_material_movements" => out(crate::commands::recipes::list_raw_material_movements(state.clone(), token.to_owned(), opt::<_>(body, "material_id")?, req::<_>(body, "limit")?)),
-            "get_product_recipe" => out(crate::commands::recipes::get_product_recipe(state.clone(), token.to_owned(), req::<_>(body, "product_id")?)),
-            "get_recipe_cost" => out(crate::commands::recipes::get_recipe_cost(state.clone(), token.to_owned(), req::<_>(body, "product_id")?)),
-            "set_product_recipe" => out(crate::commands::recipes::set_product_recipe(state.clone(), token.to_owned(), req::<_>(body, "product_id")?, req::<_>(body, "lines")?)),
-            "recipe_availability" => out(crate::commands::recipes::recipe_availability(state.clone(), token.to_owned(), req::<_>(body, "product_ids")?)),
-            "list_inventory_notifications" => out(crate::commands::ops::list_inventory_notifications(state.clone(), token.to_owned())),
-            "unread_inventory_notification_count" => out(crate::commands::ops::unread_inventory_notification_count(state.clone(), token.to_owned())),
-            "mark_inventory_notification_read" => out(crate::commands::ops::mark_inventory_notification_read(state.clone(), token.to_owned(), req::<_>(body, "id")?)),
-            "mark_all_inventory_notifications_read" => out(crate::commands::ops::mark_all_inventory_notifications_read(state.clone(), token.to_owned())),
-            "list_expense_categories" => out(crate::commands::ops::list_expense_categories(state.clone(), token.to_owned())),
-            "create_expense_category" => out(crate::commands::ops::create_expense_category(state.clone(), token.to_owned(), req::<_>(body, "name")?)),
-            "rename_expense_category" => out(crate::commands::ops::rename_expense_category(state.clone(), token.to_owned(), req::<_>(body, "code")?, req::<_>(body, "name")?)),
-            "delete_expense_category" => out(crate::commands::ops::delete_expense_category(state.clone(), token.to_owned(), req::<_>(body, "code")?)),
-            "list_expenses" => out(crate::commands::ops::list_expenses(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?, req::<_>(body, "recurring_only")?)),
-            "expenses_overview" => out(crate::commands::ops::expenses_overview(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?)),
-            "expenses_monthly" => out(crate::commands::ops::expenses_monthly(state.clone(), token.to_owned(), opt::<_>(body, "months")?)),
-            "create_expense" => out(crate::commands::ops::create_expense(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "list_shift_expenses" => out(crate::commands::ops::list_shift_expenses(state.clone(), token.to_owned())),
-            "list_expenses_of_shift" => out(crate::commands::ops::list_expenses_of_shift(state.clone(), token.to_owned(), req::<_>(body, "shift_id")?)),
-            "today_summary" => out(crate::commands::ops::today_summary(state.clone(), token.to_owned())),
-            "analytics_charts" => out(crate::commands::ops::analytics_charts(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?)),
-            "monthly_executive_report" => out(crate::commands::ops::monthly_executive_report(state.clone(), token.to_owned(), opt::<_>(body, "month")?)),
-            "list_audit" => out(crate::commands::ops::list_audit(state.clone(), token.to_owned(), req::<_>(body, "limit")?, opt::<_>(body, "action_like")?)),
-            "get_print_config" => out(crate::commands::ops::get_print_config(state.clone(), token.to_owned())),
-            "set_print_config" => out(crate::commands::ops::set_print_config(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "print_test" => out(crate::commands::ops::print_test(state.clone(), token.to_owned())),
-            "print_invoice" => out(crate::commands::ops::print_invoice(state.clone(), token.to_owned(), req::<_>(body, "invoice_id")?, opt::<_>(body, "force")?)),
-            "print_wash_ticket" => out(crate::commands::ops::print_wash_ticket(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, opt::<_>(body, "force")?)),
-            "preview_order_document" => out(crate::commands::ops::preview_order_document(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, opt::<_>(body, "discount_mode")?, opt::<_>(body, "discount_value")?, opt::<_>(body, "service_charge_minor")?)),
-            "preview_invoice" => out(crate::commands::ops::preview_invoice(state.clone(), token.to_owned(), req::<_>(body, "invoice_id")?)),
-            "preview_wash_ticket" => out(crate::commands::ops::preview_wash_ticket(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "print_shift_report" => out(crate::commands::ops::print_shift_report(state.clone(), token.to_owned(), req::<_>(body, "shift_id")?, opt::<_>(body, "force")?)),
-            "preview_shift_report" => out(crate::commands::ops::preview_shift_report(state.clone(), token.to_owned(), opt::<_>(body, "shift_id")?)),
-            "preview_day_report_cmd" => out(crate::commands::ops::preview_day_report_cmd(state.clone(), token.to_owned(), req::<_>(body, "day_id")?)),
-            "print_day_report_cmd" => out(crate::commands::ops::print_day_report_cmd(state.clone(), token.to_owned(), req::<_>(body, "day_id")?, opt::<_>(body, "force")?)),
-            "list_print_jobs" => out(crate::commands::ops::list_print_jobs(state.clone(), token.to_owned(), req::<_>(body, "limit")?)),
-            "list_tables" => out(crate::commands::pos::list_tables(state.clone(), token.to_owned())),
-            "table_lifecycle_counters" => out(crate::commands::pos::table_lifecycle_counters(state.clone(), token.to_owned())),
-            "shift_lifecycle_counters" => out(crate::commands::pos::shift_lifecycle_counters(state.clone(), token.to_owned())),
-            "set_table_count" => out(crate::commands::pos::set_table_count(state.clone(), token.to_owned(), req::<_>(body, "count")?)),
-            "open_table" => out(crate::commands::pos::open_table(state.clone(), token.to_owned(), req::<_>(body, "table_id")?)),
-            "close_empty_table" => out(crate::commands::pos::close_empty_table(state.clone(), token.to_owned(), req::<_>(body, "table_id")?)),
-            "start_order" => out(crate::commands::pos::start_order(state.clone(), token.to_owned(), req::<_>(body, "table_id")?)),
-            "start_takeaway" => out(crate::commands::pos::start_takeaway(state.clone(), token.to_owned())),
-            "list_open_takeaway_orders" => out(crate::commands::pos::list_open_takeaway_orders(state.clone(), token.to_owned())),
-            "discard_order" => out(crate::commands::pos::discard_order(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "get_order" => out(crate::commands::pos::get_order(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "add_order_line" => out(crate::commands::pos::add_order_line(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, req::<_>(body, "product_id")?, req::<_>(body, "quantity")?)),
-            "set_line_quantity" => out(crate::commands::pos::set_line_quantity(state.clone(), token.to_owned(), req::<_>(body, "line_id")?, req::<_>(body, "quantity")?)),
-            "remove_order_line" => out(crate::commands::pos::remove_order_line(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, req::<_>(body, "line_id")?)),
-            "mark_ready_to_pay" => out(crate::commands::pos::mark_ready_to_pay(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "set_order_discount" => out(crate::commands::pos::set_order_discount(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, opt::<_>(body, "discount_mode")?, opt::<_>(body, "discount_value")?, opt::<_>(body, "discount_pin")?)),
-            "attach_customer" => out(crate::commands::pos::attach_customer(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "detach_customer" => out(crate::commands::pos::detach_customer(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "get_order_customer" => out(crate::commands::pos::get_order_customer(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "preview_order" => out(crate::commands::pos::preview_order(state.clone(), token.to_owned(), req::<_>(body, "order_id")?, opt::<_>(body, "discount_mode")?, opt::<_>(body, "discount_value")?, opt::<_>(body, "_discount_pin")?, opt::<_>(body, "service_charge_minor")?)),
-            "list_daily_wash_tickets" => out(crate::commands::pos::list_daily_wash_tickets(state.clone(), token.to_owned(), opt::<_>(body, "business_day_id")?, opt::<_>(body, "query")?, opt::<_>(body, "order_status")?)),
-            "issue_wash_ticket" => out(crate::commands::pos::issue_wash_ticket(state.clone(), token.to_owned(), req::<_>(body, "order_id")?)),
-            "checkout_order" => out(crate::commands::pos::checkout_order(state.clone(), token.to_owned(), req::<_>(body, "input")?)),
-            "get_invoice" => out(crate::commands::pos::get_invoice(state.clone(), token.to_owned(), req::<_>(body, "invoice_id")?)),
-            "search_invoices" => out(crate::commands::pos::search_invoices(state.clone(), token.to_owned(), opt::<_>(body, "business_day_id")?, opt::<_>(body, "query")?, opt::<_>(body, "status")?, opt::<_>(body, "method")?)),
-            "list_credit_accounts" => out(crate::commands::pos::list_credit_accounts(state.clone(), token.to_owned())),
-            "settle_credit" => out(crate::commands::pos::settle_credit(state.clone(), token.to_owned(), req::<_>(body, "customer_id")?, req::<_>(body, "amount")?)),
-            "sales_overview" => out(crate::commands::sales::sales_overview(state.clone(), token.to_owned(), opt::<_>(body, "filter")?, opt::<_>(body, "sort")?)),
-            "sales_invoices" => out(crate::commands::sales::sales_invoices(state.clone(), token.to_owned(), opt::<_>(body, "filter")?)),
-            "sales_monthly" => out(crate::commands::sales::sales_monthly(state.clone(), token.to_owned(), opt::<_>(body, "months")?)),
-            "sales_cashiers" => out(crate::commands::sales::sales_cashiers(state.clone(), token.to_owned())),
-            "sales_target_progress" => out(crate::commands::sales::sales_target_progress(state.clone(), token.to_owned())),
-            "day_shift_state" => out(crate::commands::shifts::day_shift_state(state.clone(), token.to_owned())),
-            "open_business_day" => out(crate::commands::shifts::open_business_day(state.clone(), token.to_owned())),
-            "open_shift" => out(crate::commands::shifts::open_shift(state.clone(), token.to_owned(), req::<_>(body, "opening_cash")?)),
-            "preview_shift_close" => out(crate::commands::shifts::preview_shift_close(state.clone(), token.to_owned())),
-            "close_shift" => out(crate::commands::shifts::close_shift(state.clone(), token.to_owned(), req::<_>(body, "actual_cash")?)),
-            "open_shift_detail" => out(crate::commands::shifts::open_shift_detail(state.clone(), token.to_owned())),
-            "preview_managed_shift_close" => out(crate::commands::shifts::preview_managed_shift_close(state.clone(), token.to_owned(), req::<_>(body, "shift_id")?)),
-            "close_managed_shift" => out(crate::commands::shifts::close_managed_shift(state.clone(), token.to_owned(), req::<_>(body, "shift_id")?, req::<_>(body, "actual_cash")?)),
-            "preview_day_settlement" => out(crate::commands::shifts::preview_day_settlement(state.clone(), token.to_owned())),
-            "settle_day" => out(crate::commands::shifts::settle_day(state.clone(), token.to_owned())),
-            "day_settlement_history" => out(crate::commands::shifts::day_settlement_history(state.clone(), token.to_owned())),
-            "preview_day_close" => out(crate::commands::shifts::preview_day_close(state.clone(), token.to_owned())),
-            "close_business_day" => out(crate::commands::shifts::close_business_day(state.clone(), token.to_owned())),
-            "list_closed_shifts" => out(crate::commands::shifts::list_closed_shifts(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?)),
-            "list_closed_business_days" => out(crate::commands::shifts::list_closed_business_days(state.clone(), token.to_owned(), opt::<_>(body, "from")?, opt::<_>(body, "to")?)),
-            "list_shifts" => out(crate::commands::shifts::list_shifts(state.clone(), token.to_owned(), req::<_>(body, "day_id")?)),
-            "shift_report" => out(crate::commands::shifts::shift_report(state.clone(), token.to_owned(), req::<_>(body, "shift_id")?)),
-            "day_report" => out(crate::commands::shifts::day_report(state.clone(), token.to_owned(), req::<_>(body, "day_id")?)),
-            "db_status" => out(crate::commands::status::db_status(state.clone())),
-            "local_access_qr" => out(crate::commands::status::local_access_qr(state.clone(), token.to_owned())),
-            "get_network_config" => out(crate::commands::status::get_network_config(state.clone(), token.to_owned())),
-            "set_network_config" => out(crate::commands::status::set_network_config(state.clone(), token.to_owned(), req::<_>(body, "config")?)),
-            "local_api_status" => out(crate::commands::status::local_api_status(state.clone(), token.to_owned())),
+        "login" => out(crate::commands::auth::login(
+            state.clone(),
+            req::<_>(body, "input")?,
+        )),
+        "logout" => out(crate::commands::auth::logout(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "me" => out(crate::commands::auth::me(state.clone(), token.to_owned())),
+        "change_password" => out(crate::commands::auth::change_password(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "target_id")?,
+            req::<_>(body, "new_password")?,
+        )),
+        "list_login_accounts" => out(crate::commands::auth::list_login_accounts(state.clone())),
+        "list_products" => out(crate::commands::catalog::list_products(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "department")?,
+            req::<_>(body, "active_only")?,
+        )),
+        "create_product" => out(crate::commands::catalog::create_product(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "create_category" => out(crate::commands::catalog::create_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "name")?,
+        )),
+        "update_category" => out(crate::commands::catalog::update_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "category_id")?,
+            req::<_>(body, "name")?,
+        )),
+        "delete_category" => out(crate::commands::catalog::delete_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "category_id")?,
+        )),
+        "list_categories" => out(crate::commands::catalog::list_categories(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "update_product" => out(crate::commands::catalog::update_product(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "set_product_price" => out(crate::commands::catalog::set_product_price(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "price_minor")?,
+        )),
+        "set_product_active" => out(crate::commands::catalog::set_product_active(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "active")?,
+        )),
+        "delete_product" => out(crate::commands::catalog::delete_product(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+        )),
+        "rename_product" => out(crate::commands::catalog::rename_product(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "name")?,
+        )),
+        "get_discount_options" => out(crate::commands::catalog::get_discount_options(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_discount_options" => out(crate::commands::catalog::set_discount_options(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "get_discount_authorization" => out(crate::commands::catalog::get_discount_authorization(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_discount_authorization_pin" => {
+            out(crate::commands::catalog::set_discount_authorization_pin(
+                state.clone(),
+                token.to_owned(),
+                req::<_>(body, "pin")?,
+            ))
+        }
+        "get_service_charge" => out(crate::commands::catalog::get_service_charge(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_service_charge" => out(crate::commands::catalog::set_service_charge(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "get_monthly_sales_period" => out(crate::commands::catalog::get_monthly_sales_period(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_monthly_sales_period" => out(crate::commands::catalog::set_monthly_sales_period(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "get_revenue_targets" => out(crate::commands::catalog::get_revenue_targets(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_revenue_targets" => out(crate::commands::catalog::set_revenue_targets(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "defaults")?,
+        )),
+        "set_revenue_target_override" => {
+            out(crate::commands::catalog::set_revenue_target_override(
+                state.clone(),
+                token.to_owned(),
+                req::<_>(body, "department")?,
+                opt::<_>(body, "amount_minor")?,
+            ))
+        }
+        "get_credit_config" => out(crate::commands::catalog::get_credit_config(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_credit_config" => out(crate::commands::catalog::set_credit_config(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "search_customers" => out(crate::commands::customers::search_customers(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "query")?,
+        )),
+        "list_customers" => out(crate::commands::customers::list_customers(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "query")?,
+            opt::<_>(body, "period")?,
+        )),
+        "export_customer_phones" => out(crate::commands::customers::export_customer_phones(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "customer_ids")?,
+        )),
+        "customer_overview" => out(crate::commands::customers::customer_overview(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "period")?,
+        )),
+        "customer_details" => out(crate::commands::customers::customer_details(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "customer_id")?,
+            opt::<_>(body, "period")?,
+        )),
+        "list_cars_of" => out(crate::commands::customers::list_cars_of(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "customer_id")?,
+        )),
+        "find_cars_by_plate" => out(crate::commands::customers::find_cars_by_plate(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "plate")?,
+        )),
+        "create_customer" => out(crate::commands::customers::create_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "update_customer" => out(crate::commands::customers::update_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "customer_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "delete_customer" => out(crate::commands::customers::delete_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "customer_id")?,
+        )),
+        "create_car" => out(crate::commands::customers::create_car(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "clear_database" => out(crate::commands::developer::clear_database(
+            state.clone(),
+            token.to_owned(),
+        )),
+        // This command's session token is OPTIONAL: it may instead carry a
+        // one-time reseed grant issued by a previous `clear_database`. The
+        // grant is still checked by the command itself, so passing `None`
+        // for an unauthenticated caller cannot grant anything.
+        "load_official_data" => out(crate::commands::developer::load_official_data(
+            state.clone(),
+            (!token.is_empty()).then(|| token.to_owned()),
+            opt::<_>(body, "reseed_token")?,
+        )),
+        "list_employees" => out(crate::commands::employees::list_employees(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "query")?,
+            opt::<_>(body, "period")?,
+            opt::<_>(body, "include_inactive")?,
+        )),
+        "employee_overview" => out(crate::commands::employees::employee_overview(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "period")?,
+        )),
+        "my_attendance" => out(crate::commands::employees::my_attendance(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "record_attendance" => out(crate::commands::employees::record_attendance(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "action")?,
+            opt::<_>(body, "note")?,
+        )),
+        "correct_attendance" => out(crate::commands::employees::correct_attendance(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "business_date")?,
+            req::<_>(body, "action")?,
+            opt::<_>(body, "note")?,
+        )),
+        "override_employee_attendance" => {
+            out(crate::commands::employees::override_employee_attendance(
+                state.clone(),
+                token.to_owned(),
+                req::<_>(body, "employee_id")?,
+                req::<_>(body, "business_date")?,
+                opt::<_>(body, "check_in")?,
+                opt::<_>(body, "check_out")?,
+                opt::<_>(body, "reason")?,
+            ))
+        }
+        "employee_details" => out(crate::commands::employees::employee_details(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            opt::<_>(body, "period")?,
+        )),
+        "create_employee" => out(crate::commands::employees::create_employee(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "update_employee" => out(crate::commands::employees::update_employee(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "set_employee_status" => out(crate::commands::employees::set_employee_status(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "status")?,
+        )),
+        "delete_employee" => out(crate::commands::employees::delete_employee(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+        )),
+        "set_employee_base_salary" => out(crate::commands::employees::set_employee_base_salary(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "base_salary")?,
+        )),
+        "create_employee_advance" => out(crate::commands::employees::create_employee_advance(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "create_employee_deduction" => out(crate::commands::employees::create_employee_deduction(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "reverse_employee_advance" => out(crate::commands::employees::reverse_employee_advance(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "advance_id")?,
+        )),
+        "payroll_preview" => out(crate::commands::employees::payroll_preview(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "period")?,
+        )),
+        "create_payroll_run" => out(crate::commands::employees::create_payroll_run(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "employee_id")?,
+            req::<_>(body, "period")?,
+            opt::<_>(body, "deductions")?,
+        )),
+        "finalize_payroll_run" => out(crate::commands::employees::finalize_payroll_run(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "run_id")?,
+        )),
+        "list_wash_workers" => out(crate::commands::employees::list_wash_workers(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_order_wash_employee" => out(crate::commands::employees::set_order_wash_employee(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            opt::<_>(body, "wash_employee_id")?,
+        )),
+        "list_stock" => out(crate::commands::ops::list_stock(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "list_stock_movements" => out(crate::commands::ops::list_stock_movements(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "limit")?,
+        )),
+        "adjust_stock" => out(crate::commands::ops::adjust_stock(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "change")?,
+            req::<_>(body, "reason")?,
+            opt::<_>(body, "note")?,
+        )),
+        "set_stock_minimum" => out(crate::commands::ops::set_stock_minimum(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "min_quantity")?,
+        )),
+        "list_raw_materials" => out(crate::commands::recipes::list_raw_materials(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "active_only")?,
+        )),
+        "create_raw_material" => out(crate::commands::recipes::create_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "update_raw_material" => out(crate::commands::recipes::update_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "material_id")?,
+            req::<_>(body, "input")?,
+        )),
+        "archive_raw_material" => out(crate::commands::recipes::archive_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "material_id")?,
+        )),
+        "purchase_raw_material" => out(crate::commands::recipes::purchase_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "adjust_raw_material" => out(crate::commands::recipes::adjust_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "material_id")?,
+            req::<_>(body, "change")?,
+            opt::<_>(body, "note")?,
+        )),
+        "waste_raw_material" => out(crate::commands::recipes::waste_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "material_id")?,
+            req::<_>(body, "quantity")?,
+            opt::<_>(body, "note")?,
+        )),
+        "list_raw_material_movements" => {
+            out(crate::commands::recipes::list_raw_material_movements(
+                state.clone(),
+                token.to_owned(),
+                opt::<_>(body, "material_id")?,
+                req::<_>(body, "limit")?,
+            ))
+        }
+        "get_product_recipe" => out(crate::commands::recipes::get_product_recipe(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+        )),
+        "get_recipe_cost" => out(crate::commands::recipes::get_recipe_cost(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+        )),
+        "set_product_recipe" => out(crate::commands::recipes::set_product_recipe(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "lines")?,
+        )),
+        "recipe_availability" => out(crate::commands::recipes::recipe_availability(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "product_ids")?,
+        )),
+        "list_inventory_notifications" => out(crate::commands::ops::list_inventory_notifications(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "unread_inventory_notification_count" => {
+            out(crate::commands::ops::unread_inventory_notification_count(
+                state.clone(),
+                token.to_owned(),
+            ))
+        }
+        "mark_inventory_notification_read" => {
+            out(crate::commands::ops::mark_inventory_notification_read(
+                state.clone(),
+                token.to_owned(),
+                req::<_>(body, "id")?,
+            ))
+        }
+        "mark_all_inventory_notifications_read" => {
+            out(crate::commands::ops::mark_all_inventory_notifications_read(
+                state.clone(),
+                token.to_owned(),
+            ))
+        }
+        "list_expense_categories" => out(crate::commands::ops::list_expense_categories(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "create_expense_category" => out(crate::commands::ops::create_expense_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "name")?,
+        )),
+        "rename_expense_category" => out(crate::commands::ops::rename_expense_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "code")?,
+            req::<_>(body, "name")?,
+        )),
+        "delete_expense_category" => out(crate::commands::ops::delete_expense_category(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "code")?,
+        )),
+        "list_expenses" => out(crate::commands::ops::list_expenses(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "from")?,
+            opt::<_>(body, "to")?,
+            req::<_>(body, "recurring_only")?,
+        )),
+        "expenses_overview" => out(crate::commands::ops::expenses_overview(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "from")?,
+            opt::<_>(body, "to")?,
+        )),
+        "expenses_monthly" => out(crate::commands::ops::expenses_monthly(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "months")?,
+        )),
+        "create_expense" => out(crate::commands::ops::create_expense(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "list_shift_expenses" => out(crate::commands::ops::list_shift_expenses(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "list_expenses_of_shift" => out(crate::commands::ops::list_expenses_of_shift(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "shift_id")?,
+        )),
+        "today_summary" => out(crate::commands::ops::today_summary(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "analytics_charts" => out(crate::commands::ops::analytics_charts(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "from")?,
+            opt::<_>(body, "to")?,
+        )),
+        "monthly_executive_report" => out(crate::commands::ops::monthly_executive_report(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "month")?,
+            opt::<_>(body, "comparison")?,
+        )),
+        "list_audit" => out(crate::commands::ops::list_audit(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "limit")?,
+            opt::<_>(body, "action_like")?,
+        )),
+        "get_print_config" => out(crate::commands::ops::get_print_config(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_print_config" => out(crate::commands::ops::set_print_config(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "print_test" => out(crate::commands::ops::print_test(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "print_invoice" => out(crate::commands::ops::print_invoice(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "invoice_id")?,
+            opt::<_>(body, "force")?,
+        )),
+        "print_wash_ticket" => out(crate::commands::ops::print_wash_ticket(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            opt::<_>(body, "force")?,
+        )),
+        "preview_order_document" => out(crate::commands::ops::preview_order_document(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            opt::<_>(body, "discount_mode")?,
+            opt::<_>(body, "discount_value")?,
+            opt::<_>(body, "service_charge_minor")?,
+        )),
+        "preview_invoice" => out(crate::commands::ops::preview_invoice(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "invoice_id")?,
+        )),
+        "preview_wash_ticket" => out(crate::commands::ops::preview_wash_ticket(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "print_shift_report" => out(crate::commands::ops::print_shift_report(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "shift_id")?,
+            opt::<_>(body, "force")?,
+        )),
+        "preview_shift_report" => out(crate::commands::ops::preview_shift_report(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "shift_id")?,
+        )),
+        "preview_day_report_cmd" => out(crate::commands::ops::preview_day_report_cmd(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "day_id")?,
+        )),
+        "print_day_report_cmd" => out(crate::commands::ops::print_day_report_cmd(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "day_id")?,
+            opt::<_>(body, "force")?,
+        )),
+        "list_print_jobs" => out(crate::commands::ops::list_print_jobs(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "limit")?,
+        )),
+        "list_tables" => out(crate::commands::pos::list_tables(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "table_lifecycle_counters" => out(crate::commands::pos::table_lifecycle_counters(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "shift_lifecycle_counters" => out(crate::commands::pos::shift_lifecycle_counters(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_table_count" => out(crate::commands::pos::set_table_count(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "count")?,
+        )),
+        "open_table" => out(crate::commands::pos::open_table(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "table_id")?,
+        )),
+        "close_empty_table" => out(crate::commands::pos::close_empty_table(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "table_id")?,
+        )),
+        "start_order" => out(crate::commands::pos::start_order(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "table_id")?,
+        )),
+        "start_takeaway" => out(crate::commands::pos::start_takeaway(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "list_open_takeaway_orders" => out(crate::commands::pos::list_open_takeaway_orders(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "discard_order" => out(crate::commands::pos::discard_order(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "get_order" => out(crate::commands::pos::get_order(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "add_order_line" => out(crate::commands::pos::add_order_line(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            req::<_>(body, "product_id")?,
+            req::<_>(body, "quantity")?,
+        )),
+        "set_line_quantity" => out(crate::commands::pos::set_line_quantity(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "line_id")?,
+            req::<_>(body, "quantity")?,
+        )),
+        "remove_order_line" => out(crate::commands::pos::remove_order_line(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            req::<_>(body, "line_id")?,
+        )),
+        "mark_ready_to_pay" => out(crate::commands::pos::mark_ready_to_pay(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "set_order_discount" => out(crate::commands::pos::set_order_discount(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            opt::<_>(body, "discount_mode")?,
+            opt::<_>(body, "discount_value")?,
+            opt::<_>(body, "discount_pin")?,
+        )),
+        "attach_customer" => out(crate::commands::pos::attach_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "detach_customer" => out(crate::commands::pos::detach_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "get_order_customer" => out(crate::commands::pos::get_order_customer(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "preview_order" => out(crate::commands::pos::preview_order(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+            opt::<_>(body, "discount_mode")?,
+            opt::<_>(body, "discount_value")?,
+            opt::<_>(body, "_discount_pin")?,
+            opt::<_>(body, "service_charge_minor")?,
+        )),
+        "list_daily_wash_tickets" => out(crate::commands::pos::list_daily_wash_tickets(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "business_day_id")?,
+            opt::<_>(body, "query")?,
+            opt::<_>(body, "order_status")?,
+        )),
+        "issue_wash_ticket" => out(crate::commands::pos::issue_wash_ticket(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "order_id")?,
+        )),
+        "checkout_order" => out(crate::commands::pos::checkout_order(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "input")?,
+        )),
+        "get_invoice" => out(crate::commands::pos::get_invoice(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "invoice_id")?,
+        )),
+        "search_invoices" => out(crate::commands::pos::search_invoices(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "business_day_id")?,
+            opt::<_>(body, "query")?,
+            opt::<_>(body, "status")?,
+            opt::<_>(body, "method")?,
+        )),
+        "list_credit_accounts" => out(crate::commands::pos::list_credit_accounts(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "settle_credit" => out(crate::commands::pos::settle_credit(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "customer_id")?,
+            req::<_>(body, "amount")?,
+        )),
+        "sales_overview" => out(crate::commands::sales::sales_overview(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "filter")?,
+            opt::<_>(body, "sort")?,
+        )),
+        "sales_invoices" => out(crate::commands::sales::sales_invoices(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "filter")?,
+        )),
+        "sales_monthly" => out(crate::commands::sales::sales_monthly(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "months")?,
+        )),
+        "sales_cashiers" => out(crate::commands::sales::sales_cashiers(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "sales_target_progress" => out(crate::commands::sales::sales_target_progress(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "day_shift_state" => out(crate::commands::shifts::day_shift_state(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "open_business_day" => out(crate::commands::shifts::open_business_day(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "open_shift" => out(crate::commands::shifts::open_shift(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "opening_cash")?,
+        )),
+        "preview_shift_close" => out(crate::commands::shifts::preview_shift_close(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "close_shift" => out(crate::commands::shifts::close_shift(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "actual_cash")?,
+        )),
+        "open_shift_detail" => out(crate::commands::shifts::open_shift_detail(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "preview_managed_shift_close" => out(crate::commands::shifts::preview_managed_shift_close(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "shift_id")?,
+        )),
+        "close_managed_shift" => out(crate::commands::shifts::close_managed_shift(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "shift_id")?,
+            req::<_>(body, "actual_cash")?,
+        )),
+        "preview_day_settlement" => out(crate::commands::shifts::preview_day_settlement(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "settle_day" => out(crate::commands::shifts::settle_day(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "day_settlement_history" => out(crate::commands::shifts::day_settlement_history(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "preview_day_close" => out(crate::commands::shifts::preview_day_close(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "close_business_day" => out(crate::commands::shifts::close_business_day(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "list_closed_shifts" => out(crate::commands::shifts::list_closed_shifts(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "from")?,
+            opt::<_>(body, "to")?,
+        )),
+        "list_closed_business_days" => out(crate::commands::shifts::list_closed_business_days(
+            state.clone(),
+            token.to_owned(),
+            opt::<_>(body, "from")?,
+            opt::<_>(body, "to")?,
+        )),
+        "list_shifts" => out(crate::commands::shifts::list_shifts(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "day_id")?,
+        )),
+        "shift_report" => out(crate::commands::shifts::shift_report(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "shift_id")?,
+        )),
+        "day_report" => out(crate::commands::shifts::day_report(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "day_id")?,
+        )),
+        "db_status" => out(crate::commands::status::db_status(state.clone())),
+        "local_access_qr" => out(crate::commands::status::local_access_qr(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "get_network_config" => out(crate::commands::status::get_network_config(
+            state.clone(),
+            token.to_owned(),
+        )),
+        "set_network_config" => out(crate::commands::status::set_network_config(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "config")?,
+        )),
+        "local_api_status" => out(crate::commands::status::local_api_status(
+            state.clone(),
+            token.to_owned(),
+        )),
         _ => Err(ApiError::not_found()),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -603,7 +1306,10 @@ mod tests {
         // `search_invoices` takes only optional arguments, so an empty body is
         // complete and must NOT be refused — the table lists its `opt` keys as
         // absent precisely because they are not required.
-        assert_eq!(missing_required_argument("search_invoices", &serde_json::json!({})), None);
+        assert_eq!(
+            missing_required_argument("search_invoices", &serde_json::json!({})),
+            None
+        );
         // `list_audit` requires `limit` but not `action_like`: the required one
         // is reported, which is the distinction the table exists to preserve.
         assert_eq!(
@@ -615,7 +1321,10 @@ mod tests {
             None
         );
         // An unknown name is not a command, so it has no arguments to be missing.
-        assert_eq!(missing_required_argument("not_a_command", &serde_json::json!({})), None);
+        assert_eq!(
+            missing_required_argument("not_a_command", &serde_json::json!({})),
+            None
+        );
     }
 
     /// The defect this pins: a printer failure was mapped down to an opaque
@@ -640,7 +1349,11 @@ mod tests {
             assert_eq!(body["kind"], "printer", "{detail}");
             // Only the stable prefix travels: the `win32=` detail stays on the
             // machine that owns the printer, in the log.
-            assert_eq!(body["message"], detail.split(':').next().unwrap(), "{detail}");
+            assert_eq!(
+                body["message"],
+                detail.split(':').next().unwrap(),
+                "{detail}"
+            );
             assert!(
                 !body.to_string().contains("win32"),
                 "{detail} leaked a raw win32 code to the client"
@@ -669,9 +1382,8 @@ mod tests {
     /// error's own serialization, not about special-casing printing.
     #[test]
     fn a_business_failure_keeps_its_kind_and_code() {
-        let ApiResponse { status, body } =
-            out::<()>(Err(AppError::business("shift.already_open")))
-                .expect("a response, not a transport error");
+        let ApiResponse { status, body } = out::<()>(Err(AppError::business("shift.already_open")))
+            .expect("a response, not a transport error");
         assert_eq!(status, 422);
         assert_eq!(body["kind"], "business_rule");
         assert_eq!(body["message"], "shift.already_open");

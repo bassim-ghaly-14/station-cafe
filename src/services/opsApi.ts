@@ -173,6 +173,15 @@ export interface MonthlyMoney {
 }
 
 /**
+ * Which period the monthly report's movement figures are measured against.
+ *
+ * Mirrors the backend enum exactly (`SCREAMING_SNAKE_CASE` on the wire), and is
+ * the ONE representation of the choice in the UI: a mode that is not one of
+ * these two does not exist.
+ */
+export type MonthlyComparisonMode = 'PREVIOUS_MONTH' | 'SAME_MONTH_PREVIOUS_YEAR'
+
+/**
  * The one-page executive summary of a single business month.
  *
  * Every figure is already calculated by the backend from the existing monthly
@@ -186,12 +195,15 @@ export interface MonthlyExecutiveReport {
   month: string
   from: string
   to: string
-  /** The month immediately before `month`. */
-  previous_month: string
+  /** The month the movement figures are measured against, for `comparison`. */
+  comparison_month: string
+  /** Which period `comparison_month` names — never guessed in the UI. */
+  comparison: MonthlyComparisonMode
   cafe: MonthlyPerformance
   wash: MonthlyPerformance
   money: MonthlyMoney
-  previous: MonthlyMoney
+  /** The same three figures for `comparison_month`. */
+  comparison_figures: MonthlyMoney
 }
 
 /** One category's share of the period's spend. */
@@ -408,9 +420,18 @@ export const opsApi = {
    * the backend clock. There is deliberately no `from`/`to` pair: a monthly target
    * is a statement about a calendar month, so this read cannot be narrowed to an
    * arbitrary range the way the analytics charts can.
+   *
+   * `comparison` chooses which period the movement figures are measured against —
+   * the month before, or the same month one year earlier. It is omitted for the
+   * month before, which is the backend's default, so the reporting month and the
+   * comparison period are asked for together in one read and can never describe
+   * two different requests.
    */
-  monthlyExecutive: (month?: string) =>
-    call<MonthlyExecutiveReport>('monthly_executive_report', { month: month ?? null }),
+  monthlyExecutive: (month?: string, comparison?: MonthlyComparisonMode) =>
+    call<MonthlyExecutiveReport>('monthly_executive_report', {
+      month: month ?? null,
+      comparison: comparison ?? null,
+    }),
 
   closedBusinessDays: (from?: string, to?: string) =>
     call<ClosedBusinessDay[]>('list_closed_business_days', { from: from ?? null, to: to ?? null }),

@@ -159,6 +159,30 @@ pub fn previous_business_month(month: &str) -> Option<String> {
     Some(format!("{:04}-{:02}", year, month0 + 1))
 }
 
+/// The SAME calendar month, one year earlier: `2026-01` → `2025-01`.
+///
+/// The year-over-year counterpart to [`previous_business_month`], and for
+/// exactly the same reason it is not [`business_date_months_ago`]: that helper
+/// counts back from *today*, while a report about a month the caller chose needs
+/// the same month one year before THAT one — never the year the machine happens
+/// to be in.
+///
+/// Only the YEAR moves; the month number is carried across untouched, so
+/// February stays February and January is never December of the year before.
+/// Each year keeps its OWN length through [`business_month_bounds`], so
+/// February 2024 (29 days) is read against February 2023 (28 days) rather than
+/// being stretched to match it.
+///
+/// Pure calendar work on a `NaiveDate`: no instant, no timezone, no DST.
+///
+/// `None` for anything that is not a real month, exactly like
+/// [`business_month_bounds`].
+pub fn same_month_previous_year(month: &str) -> Option<String> {
+    let (first, _) = business_month_bounds(month)?;
+    let date = NaiveDate::parse_from_str(&first, "%Y-%m-%d").ok()?;
+    Some(format!("{:04}-{:02}", date.year() - 1, date.month()))
+}
+
 /// Whether a string is a well-formed month key AND a real calendar month.
 ///
 /// `2026-1` and `2026-13` are refused rather than repaired: a month identity is

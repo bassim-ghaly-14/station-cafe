@@ -186,7 +186,7 @@ export function MonthlyReportDocument({
   className,
 }: Readonly<{ report: MonthlyExecutiveReport; className?: string }>) {
   const { t, i18n } = useTranslation()
-  const movement = moneyMovement(report.money, report.previous)
+  const movement = moneyMovement(report.money, report.comparison_figures)
   const notes = keyNotes(report)
 
   return (
@@ -273,9 +273,15 @@ export function MonthlyReportDocument({
           {t('reports.monthly.movement')}
         </h2>
         <p className="text-caption">
-          {t('reports.monthly.vsPrevious', {
-            month: formatMonthKey(report.previous_month, i18n.language),
-          })}
+          {/* The period is named by the mode the backend resolved, never guessed
+              here: a year-over-year comparison must never read as the month
+              before. */}
+          {t(
+            report.comparison === 'SAME_MONTH_PREVIOUS_YEAR'
+              ? 'reports.monthly.vsSameMonthPreviousYear'
+              : 'reports.monthly.vsPrevious',
+            { month: formatMonthKey(report.comparison_month, i18n.language) },
+          )}
         </p>
         {/* Percentages only. The previous month's AMOUNTS are deliberately not
             printed: they are history the reports already show, and a second table
@@ -304,6 +310,11 @@ export function MonthlyReportDocument({
                 // The movement's direction is a SLUG resolved here, so an Arabic
                 // sentence never carries an English word.
                 direction: t(`reports.monthly.trend.${note.trend ?? 'flat'}`),
+                // The period a movement is measured against is a slug too: the
+                // month before, or the same month a year earlier.
+                period: note.values.period
+                  ? t(`reports.monthly.comparisonPeriod.${note.values.period}`)
+                  : t('reports.monthly.comparisonPeriod.previousMonth'),
                 // A note names its department in the active language; the slug
                 // the model carries is never printed.
                 department:

@@ -13,7 +13,20 @@
  * It is a separate module from the sheet that renders it so these rules can be
  * tested directly, without a DOM.
  */
-import type { MonthlyExecutiveReport, MonthlyMoney } from '@/services/opsApi'
+import type { MonthlyComparisonMode, MonthlyExecutiveReport, MonthlyMoney } from '@/services/opsApi'
+
+/**
+ * The two comparison periods, as the slugs the note sentences interpolate.
+ *
+ * A movement note says what it moved AGAINST, so the mode has to reach the
+ * sentence. It travels as a slug — like `direction` and `department` already do
+ * — and is resolved to a word in the active language where it is rendered, so no
+ * English ever sits inside an Arabic sentence and the i18n audit can see it.
+ */
+const COMPARISON_PERIOD: Record<MonthlyComparisonMode, string> = {
+  PREVIOUS_MONTH: 'previousMonth',
+  SAME_MONTH_PREVIOUS_YEAR: 'sameMonthPreviousYear',
+}
 
 /**
  * How one month's money moved against the month before it.
@@ -110,7 +123,9 @@ export function keyNotes(report: MonthlyExecutiveReport): ExecutiveNote[] {
     })
   }
 
-  const movement = moneyMovement(report.money, report.previous)
+  const movement = moneyMovement(report.money, report.comparison_figures)
+  // The note names WHAT it moved against, so the mode travels with the figure.
+  const period = COMPARISON_PERIOD[report.comparison] ?? COMPARISON_PERIOD.PREVIOUS_MONTH
   const largest = (Object.keys(movement) as (keyof typeof movement)[])
     .filter((key) => movement[key].percent !== null)
     // Ties keep the declared order (revenue before expenses before net), so the
@@ -122,7 +137,7 @@ export function keyNotes(report: MonthlyExecutiveReport): ExecutiveNote[] {
   if (largest) {
     notes.push({
       key: `reports.monthly.notes.${largest}Movement`,
-      values: { percent: String(movement[largest].percent) },
+      values: { percent: String(movement[largest].percent), period },
       trend: movement[largest].trend,
     })
   }

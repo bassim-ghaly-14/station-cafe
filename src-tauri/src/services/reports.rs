@@ -14,7 +14,7 @@ use crate::repositories::expenses;
 use crate::repositories::sales_analytics;
 use crate::repositories::shifts::{self, DayTotals, ShiftRow};
 use crate::repositories::Db;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub fn analytics_charts(
     conn: &Db,
@@ -222,6 +222,23 @@ pub struct MonthlyPerformance {
     pub achievement_percent: Option<String>,
 }
 
+/// Which period the monthly report compares its month against.
+///
+/// The ONE representation of that choice, carried on the payload as well as
+/// accepted as a parameter, so the UI never has to re-derive which month the
+/// `comparison` figures describe and can never label the wrong one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MonthlyComparison {
+    /// The month immediately before — the report's original behaviour, and the
+    /// default, so an absent parameter means exactly what it always did.
+    #[default]
+    PreviousMonth,
+    /// The same calendar month one year earlier: January 2026 against
+    /// January 2025, never December 2025.
+    SameMonthPreviousYear,
+}
+
 /// One month's money, in piastres.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct MonthlyMoney {
@@ -243,13 +260,16 @@ pub struct MonthlyExecutiveReport {
     /// Last business date actually READ: today while the month is in progress,
     /// so a part-month is never presented as a whole one.
     pub to: String,
-    /// The month immediately before this one — the movement comparison.
-    pub previous_month: String,
+    /// The month this one is compared against — the month immediately before it
+    /// or the same month a year earlier, according to `comparison`.
+    pub comparison_month: String,
+    /// Which of the two comparison periods `comparison_month` names.
+    pub comparison: MonthlyComparison,
     pub cafe: MonthlyPerformance,
     pub wash: MonthlyPerformance,
     pub money: MonthlyMoney,
-    /// The same three figures for `previous_month`.
-    pub previous: MonthlyMoney,
+    /// The same three figures for `comparison_month`.
+    pub comparison_figures: MonthlyMoney,
 }
 
 /// The month's revenue split by department, exactly as the monthly aggregation
@@ -324,11 +344,33 @@ fn department_performance(
     })
 }
 
+/// The month `month` is compared against, for the chosen mode.
+///
+/// Both branches reuse the EXISTING month-identity helpers — `previous_business_month`
+/// and `same_month_previous_year` — so a comparison month is derived by the same
+/// calendar arithmetic the rest of the application already trusts, and no second
+/// date rule is introduced here. Each period then reads through the same
+/// `month_read_window`, so both sides get their own calendar bounds.
+///
+/// An absent month resolves first (to the current business month), so the
+/// comparison year always follows the SELECTED reporting month rather than the
+/// system clock.
+fn comparison_month(month: &str, comparison: MonthlyComparison) -> AppResult<String> {
+    let resolved = match comparison {
+        MonthlyComparison::PreviousMonth => crate::time::previous_business_month(month),
+        MonthlyComparison::SameMonthPreviousYear => crate::time::same_month_previous_year(month),
+    };
+    resolved.ok_or_else(|| AppError::validation("settings.invalid_month"))
+}
+
 /// The whole executive summary of ONE business month.
 ///
 /// `month` absent means the current business month, resolved by Station's own
 /// clock — never from the browser and never from a page date picker, which
 /// scopes a different question.
+///
+/// `comparison` chooses WHICH period the movement figures are measured against;
+/// it defaults to the month before, which is this report's original behaviour.
 ///
 /// Manager-level, like every other read on this page: these are the same
 /// financial figures `analytics_charts` and the Sales workspace already expose
@@ -337,6 +379,7 @@ pub fn monthly_executive(
     conn: &Db,
     actor: &crate::repositories::users::User,
     month: Option<&str>,
+    comparison: MonthlyComparison,
 ) -> AppResult<MonthlyExecutiveReport> {
     crate::services::auth::require_role(actor, "MANAGER")?;
     let month = match month {
@@ -344,14 +387,16 @@ pub fn monthly_executive(
         None => crate::time::current_business_month(),
     };
     let (from, to) = month_read_window(&month)?;
-    let previous_month = crate::time::previous_business_month(&month)
-        .ok_or_else(|| AppError::validation("settings.invalid_month"))?;
+    let comparison_month = comparison_month(&month, comparison)?;
 
     let (money, split) = month_money(conn, &month)?;
-    // The previous month is read only for its money: the targets belong to the
+    // The comparison month is read only for its money: the targets belong to the
     // month being reported, and comparing two targets would be the "overall
-    // achievement" this module refuses to invent.
-    let (previous, _) = month_money(conn, &previous_month)?;
+    // achievement" this module refuses to invent. It is the SAME read for both
+    // modes, so a period's figures mean exactly the same thing whichever period
+    // it is — and an empty historical month reads as zeroes rather than failing,
+    // which `month_money` already guarantees.
+    let (comparison_figures, _) = month_money(conn, &comparison_month)?;
 
     Ok(MonthlyExecutiveReport {
         cafe: department_performance(
@@ -367,10 +412,11 @@ pub fn monthly_executive(
             split.wash_minor,
         )?,
         money,
-        previous,
+        comparison_figures,
         month,
         from,
         to,
-        previous_month,
+        comparison_month,
+        comparison,
     })
 }

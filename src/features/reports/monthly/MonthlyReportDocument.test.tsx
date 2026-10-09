@@ -17,7 +17,8 @@ const REPORT: MonthlyExecutiveReport = {
   month: '2026-09',
   from: '2026-09-01',
   to: '2026-09-30',
-  previous_month: '2026-08',
+  comparison_month: '2026-08',
+  comparison: 'PREVIOUS_MONTH',
   cafe: {
     actual_minor: 8_240_000,
     target_minor: 8_000_000,
@@ -31,7 +32,11 @@ const REPORT: MonthlyExecutiveReport = {
     achievement_percent: '95.56',
   },
   money: { revenue_minor: 12_540_000, expenses_minor: 3_240_000, net_minor: 9_300_000 },
-  previous: { revenue_minor: 11_820_000, expenses_minor: 2_980_000, net_minor: 8_840_000 },
+  comparison_figures: {
+    revenue_minor: 11_820_000,
+    expenses_minor: 2_980_000,
+    net_minor: 8_840_000,
+  },
 }
 
 const renderSheet = (report: MonthlyExecutiveReport = REPORT) =>
@@ -95,7 +100,7 @@ describe('MonthlyReportDocument', () => {
   it('states no movement at all when the month before had nothing in it', () => {
     renderSheet({
       ...REPORT,
-      previous: { revenue_minor: 0, expenses_minor: 0, net_minor: 0 },
+      comparison_figures: { revenue_minor: 0, expenses_minor: 0, net_minor: 0 },
     })
     expect(screen.queryByText(/Infinity|NaN/)).not.toBeInTheDocument()
     expect(screen.getAllByText('—').length).toBeGreaterThan(0)
@@ -129,10 +134,30 @@ describe('MonthlyReportDocument', () => {
     expect(fall.textContent).toContain('↓')
   })
 
+  /**
+   * The period the movement is measured against is named by the MODE the backend
+   * resolved, so a year-over-year comparison can never be labelled as the month
+   * before — the one mislabel that would make an owner compare the wrong periods.
+   */
+  it('names the year-earlier comparison period instead of the previous month', () => {
+    renderSheet({
+      ...REPORT,
+      comparison_month: '2025-09',
+      comparison: 'SAME_MONTH_PREVIOUS_YEAR',
+    })
+    expect(screen.getByText('مقارنة بنفس الشهر من العام الماضي — سبتمبر 2025')).toBeInTheDocument()
+    expect(screen.queryByText('مقارنة بـ أغسطس 2026')).not.toBeInTheDocument()
+  })
+
+  it('names the previous-month comparison period for the original mode', () => {
+    renderSheet()
+    expect(screen.getByText('مقارنة بـ أغسطس 2026')).toBeInTheDocument()
+  })
+
   it('keeps an unchanged figure neutral rather than green or red', () => {
     renderSheet({
       ...REPORT,
-      money: { ...REPORT.money, revenue_minor: REPORT.previous.revenue_minor },
+      money: { ...REPORT.money, revenue_minor: REPORT.comparison_figures.revenue_minor },
     })
     // 0% — flat is neither success nor destructive, and keeps its own arrow.
     const flat = screen.getByText(/→.*0%/)
@@ -140,6 +165,20 @@ describe('MonthlyReportDocument', () => {
     expect(flat.className).not.toContain('text-success')
     expect(flat.className).not.toContain('text-destructive')
     expect(flat.textContent).toContain('→')
+  })
+
+  it('says what a movement note moved against, in the active language', () => {
+    renderSheet({
+      ...REPORT,
+      comparison_month: '2025-09',
+      comparison: 'SAME_MONTH_PREVIOUS_YEAR',
+    })
+    // Expenses rose 2,980,000 → 3,240,000 (+8.7%), the largest movement. The
+    // sentence names the YEAR-EARLIER period, and no English slug reaches it.
+    expect(
+      screen.getByText('المصروفات ارتفاع 8.7% عن نفس الشهر من العام الماضي.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/previousMonth|SAME_MONTH/)).not.toBeInTheDocument()
   })
 
   it('prints at most three notes', () => {

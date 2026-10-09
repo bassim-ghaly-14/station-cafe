@@ -21,7 +21,8 @@ const report = (over: Partial<MonthlyExecutiveReport> = {}): MonthlyExecutiveRep
   month: '2026-09',
   from: '2026-09-01',
   to: '2026-09-30',
-  previous_month: '2026-08',
+  comparison_month: '2026-08',
+  comparison: 'PREVIOUS_MONTH',
   cafe: {
     actual_minor: 8_240_000,
     target_minor: 8_000_000,
@@ -35,7 +36,7 @@ const report = (over: Partial<MonthlyExecutiveReport> = {}): MonthlyExecutiveRep
     achievement_percent: '95.56',
   },
   money: money(12_540_000, 3_240_000),
-  previous: money(11_820_000, 2_980_000),
+  comparison_figures: money(11_820_000, 2_980_000),
   ...over,
 })
 
@@ -91,7 +92,24 @@ describe('moneyMovement', () => {
     expect(movement.net).toEqual({ trend: 'unavailable', percent: null })
   })
 
-  it('reports the whole set as unavailable when the previous month was empty', () => {
+  /**
+   * The comparison period is the ONLY thing the mode changes — the movement
+   * arithmetic itself is the same function over the same figures, so the new
+   * mode introduces no new percentage semantics.
+   */
+  it('measures a positive, negative and equal change identically for either period', () => {
+    const rise = moneyMovement(money(110, 100), money(100, 80))
+    const fall = moneyMovement(money(90, 100), money(100, 80))
+    expect(rise.revenue.percent).toBe(10)
+    expect(fall.revenue.percent).toBe(-10)
+    // Equal values are flat, not a hidden zero change.
+    expect(moneyMovement(money(100, 100), money(100, 100)).revenue).toEqual({
+      trend: 'flat',
+      percent: 0,
+    })
+  })
+
+  it('reports the whole set as unavailable when the comparison month was empty', () => {
     const movement = moneyMovement(money(500, 100), money(0, 0))
     expect(Object.values(movement).map((entry) => entry.percent)).toEqual([null, null, null])
   })
@@ -131,7 +149,7 @@ describe('keyNotes', () => {
   })
 
   it('picks the largest movement, and names no figure it cannot compare', () => {
-    const notes = keyNotes(report({ previous: money(0, 0) }))
+    const notes = keyNotes(report({ comparison_figures: money(0, 0) }))
     expect(notes).toHaveLength(2)
     expect(notes.some((note) => note.key.endsWith('Movement'))).toBe(false)
   })
@@ -142,12 +160,12 @@ describe('keyNotes', () => {
    * as "excellent", "weak" or "needs improvement".
    */
   it('carries no prose at all — only keys and figures', () => {
-    const allowed = ['percent', 'department', 'direction']
+    const allowed = ['percent', 'department', 'direction', 'period']
     for (const note of keyNotes(report())) {
       expect(Object.keys(note.values).every((key) => allowed.includes(key))).toBe(true)
       // Every value is a slug or a number: nothing a judgement could hide in.
       for (const value of Object.values(note.values)) {
-        expect(value).toMatch(/^[a-z]+$|^-?\d+(\.\d+)?$/)
+        expect(value).toMatch(/^[a-z][a-zA-Z]*$|^-?\d+(\.\d+)?$/)
       }
       expect(note.key).toMatch(/^reports\.monthly\.notes\.[a-zA-Z]+$/)
     }

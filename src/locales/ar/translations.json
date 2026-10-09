@@ -636,9 +636,16 @@
       "subtitle": "ملخص الشهر — {{month}}",
       "generated": "تقرير إداري",
       "selectMonth": "اختر الشهر",
+      "selectComparison": "المقارنة",
       "currentMonth": "الشهر الحالي",
       "previousMonth": "الشهر السابق",
       "nextMonth": "الشهر التالي",
+      "comparisonPreviousMonth": "الشهر السابق",
+      "comparisonSameMonthPreviousYear": "نفس الشهر من العام الماضي",
+      "comparisonPeriod": {
+        "previousMonth": "الشهر السابق",
+        "sameMonthPreviousYear": "نفس الشهر من العام الماضي"
+      },
       "print": "تصدير PDF",
       "printError": "تعذر فتح نافذة الطباعة",
       "loading": "جارٍ تحميل ملخص الشهر",
@@ -654,13 +661,14 @@
       "expenses": "المصروفات",
       "net": "الصافي",
       "vsPrevious": "مقارنة بـ {{month}}",
+      "vsSameMonthPreviousYear": "مقارنة بنفس الشهر من العام الماضي — {{month}}",
       "percentValue": "{{value}}%",
       "notes": {
         "cafeTarget": "الكافيه حقق {{percent}}% من هدفه الشهري.",
         "washTarget": "المغسلة حققت {{percent}}% من هدفها الشهري.",
-        "revenueMovement": "الإيرادات {{direction}} {{percent}}% عن الشهر السابق.",
-        "expensesMovement": "المصروفات {{direction}} {{percent}}% عن الشهر السابق.",
-        "netMovement": "الصافي {{direction}} {{percent}}% عن الشهر السابق."
+        "revenueMovement": "الإيرادات {{direction}} {{percent}}% عن {{period}}.",
+        "expensesMovement": "المصروفات {{direction}} {{percent}}% عن {{period}}.",
+        "netMovement": "الصافي {{direction}} {{percent}}% عن {{period}}."
       },
       "trend": {
         "up": "ارتفاع",

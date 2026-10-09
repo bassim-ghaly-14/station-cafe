@@ -263,21 +263,32 @@ pub fn analytics_charts(
 
 /// The monthly executive summary for one business month — the one-page figures
 /// the owner reads: both departments against their own targets, the month's
-/// money, and the month before it for comparison.
+/// money, and a comparison month's figures.
 ///
-/// It takes an optional `month` (`YYYY-MM`) and nothing else. No `from`/`to`
-/// pair, no filter, no category list: a monthly target is a statement about a
-/// calendar month, so this command physically cannot be pointed at an arbitrary
-/// range the way a range report can. An absent month means the current Cairo
-/// business month, decided by the backend clock.
+/// It takes an optional `month` (`YYYY-MM`) and an optional `comparison` mode
+/// and nothing else. No `from`/`to` pair, no filter, no category list: a monthly
+/// target is a statement about a calendar month, so this command physically
+/// cannot be pointed at an arbitrary range the way a range report can. An absent
+/// month means the current Cairo business month, decided by the backend clock.
+///
+/// `comparison` selects which period the movement figures are measured against —
+/// the month before (the default, and what an absent value has always meant) or
+/// the same month one year earlier. The resolved comparison month travels back
+/// on the payload, so the UI never guesses it.
 #[tauri::command(rename_all = "snake_case")]
 pub fn monthly_executive_report(
     state: State<'_, AppState>,
     token: String,
     month: Option<String>,
+    comparison: Option<crate::services::reports::MonthlyComparison>,
 ) -> AppResult<crate::services::reports::MonthlyExecutiveReport> {
     authorized(&state, &token, "MANAGER", move |conn, actor| {
-        reports::monthly_executive(conn, actor, month.as_deref())
+        reports::monthly_executive(
+            conn,
+            actor,
+            month.as_deref(),
+            comparison.unwrap_or_default(),
+        )
     })
 }
 
