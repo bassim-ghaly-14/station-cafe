@@ -359,7 +359,6 @@ export function RawMaterialsPanel() {
     load()
   }, [load])
 
-  const empty = materials !== null && materials.length === 0
   const lowCount = materials?.filter((m) => m.current_quantity === 0).length ?? 0
   const okCount = (materials?.length ?? 0) - lowCount
 
@@ -384,6 +383,41 @@ export function RawMaterialsPanel() {
   const closeAndReload = () => {
     setDialog(null)
     load()
+  }
+
+  /**
+   * The material body: loading skeleton, error-with-retry, the deliberately
+   * rare empty state, then the wide/narrow presentation of the SET. Split from
+   * the panel to keep each decision on its own early return, in the same order
+   * the ternary chain it replaces occupied.
+   */
+  function renderMaterialList() {
+    if (materials === null) {
+      return listErr ? (
+        <ErrorState message={listErr} onRetry={load} retryLabel={t('app.retry')} />
+      ) : (
+        <ListRowsSkeleton rows={4} />
+      )
+    }
+    if (materials.length === 0) {
+      return (
+        <EmptyState
+          title={t('rawmaterials.empty')}
+          action={<p className="text-caption">{t('rawmaterials.emptyHint')}</p>}
+        />
+      )
+    }
+    if (wide) {
+      return (
+        <MaterialTable
+          rows={materials}
+          caption={t('rawmaterials.title')}
+          busy={false}
+          onAction={handleAction}
+        />
+      )
+    }
+    return <MaterialRecords rows={materials} onAction={handleAction} />
   }
 
   return (
@@ -428,27 +462,7 @@ export function RawMaterialsPanel() {
           </Button>
         </div>
 
-        {materials === null ? (
-          listErr ? (
-            <ErrorState message={listErr} onRetry={load} retryLabel={t('app.retry')} />
-          ) : (
-            <ListRowsSkeleton rows={4} />
-          )
-        ) : empty ? (
-          <EmptyState
-            title={t('rawmaterials.empty')}
-            action={<p className="text-caption">{t('rawmaterials.emptyHint')}</p>}
-          />
-        ) : wide ? (
-          <MaterialTable
-            rows={materials}
-            caption={t('rawmaterials.title')}
-            busy={false}
-            onAction={handleAction}
-          />
-        ) : (
-          <MaterialRecords rows={materials} onAction={handleAction} />
-        )}
+        {renderMaterialList()}
       </Card>
 
       <Card>
