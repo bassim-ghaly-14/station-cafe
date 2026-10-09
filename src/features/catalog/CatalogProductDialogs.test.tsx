@@ -56,6 +56,7 @@ function product(over: Partial<Product> = {}): Product {
     min_quantity: 5,
     is_seed: false,
     is_new: false,
+    has_recipe: false,
     ...over,
   }
 }

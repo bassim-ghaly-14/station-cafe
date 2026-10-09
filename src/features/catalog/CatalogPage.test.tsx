@@ -46,6 +46,29 @@ vi.mock('@/features/auth/useSession', () => ({
   useSession: () => ({ user: { id: 1, role: mocks.role } }),
 }))
 
+const recipeMocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  getRecipe: vi.fn(),
+  recipeCost: vi.fn(),
+  setRecipe: vi.fn(),
+}))
+
+vi.mock('@/services/recipesApi', () => ({
+  recipesApi: {
+    list: recipeMocks.list,
+    create: vi.fn(),
+    update: vi.fn(),
+    archive: vi.fn(),
+    purchase: vi.fn(),
+    adjust: vi.fn(),
+    waste: vi.fn(),
+    movements: vi.fn(),
+    getRecipe: recipeMocks.getRecipe,
+    recipeCost: recipeMocks.recipeCost,
+    setRecipe: recipeMocks.setRecipe,
+  },
+}))
+
 function product(over: Partial<Product> = {}): Product {
   return {
     id: 1,
@@ -60,6 +83,7 @@ function product(over: Partial<Product> = {}): Product {
     stock_quantity: 0,
     is_seed: false,
     is_new: false,
+    has_recipe: false,
     ...over,
   }
 }
@@ -265,6 +289,95 @@ describe('CatalogPage category and stock UI', () => {
         expect(price.querySelector('span')?.className).toContain('text-3xl')
         expect(price.querySelector('span')?.className).toContain('text-foreground-strong')
       }
+    })
+  })
+
+  describe('CatalogPage recipe signal and action', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+      mocks.listCategories.mockReset().mockResolvedValue([{ id: 1, name: 'عام' }])
+      recipeMocks.list.mockReset().mockResolvedValue([])
+      recipeMocks.getRecipe.mockReset().mockResolvedValue([])
+      recipeMocks.recipeCost
+        .mockReset()
+        .mockResolvedValue({ product_id: 1, lines: [], total_cost_minor: null })
+      recipeMocks.setRecipe.mockReset().mockResolvedValue(undefined)
+    })
+
+    it('shows the recipe badge only on a tracked product that has one', async () => {
+      mocks.list.mockResolvedValue([
+        product({ id: 1, name: 'Espresso', track_inventory: true, has_recipe: true }),
+        product({ id: 2, name: 'Plain', track_inventory: true, has_recipe: false }),
+        product({ id: 3, name: 'Untracked', track_inventory: false, has_recipe: false }),
+      ])
+      page()
+      await screen.findByText('Espresso')
+
+      const cards = screen.getAllByTestId('catalog-card')
+      expect(within(cards[0]).queryByTestId('catalog-recipe-badge')).toHaveTextContent('لديه وصفة')
+      expect(within(cards[1]).queryByTestId('catalog-recipe-badge')).not.toBeInTheDocument()
+      expect(within(cards[2]).queryByTestId('catalog-recipe-badge')).not.toBeInTheDocument()
+    })
+
+    it('offers the recipe action only to a manager on a tracked product', async () => {
+      mocks.list.mockResolvedValue([
+        product({ id: 1, name: 'Espresso', track_inventory: true, has_recipe: false }),
+        product({ id: 2, name: 'Untracked', track_inventory: false, has_recipe: false }),
+      ])
+      page()
+      await screen.findByText('Espresso')
+
+      const cards = screen.getAllByTestId('catalog-card')
+      expect(within(cards[0]).getByRole('button', { name: 'الوصفة' })).toBeInTheDocument()
+      expect(within(cards[1]).queryByRole('button', { name: 'الوصفة' })).not.toBeInTheDocument()
+    })
+
+    it('hides the recipe action from STAFF entirely', async () => {
+      mocks.role = 'STAFF'
+      mocks.list.mockResolvedValue([
+        product({ id: 1, name: 'Espresso', track_inventory: true, has_recipe: true }),
+      ])
+      page()
+      await screen.findByText('Espresso')
+      expect(screen.queryByRole('button', { name: 'الوصفة' })).not.toBeInTheDocument()
+    })
+
+    it('opens the recipe dialog and saves the edited lines', async () => {
+      recipeMocks.list.mockResolvedValue([
+        {
+          id: 7,
+          name: 'Coffee beans',
+          department: 'CAFE',
+          base_unit: 'GRAM',
+          current_quantity: 1000,
+          last_purchase_unit_cost_minor: 50,
+          is_active: true,
+          created_at: '2026-01-01T00:00:00',
+        },
+      ])
+      mocks.list.mockResolvedValue([
+        product({ id: 1, name: 'Espresso', track_inventory: true, has_recipe: false }),
+      ])
+      page()
+      await screen.findByText('Espresso')
+      fireEvent.click(screen.getByRole('button', { name: 'الوصفة' }))
+
+      const dialog = await screen.findByRole('dialog', { name: /وصفة/ })
+      // The empty-recipe state explains a tracked product may sell with no recipe.
+      expect(within(dialog).getByText(/يمكن أن يباع بدون وصفة/)).toBeInTheDocument()
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'إضافة مادة' }))
+      const selects = within(dialog).getAllByRole('combobox')
+      fireEvent.change(selects[selects.length - 1], { target: { value: '7' } })
+      const qty = within(dialog).getByLabelText('الكمية للوحدة')
+      fireEvent.change(qty, { target: { value: '18' } })
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+      await waitFor(() =>
+        expect(recipeMocks.setRecipe).toHaveBeenCalledWith(1, [
+          { raw_material_id: 7, quantity_base: 18 },
+        ]),
+      )
     })
   })
 

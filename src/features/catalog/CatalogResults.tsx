@@ -27,6 +27,7 @@ export function CatalogResults({
   onEdit,
   onToggle,
   onDelete,
+  onRecipe,
 }: {
   /** `null` while the first read is in flight. */
   readonly items: Product[] | null
@@ -40,6 +41,8 @@ export function CatalogResults({
   readonly onEdit: (product: Product) => void
   readonly onToggle: (product: Product) => void
   readonly onDelete: (product: Product) => void
+  /** Opens the recipe editor. Only wired for tracked products. */
+  readonly onRecipe: (product: Product) => void
 }) {
   const { t } = useTranslation()
 
@@ -77,6 +80,12 @@ export function CatalogResults({
           onEdit={() => onEdit(product)}
           onToggle={() => onToggle(product)}
           onDelete={() => onDelete(product)}
+          // MANAGER-only affordance on tracked products only: the dialog
+          // owns the `trackFirst` guard, so the button simply never exists
+          // for a product that could never accept a recipe.
+          onRecipe={
+            canManageCatalog && product.track_inventory ? () => onRecipe(product) : undefined
+          }
         />
       ))}
     </div>

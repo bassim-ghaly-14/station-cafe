@@ -9,6 +9,7 @@ pub mod developer;
 pub mod employees;
 pub mod ops;
 pub mod pos;
+pub mod recipes;
 
 pub mod reconciliation;
 pub mod reports;

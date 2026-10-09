@@ -32,12 +32,16 @@
  *   `StockList.tsx`          the stock table ⇄ record list and its toolbar
  *   `MovementList.tsx`       the movement table ⇄ record list
  *   `AdjustStockDialog.tsx`  the one mutation this page owns
+ *   `RawMaterialsPanel.tsx`  the Raw Materials segment — a SEPARATE inventory
+ *                            domain (raw materials consumed by recipes), shown
+ *                            behind one explicit tab switch so product stock
+ *                            and material stock are never conflated
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState, ErrorState } from '@/components/states'
-import { ListRowsSkeleton } from '@/components/ui'
+import { Button, ListRowsSkeleton } from '@/components/ui'
 import { useToast } from '@/components/ui/toast'
 import { useErrText } from '@/lib/err'
 import {
@@ -50,6 +54,7 @@ import { AdjustStockDialog } from './AdjustStockDialog'
 import { InventoryHeader, InventorySummary } from './InventoryHeader'
 import { InventoryNotifications } from './InventoryNotifications'
 import { MovementList } from './MovementList'
+import { RawMaterialsPanel } from './RawMaterialsPanel'
 import { StockAttention } from './StockAttention'
 import { StockList } from './StockList'
 import {
@@ -204,6 +209,13 @@ export default function InventoryPage() {
   const { t } = useTranslation()
   const toast = useToast()
   const errText = useErrText(t)
+  /**
+   * Which inventory domain is showing. Product stock and raw-material stock
+   * are DIFFERENT quantities with different lifecycles — the switch is a real
+   * `tablist` (the same strip shape ReportsPage uses) so the two are never
+   * merged into one ambiguous list and the selected segment is announced.
+   */
+  const [segment, setSegment] = useState<'products' | 'materials'>('products')
   const [stock, setStock] = useState<StockRow[] | null>(null)
   const [movements, setMovements] = useState<MovementRow[] | null>(null)
   const [stockErr, setStockErr] = useState<string | null>(null)
@@ -276,28 +288,64 @@ export default function InventoryPage() {
     <div className="flex flex-col gap-4">
       <InventoryHeader />
 
-      <StockSection
-        stock={stock}
-        error={stockErr}
-        refreshing={false}
-        onRetry={load}
-        onAdjust={setAdjusting}
-        notifications={notifications}
-        unread={unread}
-        marking={marking}
-        onMarkRead={markRead}
-        onMarkAllRead={markAllRead}
-      />
-
-      <LoadedList
-        rows={movements}
-        error={movErr}
-        onRetry={load}
-        skeletonRows={4}
-        emptyTitle={t('inventory.noMovements')}
+      {/* The domain switch: product stock vs raw-material stock. */}
+      <div
+        className="-mx-3 flex gap-2 overflow-x-auto overscroll-x-contain px-3 sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-0"
+        role="tablist"
+        aria-label={t('rawmaterials.tablistLabel')}
       >
-        {(loaded) => <MovementList rows={loaded} window={MOVEMENT_WINDOW} refreshing={false} />}
-      </LoadedList>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={segment === 'products'}
+          variant={segment === 'products' ? 'default' : 'ghost'}
+          size="sm"
+          className="shrink-0"
+          onClick={() => setSegment('products')}
+        >
+          {t('rawmaterials.tabProducts')}
+        </Button>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={segment === 'materials'}
+          variant={segment === 'materials' ? 'default' : 'ghost'}
+          size="sm"
+          className="shrink-0"
+          onClick={() => setSegment('materials')}
+        >
+          {t('rawmaterials.tabMaterials')}
+        </Button>
+      </div>
+
+      {segment === 'materials' ? (
+        <RawMaterialsPanel />
+      ) : (
+        <>
+          <StockSection
+            stock={stock}
+            error={stockErr}
+            refreshing={false}
+            onRetry={load}
+            onAdjust={setAdjusting}
+            notifications={notifications}
+            unread={unread}
+            marking={marking}
+            onMarkRead={markRead}
+            onMarkAllRead={markAllRead}
+          />
+
+          <LoadedList
+            rows={movements}
+            error={movErr}
+            onRetry={load}
+            skeletonRows={4}
+            emptyTitle={t('inventory.noMovements')}
+          >
+            {(loaded) => <MovementList rows={loaded} window={MOVEMENT_WINDOW} refreshing={false} />}
+          </LoadedList>
+        </>
+      )}
 
       {adjusting ? (
         <AdjustStockDialog

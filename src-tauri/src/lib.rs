@@ -11,7 +11,8 @@
 #![allow(dead_code)]
 
 #[cfg(test)]
-mod analytics_test;
+mod recipes_test;
+
 #[cfg(test)]
 mod attendance_override_test;
 mod commands;
@@ -300,6 +301,18 @@ pub fn run() {
             commands::ops::list_stock_movements,
             commands::ops::adjust_stock,
             commands::ops::set_stock_minimum,
+            commands::recipes::list_raw_materials,
+            commands::recipes::create_raw_material,
+            commands::recipes::update_raw_material,
+            commands::recipes::archive_raw_material,
+            commands::recipes::purchase_raw_material,
+            commands::recipes::adjust_raw_material,
+            commands::recipes::waste_raw_material,
+            commands::recipes::list_raw_material_movements,
+            commands::recipes::get_product_recipe,
+            commands::recipes::get_recipe_cost,
+            commands::recipes::set_product_recipe,
+            commands::recipes::recipe_availability,
             commands::ops::list_inventory_notifications,
             commands::ops::unread_inventory_notification_count,
             commands::ops::mark_inventory_notification_read,

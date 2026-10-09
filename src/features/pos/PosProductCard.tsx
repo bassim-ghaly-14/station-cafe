@@ -43,7 +43,17 @@ import type { Product } from '@/services/posApi'
 export function PosProductCard({
   product,
   onAdd,
-}: Readonly<{ readonly product: Product; readonly onAdd: (product: Product) => void }>) {
+  recipeShort = false,
+}: Readonly<{
+  readonly product: Product
+  readonly onAdd: (product: Product) => void
+  /**
+   * Advisory recipe signal: true when this product HAS a recipe whose current
+   * balances do not cover ONE unit. Never blocks the tap and never touches
+   * product-stock display — checkout revalidates authoritatively.
+   */
+  readonly recipeShort?: boolean
+}>) {
   const { t } = useTranslation()
   const tone = categoryTone(product.category_id)
   const isNew = product.is_new
@@ -104,6 +114,15 @@ export function PosProductCard({
           is spelled and coloured the same way on both screens. */}
       <div className="flex w-full flex-wrap items-center gap-1.5">
         <CatalogCategoryBadge categoryId={product.category_id} name={product.category_name} />
+        {recipeShort ? (
+          <span
+            data-testid={`pos-recipe-short-${product.id}`}
+            title={t('pos.recipeShortHint')}
+            className="rounded-full border border-warning-border bg-warning-soft px-2 py-0.5 text-caption font-semibold text-warning"
+          >
+            {t('pos.recipeShort')}
+          </span>
+        ) : null}
       </div>
 
       {/* Price is the hero: the largest thing on the tile after the name. */}

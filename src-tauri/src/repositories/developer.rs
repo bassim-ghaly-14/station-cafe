@@ -32,6 +32,12 @@ pub const APPLICATION_DATA_TABLES: &[&str] = &[
     // alongside the other product-child tables, well before `products` below —
     // otherwise a reload that re-seeds a fresh catalog trips the FK on DELETE.
     "inventory_notifications",
+    // Raw-material domain children, emptied before their parents
+    // (`raw_materials`, `expenses`, `invoices`, `products`, `users`) so the
+    // reset stays child-first against the live FK graph.
+    "raw_material_movements",
+    "product_recipe_items",
+    "raw_materials",
     "order_lines",
     "invoice_lines",
     "invoice_customers",

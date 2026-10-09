@@ -10,6 +10,7 @@ pub mod expenses;
 pub mod invoices;
 pub mod ops;
 pub mod pos;
+pub mod recipes;
 pub mod sales_analytics;
 pub mod shifts;
 pub mod users;

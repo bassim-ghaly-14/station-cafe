@@ -47,6 +47,7 @@ export type OperationGroupId =
   | 'credit'
   | 'discount'
   | 'inventory'
+  | 'rawmaterials'
   | 'expenses'
   | 'operations'
   | 'settings'
@@ -72,6 +73,7 @@ const NAMESPACE_GROUP: Record<string, OperationGroupId> = {
   credit: 'credit',
   discount: 'discount',
   inventory: 'inventory',
+  rawmaterials: 'rawmaterials',
   expense: 'expenses',
   shift: 'operations',
   day: 'operations',
@@ -152,6 +154,7 @@ export const KNOWN_ENTITIES = new Set([
   'employee_advance',
   'payroll_run',
   'attendance_day',
+  'raw_material',
   'settings',
 ])
 
@@ -176,6 +179,7 @@ export const OPERATION_GROUPS: Record<OperationGroupId, { icon: LucideIcon; tone
     credit: { icon: Wallet, tone: 'info' },
     discount: { icon: Percent, tone: 'neutral' },
     inventory: { icon: Boxes, tone: 'neutral' },
+    rawmaterials: { icon: Boxes, tone: 'info' },
     expenses: { icon: ScrollText, tone: 'neutral' },
     operations: { icon: Clock, tone: 'info' },
     settings: { icon: Settings, tone: 'neutral' },
@@ -200,6 +204,7 @@ const GROUP_ORDER: readonly OperationGroupId[] = [
   'tables',
   'catalog',
   'inventory',
+  'rawmaterials',
   'expenses',
   'customer',
   'staff',

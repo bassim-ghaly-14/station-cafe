@@ -24,6 +24,7 @@ function product(over: Partial<Product>): Product {
     stock_quantity: 0,
     is_seed: true,
     is_new: false,
+    has_recipe: false,
     ...over,
   }
 }
@@ -195,6 +196,50 @@ describe('ProductBrowser', () => {
     expect(tile).not.toHaveAttribute('data-new')
     expect(screen.queryByTestId('catalog-new-badge')).not.toBeInTheDocument()
     expect(tile.className).not.toContain('bg-new-soft')
+  })
+
+  it('flags a recipe-short product without blocking the tap', () => {
+    const onAdd = vi.fn()
+    render(
+      <ProductBrowser
+        products={[
+          product({
+            id: 1,
+            name: 'قهوة',
+            category_id: 10,
+            category_name: 'ساخنة',
+            has_recipe: true,
+          }),
+          product({
+            id: 2,
+            name: 'شاي',
+            category_id: 10,
+            category_name: 'ساخنة',
+            has_recipe: true,
+          }),
+        ]}
+        qty={1}
+        onQtyChange={vi.fn()}
+        onAdd={onAdd}
+        availability={
+          new Map([
+            [1, false],
+            [2, true],
+          ])
+        }
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /كافيه/ }))
+    fireEvent.click(screen.getByRole('button', { name: /ساخنة/ }))
+
+    // The short tile carries the advisory signal; the covered one does not.
+    expect(screen.getByTestId('pos-recipe-short-1')).toBeInTheDocument()
+    expect(screen.queryByTestId('pos-recipe-short-2')).not.toBeInTheDocument()
+
+    // Advisory only: the tap still adds the line — checkout revalidates.
+    fireEvent.click(screen.getByTestId('pos-product-1'))
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
   })
 
   it('sizes the product grid by available width, not a hardcoded column count', () => {

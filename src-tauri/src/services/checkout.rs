@@ -324,6 +324,20 @@ fn checkout_invoice(
     // Inventory: decrement tracked products (same transaction, auditable).
     crate::services::ops::apply_sale_to_inventory(tx, invoice_id, actor.id)?;
 
+    // Raw materials: consume per recipe, resolved by STABLE product_id from the
+    // order lines (never by name). Runs in the SAME transaction as the sale and
+    // product inventory above, so a shortage rolls the entire checkout back —
+    // there is never a partial consumption or a paid invoice with failed
+    // raw-material consumption. Products without a recipe are unaffected.
+    {
+        let sale_lines: Vec<(i64, i64)> = order
+            .lines
+            .iter()
+            .map(|l| (l.product_id, l.quantity))
+            .collect();
+        crate::services::recipes::consume_for_sale(tx, &sale_lines, invoice_id, actor.id)?;
+    }
+
     crate::services::audit::record(
         tx,
         Some(actor.id),

@@ -21,10 +21,14 @@ pub struct Product {
     pub is_seed: bool,
     /// Presentation flag: this is a recent addition, independent of `is_active`.
     pub is_new: bool,
+    /// Whether this product has a raw-material recipe. Only meaningful for a
+    /// tracked product; drives the catalog "recipe" affordance and the POS
+    /// recipe-availability signal. Computed, never stored on the product row.
+    pub has_recipe: bool,
 }
 
 const COLS: &str =
-    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), COALESCE(i.min_quantity, 0), p.is_seed, p.is_new";
+    "p.id, p.name, p.item_type, p.department, p.category_id, c.name, p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, 0), COALESCE(i.min_quantity, 0), p.is_seed, p.is_new, EXISTS(SELECT 1 FROM product_recipe_items ri WHERE ri.product_id = p.id)";
 
 /// An archived item is excluded from EVERY catalog read: POS, product
 /// management, selectors, category counts and by-id lookups. Its row is kept
@@ -47,6 +51,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Product> {
         min_quantity: row.get(10)?,
         is_seed: row.get::<_, i64>(11)? != 0,
         is_new: row.get::<_, i64>(12)? != 0,
+        has_recipe: row.get::<_, i64>(13)? != 0,
     })
 }
 

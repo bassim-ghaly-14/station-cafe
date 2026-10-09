@@ -33,6 +33,7 @@ function product(over: Partial<Product> = {}): Product {
     stock_quantity: 0,
     is_seed: false,
     is_new: false,
+    has_recipe: false,
     ...over,
   }
 }

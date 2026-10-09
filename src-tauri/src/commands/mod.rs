@@ -10,6 +10,7 @@ pub mod developer;
 pub mod employees;
 pub mod ops;
 pub mod pos;
+pub mod recipes;
 pub mod sales;
 pub mod shifts;
 pub mod status;

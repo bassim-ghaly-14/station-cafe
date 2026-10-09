@@ -57,6 +57,7 @@ import { useSession } from '@/features/auth/useSession'
 import { CatalogDialogs } from './CatalogDialogs'
 import { CatalogFilterPanel } from './CatalogFilterPanel'
 import { CatalogHeader, CatalogOverview } from './CatalogHeader'
+import { ProductRecipeDialog } from './CatalogRecipe'
 import { CatalogResults } from './CatalogResults'
 import type { CatalogCategoryOption } from './CatalogCategoryFilter'
 import {
@@ -91,6 +92,12 @@ export default function CatalogPage() {
   const [editing, setEditing] = useState<Product | null>(null)
   const [confirming, setConfirming] = useState<Product | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
+  /**
+   * The product whose recipe is being edited. Only ever set from the
+   * MANAGER-only card button on a tracked product — but the dialog and the
+   * backend re-check both gates independently.
+   */
+  const [recipeOf, setRecipeOf] = useState<Product | null>(null)
 
   const canManageCatalog = user?.role === 'MANAGER' || user?.role === 'ADMIN'
   /**
@@ -352,7 +359,21 @@ export default function CatalogPage() {
         onEdit={setEditing}
         onToggle={setConfirming}
         onDelete={setDeleting}
+        onRecipe={setRecipeOf}
       />
+
+      {recipeOf ? (
+        <ProductRecipeDialog
+          product={recipeOf}
+          onClose={() => setRecipeOf(null)}
+          onDone={() => {
+            setRecipeOf(null)
+            // The card badge reads `has_recipe` from the SAME payload as
+            // the rest of the card, so a reload is the only correct refresh.
+            load()
+          }}
+        />
+      ) : null}
 
       <CatalogDialogs
         canManageCatalog={canManageCatalog}

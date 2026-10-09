@@ -48,6 +48,7 @@ describe('operation type registry', () => {
       'credit',
       'discount',
       'inventory',
+      'rawmaterials',
       'expense',
       'shift',
       'day',
@@ -99,6 +100,7 @@ describe('operation type registry', () => {
     expect(isKnownEntity('employee_advance')).toBe(true)
     expect(isKnownEntity('payroll_run')).toBe(true)
     expect(isKnownEntity('attendance_day')).toBe(true)
+    expect(isKnownEntity('raw_material')).toBe(true)
     expect(isKnownEntity('loyalty_account')).toBe(false)
     expect(entityLabelKey('invoice')).toBe('audit.entities.invoice')
   })
@@ -131,6 +133,8 @@ describe('operation type registry', () => {
       'discount.authorized',
       'inventory.adjusted',
       'inventory.min_changed',
+      'rawmaterials.created',
+      'rawmaterials.recipe_set',
       'expense.created',
       'shift.opened',
       'shift.closed',

@@ -30,7 +30,7 @@
 import { useTranslation } from 'react-i18next'
 
 import { Button, MoneyDisplay } from '@/components/ui'
-import { Coffee, Droplets, Pencil, Power, Trash2 } from '@/components/ui/icon'
+import { ChefHat, Coffee, Droplets, Pencil, Power, Trash2 } from '@/components/ui/icon'
 import {
   NEW_CARD_EDGE,
   NEW_CARD_FRAME,
@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import type { Product } from '@/services/posApi'
 
 import { CatalogCategoryBadge, CatalogNewRibbon, CatalogStatusBadge } from './CatalogBadges'
+import { CatalogRecipeBadge } from './CatalogRecipe'
 
 export function CatalogCard({
   product,
@@ -49,6 +50,7 @@ export function CatalogCard({
   onEdit,
   onToggle,
   onDelete,
+  onRecipe,
 }: {
   readonly product: Product
   readonly canManage: boolean
@@ -57,6 +59,8 @@ export function CatalogCard({
   readonly onEdit: () => void
   readonly onToggle: () => void
   readonly onDelete: () => void
+  /** Opens the recipe editor. Only passed for tracked products when managing. */
+  readonly onRecipe?: () => void
 }) {
   const { t } = useTranslation()
   const isCafe = product.department === 'CAFE'
@@ -141,11 +145,13 @@ export function CatalogCard({
       </div>
 
       {/* 3 — badges. Availability first (the operational question), then the
-          category grouping. "New" is deliberately NOT repeated here: it is
-          stated once, by the ribbon in the card's top corner. */}
+          category grouping, then the recipe signal when present. "New" is
+          deliberately NOT repeated here: it is stated once, by the ribbon
+          in the card's top corner. */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 pt-3">
         <CatalogStatusBadge isActive={product.is_active} />
         <CatalogCategoryBadge categoryId={product.category_id} name={product.category_name} />
+        <CatalogRecipeBadge product={product} />
       </div>
 
       {/* 4 — secondary metadata, muted and compact. */}
@@ -164,6 +170,7 @@ export function CatalogCard({
           onEdit={onEdit}
           onToggle={onToggle}
           onDelete={onDelete}
+          onRecipe={onRecipe}
         />
       ) : null}
     </article>
@@ -178,6 +185,11 @@ export function CatalogCard({
  * relationship is self-explanatory without reading the label. Delete is a
  * separate, ADMIN-only, terminal affordance and never shares the reversible
  * availability switch.
+ *
+ * The recipe button belongs to tracked products only: a recipe is what ONE
+ * unit of product consumes, so an untracked product has nothing to consume
+ * from. When present it is a plain outline action like Edit — the recipe is
+ * configuration, not an availability outcome.
  */
 function CatalogCardActions({
   isActive,
@@ -185,12 +197,14 @@ function CatalogCardActions({
   onEdit,
   onToggle,
   onDelete,
+  onRecipe,
 }: Readonly<{
   isActive: boolean
   canDelete: boolean
   onEdit: () => void
   onToggle: () => void
   onDelete: () => void
+  onRecipe?: () => void
 }>) {
   const { t } = useTranslation()
   return (
@@ -204,6 +218,13 @@ function CatalogCardActions({
         <Pencil size={15} aria-hidden />
         {t('catalog.edit')}
       </Button>
+
+      {onRecipe ? (
+        <Button variant="outline" size="sm" className="min-w-0" onClick={onRecipe}>
+          <ChefHat size={15} aria-hidden />
+          {t('rawmaterials.recipe.button')}
+        </Button>
+      ) : null}
 
       <Button
         variant={isActive ? 'destructiveGhost' : 'success'}

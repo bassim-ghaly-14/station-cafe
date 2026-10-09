@@ -20,6 +20,14 @@ export interface Product {
   is_seed: boolean
   /** Recent addition — a catalog presentation flag, independent of `is_active`. */
   is_new: boolean
+  /**
+   * Whether this product has a raw-material recipe. Only meaningful when
+   * `track_inventory` is true — an untracked product can never have one. It is
+   * a SIGNAL, deliberately distinct from product-stock availability: a tracked
+   * product without a recipe still sells on the existing product inventory
+   * model alone.
+   */
+  has_recipe: boolean
 }
 
 export interface OrderLine {

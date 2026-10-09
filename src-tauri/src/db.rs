@@ -1903,6 +1903,99 @@ const MIGRATIONS: &[Migration] = &[
                 ON inventory_notifications(status, created_at);
         "#,
     },
+    Migration {
+        version: 38,
+        name: "raw materials, movements and product recipes",
+        needs_fk_off: false,
+        sql: r#"
+            -- RAW MATERIALS: a SEPARATE inventory domain from products.
+            -- A raw material (Coffee Beans, Sugar) is consumed through recipes.
+            -- It shares no table with `products`/`inventory_items`; a tracked
+            -- PRODUCT keeps its own stock, a raw material keeps this one.
+            --
+            -- ONE AUTHORITATIVE SOURCE: `current_quantity` is the live balance,
+            -- updated transactionally with EVERY movement row. The two never
+            -- diverge — the only writer is `repositories::recipes::apply_movement`,
+            -- which writes both in the caller's transaction.
+            --
+            -- `base_unit` is the NORMALIZED unit (GRAM or MILLILITER). A manager
+            -- buys in KG/L; the service multiplies by 1000 and stores the
+            -- base-unit integer. No string parsing, no floats.
+            --
+            -- `last_purchase_unit_cost_minor` is the LATEST PER-BASE-UNIT cost
+            -- (minor/gram/ml). INFORMATIONAL basis for Recipe Cost only — never
+            -- accounting truth, never a FIFO/average valuation, never rewrites a
+            -- historical expense. NULL until first purchase.
+            CREATE TABLE IF NOT EXISTS raw_materials (
+                id                               INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                             TEXT NOT NULL
+                                                   CHECK (name = trim(name) AND length(name) > 0),
+                department                       TEXT NOT NULL CHECK (department IN ('CAFE','WASH')),
+                base_unit                        TEXT NOT NULL CHECK (base_unit IN ('GRAM','MILLILITER')),
+                current_quantity                 INTEGER NOT NULL DEFAULT 0
+                                                   CHECK (current_quantity >= 0),
+                last_purchase_unit_cost_minor    INTEGER
+                                                   CHECK (last_purchase_unit_cost_minor IS NULL
+                                                          OR last_purchase_unit_cost_minor >= 0),
+                is_active                        INTEGER NOT NULL DEFAULT 1,
+                created_at                       TEXT NOT NULL DEFAULT (station_now()),
+                updated_at                       TEXT NOT NULL DEFAULT (station_now()),
+                deleted_at                       TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_raw_materials_active
+                ON raw_materials(is_active, department, name);
+
+            -- RAW MATERIAL MOVEMENTS: every stock change is explicit. A balance
+            -- NEVER changes silently. `reason` is a closed vocabulary:
+            --   PURCHASE          stock in (links the Expense it created)
+            --   SALE_CONSUMPTION  stock out at checkout (links the invoice)
+            --   WASTE             stock out, recorded loss
+            --   ADJUSTMENT        manual correction, + or −
+            -- No generic hidden decrement path.
+            --
+            -- `expense_id` is the purchase↔expense link, kept on the movement
+            -- side so the expense stays a normal existing Expense with no
+            -- generic metadata column. Populated only for PURCHASE.
+            CREATE TABLE IF NOT EXISTS raw_material_movements (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                raw_material_id  INTEGER NOT NULL REFERENCES raw_materials(id),
+                change           INTEGER NOT NULL CHECK (change != 0),
+                reason           TEXT NOT NULL
+                                   CHECK (reason IN ('PURCHASE','SALE_CONSUMPTION','WASTE','ADJUSTMENT')),
+                note             TEXT,
+                ref_invoice_id   INTEGER REFERENCES invoices(id),
+                expense_id       INTEGER REFERENCES expenses(id),
+                user_id          INTEGER NOT NULL REFERENCES users(id),
+                created_at       TEXT NOT NULL DEFAULT (station_now())
+            );
+            CREATE INDEX IF NOT EXISTS idx_raw_material_movements_material
+                ON raw_material_movements(raw_material_id, id);
+            CREATE INDEX IF NOT EXISTS idx_raw_material_movements_expense
+                ON raw_material_movements(expense_id) WHERE expense_id IS NOT NULL;
+
+            -- PRODUCT RECIPES: which raw materials a tracked product uses.
+            -- Ownership is STRUCTURAL: product_id -> products.id, the stable id,
+            -- never a name. Checkout consumption resolves by the order line's
+            -- product_id, so it never breaks on a rename or a shared name.
+            --
+            -- A recipe is OPTIONAL even for a tracked product: no rows for a
+            -- product means "no recipe, no consumption". One material may appear
+            -- in MANY recipes (Sugar in Coffee, Tea, Juice), each with its own
+            -- quantity_base — enforced by the UNIQUE pair below.
+            --
+            -- `quantity_base` is in the material's base unit for ONE unit of the
+            -- product; the engine multiplies by the sold quantity.
+            CREATE TABLE IF NOT EXISTS product_recipe_items (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id       INTEGER NOT NULL REFERENCES products(id),
+                raw_material_id  INTEGER NOT NULL REFERENCES raw_materials(id),
+                quantity_base    INTEGER NOT NULL CHECK (quantity_base > 0),
+                UNIQUE (product_id, raw_material_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_product_recipe_items_material
+                ON product_recipe_items(raw_material_id);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

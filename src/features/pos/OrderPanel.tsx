@@ -14,6 +14,7 @@ import {
   type Product,
 } from '@/services/posApi'
 import { discountLabelFor } from './orderDiscountLabel'
+import { recipesApi } from '@/services/recipesApi'
 import { CustomerPicker } from './CustomerPicker'
 import { DiscountDialog } from './DiscountDialog'
 import { PrintPreviewDialog, type PrintPreviewTarget } from './PrintPreviewDialog'
@@ -108,6 +109,33 @@ export function OrderPanel({
       .then(setCustomer)
       .catch(() => setCustomer(null))
   }, [order.customer_id, order.id])
+
+  // Advisory recipe availability for the pad: ONE batched read for ONE-unit
+  // scope, refreshed whenever the pad catalog changes. Products without a
+  // recipe are absent from the map; checkout revalidates authoritatively.
+  const [recipeAvailability, setRecipeAvailability] = useState<ReadonlyMap<number, boolean>>(
+    () => new Map(),
+  )
+  useEffect(() => {
+    const ids = (products ?? []).filter((p) => p.has_recipe).map((p) => p.id)
+    if (ids.length === 0) {
+      setRecipeAvailability(new Map())
+      return
+    }
+    let live = true
+    recipesApi
+      .availability(ids)
+      .then((rows) => {
+        if (live) setRecipeAvailability(new Map(rows.map((r) => [r.product_id, r.available])))
+      })
+      .catch(() => {
+        // Advisory only: a missing signal hides the badge rather than blocking sales.
+        if (live) setRecipeAvailability(new Map())
+      })
+    return () => {
+      live = false
+    }
+  }, [products])
 
   const report = (e: unknown) =>
     toast(t([`errors.${(e as { message: string }).message}`, 'errors.internal_error']), 'error')
@@ -226,6 +254,7 @@ export function OrderPanel({
               qty={qty}
               onQtyChange={setQty}
               onAdd={addItem}
+              availability={recipeAvailability}
             />
           )}
         </div>

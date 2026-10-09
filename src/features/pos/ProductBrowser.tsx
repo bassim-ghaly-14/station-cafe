@@ -52,12 +52,19 @@ export function ProductBrowser({
   qty,
   onQtyChange,
   onAdd,
+  availability,
 }: {
   /** The whole active catalog; grouping happens here, not in the API. */
   readonly products: Product[]
   readonly qty: number
   readonly onQtyChange: (quantity: number) => void
   readonly onAdd: (product: Product) => void
+  /**
+   * Advisory recipe availability by product id (ONE-unit scope). Products
+   * without a recipe are absent — they sell on product stock alone.
+   * Checkout always revalidates, so this never blocks a tap.
+   */
+  readonly availability?: ReadonlyMap<number, boolean>
 }) {
   const { t } = useTranslation()
   const [department, setDepartment] = useState<Department | null>(null)
@@ -160,7 +167,12 @@ export function ProductBrowser({
       ) : (
         <div className={PRODUCT_GRID}>
           {activeCategory.items.map((product) => (
-            <PosProductCard key={product.id} product={product} onAdd={onAdd} />
+            <PosProductCard
+              key={product.id}
+              product={product}
+              onAdd={onAdd}
+              recipeShort={availability?.get(product.id) === false}
+            />
           ))}
         </div>
       )}
