@@ -34,7 +34,7 @@ const fetchMock = vi.fn()
 const ACCOUNTS = [
   { id: 1, name: 'Bassam', role: 'ADMIN' },
   { id: 2, name: 'Belly', role: 'ADMIN' },
-  { id: 3, name: 'amira', role: 'MANAGER' },
+  { id: 3, name: 'Amira', role: 'MANAGER' },
 ]
 
 /** The screen under test, inside the REAL session provider — no auth mock. */

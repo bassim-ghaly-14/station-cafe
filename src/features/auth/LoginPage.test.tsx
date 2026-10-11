@@ -31,7 +31,7 @@ vi.mock('@/services/authApi', async (importOriginal) => {
 const ACCOUNTS = [
   { id: 1, name: 'Bassam', role: 'ADMIN' },
   { id: 2, name: 'Belly', role: 'ADMIN' },
-  { id: 3, name: 'amira', role: 'MANAGER' },
+  { id: 3, name: 'Amira', role: 'MANAGER' },
   { id: 4, name: 'momo', role: 'STAFF' },
 ]
 

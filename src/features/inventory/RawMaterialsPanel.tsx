@@ -48,6 +48,7 @@ import { useToast } from '@/components/ui/toast'
 import { Boxes, Check, TriangleAlert } from '@/components/ui/icon'
 import { useIsWide } from '@/lib/use-media-query'
 import { useErrText } from '@/lib/err'
+import { formatQuantity } from './rawMaterialsFormat'
 import { recipesApi, type RawMaterial, type RawMaterialMovement } from '@/services/recipesApi'
 import {
   RawMaterialDialog,
@@ -56,21 +57,6 @@ import {
 } from './RawMaterialDialogs'
 
 const MOVEMENT_WINDOW = 40
-
-/**
- * Format a base-unit amount for humans: a quantity exactly divisible by 1000
- * is shown in the larger unit (kg/l) with an INTEGER quotient; anything else
- * stays in base units (g/ml). Always integer arithmetic — never a float —
- * and the active i18n locale's numerals, so Arabic renders Arabic-Indic digits.
- */
-export function formatQuantity(amount: number, baseUnit: string, locale?: string): string {
-  const lang = locale ?? (typeof navigator === 'undefined' ? 'ar-EG' : navigator.language)
-  const abs = Math.abs(amount)
-  const minor = baseUnit === 'GRAM' ? 'g' : 'ml'
-  const major = baseUnit === 'GRAM' ? 'kg' : 'l'
-  if (abs >= 1000 && abs % 1000 === 0) return `${(abs / 1000).toLocaleString(lang)} ${major}`
-  return `${abs.toLocaleString(lang)} ${minor}`
-}
 
 /** The signed change of a movement, coloured by direction. */
 function MovementChange({ row }: Readonly<{ readonly row: RawMaterialMovement }>) {

@@ -204,9 +204,14 @@ export function PosCalculator({ open, onRequestClose }: PosCalculatorProps) {
   // Dismiss by an outside click or Escape — ONLY while open AND unpinned. A
   // pinned panel stays put. The capture-phase Escape mirrors the date pickers
   // and stops a parent POS dialog from closing at the same time.
+  // The floating launcher (`pos-calculator-toggle`) is deliberately excluded:
+  // it owns its own clicks, so pressing it toggles via the page state instead
+  // of racing close-then-reopen through this listener.
   useEffect(() => {
     if (!open || pinned) return
     const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest?.('[data-testid="pos-calculator-toggle"]')) return
       if (!panelRef.current?.contains(e.target as Node)) closeRef.current()
     }
     const onKey = (e: KeyboardEvent) => {

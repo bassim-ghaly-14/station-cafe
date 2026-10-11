@@ -168,7 +168,7 @@ mod tests {
             &LoginInput {
                 // A REAL official starter account: the official dataset no
                 // longer ships any demo login.
-                name: "amira".into(),
+                name: "Amira".into(),
                 password: "20192".into(),
             },
         )
@@ -210,7 +210,7 @@ mod tests {
         assert_developer_account(&conn);
         assert!(auth::require_user(&conn, &old_session.token).is_err());
         assert_eq!(count(&conn, "sessions"), 0);
-        for old_user in ["amira", "momo", "foly"] {
+        for old_user in ["Amira", "momo", "foly"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -264,7 +264,7 @@ mod tests {
             count(&conn, "users"),
             crate::seed::DEFAULT_USERS.len() as i64
         );
-        for name in ["Belly", "amira", "momo", "foly", "Bassam"] {
+        for name in ["Belly", "Amira", "momo", "foly", "Bassam"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",
@@ -384,7 +384,7 @@ mod tests {
         auth::login(
             &conn,
             &LoginInput {
-                name: "amira".into(),
+                name: "Amira".into(),
                 password: "20192".into(),
             },
         )
@@ -524,7 +524,7 @@ mod tests {
         assert!(count(&conn, "products") > 0);
         assert_eq!(count(&conn, "cafe_tables"), 12);
         assert_developer_account(&conn);
-        for name in ["amira", "momo", "foly"] {
+        for name in ["Amira", "momo", "foly"] {
             let exists: i64 = conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?1)",

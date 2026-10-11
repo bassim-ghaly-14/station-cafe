@@ -14,10 +14,11 @@
  * This bundle is served two ways: the Tauri desktop shell on the till, and the
  * same `dist/` over plain `http://` to whatever phone scanned the QR. In that
  * second origin `navigator.clipboard` is simply `undefined`, because the API is
- * only exposed in a SECURE context — so a copy button there could only ever
- * throw and its `catch` would raise a generic error toast. A control that looks
- * functional and can never succeed is worse than no control, so when the
- * capability is absent this renders NOTHING at all.
+ * only exposed in a SECURE context — so the write falls back to the synchronous
+ * `document.execCommand('copy')` path, which still exists in the mobile browsers
+ * this app is used on and runs inside the click's user gesture. A control that
+ * looks functional and can never succeed is worse than no control, so when
+ * NEITHER path exists this renders NOTHING at all.
  *
  * It is not hidden with CSS, and that is deliberate: a `display: none` button is
  * still in the accessibility tree and still focusable by a screen reader. The
@@ -62,15 +63,57 @@ import { useToast } from './toast'
 const FEEDBACK_MS = 1500
 
 /**
+ * Whether the deprecated-but-still-present synchronous copy path exists.
+ *
+ * `document.execCommand('copy')` is the only write that works in an INSECURE
+ * origin (plain `http://` on the cafe LAN, where `navigator.clipboard` is
+ * `undefined`). It still exists in the mobile browsers this app is used on,
+ * and it runs inside the click's user gesture so no permission prompt applies.
+ * Probed as a function rather than assumed, so a future removal simply hides
+ * nothing new — `canCopy` falls back to `false` exactly as before.
+ */
+function hasLegacyCopy(): boolean {
+  return typeof document !== 'undefined' && typeof document.execCommand === 'function'
+}
+
+/**
+ * Synchronous fallback for origins with no async clipboard (plain `http://`).
+ * Returns `true` only when the browser reports the copy succeeded.
+ */
+function legacyCopyText(value: string): boolean {
+  try {
+    const area = document.createElement('textarea')
+    area.value = value
+    area.setAttribute('readonly', '')
+    // Fixed off-screen: never affects layout, never scrolls the page.
+    area.style.position = 'fixed'
+    area.style.top = '-9999px'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    // iOS Safari selects nothing without an explicit range.
+    area.setSelectionRange(0, area.value.length)
+    const ok = document.execCommand('copy')
+    area.remove()
+    return ok !== false
+  } catch {
+    return false
+  }
+}
+
+/**
  * Whether copying can mean anything at all in this origin. See the note above:
  * the desktop shell always has a clipboard; a browser is judged on the API
  * itself rather than on the shell, so a supporting browser keeps the feature.
+ * An insecure LAN origin with no async clipboard still counts when the legacy
+ * synchronous path exists — otherwise the control would vanish on the very
+ * phones this app is most often used on.
  */
 function canCopy(): boolean {
-  return (
-    isDesktop() ||
-    (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function')
-  )
+  if (isDesktop()) return true
+  if (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function')
+    return true
+  return hasLegacyCopy()
 }
 
 export interface CopyButtonProps extends Omit<ButtonProps, 'onClick' | 'children' | 'type'> {
@@ -123,19 +166,32 @@ export function CopyButton({
     // on `canCopy`. A control that cannot copy must never reach the success
     // state, and must never raise a misleading toast.
     const write = typeof navigator !== 'undefined' ? navigator.clipboard?.writeText : undefined
-    if (typeof write !== 'function') return
-
-    try {
-      await write.call(navigator.clipboard, value)
+    // Success shared by both paths, so the feedback cannot drift between them.
+    const succeed = () => {
       setCopied(true)
       toast(t('app.copied'), 'success')
       // A repeated click restarts the window instead of queueing another, so
       // the check can never outlive its own reset.
       if (timer.current !== null) clearTimeout(timer.current)
       timer.current = setTimeout(() => setCopied(false), FEEDBACK_MS)
-    } catch {
-      // The write failed, so there is no success state and no "copied" claim.
-      toast(t('app.error'), 'error')
+    }
+
+    if (typeof write === 'function') {
+      try {
+        await write.call(navigator.clipboard, value)
+        succeed()
+      } catch {
+        // The write failed, so there is no success state and no "copied" claim.
+        toast(t('app.error'), 'error')
+      }
+      return
+    }
+
+    // No async clipboard (plain `http://` LAN origin): the only path left is
+    // the synchronous one, inside this same user gesture.
+    if (hasLegacyCopy()) {
+      if (legacyCopyText(value)) succeed()
+      else toast(t('app.error'), 'error')
     }
   }, [toast, t, value])
 

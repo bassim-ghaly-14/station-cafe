@@ -120,8 +120,16 @@ export function cleanFloat(value: number): string {
   // there would corrupt the exponent (`e+80` -> `e+8`). Those magnitudes never
   // reach here as a RESULT (finite() already flags them as overflow), but the
   // guard keeps this function safe for any caller and any future value.
+  // NOTE: deterministic trim (no regex) — avoids SonarQube S8786 on /\\.?0+$/.
   if (fixed.includes('.') && !fixed.includes('e') && !fixed.includes('E')) {
-    fixed = fixed.replace(/\.?0+$/, '')
+    let end = fixed.length
+    while (end > 0 && fixed.charCodeAt(end - 1) === 48) {
+      end -= 1
+    }
+    if (end > 0 && fixed.charCodeAt(end - 1) === 46) {
+      end -= 1
+    }
+    fixed = fixed.slice(0, end)
   }
   // Guard against a `-0` string ever reaching the display.
   return fixed === '-0' ? '0' : fixed

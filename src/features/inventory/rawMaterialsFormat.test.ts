@@ -1,6 +1,6 @@
 /** Unit tests for the raw-material quantity formatter. */
 import { describe, expect, it } from 'vitest'
-import { formatQuantity } from './RawMaterialsPanel'
+import { formatQuantity } from './rawMaterialsFormat'
 
 describe('formatQuantity', () => {
   it('shows an exact multiple of 1000 in the larger unit', () => {

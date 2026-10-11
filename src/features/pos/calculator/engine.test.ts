@@ -18,6 +18,7 @@ import {
   applyPercent,
   backspace,
   chooseOperator,
+  cleanFloat,
   clearAll,
   equals,
   inputDigit,
@@ -318,5 +319,36 @@ describe('calculator engine — input length limits', () => {
       s = inputDigit(s, '7')
     }
     expect(s.entry.replace(/[^0-9]/g, '').length).toBeLessThanOrEqual(MAX_DIGITS)
+  })
+})
+
+describe('calculator engine — cleanFloat trailing-zero trim (S8786)', () => {
+  it('trims integer results without leaving a dangling point', () => {
+    expect(cleanFloat(4)).toBe('4')
+    expect(cleanFloat(100)).toBe('100')
+    expect(cleanFloat(1000)).toBe('1000')
+    expect(cleanFloat(8 / 2)).toBe('4')
+  })
+
+  it('removes float noise and keeps meaningful fraction digits', () => {
+    expect(cleanFloat(0.1 + 0.2)).toBe('0.3')
+    expect(cleanFloat(1.25)).toBe('1.25')
+    expect(cleanFloat(10 / 8)).toBe('1.25')
+    expect(cleanFloat(2.5)).toBe('2.5')
+  })
+
+  it('handles negatives, zero, and values rounding to an integer', () => {
+    expect(cleanFloat(-4)).toBe('-4')
+    expect(cleanFloat(-1.25)).toBe('-1.25')
+    expect(cleanFloat(0)).toBe('0')
+    expect(cleanFloat(-0)).toBe('0')
+    expect(cleanFloat(1.99999999999)).toBe('2')
+  })
+
+  it('preserves exponential-notation and non-finite behavior', () => {
+    expect(cleanFloat(1e21)).toBe('1e+21')
+    expect(cleanFloat(-1e21)).toBe('-1e+21')
+    expect(cleanFloat(Number.POSITIVE_INFINITY)).toBe('Infinity')
+    expect(cleanFloat(Number.NaN)).toBe('NaN')
   })
 })

@@ -23,6 +23,9 @@ import { QtyStepper } from './QtyStepper'
 import { DeptBadge } from './DeptBadge'
 import { CheckoutSummary } from './CheckoutSummary'
 
+/** Shared empty advisory map: stable reference for the no-recipe render path. */
+const EMPTY_AVAILABILITY: ReadonlyMap<number, boolean> = new Map()
+
 export function OrderPanel({
   order,
   preview,
@@ -116,12 +119,14 @@ export function OrderPanel({
   const [recipeAvailability, setRecipeAvailability] = useState<ReadonlyMap<number, boolean>>(
     () => new Map(),
   )
+  // Derived during render: with no recipe-enabled ids there is nothing for the
+  // pad to look up, so the empty result is a pure function of `products` and
+  // never a synchronous state update inside the effect below.
+  const recipeIds = (products ?? []).filter((p) => p.has_recipe).map((p) => p.id)
+  const effectiveAvailability = recipeIds.length === 0 ? EMPTY_AVAILABILITY : recipeAvailability
   useEffect(() => {
     const ids = (products ?? []).filter((p) => p.has_recipe).map((p) => p.id)
-    if (ids.length === 0) {
-      setRecipeAvailability(new Map())
-      return
-    }
+    if (ids.length === 0) return
     let live = true
     recipesApi
       .availability(ids)
@@ -254,7 +259,7 @@ export function OrderPanel({
               qty={qty}
               onQtyChange={setQty}
               onAdd={addItem}
-              availability={recipeAvailability}
+              availability={effectiveAvailability}
             />
           )}
         </div>

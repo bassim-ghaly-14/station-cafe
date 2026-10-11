@@ -111,7 +111,7 @@ const CATALOG_SEED_MARKER: &str = "seed.catalog.v4.completed_at";
 /// live in `crate::demo_data::DEMO_USERS`, because a shared, guessable
 /// password must never reach a production installation.
 pub const DEFAULT_USERS: &[(&str, Option<&str>, &str, &str)] = &[
-    ("amira", None, "MANAGER", "20192"),
+    ("Amira", None, "MANAGER", "20192"),
     ("momo", None, "STAFF", "11111"),
     ("foly", None, "STAFF", "22222"),
     // The café's own owner account. An ADMIN like any other: it gets its
@@ -1496,7 +1496,7 @@ mod tests {
         let other = login(
             &conn,
             &LoginInput {
-                name: "amira".into(),
+                name: "Amira".into(),
                 password: "20192".into(),
             },
         )
@@ -1521,8 +1521,8 @@ mod tests {
         migrate(&conn).unwrap();
         run_if_empty(&conn).unwrap();
 
-        // The café's owner genuinely changes amira's PIN through the app.
-        let amira = users::find_by_name(&conn, "amira").unwrap().unwrap();
+        // The café's owner genuinely changes Amira's PIN through the app.
+        let amira = users::find_by_name(&conn, "Amira").unwrap().unwrap();
         users::set_password(&conn, amira.user.id, &auth::hash_password("4321").unwrap()).unwrap();
 
         run_if_empty(&conn).unwrap();
@@ -1531,7 +1531,7 @@ mod tests {
             login(
                 &conn,
                 &LoginInput {
-                    name: "amira".into(),
+                    name: "Amira".into(),
                     password: "4321".into(),
                 }
             )
@@ -1542,7 +1542,7 @@ mod tests {
             login(
                 &conn,
                 &LoginInput {
-                    name: "amira".into(),
+                    name: "Amira".into(),
                     password: "20192".into(),
                 }
             )
@@ -1620,7 +1620,7 @@ mod tests {
 
         // The café demotes a starter manager to an ordinary cashier.
         let user_id: i64 = conn
-            .query_row("SELECT id FROM users WHERE name = 'amira'", [], |r| {
+            .query_row("SELECT id FROM users WHERE name = 'Amira'", [], |r| {
                 r.get(0)
             })
             .unwrap();

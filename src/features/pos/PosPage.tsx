@@ -740,17 +740,37 @@ function PosHeader({
       </div>
 
       <DailyRecordsActions onNavigate={onNavigate} />
+      {/*
+        Floating calculator launcher — the SAME trigger as before, now anchored
+        to the viewport instead of the top-of-page header (which scrolled away).
+
+        - `fixed` keeps it reachable at either end of the POS scroll. It stays
+          inside this header in the DOM so the page landmarks are unchanged and
+          no transformed ancestor breaks viewport anchoring.
+        - Inline-START corner: the panel itself is fixed at inline-END
+          (`inset-e-4` in `PosCalculator`), so the two never overlap.
+        - `z-40` sits above page content and the sticky topbar (`z-30`) while
+          staying below the calculator panel and dialogs (`z-50`) and toasts
+          (`z-60`) — the smallest level that works.
+        - The mobile offset clears the fixed bottom navigation plus the
+          safe-area inset, mirroring the `AppShell`/`toast` convention;
+          `md:` restores a plain offset where no bottom bar exists.
+        - `size-12` (48px) meets the 44px touch target; `title` mirrors the
+          accessible name as the tooltip.
+      */}
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-lg"
         onClick={onToggleCalculator}
         aria-label={t('pos.calculator.toggle')}
+        title={t('pos.calculator.toggle')}
         aria-expanded={calculatorOpen}
         data-testid="pos-calculator-toggle"
         disabled={calculatorDisabled}
+        className="fixed inset-s-4 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-40 size-12 rounded-full border border-border-strong bg-surface-elevated text-foreground shadow-lg hover:bg-surface-hover hover:text-foreground md:inset-s-6 md:bottom-6"
       >
-        <Calculator size={16} aria-hidden />
+        <Calculator size={20} aria-hidden />
       </Button>
     </header>
   )
@@ -790,7 +810,9 @@ function DailyRecordsActions({
         aria-label={t('pos.dailyRecordsNav')}
         className="flex w-full flex-col gap-2 border-t border-border-subtle pt-4"
       >
-        <p className="text-center text-caption text-foreground-subtle">{t('pos.dailyRecordsHint')}</p>
+        <p className="text-center text-caption text-foreground-subtle">
+          {t('pos.dailyRecordsHint')}
+        </p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Button variant="outline" size="sm" onClick={() => onNavigate('today-invoices')}>
             <Receipt size={16} aria-hidden />

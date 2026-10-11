@@ -34,7 +34,7 @@ fn login(conn: &Connection, name: &str, password: &str) -> auth::User {
 
 /// The seeded manager, who is the only role allowed to touch raw materials.
 fn manager(conn: &Connection) -> auth::User {
-    login(conn, "amira", "20192")
+    login(conn, "Amira", "20192")
 }
 
 /// A tracked CAFE product of our own, so its recipe is entirely under the test.

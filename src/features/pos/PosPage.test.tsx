@@ -762,6 +762,90 @@ describe('POS page hierarchy (operation vs. selling workflow)', () => {
   })
 })
 
+describe('floating calculator launcher', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    session.user = null
+    localStorage.clear()
+
+    mocks.tables.mockResolvedValue([table({ status: 'EMPTY' })])
+    mocks.openTakeaways.mockResolvedValue([])
+    mocks.state.mockResolvedValue({
+      day: { id: 1 },
+      my_shift: { id: 1, opened_at: '2026-01-05 08:00:00Z' },
+    })
+    mocks.preview.mockResolvedValue(previewOf())
+    signInAs('STAFF')
+  })
+
+  afterEach(() => {
+    session.user = null
+    localStorage.clear()
+  })
+
+  it('anchors the single calculator trigger to the viewport, not the scrolled document', async () => {
+    renderPage()
+
+    const toggle = await screen.findByTestId('pos-calculator-toggle')
+
+    // Exactly one trigger — the header entry point became the floating
+    // launcher; a second trigger would double the tab stops and the state.
+    expect(screen.getAllByTestId('pos-calculator-toggle')).toHaveLength(1)
+
+    // Viewport-anchored: `fixed` keeps it reachable at either end of the POS
+    // scroll, where the old in-flow button scrolled away.
+    expect(toggle.className).toContain('fixed')
+
+    // It lives at the inline-START corner while the panel opens at
+    // inline-END, so the two never overlap; both are logical so RTL mirrors.
+    expect(toggle.className).toContain('inset-s-')
+    expect(toggle.className).not.toMatch(/(^|[\s:])(left|right)-/)
+
+    // Above page content and the sticky topbar, below the panel/dialogs —
+    // the smallest stacking level that works.
+    expect(toggle.className).toContain('z-40')
+
+    // Clears the phone's bottom navigation plus the safe-area inset.
+    expect(toggle.className).toContain('env(safe-area-inset-bottom)')
+  })
+
+  it('opens the existing calculator and closes it again without losing the trigger', async () => {
+    renderPage()
+
+    const toggle = await screen.findByTestId('pos-calculator-toggle')
+
+    // Closed initially, announced as collapsed.
+    expect(screen.queryByTestId('pos-calculator')).toBeNull()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(toggle)
+    expect(await screen.findByTestId('pos-calculator')).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    // Toggle again: the panel asks to close and unmounts; the launcher stays.
+    fireEvent.click(toggle)
+    await waitFor(() => expect(screen.queryByTestId('pos-calculator')).toBeNull())
+    expect(screen.getByTestId('pos-calculator-toggle')).toBeInTheDocument()
+
+    // ...and it reopens from the same trigger without a reload.
+    fireEvent.click(screen.getByTestId('pos-calculator-toggle'))
+    expect(await screen.findByTestId('pos-calculator')).toBeInTheDocument()
+  })
+
+  it('keeps the launcher reachable while the panel is open', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('pos-calculator-toggle'))
+    await screen.findByTestId('pos-calculator')
+
+    // mousedown on the launcher is the toggle's own press, not an "outside"
+    // dismissal — without the guard the panel would close-then-reopen and a
+    // second click could never close it.
+    fireEvent.mouseDown(screen.getByTestId('pos-calculator-toggle'))
+    expect(screen.getByTestId('pos-calculator')).toBeInTheDocument()
+  })
+})
+
 describe('daily records access (الفواتير / تذاكر المغسلة)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -875,7 +959,9 @@ describe('daily records access (الفواتير / تذاكر المغسلة)', 
     await screen.findByRole('button', { name: 'فتح وردية جديدة' })
     expect(screen.getAllByText('لا توجد وردية مفتوحة')).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 1, name: 'نقطة البيع' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'لا توجد وردية مفتوحة' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'لا توجد وردية مفتوحة' }),
+    ).toBeInTheDocument()
   })
 
   it('distinguishes the shift from the business day in words', async () => {

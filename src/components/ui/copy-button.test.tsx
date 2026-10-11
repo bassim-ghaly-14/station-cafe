@@ -12,7 +12,8 @@
  *    possible outcome for this control is telling a user something is on the
  *    clipboard when it is not.
  *  - The capability gate is preserved: nothing at all is rendered in an origin
- *    with no clipboard.
+ *    with no clipboard AND no legacy path. A plain-`http://` LAN origin with
+ *    the legacy path keeps a working control instead of vanishing on a phone.
  *  - Accessibility: a real accessible name, keyboard operable, a native `title`
  *    kept in step with the name, and a decorative glyph.
  */
@@ -162,8 +163,8 @@ describe('CopyButton', () => {
   })
 
   it('renders nothing at all in an origin with no clipboard', () => {
-    // A phone that arrived through the QR is on plain `http://`, where the API
-    // is undefined. A control that could only ever fail is not rendered, and it
+    // No async clipboard AND no legacy path (jsdom has neither by default).
+    // A control that could only ever fail is not rendered, and it
     // is not merely hidden — a `display: none` button stays focusable.
     delete window.__TAURI_INTERNALS__
     Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
@@ -175,6 +176,48 @@ describe('CopyButton', () => {
     // container would be asserting something that is true in every test.
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByTestId('copy')).not.toBeInTheDocument()
+  })
+
+  it('stays visible and copies on a plain-http phone via the legacy path', async () => {
+    // The reported mobile bug: a phone on the cafe LAN is on plain `http://`,
+    // where `navigator.clipboard` is undefined. Stubbing `execCommand` models
+    // the mobile browsers that still expose the synchronous write.
+    delete window.__TAURI_INTERNALS__
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    try {
+      renderCopy()
+
+      // Visible first: the regression was `null` here on mobile.
+      const button = control()
+      expect(button).toBeInTheDocument()
+
+      fireEvent.click(button)
+
+      expect(execCommand).toHaveBeenCalledWith('copy')
+      // Same three-way success as the async path: renamed control + toast.
+      expect(await screen.findByRole('button', { name: 'تم النسخ' })).toBeInTheDocument()
+    } finally {
+      Object.defineProperty(document, 'execCommand', { value: undefined, configurable: true })
+    }
+  })
+
+  it('raises an error toast when the legacy path reports failure', async () => {
+    delete window.__TAURI_INTERNALS__
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    const execCommand = vi.fn().mockReturnValue(false)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    try {
+      renderCopy()
+
+      fireEvent.click(control())
+
+      await screen.findByText('حدث خطأ غير متوقع')
+      expect(screen.queryByRole('button', { name: 'تم النسخ' })).not.toBeInTheDocument()
+    } finally {
+      Object.defineProperty(document, 'execCommand', { value: undefined, configurable: true })
+    }
   })
 
   it('still copies in a browser that genuinely exposes the clipboard', async () => {
