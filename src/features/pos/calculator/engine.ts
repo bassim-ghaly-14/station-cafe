@@ -123,10 +123,10 @@ export function cleanFloat(value: number): string {
   // NOTE: deterministic trim (no regex) — avoids SonarQube S8786 on /\\.?0+$/.
   if (fixed.includes('.') && !fixed.includes('e') && !fixed.includes('E')) {
     let end = fixed.length
-    while (end > 0 && fixed.charCodeAt(end - 1) === 48) {
+    while (end > 0 && fixed.codePointAt(end - 1) === 48) {
       end -= 1
     }
-    if (end > 0 && fixed.charCodeAt(end - 1) === 46) {
+    if (end > 0 && fixed.codePointAt(end - 1) === 46) {
       end -= 1
     }
     fixed = fixed.slice(0, end)

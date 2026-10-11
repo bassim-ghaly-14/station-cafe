@@ -33,8 +33,9 @@
  * --------
  * Three things happen on a successful copy, and all three are needed:
  *
- *  1. the glyph becomes a check and the button takes the existing `success`
- *     semantic colour — visible without reading anything;
+ *  1. the button surface takes the existing `success-soft` semantic background
+ *     while its text and glyph keep their normal theme colors — visible
+ *     without reading anything;
  *  2. the accessible name becomes the "copied" string, so the state is never
  *     communicated by an icon change alone;
  *  3. a toast in the project's existing `ToastProvider` stack is raised, whose
@@ -216,7 +217,12 @@ export function CopyButton({
       title={copied ? copiedLabel : label}
       className={cn(
         text ? 'transition-colors' : 'shrink-0',
-        copied ? 'text-success' : 'text-foreground-subtle hover:text-foreground',
+        // Success highlights the SURFACE only: content keeps its resting
+        // colors (no `text-success`). `bg-success-soft` merges over the
+        // `secondary` / `ghost` resting background via `cn`, and its
+        // hover/active companions hold it while feedback is showing.
+        'text-foreground-subtle hover:text-foreground',
+        copied && 'bg-success-soft hover:bg-success-soft-hover active:bg-success-soft-hover',
         className,
       )}
     >
