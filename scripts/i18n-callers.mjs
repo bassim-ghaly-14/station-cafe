@@ -62,7 +62,7 @@ for (const localeDir of fs.readdirSync(LOCALES, { withFileTypes: true })) {
       // Leftover single braces, doubled openers and unbalanced braces are all
       // shapes i18next will NOT interpolate — they reach the screen verbatim.
       const stripped = value.replace(/\{\{[^{}]*\}\}/g, '')
-      const single = [...stripped.matchAll(/(?<!\{)\{[A-Za-z_][A-Za-z0-9_]*\}(?!\})/g)]
+      const single = [...stripped.matchAll(/(?<!\{)\{[A-Za-z_]\w*\}(?!\})/g)]
       const opens = (stripped.match(/\{/g) ?? []).length
       const closes = (stripped.match(/\}/g) ?? []).length
       const spaced = value.match(/\{\{\s|\s\}\}/g)

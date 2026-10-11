@@ -26,7 +26,8 @@ console.log('CRAWLER METADATA (fetched by Telegram from a public origin):')
 for (const tag of crawler) {
   const key = tag.match(/(?:property|name)="([^"]+)"/)?.[1]
   const v = value(tag)
-  console.log(`  ${key.padEnd(20)} -> ${v === CDN ? 'ABSOLUTE CLOUDINARY OK' : `WRONG: ${v}`}`)
+  const status = v === CDN ? 'ABSOLUTE CLOUDINARY OK' : `WRONG: ${v}`
+  console.log(`  ${key.padEnd(20)} -> ${status}`)
 }
 
 console.log('\nRUNTIME ICONS (fetched by the browser; local + CSP-safe):')

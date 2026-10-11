@@ -236,8 +236,8 @@ function canonicalRoots(roots) {
   return canonical
 }
 
-/** A UNC share root (`\\server\share\`), which is never an allowed location. */
-const UNC_SHARE = /^\\\\/
+/** A UNC share prefix (`\\server\share\`), which is never an allowed location. */
+const UNC_SHARE_PREFIX = '\\\\'
 
 /**
  * Parse the untrusted CLI argument into `{ absolute, segments }`, or throw.
@@ -321,7 +321,7 @@ function normalizeManifestPathSeparators(raw) {
  * only be a filename that happens to contain a colon, so it is refused there.
  */
 function assertLocalManifestPath(unified) {
-  if (UNC_SHARE.test(unified)) {
+  if (unified.startsWith(UNC_SHARE_PREFIX)) {
     throw new Error('the release manifest path must be a local path, not a network share')
   }
   if (path.sep !== '\\' && /^[a-zA-Z]:/.test(unified)) {
@@ -681,9 +681,9 @@ function main() {
   if (problems.length > 0) {
     // `validatedVersion` is either a digits-and-dots string or `null`. The raw
     // manifest value is not reachable from this line at all.
-    console.error(
-      `error: release ${validatedVersion === null ? '(unvalidated version)' : `v${validatedVersion}`} is not updatable everywhere:`,
-    )
+    const versionLabel =
+      validatedVersion === null ? '(unvalidated version)' : `v${validatedVersion}`
+    console.error(`error: release ${versionLabel} is not updatable everywhere:`)
     // Every problem string is built from literals in this file plus keys that
     // passed `sanitizeTargetKey`; no URL, signature, path or free text is here.
     for (const problem of problems) console.error(`  - ${problem}`)
