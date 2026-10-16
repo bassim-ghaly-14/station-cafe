@@ -58,6 +58,32 @@ pub fn archive_raw_material(
     })
 }
 
+/// The archived raw materials — the source for the manager's restore workspace.
+/// MANAGER-gated like every other raw-material surface; the service re-checks.
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_archived_raw_materials(
+    state: State<'_, AppState>,
+    token: String,
+) -> AppResult<Vec<RawMaterial>> {
+    authorized(&state, &token, "MANAGER", move |conn, _| {
+        recipes_svc::list_archived_materials(conn)
+    })
+}
+
+/// Restore an archived raw material to the active catalog. MANAGER-gated; the
+/// service re-checks the role and only flips an already-archived row, so it is
+/// safe to call and cannot create a duplicate.
+#[tauri::command(rename_all = "snake_case")]
+pub fn restore_raw_material(
+    state: State<'_, AppState>,
+    token: String,
+    material_id: i64,
+) -> AppResult<()> {
+    authorized(&state, &token, "MANAGER", move |conn, actor| {
+        recipes_svc::restore_material(conn, actor, material_id)
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub fn purchase_raw_material(
     state: State<'_, AppState>,

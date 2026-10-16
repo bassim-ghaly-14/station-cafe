@@ -9,6 +9,8 @@ export {
   ArrowLeft,
   ArrowRight,
   ArrowUpDown,
+  Archive,
+  ArchiveRestore,
   Ban,
   Car,
   CarFront,

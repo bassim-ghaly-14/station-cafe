@@ -78,6 +78,12 @@ pub fn list_materials(conn: &Db, active_only: bool) -> AppResult<Vec<RawMaterial
     recipes::list_materials(conn, active_only)
 }
 
+/// The archived (soft-deleted) materials — the restore workspace's source.
+/// A MANAGER-only read; the command re-checks the role as well.
+pub fn list_archived_materials(conn: &Db) -> AppResult<Vec<RawMaterial>> {
+    recipes::list_archived_materials(conn)
+}
+
 pub fn get_material(conn: &Db, id: i64) -> AppResult<RawMaterial> {
     recipes::get_material(conn, id)?.ok_or_else(|| AppError::not_found("rawmaterials.not_found"))
 }
@@ -183,6 +189,41 @@ pub fn archive_material(conn: &Db, actor: &User, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// MANAGER+ restore of an ARCHIVED raw material.
+///
+/// This is the inverse of `archive_material` and mirrors its rules: archiving is
+/// refused while a recipe still references the material, but a material can only
+/// BE archived once it is unused, so restoring it re-activates a material that
+/// has no live recipe references — there is no business rule to re-validate.
+/// It flips the SAME row (`deleted_at = NULL, is_active = 1`) rather than
+/// inserting a replacement, so identity, stock balance, purchase history,
+/// movements and every reference are preserved untouched, and a repeated restore
+/// is an idempotent no-op rather than a duplicate. Recorded for symmetry with
+/// archiving.
+pub fn restore_material(conn: &Db, actor: &User, id: i64) -> AppResult<()> {
+    require_role(actor, "MANAGER")?;
+    // The name is read for the audit trail; the row is fetched through the
+    // archived query because `get_material` hides soft-deleted rows by design.
+    let before = recipes::list_archived_materials(conn)?
+        .into_iter()
+        .find(|m| m.id == id)
+        .ok_or_else(|| AppError::not_found("rawmaterials.not_found"))?;
+    if !recipes::restore_material(conn, id)? {
+        return Err(AppError::not_found("rawmaterials.not_found"));
+    }
+    audit::record(
+        conn,
+        Some(actor.id),
+        Some(&actor.role),
+        "rawmaterials.restored",
+        "raw_material",
+        Some(&id.to_string()),
+        Some(&serde_json::json!({ "name": before.name, "is_active": false })),
+        Some(&serde_json::json!({ "is_active": true })),
+    )?;
+    Ok(())
+}
+
 // ---- purchase (atomic: stock + movement + expense) ------------------------
 // The purchase expense reuses the SHARED `ops::create_expense` placement
 // rules (same business-date, shift and day linkage as every other expense).
@@ -221,6 +262,21 @@ fn per_unit_cost(total_cost_minor: i64, normalized_qty: i64) -> AppResult<i64> {
         return Err(AppError::validation("rawmaterials.invalid_quantity"));
     }
     Ok(crate::money::div_round(total_cost_minor, normalized_qty))
+}
+
+/// The exact cost PER PURCHASE UNIT (e.g. per kilogram) implied by a purchase.
+///
+/// This is what the Raw Materials table shows as the "last cost": the total paid
+/// divided by the quantity in the unit the manager actually bought in, so 10 kg
+/// for 300 EGP is 30.00 EGP/kg. It is derived from the ORIGINAL quantity — never
+/// by scaling the per-base-unit figure, which would amplify that figure's
+/// per-gram rounding a thousandfold. Informational only; the recorded expense
+/// stays the accounting truth.
+fn per_purchase_unit_cost(total_cost_minor: i64, purchase_qty: i64) -> AppResult<i64> {
+    if purchase_qty <= 0 {
+        return Err(AppError::validation("rawmaterials.invalid_quantity"));
+    }
+    Ok(crate::money::div_round(total_cost_minor, purchase_qty))
 }
 
 /// A raw-material purchase input. `quantity` is in `purchase_unit`; the total
@@ -266,6 +322,9 @@ pub fn purchase_material(conn: &Db, actor: &User, input: &PurchaseInput) -> AppR
         .checked_mul(factor)
         .ok_or_else(|| AppError::internal("rawmaterials.quantity_overflow"))?;
     let unit_cost = per_unit_cost(input.total_cost_minor, normalized)?;
+    // The per-PURCHASE-UNIT cost, from the original quantity, is what the table
+    // shows; it is stored beside the per-base-unit figure Recipe Cost reads.
+    let purchase_unit_cost = per_purchase_unit_cost(input.total_cost_minor, input.quantity)?;
 
     let tx = conn.unchecked_transaction()?;
     let placement = resolve_purchase_placement(&tx, actor)?;
@@ -306,12 +365,23 @@ pub fn purchase_material(conn: &Db, actor: &User, input: &PurchaseInput) -> AppR
         actor.id,
     )?;
 
-    // Record the informational latest per-base-unit cost.
+    // Record the informational latest per-base-unit cost AND the exact
+    // per-purchase-unit cost with its unit, all from THIS purchase. The
+    // per-base-unit figure feeds Recipe Cost; the per-purchase-unit pair is the
+    // business-facing "last cost" the table renders (30.00 EGP/kg, not 0.03/g).
     tx.execute(
         "UPDATE raw_materials
-         SET last_purchase_unit_cost_minor = ?2, updated_at = station_now()
+         SET last_purchase_unit_cost_minor = ?2,
+             last_purchase_unit = ?3,
+             last_purchase_cost_per_unit_minor = ?4,
+             updated_at = station_now()
          WHERE id = ?1",
-        rusqlite::params![input.raw_material_id, unit_cost],
+        rusqlite::params![
+            input.raw_material_id,
+            unit_cost,
+            input.purchase_unit,
+            purchase_unit_cost
+        ],
     )?;
 
     audit::record(

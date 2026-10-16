@@ -1996,6 +1996,32 @@ const MIGRATIONS: &[Migration] = &[
                 ON product_recipe_items(raw_material_id);
         "#,
     },
+    Migration {
+        version: 39,
+        name: "raw material last purchase unit cost",
+        needs_fk_off: false,
+        sql: r#"
+            -- The Raw Materials table must show the cost PER UNIT OF THE MOST
+            -- RECENT PURCHASE, in that purchase's own unit (e.g. 30.00 EGP/kg
+            -- for 10 kg bought for 300 EGP). The existing
+            -- `last_purchase_unit_cost_minor` is a PER-BASE-UNIT (per gram/ml)
+            -- rate that Recipe Cost reads; multiplying it back up to the
+            -- purchase unit would amplify its per-gram rounding 1000x, so the
+            -- EXACT per-purchase-unit figure is persisted alongside it instead.
+            --
+            -- Both columns are additive and nullable, so no historical row is
+            -- backfilled or rewritten: a material with no purchase yet, and a
+            -- legacy row recorded before this migration, both read NULL and the
+            -- table shows an em-dash until its next purchase. Recipe Cost,
+            -- stock valuation and consumption keep reading the unchanged
+            -- per-base-unit column, so nothing downstream is affected.
+            ALTER TABLE raw_materials ADD COLUMN last_purchase_unit TEXT;
+            ALTER TABLE raw_materials
+                ADD COLUMN last_purchase_cost_per_unit_minor INTEGER
+                CHECK (last_purchase_cost_per_unit_minor IS NULL
+                       OR last_purchase_cost_per_unit_minor >= 0);
+        "#,
+    },
 ];
 
 /// Populate `customers.phone_key` / `cars.plate_key` from the stored values and

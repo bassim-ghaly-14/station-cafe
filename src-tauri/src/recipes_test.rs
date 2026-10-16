@@ -737,3 +737,195 @@ fn developer_reset_clears_recipe_tables_child_first() {
     assert!(pos("raw_material_movements") < pos("expenses"));
     assert!(pos("raw_material_movements") < pos("invoices"));
 }
+
+/// The business-facing "last cost" is the EXACT cost per PURCHASE UNIT of the
+/// most recent purchase — 10 kg for 300 EGP reads 30.00 EGP/kg (3000 minor/kg),
+/// NOT the per-gram figure (0.03 EGP/g) the per-base-unit column holds.
+#[test]
+fn last_purchase_cost_per_unit_is_exact_per_purchase_unit() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let beans = material(&conn, &m, "حبوب القهوة", "GRAM");
+
+    recipes_svc::purchase_material(
+        &conn,
+        &m,
+        &PurchaseInput {
+            raw_material_id: beans,
+            quantity: 10,
+            purchase_unit: "KILOGRAM".into(),
+            total_cost_minor: 30_000, // 300 EGP
+            note: None,
+        },
+    )
+    .unwrap();
+
+    let row = recipes::get_material(&conn, beans).unwrap().unwrap();
+    // Per-base-unit (gram) figure Recipe Cost reads: 30000 / 10000 = 3 minor/g.
+    assert_eq!(row.last_purchase_unit_cost_minor, Some(3));
+    // Per-PURCHASE-UNIT figure the table shows: 30000 / 10 = 3000 minor/kg.
+    assert_eq!(row.last_purchase_unit, Some("KILOGRAM".to_string()));
+    assert_eq!(row.last_purchase_cost_per_unit_minor, Some(3000));
+}
+
+/// A purchase the rounded per-gram figure would misrepresent: 3 kg for 100 EGP
+/// is 33.33 EGP/kg (3333 minor/kg), NOT 30.00 from scaling the per-gram value.
+/// This is why the per-purchase-unit cost is stored, not derived.
+#[test]
+fn last_purchase_cost_per_unit_avoids_base_unit_rounding_amplification() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let sugar = material(&conn, &m, "سكر", "GRAM");
+
+    recipes_svc::purchase_material(
+        &conn,
+        &m,
+        &PurchaseInput {
+            raw_material_id: sugar,
+            quantity: 3,
+            purchase_unit: "KILOGRAM".into(),
+            total_cost_minor: 10_000, // 100 EGP
+            note: None,
+        },
+    )
+    .unwrap();
+
+    let row = recipes::get_material(&conn, sugar).unwrap().unwrap();
+    // Per-gram rounds to 3 (10000 / 3000); scaling it would give 3000, WRONG for
+    // the purchase unit. The exact per-kg is 10000 / 3 = 3333.
+    assert_eq!(row.last_purchase_unit_cost_minor, Some(3));
+    assert_eq!(row.last_purchase_cost_per_unit_minor, Some(3333));
+    assert_eq!(row.last_purchase_unit, Some("KILOGRAM".to_string()));
+}
+
+/// A later purchase OVERWRITES the last-purchase pair; the earlier purchase is
+/// never resurrected and the per-base-unit Recipe Cost basis follows the latest
+/// purchase too.
+#[test]
+fn last_purchase_pair_tracks_the_latest_purchase_only() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let milk = material(&conn, &m, "حليب", "MILLILITER");
+
+    recipes_svc::purchase_material(
+        &conn,
+        &m,
+        &PurchaseInput {
+            raw_material_id: milk,
+            quantity: 4,
+            purchase_unit: "LITER".into(),
+            total_cost_minor: 20_000, // 50.00 EGP/l
+            note: None,
+        },
+    )
+    .unwrap();
+    recipes_svc::purchase_material(
+        &conn,
+        &m,
+        &PurchaseInput {
+            raw_material_id: milk,
+            quantity: 2,
+            purchase_unit: "LITER".into(),
+            total_cost_minor: 10_000, // 50.00 EGP/l
+            note: None,
+        },
+    )
+    .unwrap();
+
+    let row = recipes::get_material(&conn, milk).unwrap().unwrap();
+    assert_eq!(row.last_purchase_unit, Some("LITER".to_string()));
+    assert_eq!(row.last_purchase_cost_per_unit_minor, Some(5000)); // 10000 / 2
+    assert_eq!(balance(&conn, milk), 6_000); // 4 L + 2 L
+}
+
+/// Archiving hides a material from every list and preserves its stock, purchase
+/// history and expense; restoring brings the SAME row back with all of it intact.
+#[test]
+fn archive_then_restore_preserves_stock_and_history() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let beans = material(&conn, &m, "حبوب القهوة", "GRAM");
+    recipes_svc::purchase_material(
+        &conn,
+        &m,
+        &PurchaseInput {
+            raw_material_id: beans,
+            quantity: 2,
+            purchase_unit: "KILOGRAM".into(),
+            total_cost_minor: 100_000,
+            note: None,
+        },
+    )
+    .unwrap();
+
+    // Archived: gone from the active list, present in the archived list.
+    recipes_svc::archive_material(&conn, &m, beans).unwrap();
+    assert!(recipes::list_materials(&conn, true)
+        .unwrap()
+        .iter()
+        .all(|r| r.id != beans));
+    let archived = recipes::list_archived_materials(&conn).unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].id, beans);
+
+    // Restored: the SAME row returns, stock and cost untouched, no duplicate.
+    recipes_svc::restore_material(&conn, &m, beans).unwrap();
+    assert!(recipes::list_archived_materials(&conn).unwrap().is_empty());
+    let active = recipes::list_materials(&conn, true).unwrap();
+    assert_eq!(
+        active.iter().filter(|r| r.id == beans).count(),
+        1,
+        "restore must not duplicate"
+    );
+    let row = recipes::get_material(&conn, beans).unwrap().unwrap();
+    assert_eq!(balance(&conn, beans), 2_000);
+    assert_eq!(row.last_purchase_cost_per_unit_minor, Some(50000)); // 100000 / 2
+                                                                    // The PURCHASE movement and its expense survived the round trip.
+    assert_eq!(
+        recipes::list_movements(&conn, Some(beans), 10)
+            .unwrap()
+            .iter()
+            .filter(|mv| mv.reason == "PURCHASE")
+            .count(),
+        1
+    );
+}
+
+/// Repeated archive/restore cycles are idempotent and never create a second row.
+#[test]
+fn repeated_archive_restore_never_duplicates() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let sugar = material(&conn, &m, "سكر", "GRAM");
+    for _ in 0..3 {
+        recipes_svc::archive_material(&conn, &m, sugar).unwrap();
+        recipes_svc::restore_material(&conn, &m, sugar).unwrap();
+    }
+    let all_active = recipes::list_materials(&conn, true).unwrap();
+    assert_eq!(all_active.iter().filter(|r| r.id == sugar).count(), 1);
+    assert!(recipes::list_archived_materials(&conn).unwrap().is_empty());
+}
+
+/// A non-archived material cannot be "restored": the service fails closed with
+/// not-found rather than fabricating a second active copy.
+#[test]
+fn restoring_an_active_material_is_refused() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let beans = material(&conn, &m, "حبوب", "GRAM");
+    assert!(recipes_svc::restore_material(&conn, &m, beans).is_err());
+    assert!(recipes_svc::restore_material(&conn, &m, 999_999).is_err());
+}
+
+/// STAFF may not restore a material: the gate is the service's, not the UI's,
+/// and a refused attempt leaves the material archived.
+#[test]
+fn staff_is_forbidden_from_restoring_materials() {
+    let conn = fresh();
+    let m = manager(&conn);
+    let staff = login(&conn, "momo", "11111");
+    let beans = material(&conn, &m, "حبوب", "GRAM");
+    recipes_svc::archive_material(&conn, &m, beans).unwrap();
+    assert!(recipes_svc::restore_material(&conn, &staff, beans).is_err());
+    assert_eq!(recipes::list_archived_materials(&conn).unwrap().len(), 1);
+}

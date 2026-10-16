@@ -221,6 +221,8 @@ const REQUIRED_ARGS: &[(&str, &[&str])] = &[
     ("create_raw_material", &["input"]),
     ("update_raw_material", &["material_id", "input"]),
     ("archive_raw_material", &["material_id"]),
+    ("list_archived_raw_materials", &[]),
+    ("restore_raw_material", &["material_id"]),
     ("purchase_raw_material", &["input"]),
     ("adjust_raw_material", &["material_id", "change"]),
     ("waste_raw_material", &["material_id", "quantity"]),
@@ -735,6 +737,14 @@ fn dispatch(
             req::<_>(body, "input")?,
         )),
         "archive_raw_material" => out(crate::commands::recipes::archive_raw_material(
+            state.clone(),
+            token.to_owned(),
+            req::<_>(body, "material_id")?,
+        )),
+        "list_archived_raw_materials" => out(
+            crate::commands::recipes::list_archived_raw_materials(state.clone(), token.to_owned()),
+        ),
+        "restore_raw_material" => out(crate::commands::recipes::restore_raw_material(
             state.clone(),
             token.to_owned(),
             req::<_>(body, "material_id")?,

@@ -304,6 +304,8 @@ pub fn run() {
             commands::recipes::create_raw_material,
             commands::recipes::update_raw_material,
             commands::recipes::archive_raw_material,
+            commands::recipes::list_archived_raw_materials,
+            commands::recipes::restore_raw_material,
             commands::recipes::purchase_raw_material,
             commands::recipes::adjust_raw_material,
             commands::recipes::waste_raw_material,

@@ -28,6 +28,15 @@ export interface RawMaterial {
   current_quantity: number
   /** Latest per-base-unit cost — informational Recipe Cost basis only. */
   last_purchase_unit_cost_minor: number | null
+  /**
+   * The unit of the MOST RECENT purchase (e.g. `KILOGRAM`), paired with
+   * `last_purchase_cost_per_unit_minor` to render the business-facing "last
+   * cost" per purchase unit (30.00 EGP/kg). Both are null until the first
+   * purchase and for legacy rows recorded before they existed.
+   */
+  last_purchase_unit: MaterialUnit | null
+  /** Exact cost per `last_purchase_unit` for the most recent purchase, minor. */
+  last_purchase_cost_per_unit_minor: number | null
   is_active: boolean
   created_at: string
 }
@@ -118,6 +127,8 @@ export const recipesApi = {
   update: (material_id: number, input: NewMaterialInput) =>
     call<void>('update_raw_material', { material_id, input }),
   archive: (material_id: number) => call<void>('archive_raw_material', { material_id }),
+  listArchived: () => call<RawMaterial[]>('list_archived_raw_materials', {}),
+  restore: (material_id: number) => call<void>('restore_raw_material', { material_id }),
   purchase: (input: PurchaseInput) => call<void>('purchase_raw_material', { input }),
   adjust: (material_id: number, change: number, note: string | null) =>
     call<void>('adjust_raw_material', { material_id, change, note }),

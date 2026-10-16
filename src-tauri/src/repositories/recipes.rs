@@ -29,6 +29,11 @@ use std::collections::HashMap;
 /// `last_purchase_unit_cost_minor` is the latest PER-BASE-UNIT cost from the
 /// most recent purchase — an INFORMATIONAL display basis for Recipe Cost only,
 /// never accounting truth and never a valuation.
+/// `last_purchase_unit` / `last_purchase_cost_per_unit_minor` carry the SAME
+/// most-recent purchase expressed in ITS OWN unit (e.g. KILOGRAM / 3000 minor),
+/// so the Raw Materials table can show the exact per-purchase-unit cost without
+/// amplifying the per-gram rounding of the per-base-unit figure. Both are NULL
+/// until the first purchase and are never backfilled onto legacy rows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawMaterial {
     pub id: i64,
@@ -40,12 +45,15 @@ pub struct RawMaterial {
     pub current_quantity: i64,
     /// Latest per-base-unit cost in minor units, informational only.
     pub last_purchase_unit_cost_minor: Option<i64>,
+    /// The unit the most recent purchase was made in (e.g. `KILOGRAM`).
+    pub last_purchase_unit: Option<String>,
+    /// Exact cost per `last_purchase_unit` for the most recent purchase, minor.
+    pub last_purchase_cost_per_unit_minor: Option<i64>,
     pub is_active: bool,
     pub created_at: String,
 }
 
-const MATERIAL_COLS: &str =
-    "id, name, department, base_unit, current_quantity, last_purchase_unit_cost_minor, is_active, created_at";
+const MATERIAL_COLS: &str = "id, name, department, base_unit, current_quantity, last_purchase_unit_cost_minor, last_purchase_unit, last_purchase_cost_per_unit_minor, is_active, created_at";
 
 fn material_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawMaterial> {
     Ok(RawMaterial {
@@ -55,8 +63,10 @@ fn material_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawMaterial> {
         base_unit: r.get(3)?,
         current_quantity: r.get(4)?,
         last_purchase_unit_cost_minor: r.get(5)?,
-        is_active: r.get::<_, i64>(6)? != 0,
-        created_at: r.get(7)?,
+        last_purchase_unit: r.get(6)?,
+        last_purchase_cost_per_unit_minor: r.get(7)?,
+        is_active: r.get::<_, i64>(8)? != 0,
+        created_at: r.get(9)?,
     })
 }
 
@@ -160,6 +170,32 @@ pub fn archive_material(conn: &Db, id: i64) -> AppResult<bool> {
         "UPDATE raw_materials
          SET deleted_at = station_now(), is_active = 0, updated_at = station_now()
          WHERE id = ?1 AND deleted_at IS NULL",
+        [id],
+    )?;
+    Ok(changed > 0)
+}
+
+/// The ARCHIVED (soft-deleted) materials — the restore workspace's source.
+/// `active_only` is irrelevant here; every row returned has `deleted_at` set.
+pub fn list_archived_materials(conn: &Db) -> AppResult<Vec<RawMaterial>> {
+    let sql = format!(
+        "SELECT {MATERIAL_COLS} FROM raw_materials WHERE deleted_at IS NOT NULL ORDER BY name"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], material_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Restore a soft-deleted material to the active catalog. It flips the SAME row
+/// back — never inserts a replacement — so identity, stock balance, purchase
+/// history, movements and any references are all preserved untouched. The
+/// `deleted_at IS NOT NULL` guard makes it a no-op on an already-active row, so
+/// a repeated restore can never create a duplicate.
+pub fn restore_material(conn: &Db, id: i64) -> AppResult<bool> {
+    let changed = conn.execute(
+        "UPDATE raw_materials
+         SET deleted_at = NULL, is_active = 1, updated_at = station_now()
+         WHERE id = ?1 AND deleted_at IS NOT NULL",
         [id],
     )?;
     Ok(changed > 0)
