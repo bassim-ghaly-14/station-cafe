@@ -90,6 +90,7 @@ use crate::services::attendance::{self, AttendanceAction};
 use crate::services::auth::{self, User};
 use crate::services::checkout::NO_CUSTOMER_LABEL;
 use crate::services::pos as pos_svc;
+use crate::services::recipes as recipes_svc;
 use crate::services::reconciliation;
 use crate::services::settings::{self, CreditConfig, RevenueDepartment, RevenueTargetDefaults};
 use crate::time;
@@ -815,13 +816,78 @@ const DEMO_WASH_PRODUCTS: &[DemoProduct] = &[
     ),
 ];
 
+/// Recipe-demonstration products: tracked inventory items whose consumption is
+/// driven by raw-material recipes (see [`DEMO_RAW_MATERIALS`] below).
+///
+/// Kept as a SEPARATE table — rather than folded into `DEMO_CAFE_PRODUCTS` /
+/// `DEMO_WASH_PRODUCTS` — so the recipe demo stays individually addressable
+/// without renumbering the existing catalog fixtures. Each row uses the same
+/// tuple shape as the existing tables: `(name, item_type, department,
+/// category, price_egp, opening_stock, min_quantity, active)`.
+const DEMO_RECIPE_PRODUCTS: &[(&str, &str, &str, &str, i64, Option<i64>, i64, bool)] = &[
+    (
+        "لاتيه الحليب — وصفة تجريبية",
+        "PRODUCT",
+        "CAFE",
+        "مشروبات ساخنة",
+        92,
+        Some(20),
+        5,
+        true,
+    ),
+    (
+        "عبوة شامبو الغسيل — تجريبية",
+        "PRODUCT",
+        "WASH",
+        "ماركت مغسلة",
+        40,
+        Some(30),
+        8,
+        true,
+    ),
+];
+
+/// Raw materials backing the recipe demonstration: `(name, department,
+/// base_unit)`.
+///
+/// Purchases for these materials are recorded through the REAL purchase service
+/// in [`seed_recipe_demo`] (see [`DEMO_RAW_MATERIAL_PURCHASES`]).
+const DEMO_RAW_MATERIALS: &[(&str, &str, &str)] = &[
+    ("بن مطحون", "CAFE", "GRAM"),
+    ("حليب خام", "CAFE", "MILLILITER"),
+    ("مسحوق غسيل", "WASH", "GRAM"),
+];
+
+/// Demo purchases: `(material_name, quantity, purchase_unit, total_cost_egp)`.
+///
+/// Money is whole EGP here and converted to the project's minor-unit format at
+/// the call site, exactly like product prices (`price * 100`). Quantities use
+/// the purchase unit the service expects (`KILOGRAM` / `LITER`), normalized by
+/// the service to the material's base unit (×1000).
+const DEMO_RAW_MATERIAL_PURCHASES: &[(&str, i64, &str, i64)] = &[
+    ("بن مطحون", 5, "KILOGRAM", 750),
+    ("حليب خام", 20, "LITER", 900),
+    ("مسحوق غسيل", 10, "KILOGRAM", 600),
+];
+
+/// Recipe mappings for the demo recipe products: `(product_name,
+/// [(material_name, quantity_base)])`. Quantities are positive integers in the
+/// material's base unit (grams / milliliters) for ONE unit of the product.
+const DEMO_RECIPES: &[(&str, &[(&str, i64)])] = &[
+    (
+        "لاتيه الحليب — وصفة تجريبية",
+        &[("بن مطحون", 12), ("حليب خام", 180)],
+    ),
+    ("عبوة شامبو الغسيل — تجريبية", &[("مسحوق غسيل", 150)]),
+];
+
 /// Insert the demo catalog on top of the official one.
 ///
 /// `is_seed = 0` on purpose: these are ordinary catalog rows, not part of the
 /// authoritative starter list, so the official `sync_catalog` pass (which only
 /// ever touches `is_seed = 1`) can neither deactivate nor delete them.
 fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
-    for table in [DEMO_CAFE_PRODUCTS, DEMO_WASH_PRODUCTS] {
+    for table in [DEMO_CAFE_PRODUCTS, DEMO_WASH_PRODUCTS, DEMO_RECIPE_PRODUCTS] {
         for (name, item_type, department, category, price, stock, min_qty, active) in table {
             let category_id = catalog::ensure_category(conn, category)?;
             let price_minor = price.checked_mul(100).ok_or_else(|| {
@@ -876,6 +942,132 @@ fn seed_products(conn: &Db, actor_id: i64) -> AppResult<()> {
                 catalog::set_active(conn, product_id, false)?;
             }
         }
+    }
+
+    Ok(())
+}
+
+/// Raw-material + purchase + recipe demonstration for [`DEMO_RECIPE_PRODUCTS`].
+///
+/// Runs through the REAL services only: `create_material`, `purchase_material`
+/// and `set_recipe`. Must run AFTER the live day + ACTIVE shift exist (the
+/// purchase links its SUPPLIES expense to the actor's open shift and today's
+/// business day) and BEFORE the final product-stock repair. History generation
+/// never consumes raw materials (the historical place_order path does not call
+/// consume_for_sale), so nothing back-dated is fabricated here.
+fn seed_recipe_demo(conn: &Db, actor: &User) -> AppResult<()> {
+    use crate::repositories::recipes::NewMaterial;
+
+    let mut material_ids: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
+    for (name, department, base_unit) in DEMO_RAW_MATERIALS {
+        let existing: Option<(i64, String, bool)> = conn
+            .query_row(
+                "SELECT id, base_unit, is_active FROM raw_materials
+                  WHERE name = ?1 AND department = ?2 AND deleted_at IS NULL
+                  ORDER BY id LIMIT 1",
+                params![name, department],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+            )
+            .ok();
+        let id = match existing {
+            Some((id, current_base, is_active)) => {
+                if current_base != *base_unit {
+                    return Err(AppError::internal(format!(
+                        "demo raw material {name} has base unit {current_base}, expected {base_unit}"
+                    )));
+                }
+                if !is_active {
+                    recipes_svc::restore_material(conn, actor, id)?;
+                }
+                recipes_svc::update_material(
+                    conn,
+                    actor,
+                    id,
+                    &NewMaterial {
+                        name: (*name).to_string(),
+                        department: (*department).to_string(),
+                        base_unit: (*base_unit).to_string(),
+                    },
+                )?;
+                id
+            }
+            None => recipes_svc::create_material(
+                conn,
+                actor,
+                &NewMaterial {
+                    name: (*name).to_string(),
+                    department: (*department).to_string(),
+                    base_unit: (*base_unit).to_string(),
+                },
+            )?,
+        };
+        material_ids.insert(name, id);
+    }
+
+    // Purchases: one per material, skipped when the matching PURCHASE
+    // movement + SUPPLIES expense already exists (idempotent reload).
+    for (material_name, quantity, purchase_unit, total_egp) in DEMO_RAW_MATERIAL_PURCHASES {
+        let material_id = *material_ids.get(material_name).ok_or_else(|| {
+            AppError::internal(format!("demo raw material {material_name} was not seeded"))
+        })?;
+        let total_cost_minor = total_egp.checked_mul(100).ok_or_else(|| {
+            AppError::internal(format!(
+                "demo purchase overflow for material: {material_name}"
+            ))
+        })?;
+        let factor: i64 = match *purchase_unit {
+            "KILOGRAM" | "LITER" => 1000,
+            _ => 1,
+        };
+        let expected_change = (*quantity)
+            .checked_mul(factor)
+            .ok_or_else(|| AppError::internal("demo purchase quantity overflow"))?;
+        let already: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM raw_material_movements m
+                  JOIN expenses e ON e.id = m.expense_id
+                  WHERE m.raw_material_id = ?1 AND m.reason = 'PURCHASE'
+                    AND m.change = ?2 AND e.amount = ?3 AND e.category = 'SUPPLIES'",
+                params![material_id, expected_change, total_cost_minor],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if already > 0 {
+            continue;
+        }
+        recipes_svc::purchase_material(
+            conn,
+            actor,
+            &recipes_svc::PurchaseInput {
+                raw_material_id: material_id,
+                quantity: *quantity,
+                purchase_unit: (*purchase_unit).to_string(),
+                total_cost_minor,
+                note: Some(format!("توريد تجريبي {material_name}")),
+            },
+        )?;
+    }
+
+    // Recipes: replace-to-converge through the real service.
+    for (product_name, lines) in DEMO_RECIPES {
+        let product_id: i64 = conn
+            .query_row(
+                "SELECT p.id FROM products p WHERE p.name = ?1 AND p.deleted_at IS NULL ORDER BY p.id LIMIT 1",
+                params![product_name],
+                |r| r.get(0),
+            )
+            .map_err(|_| AppError::internal(format!("demo recipe product missing: {product_name}")))?;
+        let mut inputs: Vec<recipes_svc::RecipeLineInput> = Vec::new();
+        for (material_name, quantity_base) in *lines {
+            let raw_material_id = *material_ids.get(material_name).ok_or_else(|| {
+                AppError::internal(format!("demo raw material {material_name} was not seeded"))
+            })?;
+            inputs.push(recipes_svc::RecipeLineInput {
+                raw_material_id,
+                quantity_base: *quantity_base,
+            });
+        }
+        recipes_svc::set_recipe(conn, actor, product_id, &inputs)?;
     }
 
     Ok(())
@@ -2711,6 +2903,11 @@ pub fn load(conn: &Db) -> AppResult<()> {
     seed_credit_settlements(conn, &accounts.manager)?;
 
     // ---- restocking and waste ---------------------------------------------
+    // Recipe demo BEFORE the repair: purchases book today's SUPPLIES expenses
+    // (750 + 900 + 600 = 2,250 EGP = 225_000 minor) onto the open shift/day
+    // through the existing reporting flow. The repair below only touches
+    // product inventory_items, but the "history, then repair" order stays.
+    seed_recipe_demo(conn, &accounts.admin)?;
     seed_stock_movements(conn, &accounts.admin)?;
 
     Ok(())
@@ -4085,6 +4282,213 @@ mod tests {
                 &conn,
                 "SELECT COUNT(DISTINCT day_date || '-' || waiting_no) FROM wash_tickets"
             )
+        );
+    }
+
+    fn demo_product_row(
+        conn: &Connection,
+        name: &str,
+    ) -> (i64, i64, i64, i64, i64, i64, String, String) {
+        conn.query_row(
+            "SELECT p.price_minor, p.is_active, p.track_inventory, COALESCE(i.quantity, -1),
+                    COALESCE(i.min_quantity, -1), p.is_seed, p.department, c.name
+             FROM products p JOIN categories c ON c.id = p.category_id
+             LEFT JOIN inventory_items i ON i.product_id = p.id
+             WHERE p.name = ?1 AND p.deleted_at IS NULL",
+            [name],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                ))
+            },
+        )
+        .unwrap()
+    }
+
+    fn demo_material_row(conn: &Connection, name: &str) -> (i64, String, String, i64) {
+        conn.query_row(
+            "SELECT id, department, base_unit, current_quantity FROM raw_materials
+             WHERE name = ?1 AND deleted_at IS NULL",
+            [name],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap()
+    }
+
+    /// Recipe demo seed correctness: products, materials, purchases, recipes.
+    #[test]
+    fn recipe_demo_seed_correctness() {
+        let conn = demo_db();
+        let latte = demo_product_row(&conn, "لاتيه الحليب — وصفة تجريبية");
+        assert_eq!(latte.0, 9_200, "latte 92 EGP in minor units");
+        assert_eq!((latte.1, latte.2, latte.4, latte.5), (1, 1, 5, 0));
+        // The new items join the catalog BEFORE history generation, so the 24
+        // months of demo sales may legitimately draw them down and the
+        // pre-existing `seed_stock_movements` repair restocks every tracked
+        // item. The spec pins the OPENING stock (20), not the live balance:
+        // assert the opening movement and that the live balance stays sane.
+        let latte_id_check: i64 = conn
+            .query_row(
+                "SELECT id FROM products WHERE name = 'لاتيه الحليب — وصفة تجريبية'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let latte_opening: i64 = conn.query_row("SELECT COALESCE(SUM(change), 0) FROM stock_movements WHERE product_id = ?1 AND reason = 'ADJUSTMENT' AND note = 'initial_stock'", [latte_id_check], |r| r.get(0)).unwrap();
+        assert_eq!(latte_opening, 20, "latte opening stock movement");
+        assert!(latte.3 >= 0, "latte live balance non-negative after repair");
+        assert_eq!(
+            (latte.6.as_str(), latte.7.as_str()),
+            ("CAFE", "مشروبات ساخنة")
+        );
+        let wash = demo_product_row(&conn, "عبوة شامبو الغسيل — تجريبية");
+        assert_eq!(wash.0, 4_000, "wash bundle 40 EGP in minor units");
+        assert_eq!((wash.1, wash.2, wash.4, wash.5), (1, 1, 8, 0));
+        let wash_id_check: i64 = conn
+            .query_row(
+                "SELECT id FROM products WHERE name = 'عبوة شامبو الغسيل — تجريبية'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let wash_opening: i64 = conn.query_row("SELECT COALESCE(SUM(change), 0) FROM stock_movements WHERE product_id = ?1 AND reason = 'ADJUSTMENT' AND note = 'initial_stock'", [wash_id_check], |r| r.get(0)).unwrap();
+        assert_eq!(wash_opening, 30, "wash opening stock movement");
+        assert!(wash.3 >= 0, "wash live balance non-negative after repair");
+        assert_eq!((wash.6.as_str(), wash.7.as_str()), ("WASH", "ماركت مغسلة"));
+        let item_type: String = conn
+            .query_row(
+                "SELECT item_type FROM products WHERE name = 'عبوة شامبو الغسيل — تجريبية'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(item_type.as_str(), "PRODUCT");
+
+        // Materials with converted balances: 5kg->5000g, 20L->20000ml, 10kg->10000g.
+        let coffee = demo_material_row(&conn, "بن مطحون");
+        assert_eq!(
+            (coffee.1.as_str(), coffee.2.as_str(), coffee.3),
+            ("CAFE", "GRAM", 5_000)
+        );
+        let milk = demo_material_row(&conn, "حليب خام");
+        assert_eq!(
+            (milk.1.as_str(), milk.2.as_str(), milk.3),
+            ("CAFE", "MILLILITER", 20_000)
+        );
+        let powder = demo_material_row(&conn, "مسحوق غسيل");
+        assert_eq!(
+            (powder.1.as_str(), powder.2.as_str(), powder.3),
+            ("WASH", "GRAM", 10_000)
+        );
+
+        // Each purchase: PURCHASE movement + linked SUPPLIES expense of the total.
+        for (name, change, amount) in [
+            ("بن مطحون", 5_000, 75_000),
+            ("حليب خام", 20_000, 90_000),
+            ("مسحوق غسيل", 10_000, 60_000),
+        ] {
+            let (id, _, _, _) = demo_material_row(&conn, name);
+            let (m_change, expense_id): (i64, i64) = conn
+                .query_row(
+                    "SELECT change, expense_id FROM raw_material_movements
+                     WHERE raw_material_id = ?1 AND reason = 'PURCHASE' ORDER BY id",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(m_change, change, "{name} base-unit increase");
+            let (category, e_amount): (String, i64) = conn
+                .query_row(
+                    "SELECT category, amount FROM expenses WHERE id = ?1",
+                    [expense_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((category.as_str(), e_amount), ("SUPPLIES", amount));
+        }
+        // Combined demo purchase expense: 2,250 EGP = 225_000 minor.
+        let today = crate::time::today_business_date();
+        let total: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(e.amount), 0) FROM expenses e
+                 JOIN raw_material_movements m ON m.expense_id = e.id
+                 WHERE m.reason = 'PURCHASE' AND e.category = 'SUPPLIES' AND e.expense_date = ?1
+                   AND m.raw_material_id IN (SELECT id FROM raw_materials WHERE name IN ('بن مطحون','حليب خام','مسحوق غسيل'))",
+                [today],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(total, 225_000);
+
+        // Recipes match the approved mapping.
+        let latte_id: i64 = conn
+            .query_row(
+                "SELECT id FROM products WHERE name = 'لاتيه الحليب — وصفة تجريبية'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let wash_id: i64 = conn
+            .query_row(
+                "SELECT id FROM products WHERE name = 'عبوة شامبو الغسيل — تجريبية'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let recipe_of = |pid: i64| -> Vec<(String, i64)> {
+            let mut stmt = conn.prepare("SELECT r.name, ri.quantity_base FROM product_recipe_items ri JOIN raw_materials r ON r.id = ri.raw_material_id WHERE ri.product_id = ?1").unwrap();
+            stmt.query_map([pid], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        let latte_recipe = recipe_of(latte_id);
+        assert_eq!(latte_recipe.len(), 2);
+        assert!(latte_recipe.contains(&("بن مطحون".to_string(), 12)));
+        assert!(latte_recipe.contains(&("حليب خام".to_string(), 180)));
+        assert_eq!(recipe_of(wash_id), vec![("مسحوق غسيل".to_string(), 150)]);
+    }
+
+    /// Reloading the recipe demo converges: no duplicate products, materials,
+    /// movements, recipes, stock or expenses.
+    #[test]
+    fn recipe_demo_reload_is_idempotent() {
+        let conn = demo_db();
+        let admin = login(&conn, "Belly", "2214");
+        let counts = |c: &Connection| -> (i64, i64, i64, i64) {
+            (
+                count(c, "SELECT COUNT(*) FROM products"),
+                count(c, "SELECT COUNT(*) FROM raw_materials"),
+                count(c, "SELECT COUNT(*) FROM raw_material_movements"),
+                count(c, "SELECT COUNT(*) FROM product_recipe_items"),
+            )
+        };
+        let before = counts(&conn);
+        seed_recipe_demo(&conn, &admin).unwrap();
+        assert_eq!(counts(&conn), before);
+        assert_eq!(demo_material_row(&conn, "بن مطحون").3, 5_000);
+        assert_eq!(demo_material_row(&conn, "حليب خام").3, 20_000);
+        assert_eq!(demo_material_row(&conn, "مسحوق غسيل").3, 10_000);
+    }
+
+    /// Existing products gain no recipes or tracking from this change.
+    #[test]
+    fn recipe_demo_leaves_existing_products_untouched() {
+        let conn = demo_db();
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM product_recipe_items WHERE product_id NOT IN (SELECT id FROM products WHERE name IN ('لاتيه الحليب — وصفة تجريبية','عبوة شامبو الغسيل — تجريبية'))"),
+            0
+        );
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM products WHERE name IN ('إسبريسو','لاتيه','كابتشينو') AND track_inventory = 1"),
+            0
         );
     }
 }
